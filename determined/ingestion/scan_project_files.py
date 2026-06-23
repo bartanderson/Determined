@@ -39,12 +39,29 @@ DEFAULT_IGNORED_DIRECTORIES = {
     "tools_old",
 }
 
+DETERMINEDIGNORE_FILENAME = ".determinedignore"
+
+
+def load_ignore_list(project_root: str | Path) -> set[str]:
+    """Merge defaults with any .determinedignore file in the project root."""
+    ignored = set(DEFAULT_IGNORED_DIRECTORIES)
+    ignore_file = Path(project_root) / DETERMINEDIGNORE_FILENAME
+    if ignore_file.exists():
+        for line in ignore_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                ignored.add(line)
+    return ignored
+
 
 # =========================================================
 # FILE DISCOVERY
 # =========================================================
 def should_ignore_path(path: Path, ignored_directory_names: Iterable[str]) -> bool:
     ignored = set(ignored_directory_names)
+    # always skip dot-folders (hidden/tooling dirs)
+    if any(part.startswith(".") for part in path.parts if part not in (".", "..")):
+        return True
     return any(part in ignored for part in path.parts)
 
 
@@ -58,7 +75,7 @@ def discover_python_files(
     ignored = (
         set(ignored_directory_names)
         if ignored_directory_names is not None
-        else DEFAULT_IGNORED_DIRECTORIES
+        else load_ignore_list(root)
     )
 
     discovered_files: List[Path] = []

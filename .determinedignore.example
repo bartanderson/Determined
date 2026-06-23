@@ -1,0 +1,14 @@
+# .determinedignore — add this file to your project root to customize
+# which directories Determined skips during analysis.
+#
+# Dot-folders (e.g. .git, .venv, .claude) are always skipped automatically.
+# The following directories are also skipped by default:
+#   __pycache__, venv, .venv, node_modules, dist, build, archive, tools_old
+#
+# Add any project-specific directories below, one per line:
+
+# examples:
+# tests
+# docs
+# scripts
+# migrations
