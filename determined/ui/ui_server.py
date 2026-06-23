@@ -75,14 +75,14 @@ def handle_query(data):
         emit("answer", {"question": question, "answer": answer})
         return
 
-    if q_lower == "discover":
+    if q_lower in ("discover", "discover more"):
         sid = request.sid
         def _run_discover():
             try:
                 from determined.agent.discovery_agent import run as discover_run
                 from determined.agent.knowledge_status import coverage_summary
                 socketio.emit("status", {"message": "Running discovery…"}, to=sid)
-                discover_run(_db_path, limit=5, verbose=False)
+                discover_run(_db_path, limit=20, verbose=False)
                 answer = coverage_summary(_oracle, _assessor)
                 socketio.emit("answer", {"question": question, "answer": answer}, to=sid)
             except Exception as exc:
