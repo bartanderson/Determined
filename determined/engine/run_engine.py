@@ -156,32 +156,31 @@ class EngineRunner:
 
 
 if __name__ == "__main__":
+    import argparse
 
-    # ----------------------------
-    # DB TARGETS (explicit roles)
-    # ----------------------------
+    parser = argparse.ArgumentParser(description="Ingest a codebase into a Determined corpus DB.")
+    parser.add_argument("path", nargs="?", help="Path to the directory to ingest (omit to use a folder picker dialog)")
+    args = parser.parse_args()
 
     print("Begin analysis.")
     project_prefixes = []
     repo_root = "."
 
-    import tkinter as tk 
-    from tkinter import filedialog
+    if args.path:
+        selected_target = str(Path(args.path).resolve())
+    else:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        selected_target = filedialog.askdirectory(initialdir=Path(__file__).parent)
 
-    root = tk.Tk()
+    if not selected_target:
+        print("No path selected. Exiting.")
+        raise SystemExit(1)
 
-    root.withdraw() # hide the empty window
-
-    # select analysis target path
-    selected_target = filedialog.askdirectory(initialdir=Path(__file__).parent) 
-    
-    corpus = type(
-        "Corpus",
-        (),
-        {"root_path": selected_target},
-    )()
- 
-    db_path = resolve_analysis_db_path(corpus.root_path) # path selected normalized with _ + .db
+    corpus = type("Corpus", (), {"root_path": selected_target})()
+    db_path = resolve_analysis_db_path(corpus.root_path)
 
     log_path = Path(db_path).with_suffix(".log")
     logger = EngineLogger(enabled=enable_logging, path=log_path)
@@ -189,7 +188,6 @@ if __name__ == "__main__":
     logger.write("ENGINE START")
     logger.write("Target:", corpus.root_path)
     logger.write("DB:", db_path)
-    logger.write("LOG FILE:", str(Path(db_path).with_suffix(".txt")))
     runner = EngineRunner(logger=logger)
 
     runner.run(
