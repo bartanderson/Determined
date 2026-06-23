@@ -1,8 +1,7 @@
-# tools/analysis/ui/ui_server.py
+# determined/ui/ui_server.py
 #
 # Flask + SocketIO server for the developer console UI.
-# Wraps the same _answer() pipeline as local_agent.py.
-# Start via: python -m tools.analysis.agent.local_agent <corpus.db> --ui
+# Start via: python -m determined.agent.local_agent --ui
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# tools/analysis/ingestion/scan_project_files.py
+# determined/ingestion/scan_project_files.py
 
 from __future__ import annotations
 
