@@ -80,6 +80,21 @@ def handle_clear():
     emit("status", {"message": "History cleared."})
 
 
+@socketio.on("browse")
+def handle_browse(data):
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)
+        path = filedialog.askdirectory(title="Select project folder")
+        root.destroy()
+        emit("browse_result", {"path": path or ""})
+    except Exception as exc:
+        emit("browse_result", {"path": "", "error": str(exc)})
+
+
 @socketio.on("ingest")
 def handle_ingest(data):
     path = (data.get("path") or "").strip()

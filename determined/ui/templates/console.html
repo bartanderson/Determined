@@ -157,20 +157,31 @@ document.getElementById("btn-clear-history").addEventListener("click", () => {
   results.innerHTML = "";
 });
 
-// ── ingest ────────────────────────────────────────────────
+// ── analyze ───────────────────────────────────────────────
 const ingestPath = document.getElementById("ingest-path");
 const ingestBtn  = document.getElementById("ingest-btn");
 
-function startIngest() {
-  const p = ingestPath.value.trim();
-  if (!p) return;
+function startIngest(path) {
   ingestBtn.disabled = true;
-  addStatusMsg(`Ingesting ${p}…`);
-  socket.emit("ingest", { path: p });
+  addStatusMsg(`Analyzing ${path}…`);
+  socket.emit("ingest", { path });
 }
 
-ingestBtn.addEventListener("click", startIngest);
-ingestPath.addEventListener("keydown", e => { if (e.key === "Enter") startIngest(); });
+ingestBtn.addEventListener("click", () => {
+  const p = ingestPath.value.trim();
+  if (p) { startIngest(p); return; }
+  ingestBtn.disabled = true;
+  socket.emit("browse", {});
+});
+
+ingestPath.addEventListener("keydown", e => {
+  if (e.key === "Enter" && ingestPath.value.trim()) startIngest(ingestPath.value.trim());
+});
+
+socket.on("browse_result", data => {
+  ingestBtn.disabled = false;
+  if (data.path) { ingestPath.value = data.path; startIngest(data.path); }
+});
 
 socket.on("ingest_status", data => addStatusMsg(data.message));
 
@@ -178,7 +189,7 @@ socket.on("ingest_done", data => {
   ingestBtn.disabled = false;
   clearStatusMsgs();
   document.getElementById("db-badge").textContent = data.db_name;
-  addResultBlock("Ingestion complete", `Corpus loaded: ${data.db_name}`);
+  addResultBlock("Analysis complete", `Corpus loaded: ${data.db_name}`);
 });
 
 socket.on("ingest_error", data => {
