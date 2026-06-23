@@ -229,6 +229,9 @@ socket.on("ingest_done", data => {
   sendBtn.disabled = false;
   clearStatusMsgs();
   document.getElementById("db-badge").textContent = data.db_name;
+  if (data.skipped > 0) {
+    addStatusMsg(`${data.skipped} file${data.skipped === 1 ? '' : 's'} skipped (syntax errors)`);
+  }
   input.value = "what do you know?";
   sendQuery();
 });

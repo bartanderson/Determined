@@ -31,11 +31,13 @@ class EngineRunner:
         # ==================================================
         # PHASE 0: INGESTION
         # ==================================================
+        ingest_stats: dict = {}
         file_analyses = list(
             scan_project_files(
                 corpus.root_path,
                 project_prefixes,
                 repo_root,
+                stats=ingest_stats,
             )
         )
 
@@ -153,6 +155,8 @@ class EngineRunner:
             project_prefixes=project_prefixes,
             project_root=repo_root,
         )
+
+        return ingest_stats
 
 
 if __name__ == "__main__":

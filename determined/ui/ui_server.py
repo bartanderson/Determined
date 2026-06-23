@@ -187,7 +187,7 @@ def handle_ingest(data):
             corpus = type("Corpus", (), {"root_path": str(target)})()
             conn = sqlite3.connect(db_path)
             runner = EngineRunner()
-            runner.run(corpus=corpus, project_prefixes=[], repo_root=str(target), connection=conn)
+            run_stats = runner.run(corpus=corpus, project_prefixes=[], repo_root=str(target), connection=conn) or {}
             conn.close()
 
             init(db_path)
@@ -197,7 +197,11 @@ def handle_ingest(data):
                 discover_run(db_path, limit=10, verbose=False)
             except Exception as disc_exc:
                 socketio.emit("ingest_status", {"message": f"Discovery skipped: {disc_exc}"}, to=sid)
-            socketio.emit("ingest_done", {"db_name": Path(db_path).name, "db_path": db_path}, to=sid)
+            socketio.emit("ingest_done", {
+                "db_name": Path(db_path).name,
+                "db_path": db_path,
+                "skipped": run_stats.get("skipped", 0),
+            }, to=sid)
         except Exception as exc:
             socketio.emit("ingest_error", {"message": f"Analysis failed: {exc}"}, to=sid)
 

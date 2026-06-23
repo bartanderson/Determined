@@ -155,6 +155,7 @@ def analyze_files(
     GLOBAL_SYMBOLS: set[str],
     runtime_bindings: dict,
     project_root: Path,
+    stats: dict | None = None,
 ) -> Generator[FileAnalysis, None, None]:
 
     for file_path in python_files:
@@ -168,6 +169,8 @@ def analyze_files(
         )
 
         if analysis is None:
+            if stats is not None:
+                stats["skipped"] = stats.get("skipped", 0) + 1
             continue
 
         # attach global symbol universe
@@ -184,6 +187,7 @@ def scan_project_files(
     project_prefixes: list[str],
     repo_root: str | Path,
     ignored_directory_names: Iterable[str] | None = None,
+    stats: dict | None = None,
 ) -> Generator[FileAnalysis, None, None]:
 
     project_root = Path(project_root).resolve(strict=True)
@@ -224,4 +228,5 @@ def scan_project_files(
         GLOBAL_SYMBOLS=GLOBAL_SYMBOLS,
         runtime_bindings=runtime_bindings,
         project_root=project_root,
+        stats=stats,
     )
