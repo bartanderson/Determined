@@ -76,7 +76,7 @@ def _seed_symbol(oracle, file_path, name):
 # =========================================================
 
 def test_file_path_to_module_trims_with_project_root():
-    abs_path = "/sessions/eloquent-magical-bohr/mnt/myproject/tools/analysis/oracle/db_oracle.py"
+    abs_path = "/sessions/eloquent-magical-bohr/mnt/myproject/determined/oracle/db_oracle.py"
     root = "/sessions/eloquent-magical-bohr/mnt/myproject"
 
     assert _file_path_to_module(abs_path, root) == "determined.oracle"
@@ -137,8 +137,8 @@ def test_get_project_root_infers_from_files_when_unset():
         # the common ancestor up to "/sessions/x/mnt/myproject", which is the
         # case this test wants to demonstrate.
         _seed_files(oracle, [
-            "/sessions/x/mnt/myproject/tools/analysis/oracle/db_oracle.py",
-            "/sessions/x/mnt/myproject/tools/analysis/truth/views.py",
+            "/sessions/x/mnt/myproject/determined/oracle/db_oracle.py",
+            "/sessions/x/mnt/myproject/determined/truth/views.py",
             "/sessions/x/mnt/myproject/README.md",
         ])
         assert oracle.get_project_root() == "/sessions/x/mnt/myproject"
@@ -154,7 +154,7 @@ def test_get_project_root_empty_when_insufficient_signal():
         # a directory without risking the filename itself being treated
         # as a path segment, so this must stay "" (no trimming) rather
         # than guess.
-        _seed_files(oracle, ["/sessions/x/mnt/myproject/tools/analysis/only_file.py"])
+        _seed_files(oracle, ["/sessions/x/mnt/myproject/determined/only_file.py"])
         assert oracle.get_project_root() == ""
     finally:
         oracle.conn.close()
@@ -190,8 +190,8 @@ def test_find_modules_and_symbol_module_map_use_persisted_root():
     tmp_dir = tempfile.mkdtemp()
     try:
         root = normalize_file_path(tmp_dir)
-        oracle_file = root + "/tools/analysis/oracle/db_oracle.py"
-        truth_file = root + "/tools/analysis/truth/views.py"
+        oracle_file = root + "/determined/oracle/db_oracle.py"
+        truth_file = root + "/determined/truth/views.py"
 
         set_project_root(oracle.conn, root)
         _seed_files(oracle, [oracle_file, truth_file])
