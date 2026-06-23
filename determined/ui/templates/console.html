@@ -25,6 +25,14 @@
   <!-- ── sidebar ── -->
   <div class="sidebar">
     <div class="sidebar-section">
+      <div class="sidebar-label">Analyze</div>
+      <div class="sidebar-ingest">
+        <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
+        <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-label">Query</div>
       <div class="sidebar-item active" data-fill="">
         <span class="icon">⌨</span>ask anything
@@ -53,14 +61,6 @@
       </div>
       <div class="sidebar-item" data-fill="find similar to ">
         <span class="icon">≈</span>similar to…
-      </div>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-label">Analyze</div>
-      <div class="sidebar-ingest">
-        <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
-        <button id="ingest-btn">Analyze ↵</button>
       </div>
     </div>
 
@@ -161,35 +161,76 @@ document.getElementById("btn-clear-history").addEventListener("click", () => {
 const ingestPath = document.getElementById("ingest-path");
 const ingestBtn  = document.getElementById("ingest-btn");
 
-function startIngest(path) {
+function startScan(path) {
   ingestBtn.disabled = true;
-  addStatusMsg(`Analyzing ${path}…`);
+  addStatusMsg(`Scanning ${path}…`);
+  socket.emit("scan", { path });
+}
+
+function startIngest(path) {
+  clearStatusMsgs();
+  addStatusMsg(`Analyzing ${path}… (this may take several minutes)`);
   socket.emit("ingest", { path });
 }
 
 ingestBtn.addEventListener("click", () => {
   const p = ingestPath.value.trim();
-  if (p) { startIngest(p); return; }
+  if (p) { startScan(p); return; }
   ingestBtn.disabled = true;
   socket.emit("browse", {});
 });
 
 ingestPath.addEventListener("keydown", e => {
-  if (e.key === "Enter" && ingestPath.value.trim()) startIngest(ingestPath.value.trim());
+  if (e.key === "Enter" && ingestPath.value.trim()) startScan(ingestPath.value.trim());
 });
 
 socket.on("browse_result", data => {
   ingestBtn.disabled = false;
-  if (data.path) { ingestPath.value = data.path; startIngest(data.path); }
+  if (data.path) { ingestPath.value = data.path; startScan(data.path); }
+});
+
+socket.on("scan_result", data => {
+  ingestBtn.disabled = false;
+  clearStatusMsgs();
+  if (data.error) { addErrorBlock(data.error); return; }
+  const secs = Math.max(5, data.file_count * 2 + data.size_mb * 3);
+  const timeEst = secs < 60
+    ? `~${Math.round(secs)}s`
+    : `~${Math.max(1, Math.round(secs / 60))} min`;
+  const block = document.createElement("div");
+  block.className = "result-block _scan-confirm";
+  block.innerHTML = `
+    <div class="result-header">
+      <span class="kind-tag kind-survey">scan</span>
+      <span class="result-subject">${escHtml(data.path)}</span>
+    </div>
+    <div class="result-body" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <span>${data.file_count.toLocaleString()} source files &middot; ${data.size_mb} MB &middot; ${timeEst}</span>
+      <button class="send-btn" id="confirm-ingest">Analyze ↵</button>
+      <button class="send-btn" style="background:var(--surface2)" id="cancel-ingest">Cancel</button>
+    </div>`;
+  results.appendChild(block);
+  results.scrollTop = results.scrollHeight;
+  document.getElementById("confirm-ingest").addEventListener("click", () => {
+    block.remove();
+    startIngest(data.path);
+  });
+  document.getElementById("cancel-ingest").addEventListener("click", () => {
+    block.remove();
+    ingestPath.value = "";
+    ingestBtn.disabled = false;
+  });
 });
 
 socket.on("ingest_status", data => addStatusMsg(data.message));
 
 socket.on("ingest_done", data => {
   ingestBtn.disabled = false;
+  sendBtn.disabled = false;
   clearStatusMsgs();
   document.getElementById("db-badge").textContent = data.db_name;
-  addResultBlock("Analysis complete", `Corpus loaded: ${data.db_name}`);
+  input.value = "what do you know?";
+  sendQuery();
 });
 
 socket.on("ingest_error", data => {
@@ -320,6 +361,8 @@ function detectKind(answer) {
   if (a.includes("file_purpose") || a.includes("design_note") ||
       a.includes("known_issue") || a.includes("finding"))         return "findings";
   if (a.includes("files:\n") || a.includes("symbols:\n"))         return "survey";
+  if (a.includes("knowledge coverage:") || a.includes("not yet explored:") ||
+      a.includes("unexplored files"))                              return "coverage";
   return "answer";
 }
 
@@ -329,6 +372,7 @@ function kindClass(kind) {
     findings: "kind-findings",
     impact:   "kind-impact",
     survey:   "kind-survey",
+    coverage: "kind-survey",
     answer:   "kind-answer",
   }[kind] || "kind-answer";
 }
