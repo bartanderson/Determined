@@ -107,13 +107,15 @@ def handle_ingest(data):
         emit("ingest_error", {"message": f"Not a directory: {path}"})
         return
 
+    sid = request.sid
+
     def _run():
         try:
             from determined.engine.run_engine import EngineRunner
             from determined.engine.db_resolver import resolve_analysis_db_path
 
             db_path = resolve_analysis_db_path(str(target))
-            emit("ingest_status", {"message": f"Ingesting {target.name}…"})
+            socketio.emit("ingest_status", {"message": f"Analyzing {target.name}…"}, to=sid)
 
             corpus = type("Corpus", (), {"root_path": str(target)})()
             conn = sqlite3.connect(db_path)
@@ -121,11 +123,10 @@ def handle_ingest(data):
             runner.run(corpus=corpus, project_prefixes=[], repo_root=str(target), connection=conn)
             conn.close()
 
-            # switch active corpus
             init(db_path)
-            emit("ingest_done", {"db_name": Path(db_path).name, "db_path": db_path})
+            socketio.emit("ingest_done", {"db_name": Path(db_path).name, "db_path": db_path}, to=sid)
         except Exception as exc:
-            emit("ingest_error", {"message": f"Ingestion failed: {exc}"})
+            socketio.emit("ingest_error", {"message": f"Analysis failed: {exc}"}, to=sid)
 
     threading.Thread(target=_run, daemon=True).start()
 
