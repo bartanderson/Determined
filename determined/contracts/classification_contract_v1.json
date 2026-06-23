@@ -1,0 +1,40 @@
+{
+  "version": "v1",
+
+  "routes": {
+    "project": {
+      "output": "project"
+    },
+
+    "builtin": {
+      "output": "builtin"
+    },
+
+    "stdlib": {
+      "output": "stdlib"
+    },
+
+    "runtime": {
+      "output": "runtime"
+    },
+
+    "external": {
+      "output": "external_lib.{root}"
+    },
+
+    "unknown": {
+      "output": "unresolved_qualified_reference"
+    }
+  },
+
+  "rules": {
+    "route_override_priority": [
+      "project",
+      "builtin",
+      "stdlib",
+      "runtime"
+    ],
+
+    "fallback": "unknown"
+  }
+}

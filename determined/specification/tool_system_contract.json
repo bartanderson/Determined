@@ -1,0 +1,107 @@
+{
+  "system": "tools.analysis",
+  "version": "0.1",
+  "purpose": "Deterministic transformation of source code into structured analytical representations for downstream reasoning systems.",
+
+  "domains": {
+    "ingestion": {
+      "definition": "Convert raw source code into parsed, traversable structures.",
+      "rules": [
+        "Must not perform semantic interpretation beyond structural parsing",
+        "Must not depend on persistence layer",
+        "Must operate on file input only",
+        "Must be deterministic given same input"
+      ]
+    },
+
+    "representation": {
+      "definition": "Transform AST and raw code into normalized structural entities.",
+      "rules": [
+        "Must extract functions, classes, imports, and contracts consistently",
+        "Must not perform global analysis or cross-file reasoning",
+        "Must not embed storage assumptions",
+        "Must normalize outputs into stable schemas"
+      ]
+    },
+
+    "analysis": {
+      "definition": "Derive higher-order structural signals from representations.",
+      "rules": [
+        "May aggregate across files",
+        "May infer architecture-level patterns",
+        "Must not mutate source representations",
+        "Must produce explainable, structured outputs"
+      ]
+    },
+
+    "indexing": {
+      "definition": "Optional layer for enabling retrieval and similarity search.",
+      "rules": [
+        "Must be fully optional and non-required for system execution",
+        "Must not be required by ingestion or analysis layers",
+        "May include embeddings or external storage integration",
+        "Must remain replaceable without affecting core pipeline"
+      ]
+    },
+
+    "orchestration": {
+      "definition": "Controls execution flow across all other domains.",
+      "rules": [
+        "Must not implement domain logic",
+        "Must only coordinate calls between modules",
+        "Must remain stateless or minimally stateful",
+        "Must not embed analysis heuristics"
+      ]
+    }
+  },
+
+  "core_invariants": [
+    "Downward dependency only: ingestion → representation → analysis → orchestration",
+    "No cyclic dependencies between domains",
+    "All outputs must be serializable structured data",
+    "No hidden global state assumptions",
+    "System must remain functional without indexing layer",
+    "AST parsing is foundational but not interpretive",
+    "All analysis must be reproducible from source input"
+  ],
+
+  "output_contract": {
+    "required_fields": [
+      "entities",
+      "relationships",
+      "metrics",
+      "signals"
+    ],
+    "rules": [
+      "All tools must emit structured machine-readable output",
+      "Narrative or interpretive text is optional and non-authoritative",
+      "Outputs must not assume persistence or external storage",
+      "Outputs must be self-contained"
+    ]
+  },
+
+  "dependency_rules": {
+    "allowed": {
+      "ingestion": [],
+      "representation": ["ingestion"],
+      "analysis": ["representation", "ingestion"],
+      "indexing": ["representation"],
+      "orchestration": ["analysis", "representation", "ingestion", "indexing"]
+    },
+    "forbidden": [
+      "reverse dependency (higher layer importing lower abstraction assumptions)",
+      "analysis depending on orchestration",
+      "ingestion depending on analysis",
+      "representation depending on indexing"
+    ]
+  },
+
+  "stability_principle": {
+    "definition": "The system must remain stable under arbitrary evolution of input codebases.",
+    "constraints": [
+      "No tool may require redesign when project structure changes",
+      "All logic must be based on semantics of code, not file layout assumptions",
+      "All heuristics must be replaceable without schema breakage"
+    ]
+  }
+}

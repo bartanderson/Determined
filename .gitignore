@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.env
