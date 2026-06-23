@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dj2 dev console — preview</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#1a1b1e; --bg2:#212226; --bg3:#2a2b30;
+  --border:#35363d; --border2:#44454e;
+  --text:#d4d4d8; --text2:#9a9aac; --text3:#666677;
+  --blue:#7ec8f0; --green:#7ec47e; --orange:#e0a060;
+  --purple:#a98fd6; --red:#d67070; --grey:#8888a0;
+  --font-mono:"Cascadia Code","Fira Code","Consolas",monospace;
+  --font-sans:"Segoe UI",system-ui,sans-serif;
+  --radius:6px;
+}
+body { font-family:var(--font-sans); font-size:13px; color:var(--text); background:var(--bg); height:100vh; overflow:hidden; }
+.shell { display:grid; grid-template-columns:210px 1fr; grid-template-rows:36px 1fr 36px; height:100vh; }
+.topbar { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:0 12px; border-bottom:1px solid var(--border); background:var(--bg2); font-size:12px; color:var(--text2); }
+.topbar .title { font-weight:600; color:var(--text); }
+.topbar .sep { color:var(--border2); }
+.db-badge { padding:2px 8px; border-radius:10px; background:#1e3a4a; color:var(--blue); border:1px solid #2a4f66; font-size:11px; }
+.topbar .spacer { flex:1; }
+.model-label { color:var(--text3); font-size:11px; }
+.sidebar { border-right:1px solid var(--border); background:var(--bg2); overflow-y:auto; }
+.sidebar-section { padding:6px 0; }
+.sidebar-label { font-size:10px; font-weight:600; color:var(--text3); letter-spacing:.06em; text-transform:uppercase; padding:4px 12px 2px; }
+.sidebar-item { display:flex; align-items:center; gap:7px; padding:5px 12px; cursor:pointer; color:var(--text2); font-size:12px; border-left:2px solid transparent; }
+.sidebar-item:hover { background:var(--bg3); color:var(--text); }
+.sidebar-item.active { color:var(--text); border-left-color:var(--blue); background:var(--bg3); }
+.sidebar-item .icon { width:16px; text-align:center; }
+.badge-count { margin-left:auto; font-size:10px; padding:1px 5px; border-radius:8px; background:var(--bg3); color:var(--text3); border:1px solid var(--border); }
+.main { display:flex; flex-direction:column; overflow:hidden; }
+.query-bar { display:flex; align-items:center; gap:8px; padding:5px 12px; border-bottom:1px solid var(--border); background:var(--bg2); }
+.query-input { flex:1; background:var(--bg3); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); font-size:13px; padding:4px 10px; outline:none; }
+.query-input::placeholder { color:var(--text3); }
+.send-btn { padding:4px 12px; background:#1e3a4a; border:1px solid var(--blue); border-radius:var(--radius); color:var(--blue); font-size:12px; cursor:pointer; }
+.results-area { flex:1; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
+.result-block { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.result-header { display:flex; align-items:center; gap:6px; padding:6px 10px; border-bottom:1px solid var(--border); background:var(--bg3); }
+.kind-tag { font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px; text-transform:uppercase; letter-spacing:.04em; }
+.kind-callers  { background:#1e3322; color:var(--green); }
+.kind-findings { background:#3a2a18; color:var(--orange); }
+.kind-impact   { background:#3a1e1e; color:var(--red); }
+.kind-survey   { background:#2a1e3a; color:var(--purple); }
+.kind-answer   { background:#1e2e3a; color:var(--blue); }
+.result-subject { font-size:12px; font-weight:600; color:var(--text); flex:1; }
+.result-meta { font-size:11px; color:var(--text3); }
+.toggle-group { display:flex; gap:2px; margin-left:6px; }
+.tog { width:22px; height:22px; display:flex; align-items:center; justify-content:center; border-radius:4px; border:1px solid var(--border); cursor:pointer; color:var(--text3); font-size:13px; }
+.tog.active { background:var(--bg); color:var(--text); border-color:var(--border2); }
+.limit-select { font-size:11px; padding:2px 5px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text2); margin-left:4px; }
+.result-body { padding:10px 12px; }
+.question-echo { font-size:11px; color:var(--text3); padding:4px 12px 6px; border-bottom:1px solid var(--border); font-style:italic; }
+.answer-text { color:var(--text); line-height:1.6; white-space:pre-wrap; font-size:13px; }
+.sym { color:var(--blue); font-family:var(--font-mono); font-size:11px; }
+.fp  { color:var(--grey); font-family:var(--font-mono); font-size:11px; }
+.followups { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+.followup-label { font-size:10px; color:var(--text3); margin-bottom:4px; }
+.followup-chip { display:inline-block; margin:2px 3px 2px 0; padding:2px 8px; border-radius:10px; border:1px solid var(--border2); color:var(--text2); font-size:11px; cursor:pointer; }
+.statusbar { grid-column:1/-1; display:flex; align-items:center; gap:12px; padding:0 12px; border-top:1px solid var(--border); background:var(--bg2); font-size:11px; color:var(--text3); }
+.status-dot { width:6px; height:6px; border-radius:50%; background:var(--green); display:inline-block; margin-right:3px; }
+.statusbar .spacer { flex:1; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <span class="title">dj2</span>
+    <span class="sep">—</span>
+    <span>dev console</span>
+    <span class="sep">·</span>
+    <span class="db-badge">game_corpus.db</span>
+    <span class="spacer"></span>
+    <span class="model-label">Ollama llama3.2:3b</span>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Query</div>
+      <div class="sidebar-item active"><span class="icon">⌨</span>ask anything</div>
+      <div class="sidebar-item"><span class="icon">↺</span>clear history</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Jump to</div>
+      <div class="sidebar-item"><span class="icon">←</span>callers of…</div>
+      <div class="sidebar-item"><span class="icon">→</span>callees of…</div>
+      <div class="sidebar-item"><span class="icon">⚡</span>impact of…</div>
+      <div class="sidebar-item"><span class="icon">⊙</span>survey…</div>
+      <div class="sidebar-item"><span class="icon">⏱</span>git history…</div>
+      <div class="sidebar-item"><span class="icon">≈</span>similar to…</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Knowledge</div>
+      <div class="sidebar-item"><span class="icon">◉</span>coverage <span class="badge-count">78</span></div>
+      <div class="sidebar-item"><span class="icon">☑</span>work queue <span class="badge-count">6</span></div>
+      <div class="sidebar-item"><span class="icon">⚠</span>docstrings</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="query-bar">
+      <input class="query-input" placeholder="Ask about the codebase…" value="what calls adjudicate_action">
+      <button class="send-btn">Ask ↵</button>
+    </div>
+    <div class="results-area">
+
+      <!-- sample: callers result -->
+      <div class="result-block">
+        <div class="result-header">
+          <span class="kind-tag kind-callers">callers</span>
+          <span class="result-subject">what calls adjudicate_action</span>
+          <span class="result-meta">3 callers</span>
+          <div class="toggle-group">
+            <span class="tog active" title="normal">≡</span>
+            <span class="tog" title="compact">⋯</span>
+            <span class="tog" title="raw">{ }</span>
+          </div>
+          <select class="limit-select"><option>all</option><option>15</option><option>10</option><option>5</option></select>
+        </div>
+        <div class="question-echo">what calls adjudicate_action</div>
+        <div class="result-body">
+          <div class="answer-text">Direct callers of <span class="sym">adjudicate_action</span>:
+  <span class="sym">process_action</span>  <span class="fp">action_system.py:142</span>
+  <span class="sym">handle_player_turn</span>  <span class="fp">action_system.py:89</span>
+  <span class="sym">process_command</span>  <span class="fp">dm_chat_handler.py:214</span></div>
+          <div class="followups">
+            <div class="followup-label">Suggested follow-ups</div>
+            <span class="followup-chip">if I change adjudicate_action what breaks</span>
+            <span class="followup-chip">what does process_action do</span>
+            <span class="followup-chip">explain adjudicate_action</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- sample: findings result -->
+      <div class="result-block">
+        <div class="result-header">
+          <span class="kind-tag kind-findings">findings</span>
+          <span class="result-subject">what does adjudication_engine.py do</span>
+          <span class="result-meta">2 findings</span>
+          <div class="toggle-group">
+            <span class="tog active" title="normal">≡</span>
+            <span class="tog" title="compact">⋯</span>
+            <span class="tog" title="raw">{ }</span>
+          </div>
+          <select class="limit-select"><option>all</option><option>15</option><option>10</option><option>5</option></select>
+        </div>
+        <div class="question-echo">what does adjudication_engine.py do</div>
+        <div class="result-body">
+          <div class="answer-text">[file_purpose] <span class="fp">adjudication_engine.py</span>: Central game action router. Validates all player actions through the authority system before execution.
+
+[known_issue] Phase violation confirmed — <span class="fp">dm_chat_handler.py</span> imports directly, bypassing authority layer.</div>
+        </div>
+      </div>
+
+      <!-- sample: impact result -->
+      <div class="result-block">
+        <div class="result-header">
+          <span class="kind-tag kind-impact">impact</span>
+          <span class="result-subject">if I change adjudicate_action what breaks</span>
+          <span class="result-meta">2 direct · 4 indirect</span>
+          <div class="toggle-group">
+            <span class="tog active">≡</span>
+            <span class="tog">⋯</span>
+            <span class="tog">{ }</span>
+          </div>
+          <select class="limit-select"><option>all</option><option>15</option><option>10</option><option>5</option></select>
+        </div>
+        <div class="question-echo">if I change adjudicate_action what breaks</div>
+        <div class="result-body">
+          <div class="answer-text">Direct callers: <span class="sym">process_action</span>, <span class="sym">process_command</span>
+Impact zone: <span class="sym">handle_player_turn</span> → <span class="sym">world_controller</span> → … (3 more)
+
+Changing <span class="sym">adjudicate_action</span> will require updating 2 direct callers and may affect 4 downstream symbols.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span class="status-dot"></span>connected
+    <span>·</span>
+    <span>game_corpus.db · knowledge.db</span>
+    <span class="spacer"></span>
+    <span>0.4s</span>
+  </div>
+
+</div>
+</body>
+</html>

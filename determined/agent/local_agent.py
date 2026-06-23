@@ -563,10 +563,12 @@ if __name__ == "__main__":
     elif args.db_path:
         db_path = args.db_path
     else:
-        parser.error("Provide db_path or --source <dir>.")
+        db_path = None
 
     if args.ui:
         from determined.ui.ui_server import run_server
         run_server(db_path, port=args.port)
     else:
+        if not db_path:
+            parser.error("Provide db_path or --source <dir> when not using --ui.")
         run(db_path, verbose=args.verbose)

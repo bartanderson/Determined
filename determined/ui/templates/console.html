@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dj2 dev console</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── topbar ── -->
+  <div class="topbar">
+    <span class="title">dj2</span>
+    <span class="sep">—</span>
+    <span>dev console</span>
+    <span class="sep">·</span>
+    <span class="db-badge" id="db-badge">{{ db_name }}</span>
+    <span class="spacer"></span>
+    <span class="model-label">Ollama llama3.2:3b</span>
+  </div>
+
+  <!-- ── sidebar ── -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Query</div>
+      <div class="sidebar-item active" data-fill="">
+        <span class="icon">⌨</span>ask anything
+      </div>
+      <div class="sidebar-item" id="btn-clear-history">
+        <span class="icon">↺</span>clear history
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Jump to</div>
+      <div class="sidebar-item" data-fill="what calls ">
+        <span class="icon">←</span>callers of…
+      </div>
+      <div class="sidebar-item" data-fill="callees of ">
+        <span class="icon">→</span>callees of…
+      </div>
+      <div class="sidebar-item" data-fill="if I change  what breaks">
+        <span class="icon">⚡</span>impact of…
+      </div>
+      <div class="sidebar-item" data-fill="what exists for ">
+        <span class="icon">⊙</span>survey…
+      </div>
+      <div class="sidebar-item" data-fill="what changed recently in ">
+        <span class="icon">⏱</span>git history…
+      </div>
+      <div class="sidebar-item" data-fill="find similar to ">
+        <span class="icon">≈</span>similar to…
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Analyze</div>
+      <div class="sidebar-ingest">
+        <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
+        <button id="ingest-btn">Analyze ↵</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Knowledge</div>
+      <div class="sidebar-item" data-fill="what do you know?">
+        <span class="icon">◉</span>coverage
+      </div>
+      <div class="sidebar-item" data-fill="what should I work on">
+        <span class="icon">☑</span>work queue
+      </div>
+      <div class="sidebar-item" data-fill="what functions are missing docstrings">
+        <span class="icon">⚠</span>docstrings
+      </div>
+    </div>
+  </div>
+
+  <!-- ── main ── -->
+  <div class="main">
+
+    <div class="query-bar">
+      <input id="q-input" class="query-input" type="text"
+             placeholder="Ask about the codebase…" autocomplete="off" autofocus>
+      <button id="send-btn" class="send-btn">Ask ↵</button>
+    </div>
+
+    <div id="results" class="results-area"></div>
+
+  </div>
+
+  <!-- ── statusbar ── -->
+  <div class="statusbar">
+    <span id="conn-dot" class="status-dot offline"></span>
+    <span id="conn-label">connecting…</span>
+    <span class="sep">·</span>
+    <span>{{ db_name }}</span>
+    <span class="spacer"></span>
+    <span id="elapsed" class="elapsed"></span>
+  </div>
+
+</div><!-- .shell -->
+
+<script>
+const socket = io();
+const input   = document.getElementById("q-input");
+const sendBtn = document.getElementById("send-btn");
+const results = document.getElementById("results");
+const connDot = document.getElementById("conn-dot");
+const connLbl = document.getElementById("conn-label");
+const elapsed = document.getElementById("elapsed");
+
+let _t0 = 0;
+
+// ── connection state ──────────────────────────────────────
+socket.on("connect", () => {
+  connDot.classList.remove("offline");
+  connLbl.textContent = "connected";
+});
+socket.on("disconnect", () => {
+  connDot.classList.add("offline");
+  connLbl.textContent = "disconnected";
+});
+
+// ── send query ────────────────────────────────────────────
+function sendQuery() {
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = "";
+  sendBtn.disabled = true;
+  _t0 = Date.now();
+  elapsed.textContent = "";
+
+  addStatusMsg("Thinking…");
+  socket.emit("query", { question: q });
+}
+
+input.addEventListener("keydown", e => { if (e.key === "Enter") sendQuery(); });
+sendBtn.addEventListener("click", sendQuery);
+
+// ── sidebar shortcuts ─────────────────────────────────────
+document.querySelectorAll(".sidebar-item[data-fill]").forEach(el => {
+  el.addEventListener("click", () => {
+    const fill = el.dataset.fill;
+    if (!fill && el.id === "btn-clear-history") return;
+    input.value = fill;
+    input.focus();
+    // place cursor at end
+    input.setSelectionRange(fill.length, fill.length);
+  });
+});
+
+document.getElementById("btn-clear-history").addEventListener("click", () => {
+  socket.emit("clear_history");
+  results.innerHTML = "";
+});
+
+// ── ingest ────────────────────────────────────────────────
+const ingestPath = document.getElementById("ingest-path");
+const ingestBtn  = document.getElementById("ingest-btn");
+
+function startIngest() {
+  const p = ingestPath.value.trim();
+  if (!p) return;
+  ingestBtn.disabled = true;
+  addStatusMsg(`Ingesting ${p}…`);
+  socket.emit("ingest", { path: p });
+}
+
+ingestBtn.addEventListener("click", startIngest);
+ingestPath.addEventListener("keydown", e => { if (e.key === "Enter") startIngest(); });
+
+socket.on("ingest_status", data => addStatusMsg(data.message));
+
+socket.on("ingest_done", data => {
+  ingestBtn.disabled = false;
+  clearStatusMsgs();
+  document.getElementById("db-badge").textContent = data.db_name;
+  addResultBlock("Ingestion complete", `Corpus loaded: ${data.db_name}`);
+});
+
+socket.on("ingest_error", data => {
+  ingestBtn.disabled = false;
+  clearStatusMsgs();
+  addErrorBlock(data.message);
+});
+
+// ── receive events ────────────────────────────────────────
+socket.on("status", data => {
+  addStatusMsg(data.message);
+  if (data.message === "History cleared.") {
+    sendBtn.disabled = false;
+  }
+});
+
+socket.on("answer", data => {
+  sendBtn.disabled = false;
+  const ms = Date.now() - _t0;
+  elapsed.textContent = (ms / 1000).toFixed(1) + "s";
+  clearStatusMsgs();
+  addResultBlock(data.question, data.answer);
+});
+
+socket.on("error", data => {
+  sendBtn.disabled = false;
+  clearStatusMsgs();
+  addErrorBlock(data.message);
+});
+
+// ── DOM helpers ───────────────────────────────────────────
+function addStatusMsg(msg) {
+  clearStatusMsgs();
+  const d = document.createElement("div");
+  d.className = "status-msg _status";
+  d.textContent = msg;
+  results.appendChild(d);
+  results.scrollTop = results.scrollHeight;
+}
+
+function clearStatusMsgs() {
+  results.querySelectorAll("._status").forEach(e => e.remove());
+}
+
+function addErrorBlock(msg) {
+  const block = document.createElement("div");
+  block.className = "result-block";
+  block.innerHTML = `
+    <div class="result-header">
+      <span class="kind-tag kind-impact">error</span>
+      <span class="result-subject">Pipeline error</span>
+    </div>
+    <div class="result-body">
+      <div class="answer-text" style="color:var(--red)">${escHtml(msg)}</div>
+    </div>`;
+  results.appendChild(block);
+  results.scrollTop = results.scrollHeight;
+}
+
+function addResultBlock(question, answer) {
+  const kind   = detectKind(answer);
+  const kindCss = kindClass(kind);
+
+  // split answer body from follow-ups (separated by blank line starting with ">")
+  const parts    = splitFollowups(answer);
+  const bodyText = colorize(parts.body);
+  const followupHtml = parts.followups.length
+    ? `<div class="followups">
+         <div class="followup-label">Suggested follow-ups</div>
+         ${parts.followups.map(f =>
+           `<span class="followup-chip" data-q="${escAttr(f)}">${escHtml(f)}</span>`
+         ).join("")}
+       </div>`
+    : "";
+
+  const block = document.createElement("div");
+  block.className = "result-block";
+  block.innerHTML = `
+    <div class="result-header">
+      <span class="kind-tag ${kindCss}">${kind}</span>
+      <span class="result-subject">${escHtml(truncate(question, 60))}</span>
+      <div class="toggle-group" title="view mode">
+        <span class="tog active" data-mode="normal" title="normal">≡</span>
+        <span class="tog"        data-mode="compact" title="compact">⋯</span>
+        <span class="tog"        data-mode="raw"    title="raw">{ }</span>
+      </div>
+      <select class="limit-select" title="item limit">
+        <option>all</option><option>25</option><option>15</option><option>10</option><option>5</option>
+      </select>
+    </div>
+    <div class="question-echo">${escHtml(question)}</div>
+    <div class="result-body">
+      <div class="answer-text view-normal">${bodyText}</div>
+      <div class="answer-text view-compact" style="display:none">${compactView(parts.body)}</div>
+      <div class="answer-text view-raw"     style="display:none">${escHtml(parts.body)}</div>
+      ${followupHtml}
+    </div>`;
+
+  // toggle logic
+  block.querySelectorAll(".tog").forEach(tog => {
+    tog.addEventListener("click", () => {
+      block.querySelectorAll(".tog").forEach(t => t.classList.remove("active"));
+      tog.classList.add("active");
+      const mode = tog.dataset.mode;
+      block.querySelector(".view-normal").style.display  = mode === "normal"  ? "" : "none";
+      block.querySelector(".view-compact").style.display = mode === "compact" ? "" : "none";
+      block.querySelector(".view-raw").style.display     = mode === "raw"     ? "" : "none";
+    });
+  });
+
+  // follow-up click → fill query bar
+  block.querySelectorAll(".followup-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      input.value = chip.dataset.q;
+      input.focus();
+    });
+  });
+
+  results.appendChild(block);
+  results.scrollTop = results.scrollHeight;
+}
+
+// ── answer analysis ───────────────────────────────────────
+function detectKind(answer) {
+  const a = answer.toLowerCase();
+  if (a.includes("direct callers of") || a.includes("callers:"))  return "callers";
+  if (a.includes("impact") || a.includes("what breaks"))          return "impact";
+  if (a.includes("file_purpose") || a.includes("design_note") ||
+      a.includes("known_issue") || a.includes("finding"))         return "findings";
+  if (a.includes("files:\n") || a.includes("symbols:\n"))         return "survey";
+  return "answer";
+}
+
+function kindClass(kind) {
+  return {
+    callers:  "kind-callers",
+    findings: "kind-findings",
+    impact:   "kind-impact",
+    survey:   "kind-survey",
+    answer:   "kind-answer",
+  }[kind] || "kind-answer";
+}
+
+function splitFollowups(answer) {
+  const lines = answer.split("\n");
+  const body = [], followups = [];
+  let inFollowups = false;
+  for (const line of lines) {
+    if (!inFollowups && (line.startsWith("> ") || line.startsWith("Follow-up") || line.startsWith("Suggested"))) {
+      inFollowups = true;
+    }
+    if (inFollowups && line.startsWith("> ")) {
+      followups.push(line.replace(/^>\s*/, "").replace(/^\d+\.\s*/, "").trim());
+    } else if (!inFollowups) {
+      body.push(line);
+    }
+  }
+  return { body: body.join("\n").trim(), followups };
+}
+
+// light syntax coloring for answer text
+function colorize(text) {
+  return escHtml(text)
+    // file paths (ends in .py)
+    .replace(/([a-zA-Z_][a-zA-Z0-9_/]*\.py)/g, '<span class="fp">$1</span>')
+    // CamelCase symbols
+    .replace(/\b([A-Z][a-zA-Z0-9]{2,})\b/g, '<span class="sym">$1</span>')
+    // function names (snake_case with parens hint or standalone)
+    .replace(/\b([a-z_][a-z0-9_]{3,})\(/g, '<span class="fn">$1</span>(');
+}
+
+function compactView(text) {
+  const lines = text.split("\n").filter(l => l.trim());
+  return escHtml(lines.slice(0, 6).join(" · ") + (lines.length > 6 ? " …" : ""));
+}
+
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + "…" : s; }
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function escAttr(s) { return escHtml(s); }
+</script>
+</body>
+</html>
