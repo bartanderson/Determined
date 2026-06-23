@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/evaluation_snapshot.py
+# tools/analysis/graph/evaluation_snapshot.py
 
 # MODULE: snapshot
 # OWNED: TRUE

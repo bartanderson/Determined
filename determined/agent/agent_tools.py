@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/agent_tools.py
+# tools/analysis/agent/agent_tools.py
 #
 # Tool functions for the local conversational agent (DESIGN.md section 8).
 # Each tool is a plain function: takes (oracle, assessor, args_dict) and

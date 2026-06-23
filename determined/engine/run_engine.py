@@ -1,4 +1,4 @@
-﻿# tools/analysis/engine/run_engine.py
+# tools/analysis/engine/run_engine.py
 
 from dataclasses import dataclass
 from typing import Any, Dict

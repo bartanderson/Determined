@@ -1,4 +1,4 @@
-﻿# tools/analysis/api/oracle_router.py
+# tools/analysis/api/oracle_router.py
 #
 # Thin compatibility re-export. Routing logic moved to assessor/query_router.py
 # (Phase 3 boundary completion - Assessor owns query execution).

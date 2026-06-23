@@ -1,4 +1,4 @@
-﻿# tools/analysis/context/build_context_bundle.py
+# tools/analysis/context/build_context_bundle.py
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-﻿# tools/analysis/context/expand_context_from_graph.py
+# tools/analysis/context/expand_context_from_graph.py
 
 from typing import List
 

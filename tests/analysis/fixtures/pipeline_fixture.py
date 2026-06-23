@@ -1,4 +1,4 @@
-﻿from determined.metrics.extract_metrics import extract_metrics
+from determined.metrics.extract_metrics import extract_metrics
 from determined.graph.evaluation_snapshot import build_evaluation_snapshot
 
 def run_full_analysis_pipeline(file_analyses):

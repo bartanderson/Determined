@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/graph_builder.py
+# tools/analysis/graph/graph_builder.py
 
 from __future__ import annotations
 

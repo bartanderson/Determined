@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/test_embedding_seeds.py
+# tools/analysis/tests/test_embedding_seeds.py
 #
 # Standalone test harness for embedding-based seed discovery.
 # Run against your engine DB:

@@ -1,4 +1,4 @@
-﻿# tools/analysis/truth/query_executor.py
+# tools/analysis/truth/query_executor.py
 
 from dataclasses import dataclass
 from typing import Any, Optional

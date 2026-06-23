@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/agent_resolver.py
+# tools/analysis/agent/agent_resolver.py
 #
 # Phase 2 of the three-phase agent pipeline (DESIGN.md section 8).
 # Maps NEED lines produced by Phase 1 to tool calls, executes them,

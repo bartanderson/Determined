@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_task_rereferencer.py
+# tools/analysis/tests/regression/test_task_rereferencer.py
 #
 # Locks in task.md re-reference path (TRACKER item 10 step 2, 2026-06-19).
 # Workflow: read task.md -> extract symbol -> re-run query -> diff -> report.

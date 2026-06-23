@@ -1,4 +1,4 @@
-﻿# tools/analysis/truth/subsystem_view.py
+# tools/analysis/truth/subsystem_view.py
 # CLAUDE-EDIT 2026-06-17: returns SubsystemView (views.py) instead of a
 # bare dict. Before this, SUBSYSTEM was the only one of the 6 Truth Layer
 # views where Select(view) with no metric returned a raw dict (bracket

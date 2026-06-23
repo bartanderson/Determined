@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_subsystem_path_pollution_fix.py
+# tools/analysis/tests/regression/test_subsystem_path_pollution_fix.py
 #
 # Locks in the 2026-06-17 fix for TRACKER.md open item 16: SUBSYSTEM /
 # find_modules() identity strings were carrying the full absolute

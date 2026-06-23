@@ -1,4 +1,4 @@
-﻿from determined.ingestion.scan_project_files import scan_project_files
+from determined.ingestion.scan_project_files import scan_project_files
 from determined.graph.evaluation_snapshot import build_evaluation_snapshot
 
 

@@ -1,4 +1,4 @@
-﻿# tools/analysis/representation/context_bundle.py
+# tools/analysis/representation/context_bundle.py
 
 from dataclasses import dataclass
 from typing import List

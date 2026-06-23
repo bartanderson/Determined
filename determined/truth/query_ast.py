@@ -1,4 +1,4 @@
-﻿# tools/analysis/truth/query_ast.py
+# tools/analysis/truth/query_ast.py
 
 from __future__ import annotations
 

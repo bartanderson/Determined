@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_oracle_cli_smoke.py
+# tools/analysis/tests/regression/test_oracle_cli_smoke.py
 #
 # Minimal oracle CLI smoke test against the real self-corpus DB.
 # Exercises the full route_query path (DBOracle -> route_query ->

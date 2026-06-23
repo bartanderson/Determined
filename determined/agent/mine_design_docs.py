@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Mine game design documents into knowledge.db as design_note artifacts.
 Run once per corpus DB to seed design intent before code analysis.

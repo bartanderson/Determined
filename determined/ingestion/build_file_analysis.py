@@ -1,4 +1,4 @@
-﻿# tools/analysis/ingestion/build_file_analysis.py
+# tools/analysis/ingestion/build_file_analysis.py
 
 from __future__ import annotations
 

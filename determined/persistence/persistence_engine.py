@@ -1,4 +1,4 @@
-﻿# tools/analysis/persistence/persistence_engine.py
+# tools/analysis/persistence/persistence_engine.py
 
 
 from __future__ import annotations

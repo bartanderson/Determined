@@ -1,4 +1,4 @@
-﻿# tools/analysis/classification/classify_references.py
+# tools/analysis/classification/classify_references.py
 
 # MODULE: classification
 # OWNED: TRUE

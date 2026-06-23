@@ -1,4 +1,4 @@
-﻿# tools\analysis\tests\semantic\test_semantic_identity_project.py
+# tools\analysis\tests\semantic\test_semantic_identity_project.py
 
 from determined.representation.symbol_environment import SymbolEnvironment
 from determined.graph.semantic_candidate_builder import SemanticIdentityBuilder

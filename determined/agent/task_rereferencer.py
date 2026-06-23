@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/task_rereferencer.py
+# tools/analysis/agent/task_rereferencer.py
 #
 # Re-reference path for task.md (TRACKER item 10 step 2, 2026-06-19).
 #

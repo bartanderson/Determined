@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/graph_viz.py
+# tools/analysis/agent/graph_viz.py
 #
 # Visual output for call graphs. Two formats:
 #   - ASCII text tree (terminal, always works)

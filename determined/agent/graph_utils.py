@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/graph_utils.py
+# tools/analysis/agent/graph_utils.py
 #
 # Graph traversal utilities for the discovery agent.
 # Pure DB operations - no AI calls. All functions take an oracle and

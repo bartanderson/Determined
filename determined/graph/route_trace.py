@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/route_trace.py   (new file)
+# tools/analysis/graph/route_trace.py   (new file)
 
 from dataclasses import dataclass, field
 from typing import Optional, Any

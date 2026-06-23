@@ -1,4 +1,4 @@
-﻿"""
+"""
 determined.contracts
 
 This package defines the authoritative structural contract system

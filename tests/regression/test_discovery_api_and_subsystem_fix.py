@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_discovery_api_and_subsystem_fix.py
+# tools/analysis/tests/regression/test_discovery_api_and_subsystem_fix.py
 #
 # Locks in the 2026-06-17 Track A + Track B-item-2 work:
 #   1. The 5 new DBReader-only discovery methods on DBOracle

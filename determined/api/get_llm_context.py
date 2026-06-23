@@ -1,4 +1,4 @@
-﻿# tools/analysis/api/get_llm_context.py
+# tools/analysis/api/get_llm_context.py
 
 from __future__ import annotations
 

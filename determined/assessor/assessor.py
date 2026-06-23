@@ -1,4 +1,4 @@
-﻿# tools\analysis\assessor\assessor.py
+# tools\analysis\assessor\assessor.py
 
 from collections import defaultdict
 from dataclasses import dataclass, field

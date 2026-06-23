@@ -1,4 +1,4 @@
-﻿# tools\analysis\tests\semantic\test_semantic_identity_runtime.py
+# tools\analysis\tests\semantic\test_semantic_identity_runtime.py
 import ast
 
 from determined.representation.symbol_environment import SymbolEnvironment

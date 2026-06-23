@@ -1,4 +1,4 @@
-﻿# tests/regression/test_intent_layer_ab.py
+# tests/regression/test_intent_layer_ab.py
 #
 # Regression tests for Intent Layer sub-layers A and B (TRACKER.md item 12b):
 #   Sub-layer A: semantic_summaries table + get_or_generate_summary()

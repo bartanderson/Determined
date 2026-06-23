@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/local_agent.py
+# tools/analysis/agent/local_agent.py
 #
 # Local conversational agent backed by Ollama (llama3.2:3b).
 # Three-phase pipeline (DESIGN.md section 8):

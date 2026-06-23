@@ -1,4 +1,4 @@
-﻿# tools/analysis/oracle/knowledge_oracle.py
+# tools/analysis/oracle/knowledge_oracle.py
 #
 # Shared knowledge overlay - wraps knowledge.db, which holds
 # knowledge_artifacts and semantic_summaries for all corpora.

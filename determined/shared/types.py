@@ -1,4 +1,4 @@
-﻿# tools/analysis/shared/types.py
+# tools/analysis/shared/types.py
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Literal

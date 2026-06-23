@@ -1,4 +1,4 @@
-﻿# tools/analysis/utilities/reachable_print_trace.py
+# tools/analysis/utilities/reachable_print_trace.py
 from collections import deque
 
 

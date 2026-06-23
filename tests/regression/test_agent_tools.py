@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_agent_tools.py
+# tools/analysis/tests/regression/test_agent_tools.py
 #
 # Regression tests for agent/agent_tools.py (DESIGN.md section 8).
 # All 12 tools tested against a controlled in-memory fixture.

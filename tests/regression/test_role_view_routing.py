@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_role_view_routing.py
+# tools/analysis/tests/regression/test_role_view_routing.py
 #
 # Locks in the 2026-06-16/17 ROLE view fix (Truth.md Phase 3 Row 1 / Row 2:
 # "purpose of a file" / "why does X exist" / "role of X" questions had no

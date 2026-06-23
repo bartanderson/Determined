@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_runtime_resolution_lock.py
+# tools/analysis/tests/regression/test_runtime_resolution_lock.py
 
 import ast
 

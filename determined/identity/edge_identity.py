@@ -1,4 +1,4 @@
-﻿# tools/analysis/identity/edge_identity.py
+# tools/analysis/identity/edge_identity.py
 
 from typing import Any
 from determined.identity.symbol_identity import (

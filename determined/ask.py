@@ -1,4 +1,4 @@
-﻿# tools/analysis/ask.py
+# tools/analysis/ask.py
 #
 # CLAUDE-EDIT 2026-06-16: the real, wired entrypoint.
 #

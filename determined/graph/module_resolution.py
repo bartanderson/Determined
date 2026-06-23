@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/module_resolution.py
+# tools/analysis/graph/module_resolution.py
 
 from __future__ import annotations
 

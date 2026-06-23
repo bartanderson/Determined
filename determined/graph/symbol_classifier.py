@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/symbol_classifier.py
+# tools/analysis/graph/symbol_classifier.py
 
 from __future__ import annotations
 

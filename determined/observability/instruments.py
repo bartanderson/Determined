@@ -1,4 +1,4 @@
-﻿# tools/analysis/observability/instruments.py
+# tools/analysis/observability/instruments.py
 
 from collections import Counter
 

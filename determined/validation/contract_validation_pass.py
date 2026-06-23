@@ -1,4 +1,4 @@
-﻿# tools/analysis/validation/contract_validation_pass.py
+# tools/analysis/validation/contract_validation_pass.py
 
 from __future__ import annotations
 

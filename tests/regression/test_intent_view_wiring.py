@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_intent_view_wiring.py
+# tools/analysis/tests/regression/test_intent_view_wiring.py
 #
 # Locks in Truth.md Phase 1 Row 1 remainder + Row 5 (2026-06-19):
 # intent/description capture at ingestion time via docstrings.

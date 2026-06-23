@@ -1,4 +1,4 @@
-﻿# tools/analysis/api/query_reasoning.py
+# tools/analysis/api/query_reasoning.py
 
 from determined.oracle.db_oracle import (
     context,

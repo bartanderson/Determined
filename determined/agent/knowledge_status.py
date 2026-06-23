@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/knowledge_status.py
+# tools/analysis/agent/knowledge_status.py
 #
 # Self-awareness layer: what the agent knows vs what exists in the corpus.
 # Used for Phase 4 SUGGEST (post-answer follow-up directions) and the

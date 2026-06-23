@@ -1,4 +1,4 @@
-﻿# tools/analysis/truth/query_plan.py
+# tools/analysis/truth/query_plan.py
 
 from dataclasses import dataclass
 from typing import Any

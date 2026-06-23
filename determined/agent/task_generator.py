@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/task_generator.py
+# tools/analysis/agent/task_generator.py
 #
 # Generates task.md - a plain Markdown checklist of everything that may need
 # review when a given symbol changes.

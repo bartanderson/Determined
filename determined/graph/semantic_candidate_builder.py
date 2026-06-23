@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/semantic_candidate_builder.py
+# tools/analysis/graph/semantic_candidate_builder.py
 
 from determined.representation.semantic_identity import SemanticIdentity
 from determined.representation.symbol_environment import SymbolEnvironment

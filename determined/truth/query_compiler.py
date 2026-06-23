@@ -1,4 +1,4 @@
-﻿# tools/analysis/truth/query_compiler.py
+# tools/analysis/truth/query_compiler.py
 # CLAUDE-EDIT 2026-06-16: full rewrite of Layer 4 compiler. Was a rule-based
 # stub only. Now tries local Ollama (llama3.2:3b @ localhost:11434/api/generate)
 # first, validates output through QueryPlanner, falls back to the original

@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_runtime_bindings_wiring.py
+# tools/analysis/tests/regression/test_runtime_bindings_wiring.py
 #
 # TRACKER.md item 23: dead runtime_bindings wiring.
 #

@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_oracle_router_persistence_lock.py
+# tools/analysis/tests/regression/test_oracle_router_persistence_lock.py
 #
 # Locks in the "close the small holes" fixes (2026-06-16):
 #   1. Builtin exclusion during graph expansion is decided by the DB's

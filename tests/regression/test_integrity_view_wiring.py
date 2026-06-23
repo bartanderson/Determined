@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_integrity_view_wiring.py
+# tools/analysis/tests/regression/test_integrity_view_wiring.py
 #
 # Locks in the 2026-06-18 fix for TRACKER.md open item 17: the INTEGRITY
 # view was thinner than the codebase's own existing validation logic.

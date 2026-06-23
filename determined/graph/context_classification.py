@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/context_classification.py
+# tools/analysis/graph/context_classification.py
 
 from determined.graph.project_graph_context import ProjectGraphContext
 from determined.graph.symbol_classifier import classify_symbol

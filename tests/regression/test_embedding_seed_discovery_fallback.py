@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_embedding_seed_discovery_fallback.py
+# tools/analysis/tests/regression/test_embedding_seed_discovery_fallback.py
 #
 # TRACKER.md item 22: embedding-fallback crash risk in seed discovery.
 #

@@ -1,4 +1,4 @@
-﻿# tools/analysis/ingestion/parse_ast.py
+# tools/analysis/ingestion/parse_ast.py
 # CLAUDE-EDIT 2026-06-16: replaced stub _extract_behavioral_contracts (always
 # empty side_effects/raises/testable_behaviors, complexity=0) with full impl
 # (docstring pattern matching + AST signals + cyclomatic complexity). Added

@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/build_dependency_graph.py
+# tools/analysis/graph/build_dependency_graph.py
 
 from __future__ import annotations
 

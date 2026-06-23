@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/symbol_router.py
+# tools/analysis/graph/symbol_router.py
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-﻿# tools/analysis/assessor/query_router.py
+# tools/analysis/assessor/query_router.py
 #
 # Assessor-owned query routing layer (Phase 3 boundary completion).
 # Moved here from api/oracle_router.py so the query path is fully Assessor-owned

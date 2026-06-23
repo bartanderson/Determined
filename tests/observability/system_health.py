@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/observability/system_health.py
+# tools/analysis/tests/observability/system_health.py
 
 from collections import Counter
 from dataclasses import dataclass

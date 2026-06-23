@@ -1,4 +1,4 @@
-﻿# tools/analysis/truth/tests/test_query_algebra.py
+# tools/analysis/truth/tests/test_query_algebra.py
 
 import pytest
 

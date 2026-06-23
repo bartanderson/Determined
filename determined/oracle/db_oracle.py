@@ -1,4 +1,4 @@
-﻿# tools/analysis/oracle/db_oracle.py
+# tools/analysis/oracle/db_oracle.py
 
 import logging
 import os

@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/claude_eval.py
+# tools/analysis/agent/claude_eval.py
 #
 # Claude's non-interactive access path to the agent pipeline.
 # Simulates what Bart does in the REPL, driven by Claude's own judgment.

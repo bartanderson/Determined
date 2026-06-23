@@ -1,4 +1,4 @@
-﻿# tools/analysis/tests/regression/test_drift_signals_wiring.py
+# tools/analysis/tests/regression/test_drift_signals_wiring.py
 #
 # Locks in the 2026-06-17 drift_signals fix (Truth.md Phase 3 Row 3 /
 # Truth Kernel Board.md Tier 1): Assessor.stability_view() used to call

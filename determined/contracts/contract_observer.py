@@ -1,4 +1,4 @@
-﻿# tools/analysis/contracts/contract_observer.py
+# tools/analysis/contracts/contract_observer.py
 
 from __future__ import annotations
 

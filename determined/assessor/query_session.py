@@ -1,4 +1,4 @@
-﻿# tools/analysis/assessor/query_session.py
+# tools/analysis/assessor/query_session.py
 # CLAUDE-EDIT 2026-06-16: (1) pass `text=text` into compile_and_explain()
 # call inside run_algebra() so the local AI compiler sees the raw NL query,
 # not just the intent label. (2) self_model wiring (import + field +

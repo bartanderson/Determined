@@ -1,4 +1,4 @@
-﻿# tools/analysis/engine/pipeline_dependency_tracer.py
+# tools/analysis/engine/pipeline_dependency_tracer.py
 
 from collections import defaultdict
 from dataclasses import dataclass

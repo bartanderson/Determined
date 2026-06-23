@@ -1,4 +1,4 @@
-﻿# tests/regression/test_discovery_agent.py - minimal smoke tests
+# tests/regression/test_discovery_agent.py - minimal smoke tests
 
 import sys, os, sqlite3
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))

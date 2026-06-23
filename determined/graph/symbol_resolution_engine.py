@@ -1,4 +1,4 @@
-﻿# tools/analysis/graph/symbol_resolution_engine.py
+# tools/analysis/graph/symbol_resolution_engine.py
 
 from __future__ import annotations
 

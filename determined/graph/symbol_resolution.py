@@ -1,4 +1,4 @@
-﻿# determined.graph.symbol_resolution.py
+# determined.graph.symbol_resolution.py
 def resolve_symbol_identity(name: str, alias_map: dict[str, str]) -> str:
     """
     Convert raw AST call names into canonical identity space.

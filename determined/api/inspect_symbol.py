@@ -1,4 +1,4 @@
-﻿# tools/analysis/api/inspect_symbol.py
+# tools/analysis/api/inspect_symbol.py
 
 from determined.graph.symbol_router import route_symbol
 from determined.graph.symbol_classifier import classify_symbol

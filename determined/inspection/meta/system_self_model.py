@@ -1,4 +1,4 @@
-﻿# tools/analysis/inspection/meta/system_self_model.py
+# tools/analysis/inspection/meta/system_self_model.py
 #
 # SystemSelfModel — the assessor's account of its own blind spots.
 #

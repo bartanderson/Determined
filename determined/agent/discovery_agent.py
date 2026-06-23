@@ -1,4 +1,4 @@
-﻿# tools/analysis/agent/discovery_agent.py
+# tools/analysis/agent/discovery_agent.py
 #
 # Autonomous discovery loop - surveys the corpus and populates knowledge.db.
 # Designed to run in finite batches; resume-safe (skips already-stored subjects).

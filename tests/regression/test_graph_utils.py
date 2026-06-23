@@ -1,4 +1,4 @@
-﻿# tests/regression/test_graph_utils.py
+# tests/regression/test_graph_utils.py
 #
 # Minimal tests for graph_utils.py against an in-memory SQLite DB.
 
