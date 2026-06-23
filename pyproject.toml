@@ -18,6 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ui = [
+    "flask>=3.0",
+    "flask-socketio>=5.0",
+]
 embeddings = [
     "sentence-transformers>=2.0",
 ]
