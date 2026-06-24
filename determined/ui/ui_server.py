@@ -232,8 +232,7 @@ def handle_tab_query(data):
 
             else:
                 from determined.agent.local_agent import _answer
-                with _lock:
-                    answer, _ = _answer(question, [], _oracle, _assessor, verbose=False)
+                answer, _ = _answer(question, [], _oracle, _assessor, verbose=False)
 
             socketio.emit("tab_answer", {"tab": tab, "answer": answer, "question": question}, to=sid)
         except Exception as exc:
