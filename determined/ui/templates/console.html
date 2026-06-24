@@ -113,7 +113,14 @@
   </div>
 
   <!-- ── main ── -->
-  <div class="main">
+  <div class="main" id="main-panel">
+
+    <!-- breadcrumb trail -->
+    <div class="trail-bar" id="trail-bar" style="display:none">
+      <span class="trail-label">Trail:</span>
+      <div class="trail-chips" id="trail-chips"></div>
+      <button class="trail-clear" id="trail-clear" title="Clear trail">✕</button>
+    </div>
 
     <div class="query-bar">
       <input id="q-input" class="query-input" type="text"
@@ -124,6 +131,21 @@
     <div id="results" class="results-area"></div>
 
   </div>
+
+  <!-- ── spotlight panel ── -->
+  <div class="spotlight" id="spotlight" style="display:none">
+    <div class="spotlight-header">
+      <span class="spotlight-badge" id="sp-badge"></span>
+      <span class="spotlight-name" id="sp-name"></span>
+      <span class="spotlight-meta" id="sp-meta"></span>
+      <button class="spotlight-close" id="sp-close">✕</button>
+    </div>
+    <div class="spotlight-actions" id="sp-actions"></div>
+    <div class="spotlight-body" id="sp-body"></div>
+  </div>
+
+  <!-- ── hover tooltip ── -->
+  <div class="sym-tooltip" id="sym-tooltip" style="display:none"></div>
 
   <!-- ── statusbar ── -->
   <div class="statusbar">
@@ -156,6 +178,28 @@ socket.on("connect", () => {
 socket.on("disconnect", () => {
   connDot.classList.add("offline");
   connLbl.textContent = "disconnected";
+});
+
+// server sends this immediately on connect if a corpus is already loaded
+socket.on("corpus_ready", data => {
+  document.getElementById("db-badge").textContent = data.db_name;
+  sendBtn.disabled = false;
+  // show a quiet status card — no query, no LLM, just facts
+  const block = document.createElement("div");
+  block.className = "result-block";
+  block.innerHTML = `
+    <div class="result-header">
+      <span class="kind-tag kind-survey">corpus</span>
+      <span class="result-subject">${escHtml(data.db_name)}</span>
+    </div>
+    <div class="result-body">
+      <div class="answer-text" style="color:var(--text2)">
+${data.files} files · ${data.hot} hot · ${data.stubs} stubs · ${data.artifacts} knowledge artifacts
+
+Ready. Try a workflow button on the left, or ask anything.
+      </div>
+    </div>`;
+  results.appendChild(block);
 });
 
 // ── send query ────────────────────────────────────────────
@@ -396,7 +440,224 @@ function addResultBlock(question, answer) {
 
   results.appendChild(block);
   results.scrollTop = results.scrollHeight;
+
+  // upgrade decorative symbol spans to interactive ones
+  attachSymbolHandlers(block);
 }
+
+// ── interactive symbols ───────────────────────────────────
+// Replace colorize() spans with clickable sym-link / fp-link elements.
+// Called after innerHTML is set; walks rendered spans and upgrades them.
+function attachSymbolHandlers(container) {
+  container.querySelectorAll(".sym, .fn").forEach(el => {
+    const name = el.textContent.replace(/\($/, "").trim();
+    el.className = "sym-link";
+    el.dataset.sym = name;
+  });
+  container.querySelectorAll(".fp").forEach(el => {
+    el.className = "fp-link";
+  });
+  container.querySelectorAll(".sym-link").forEach(el => {
+    el.addEventListener("mouseenter", onSymHover);
+    el.addEventListener("mouseleave", onSymLeave);
+    el.addEventListener("click",      e => { e.stopPropagation(); openSpotlight(el.dataset.sym); });
+  });
+}
+
+// ── hover tooltip ─────────────────────────────────────────
+const tooltip = document.getElementById("sym-tooltip");
+let _tooltipTimer = null;
+let _pendingSym = null;
+
+function onSymHover(e) {
+  const sym = e.currentTarget.dataset.sym;
+  _pendingSym = sym;
+  clearTimeout(_tooltipTimer);
+  _tooltipTimer = setTimeout(() => {
+    if (_pendingSym === sym) socket.emit("symbol_quick", { symbol: sym });
+  }, 280);
+}
+function onSymLeave() {
+  _pendingSym = null;
+  clearTimeout(_tooltipTimer);
+  tooltip.style.display = "none";
+}
+
+socket.on("symbol_quick_result", data => {
+  if (data.error || _pendingSym === null) { tooltip.style.display = "none"; return; }
+  const riskCls = { HOT: "risk-hot", WARM: "risk-warm", SAFE: "risk-safe" }[data.risk] || "";
+  tooltip.innerHTML = `
+    <div class="tt-name"><span class="${riskCls}">${data.badge || ""}</span> ${escHtml(data.symbol)}</div>
+    <div class="tt-meta">${data.type} · ${escHtml(data.file)} line ${data.line}</div>
+    ${data.docstring ? `<div class="tt-doc">${escHtml(data.docstring)}</div>` : ""}
+    <div class="tt-stats">
+      <span>↙ ${data.caller_count} callers</span>
+      <span>↗ ${data.callee_count} callees</span>
+      ${data.findings_count ? `<span>◈ ${data.findings_count} findings</span>` : ""}
+    </div>
+    <div class="tt-hint">click to open spotlight</div>`;
+  positionTooltip();
+  tooltip.style.display = "block";
+});
+
+let _mouseX = 0, _mouseY = 0;
+document.addEventListener("mousemove", e => { _mouseX = e.clientX; _mouseY = e.clientY; });
+function positionTooltip() {
+  const pad = 12;
+  let x = _mouseX + pad, y = _mouseY + pad;
+  tooltip.style.left = x + "px";
+  tooltip.style.top  = y + "px";
+  tooltip.style.display = "block";
+  const r = tooltip.getBoundingClientRect();
+  if (r.right  > window.innerWidth)  x = _mouseX - r.width  - pad;
+  if (r.bottom > window.innerHeight) y = _mouseY - r.height - pad;
+  tooltip.style.left = x + "px";
+  tooltip.style.top  = y + "px";
+}
+
+// ── spotlight panel ───────────────────────────────────────
+const spotlight  = document.getElementById("spotlight");
+const spBadge    = document.getElementById("sp-badge");
+const spName     = document.getElementById("sp-name");
+const spMeta     = document.getElementById("sp-meta");
+const spActions  = document.getElementById("sp-actions");
+const spBody     = document.getElementById("sp-body");
+const spClose    = document.getElementById("sp-close");
+const shell      = document.querySelector(".shell");
+let _currentSpotlight = null;
+
+const SP_SECTIONS = {
+  risk:    { label: "Risk Profile",  order: 0 },
+  intent:  { label: "Intent",        order: 1 },
+  callers: { label: "Callers",       order: 2 },
+  callees: { label: "Calls",         order: 3 },
+  findings:{ label: "Findings",      order: 4 },
+};
+
+function openSpotlight(sym) {
+  tooltip.style.display = "none";
+  if (_currentSpotlight === sym) { closeSpotlight(); return; }
+  _currentSpotlight = sym;
+
+  // highlight all sym-link spans for this symbol
+  document.querySelectorAll(".sym-link").forEach(el => {
+    el.classList.toggle("in-spotlight", el.dataset.sym === sym);
+  });
+
+  spName.textContent = sym;
+  spBadge.textContent = "";
+  spBadge.className = "spotlight-badge";
+  spMeta.textContent = "";
+  spActions.innerHTML = "";
+  spBody.innerHTML = "";
+
+  // placeholder sections while loading
+  Object.entries(SP_SECTIONS).sort((a,b) => a[1].order - b[1].order).forEach(([key, meta]) => {
+    const sec = document.createElement("div");
+    sec.className = "sp-section";
+    sec.id = `sp-sec-${key}`;
+    sec.innerHTML = `<div class="sp-section-label">${meta.label}</div>
+                     <div class="sp-section-content sp-loading" id="sp-content-${key}">loading…</div>`;
+    spBody.appendChild(sec);
+  });
+
+  // action buttons
+  const actions = [
+    { label: "full brief",    q: `understand ${sym}`,          cls: "primary" },
+    { label: "trace from…",  q: `trace ${sym} to `,           cls: "" },
+    { label: "git history",  q: `git history of ${sym}`,       cls: "" },
+    { label: "similar",      q: `find similar to ${sym}`,      cls: "" },
+    { label: "store note",   q: `store finding for ${sym}`,    cls: "" },
+  ];
+  actions.forEach(a => {
+    const btn = document.createElement("button");
+    btn.className = `sp-action ${a.cls}`;
+    btn.textContent = a.label;
+    btn.addEventListener("click", () => {
+      input.value = a.q;
+      if (!a.q.endsWith(" ")) { sendQuery(); } else { input.focus(); }
+    });
+    spActions.appendChild(btn);
+  });
+
+  spotlight.style.display = "flex";
+  shell.classList.add("spotlight-open");
+  trailAdd(sym);
+  socket.emit("symbol_spotlight", { symbol: sym });
+}
+
+function closeSpotlight() {
+  _currentSpotlight = null;
+  spotlight.style.display = "none";
+  shell.classList.remove("spotlight-open");
+  document.querySelectorAll(".sym-link.in-spotlight").forEach(el => el.classList.remove("in-spotlight"));
+}
+
+spClose.addEventListener("click", closeSpotlight);
+
+socket.on("spotlight_section", data => {
+  if (data.symbol !== _currentSpotlight) return;
+  const el = document.getElementById(`sp-content-${data.key}`);
+  if (!el) return;
+  el.className = "sp-section-content";
+  el.textContent = data.content;
+
+  // extract risk badge from risk section
+  if (data.key === "risk") {
+    const m = data.content.match(/\[(HOT|WARM|SAFE)\]/);
+    if (m) {
+      const lvl = m[1];
+      const cls = { HOT: "risk-hot", WARM: "risk-warm", SAFE: "risk-safe" }[lvl] || "";
+      spBadge.textContent = lvl;
+      spBadge.className = `spotlight-badge ${cls}`;
+    }
+  }
+});
+
+socket.on("spotlight_done", data => {
+  if (data.symbol !== _currentSpotlight) return;
+  spMeta.textContent = "ready";
+});
+
+socket.on("spotlight_error", data => {
+  spBody.innerHTML = `<div class="sp-section"><div class="sp-section-content" style="color:var(--red)">${escHtml(data.message)}</div></div>`;
+});
+
+// ── trail / breadcrumbs ───────────────────────────────────
+const trailBar   = document.getElementById("trail-bar");
+const trailChips = document.getElementById("trail-chips");
+const trailClear = document.getElementById("trail-clear");
+let _trail = [];
+
+function trailAdd(sym) {
+  if (_trail[_trail.length - 1] === sym) return;
+  _trail.push(sym);
+  renderTrail();
+}
+
+function renderTrail() {
+  trailBar.style.display = _trail.length ? "flex" : "none";
+  trailChips.innerHTML = "";
+  _trail.forEach((sym, i) => {
+    if (i > 0) {
+      const arr = document.createElement("span");
+      arr.className = "trail-arrow";
+      arr.textContent = "→";
+      trailChips.appendChild(arr);
+    }
+    const chip = document.createElement("span");
+    chip.className = "trail-chip" + (i === _trail.length - 1 ? " current" : "");
+    chip.textContent = sym;
+    chip.addEventListener("click", () => openSpotlight(sym));
+    trailChips.appendChild(chip);
+  });
+}
+
+trailClear.addEventListener("click", () => {
+  _trail = [];
+  renderTrail();
+  closeSpotlight();
+});
 
 // ── answer analysis ───────────────────────────────────────
 function detectKind(answer) {

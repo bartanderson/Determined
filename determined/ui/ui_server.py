@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from pathlib import Path
@@ -18,6 +19,7 @@ from determined.agent.knowledge_status import coverage_summary
 
 _TEMPLATE_DIR = str(Path(__file__).parent / "templates")
 _STATIC_DIR   = str(Path(__file__).parent / "static")
+_SESSION_FILE = Path(__file__).parent.parent.parent / ".determined_session.json"
 
 app = Flask(__name__, template_folder=_TEMPLATE_DIR, static_folder=_STATIC_DIR)
 app.config["SECRET_KEY"] = "dev-console-local"
@@ -31,18 +33,73 @@ _history: list[dict] = []
 _lock = threading.Lock()
 
 
+def _save_session(db_path: str) -> None:
+    try:
+        _SESSION_FILE.write_text(json.dumps({"db_path": db_path}), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _load_session() -> str | None:
+    try:
+        if _SESSION_FILE.exists():
+            data = json.loads(_SESSION_FILE.read_text(encoding="utf-8"))
+            p = data.get("db_path", "")
+            if p and Path(p).exists():
+                return p
+    except Exception:
+        pass
+    return None
+
+
 def init(db_path: str) -> None:
     global _oracle, _assessor, _db_path
     _oracle   = DBOracle(db_path)
     _assessor = Assessor(_oracle)
     _db_path  = db_path
+    _save_session(db_path)
+
+
+def _corpus_status() -> dict:
+    """Quick stats for the status bar — no LLM, pure DB queries."""
+    if not _oracle:
+        return {}
+    try:
+        files     = _oracle.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        hot       = _oracle.conn.execute("SELECT COUNT(*) FROM files WHERE is_hot=1").fetchone()[0]
+        stubs     = _oracle.conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub=1").fetchone()[0]
+        artifacts = 0
+        if _assessor and _assessor._knowledge_conn:
+            artifacts = _assessor._knowledge_conn.execute(
+                "SELECT COUNT(*) FROM knowledge_artifacts"
+            ).fetchone()[0]
+        db_name = Path(_db_path).stem.replace("_", " ")
+        return {"files": files, "hot": hot, "stubs": stubs,
+                "artifacts": artifacts, "db_name": db_name}
+    except Exception:
+        return {}
 
 
 @app.route("/")
 def index():
     db_name = Path(_db_path).name if _db_path else "no corpus"
-    summary = coverage_summary(_oracle, _assessor) if _oracle else ""
-    return render_template("console.html", db_name=db_name, summary=summary)
+    status  = _corpus_status()
+    return render_template("console.html", db_name=db_name, status=status)
+
+
+@socketio.on("connect")
+def handle_connect():
+    """On browser connect, send current corpus status so the UI updates immediately."""
+    if _oracle:
+        s = _corpus_status()
+        emit("corpus_ready", {
+            "db_name": Path(_db_path).name,
+            "db_path": _db_path,
+            "files": s.get("files", 0),
+            "hot": s.get("hot", 0),
+            "stubs": s.get("stubs", 0),
+            "artifacts": s.get("artifacts", 0),
+        })
 
 
 @socketio.on("query")
@@ -261,6 +318,100 @@ def handle_ingest(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("symbol_quick")
+def handle_symbol_quick(data):
+    """
+    Fast symbol lookup: DB only, no LLM. Returns essential facts for hover tooltip.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol or _oracle is None:
+        emit("symbol_quick_result", {"error": "no symbol"})
+        return
+    try:
+        from determined.agent.risk_annotator import score_risk, risk_badge
+        # Find symbol in DB
+        row = _oracle.conn.execute(
+            "SELECT name, file_path, line_number, docstring FROM functions WHERE name = ? LIMIT 1",
+            (symbol,)
+        ).fetchone()
+        sym_type = "function"
+        if not row:
+            row = _oracle.conn.execute(
+                "SELECT name, file_path, line_number, docstring FROM classes WHERE name = ? LIMIT 1",
+                (symbol,)
+            ).fetchone()
+            sym_type = "class"
+        if not row:
+            emit("symbol_quick_result", {"error": f"'{symbol}' not in corpus"})
+            return
+        caller_count = _oracle.conn.execute(
+            "SELECT COUNT(*) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+            (symbol, f"%.{symbol}")
+        ).fetchone()[0]
+        callee_count = _oracle.conn.execute(
+            "SELECT COUNT(*) FROM graph_edges WHERE caller = ?",
+            (symbol,)
+        ).fetchone()[0]
+        findings_count = 0
+        if _assessor and _assessor._knowledge_conn:
+            findings_count = _assessor._knowledge_conn.execute(
+                "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE ?",
+                (f"%{symbol}%",)
+            ).fetchone()[0]
+        risk = score_risk(_oracle, symbol)
+        badge = risk_badge(risk["level"])
+        doc = (row[3] or "").strip()
+        doc_snippet = doc.split("\n")[0][:120] if doc else ""
+        file_short = (row[1] or "").replace("\\", "/").split("/")[-1]
+        emit("symbol_quick_result", {
+            "symbol": symbol,
+            "type": sym_type,
+            "file": file_short,
+            "line": row[2],
+            "risk": risk["level"],
+            "badge": badge,
+            "docstring": doc_snippet,
+            "caller_count": caller_count,
+            "callee_count": callee_count,
+            "findings_count": findings_count,
+        })
+    except Exception as exc:
+        emit("symbol_quick_result", {"error": str(exc)})
+
+
+@socketio.on("symbol_spotlight")
+def handle_symbol_spotlight(data):
+    """
+    Full spotlight: runs understand_symbol pattern, returns structured sections.
+    Fires multiple events as sections complete so the panel populates progressively.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol or _oracle is None:
+        emit("spotlight_error", {"message": "no symbol"})
+        return
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import dispatch
+            sections = {}
+            for tool, args, key in [
+                ("symbol_intent",  {"symbol": symbol}, "intent"),
+                ("risk_profile",   {"symbol": symbol}, "risk"),
+                ("list_callers",   {"symbol": symbol}, "callers"),
+                ("list_callees",   {"symbol": symbol}, "callees"),
+                ("get_findings",   {"symbol": symbol}, "findings"),
+            ]:
+                result = dispatch(tool, args, _oracle, _assessor)
+                sections[key] = result
+                socketio.emit("spotlight_section", {"symbol": symbol, "key": key, "content": result}, to=sid)
+            socketio.emit("spotlight_done", {"symbol": symbol}, to=sid)
+        except Exception as exc:
+            socketio.emit("spotlight_error", {"message": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _check_ollama() -> str:
     """Return 'ok' or an error message."""
     try:
@@ -302,11 +453,22 @@ def _warmup_ollama() -> None:
 
 
 def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 5050) -> None:
+    # Use explicit db_path, or fall back to last session, or start with no corpus
     if db_path:
         init(db_path)
+    else:
+        saved = _load_session()
+        if saved:
+            print(f"Resuming last session: {saved}")
+            init(saved)
+
     ollama_status = _check_ollama()
     print(f"\nDev console: http://{host}:{port}")
-    print(f"Corpus:       {db_path or 'none — use Ingest to load one'}")
+    if _db_path:
+        s = _corpus_status()
+        print(f"Corpus:       {_db_path}  ({s.get('files',0)} files, {s.get('hot',0)} hot, {s.get('artifacts',0)} artifacts)")
+    else:
+        print(f"Corpus:       none — use Ingest panel to load one")
     if ollama_status == "ok":
         threading.Thread(target=_warmup_ollama, daemon=True).start()
     else:
