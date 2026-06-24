@@ -195,6 +195,21 @@ def _extract_symbol_references(
 
         return f"{module_name}.{raw}"
 
+    def receiver_root(expr) -> str | None:
+        # Best-effort root label for a method-call receiver we can't fully
+        # resolve (subscripts, call results, etc). Returns a dotted prefix so
+        # the call still records as root.method and counts toward in_degree.
+        if isinstance(expr, ast.Name):
+            return alias_map.get(expr.id, expr.id)
+        if isinstance(expr, ast.Attribute):
+            base = receiver_root(expr.value)
+            return f"{base}.{expr.attr}" if base else expr.attr
+        if isinstance(expr, ast.Subscript):
+            return receiver_root(expr.value)
+        if isinstance(expr, ast.Call):
+            return receiver_root(expr.func)
+        return None
+
     class Visitor(ast.NodeVisitor):
 
         def __init__(self):
@@ -283,12 +298,18 @@ def _extract_symbol_references(
                         resolved = raw
 
                     else:
-                        self.generic_visit(node)
-                        return
+                        # chain bottoms out at a non-Name (e.g. grid[i].x.method());
+                        # record the attr chain + method so the method still counts
+                        raw = ".".join(
+                            list(reversed(parts)) + [node.func.attr]
+                        )
+                        resolved = raw
 
+                # subscript / call-result / other receiver: obj[i].method(), f().method()
                 else:
-                    self.generic_visit(node)
-                    return
+                    root = receiver_root(base)
+                    raw = f"{root}.{node.func.attr}" if root else node.func.attr
+                    resolved = raw
 
             # ----------------------
             # unresolved

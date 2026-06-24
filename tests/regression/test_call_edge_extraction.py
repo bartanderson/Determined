@@ -52,6 +52,27 @@ def test_self_method_call_recorded():
     assert any(c.endswith(".advance_time") for c in callees), callees
 
 
+def test_subscript_receiver_method_call_recorded():
+    # grid[x].is_door() - receiver is a subscript, was dropped before
+    src = (
+        "def handler(grid, x):\n"
+        "    grid[x].is_door()\n"
+    )
+    callees = _callees(src)
+    assert any(c.rsplit(".", 1)[-1] == "is_door" for c in callees), callees
+
+
+def test_call_result_receiver_method_call_recorded():
+    # get_cell().is_door() - receiver is a call result
+    src = (
+        "def handler(self):\n"
+        "    self.get_cell().is_door()\n"
+    )
+    callees = _callees(src)
+    last = [c.rsplit(".", 1)[-1] for c in callees]
+    assert "is_door" in last, callees
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
