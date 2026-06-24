@@ -208,12 +208,35 @@ def handle_query(data):
         emit("error", {"message": f"Pipeline error: {exc}"})
 
 
+# Tab -> direct tool dispatch. These are deterministic structural lookups;
+# no LLM needed, so they're instant and never hit Ollama timeouts.
+_TAB_TOOLS = {
+    "work_queue": ("workflow_status",      {}),
+    "docstrings": ("missing_docstrings",   {"limit": 50}),
+    "todos":      ("find_todos",           {"limit": 100}),
+}
+
+
+def _dead_code_answer() -> str:
+    """Pull dead-code candidates stored by extract_design_facts (subject 'dead::%')."""
+    if not _assessor or not _assessor._knowledge_conn:
+        return "No knowledge DB - run 'extract design facts' first."
+    rows = _assessor._knowledge_conn.execute(
+        "SELECT subject, content FROM knowledge_artifacts "
+        "WHERE subject LIKE 'dead::%' ORDER BY subject"
+    ).fetchall()
+    if not rows:
+        return "No dead-code candidates found (or facts not yet extracted)."
+    lines = [f"Dead-code candidates ({len(rows)}):"]
+    lines += [f"  {r[0].replace('dead::', '')}" for r in rows]
+    return "\n".join(lines)
+
 @socketio.on("tab_query")
 def handle_tab_query(data):
-    """Run a named tab query - same pipeline as query but result goes to tab_answer."""
+    """Run a named tab query via direct tool dispatch - no LLM, results to tab_answer."""
     tab      = (data.get("tab") or "").strip()
     question = (data.get("question") or "").strip()
-    if not question or not tab or _oracle is None:
+    if not tab or _oracle is None:
         emit("tab_answer", {"tab": tab, "answer": "No corpus loaded.", "question": question})
         return
 
@@ -221,22 +244,27 @@ def handle_tab_query(data):
 
     def _run():
         try:
-            q_lower = question.lower().rstrip("?")
-
-            if q_lower in ("what haven't you explored", "what havent you explored", "unexplored"):
+            if tab == "unexplored":
                 from determined.agent.knowledge_status import coverage_report
                 r = coverage_report(_oracle, _assessor)
                 unknown = r["unknown_files"]
                 answer = ("\n".join([f"Unexplored files ({len(unknown)} of {r['total_files']}):"]
                           + [f"  {f}" for f in unknown]) if unknown else "All files have been surveyed.")
 
-            elif q_lower in ("discover", "discover more"):
+            elif tab == "discover":
                 from determined.agent.knowledge_status import coverage_summary
                 answer = coverage_summary(_oracle, _assessor)
 
+            elif tab == "dead_code":
+                answer = _dead_code_answer()
+
+            elif tab in _TAB_TOOLS:
+                from determined.agent.agent_tools import dispatch
+                tool, args = _TAB_TOOLS[tab]
+                answer = dispatch(tool, args, _oracle, _assessor)
+
             else:
-                from determined.agent.local_agent import _answer
-                answer, _ = _answer(question, [], _oracle, _assessor, verbose=False)
+                answer = f"(no handler for tab '{tab}')"
 
             socketio.emit("tab_answer", {"tab": tab, "answer": answer, "question": question}, to=sid)
         except Exception as exc:
