@@ -163,12 +163,13 @@ input.addEventListener("keydown", e => { if (e.key === "Enter") sendQuery(); });
 sendBtn.addEventListener("click", sendQuery);
 
 // ── sidebar shortcuts ─────────────────────────────────────
-// data-fill: put text in input, focus, let user complete it
+// data-fill: put text in input, enable send button, focus
 document.querySelectorAll(".sidebar-item[data-fill]").forEach(el => {
   el.addEventListener("click", () => {
     const fill = el.dataset.fill;
     if (!fill) return;
     input.value = fill;
+    sendBtn.disabled = false;
     input.focus();
     input.setSelectionRange(fill.length, fill.length);
   });
@@ -178,6 +179,7 @@ document.querySelectorAll(".sidebar-item[data-fill]").forEach(el => {
 document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
   el.addEventListener("click", () => {
     input.value = el.dataset.submit;
+    sendBtn.disabled = false;
     sendQuery();
   });
 });
