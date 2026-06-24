@@ -405,6 +405,44 @@ Last cleaned: 2026-06-24 (session 17 - verified against live tool run).
 
 ---
 
+### BRANCH EXPERIMENT METHODOLOGY (standing, session 18)
+
+Experiments live in branches. Anything uncertain or exploratory goes in a branch.
+Working agreement:
+- Any session can create a `ui/experiment-name` branch and go wild
+- Nothing in a branch needs to be production quality — it needs to be learnable
+- Branches are NOT thrown away silently. Before abandoning a branch, extract:
+  * What worked (even partially)
+  * What felt right that didn't work yet
+  * What it revealed about what the right thing is
+  * Any code worth porting to another branch
+  Store these as a short note in HISTORY.md under "Branch findings"
+- Successful experiments merge to main. Partial experiments inform other branches.
+- Two branches can run in parallel and steal from each other.
+- "I like this thing about branch A, not the rest" is a valid outcome.
+  Port the thing, kill the branch, credit the source.
+
+**Active branch plan (session 18):**
+
+| Branch | Experiment | Key question |
+|--------|-----------|--------------|
+| `ui/spotlight` | One-symbol focus panel, no graph lib | Does hover+click context feel natural? |
+| `ui/cytoscape-subgraph` | Cytoscape.js node-expand graph | Hairball threshold? What layout wins? |
+| `ui/file-module-graph` | File-level graph, orient view | Better cold start than text output? |
+| `ui/call-tree` | Collapsible HTML call tree | Readable without a graph lib? |
+| `ui/trail` | Captured replayable investigations | Right storage model? Fork UX? |
+| `ui/list-enhanced` | Current mode + clickable symbols + sort/filter | Lowest-friction upgrade path? |
+
+Branch order: spotlight first (no deps, immediate value), then cytoscape-subgraph
+(needs library decision), then file-module (reuses cytoscape), then trail (needs
+schema design), then call-tree and list-enhanced in parallel as easier options.
+
+Cytoscape.js chosen as graph library: MIT, designed for network graphs, handles
+1000s of nodes, has dagre layout (DAG-aware), WebGL renderer available.
+Can load from CDN like other deps.
+
+---
+
 ### UI VISION: WHERE THIS IS GOING (session 18)
 
 The current UI is a query box that produces text blocks. That is the wrong shape.
