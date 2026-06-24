@@ -249,7 +249,7 @@ socket.on("tab_answer", data => {
   panel.innerHTML = "";
   const block = document.createElement("div");
   block.className = "result-block";
-  block.innerHTML = `<div class="result-body"><div class="answer-text">${markdownToHtml(data.answer)}</div></div>`;
+  block.innerHTML = `<div class="result-body"><div class="answer-text">${colorize(data.answer)}</div></div>`;
   panel.appendChild(block);
   // mark tab as loaded
   const tabBtn = document.querySelector(`.tab[data-tab="${data.tab}"]`);
