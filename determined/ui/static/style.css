@@ -188,6 +188,7 @@ body {
 
 /* results area */
 .results-area {
+  grid-row: 3;
   overflow-y: auto;
   min-height: 0;
   padding: 10px 12px;
