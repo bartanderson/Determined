@@ -19,21 +19,8 @@ Wait for the result before calling another tool. One tool call per response.
 If you have enough information to answer, do not call a tool - just answer.
 """
 
-TOOL_DESCRIPTIONS = """\
-Tools (call one at a time):
-  search_symbols   {"query": str}
-  search_files     {"query": str}
-  list_callers     {"symbol": str}
-  list_callees     {"symbol": str}
-  symbols_in_file  {"file_path": str}
-  files_in_directory {"path": str}
-  describe_file    {"file_path": str}
-  symbol_intent    {"symbol": str}
-  symbol_brief     {"symbol": str}
-  get_findings     {"symbol": str}
-  store_finding    {"symbol": str, "kind": str, "content": str}
-  ask_truth_layer  {"question": str}
-"""
+from determined.agent.tool_registry import get_compact_tool_list as _tool_list
+TOOL_DESCRIPTIONS = _tool_list()
 
 SYSTEM_PROMPT = f"""\
 You are a codebase assistant for a Python dungeon-master game. Answer questions

@@ -846,6 +846,11 @@ def extract_design_facts(assessor: "Assessor", args: dict) -> str:
     )
 
 
+def _describe_tool_wrapper(oracle, args: dict) -> str:
+    from determined.agent.tool_registry import describe_tool_fn
+    return describe_tool_fn(oracle, args)
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -875,6 +880,7 @@ TOOLS = {
     "store_workflow_item":  (store_workflow_item,  "assessor"),
     "rerank_workflow":      (rerank_workflow,      "assessor"),
     "risk_profile":         (risk_profile,         "oracle"),
+    "describe_tool":        (_describe_tool_wrapper, "oracle"),
 }
 
 

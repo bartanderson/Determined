@@ -35,12 +35,15 @@ repeated each other.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-24, session 17, continued):** Knowledge layer additions.
+**Last session (2026-06-24, session 17, continued):** Tool registry. New file:
+determined/agent/tool_registry.py - REGISTRY (28 tools, full metadata: purpose/args/output/feeds/use_when/category),
+TASK_PATTERNS (7 named workflows), describe_tool (callable from agent). agent_prompt.py now generates
+TOOL_DESCRIPTIONS from the registry (all 28 tools, grouped by category). describe_tool wired into TOOLS.
+2 new tests. 276/276 passing.
+
+**Before that (2026-06-24, session 17, continued):** Knowledge layer additions.
 extract_design_facts() - no-LLM structural extraction (entry points, dead code, hot symbols, stub files).
-knowledge_status tool - coverage report vs corpus. get_findings now searches both knowledge_artifacts
-and semantic_summaries. Tool chaining friction documented in TRACKER items 10-11.
-Wire extract_design_facts into --source ingestion path (item 11) still open.
-274/274 passing.
+knowledge_status tool, get_findings expanded to semantic_summaries. 274/274 passing.
 
 **Before that (2026-06-24, session 17):** Ran tool against dj2 corpus, found and fixed 5 real bugs.
 is_hot was hardcoded False (now bool(mutations)); is_stub column missing from old DBs (migration added);

@@ -480,8 +480,44 @@ def test_dispatch_all_tools_registered():
         "risk_profile",
         "knowledge_status",
         "extract_design_facts",
+        "describe_tool",
     }
     assert set(TOOLS.keys()) == expected
+
+
+def test_tool_registry_covers_all_tools():
+    """Every tool in TOOLS must have a registry entry with required fields."""
+    from determined.agent.agent_tools import TOOLS
+    from determined.agent.tool_registry import REGISTRY, get_compact_tool_list
+    for name in TOOLS:
+        assert name in REGISTRY, f"tool '{name}' missing from REGISTRY"
+        entry = REGISTRY[name]
+        for field in ("purpose", "args", "output", "feeds", "use_when", "category"):
+            assert field in entry, f"REGISTRY['{name}'] missing field '{field}'"
+    # compact list must mention all tools
+    compact = get_compact_tool_list()
+    for name in TOOLS:
+        assert name in compact, f"'{name}' missing from compact tool list"
+
+
+def test_describe_tool_fn_lookup():
+    """describe_tool_fn returns useful output for known and unknown tool names."""
+    from determined.agent.tool_registry import describe_tool_fn
+    result = describe_tool_fn(None, {"name": "search_symbols"})
+    assert "search_symbols" in result
+    assert "Purpose" in result
+    assert "feeds" in result.lower() or "Feeds" in result
+
+    result_all = describe_tool_fn(None, {"name": "all"})
+    assert "search_symbols" in result_all
+    assert "graph" in result_all
+
+    result_patterns = describe_tool_fn(None, {"name": "patterns"})
+    assert "understand_symbol" in result_patterns
+    assert "orient_to_codebase" in result_patterns
+
+    result_bad = describe_tool_fn(None, {"name": "xyzzy_nonexistent"})
+    assert "Unknown tool" in result_bad
 
 
 # ------------------------------------------------------------------
