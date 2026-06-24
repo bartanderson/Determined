@@ -192,7 +192,8 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
   });
 });
 
-document.getElementById("btn-clear-history").addEventListener("click", () => {
+const clearHistBtn = document.getElementById("btn-clear-history");
+if (clearHistBtn) clearHistBtn.addEventListener("click", () => {
   socket.emit("clear_history");
   results.innerHTML = "";
 });
