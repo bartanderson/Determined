@@ -35,7 +35,14 @@ repeated each other.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-24, session 17):** Ran tool against dj2 corpus, found and fixed 5 real bugs.
+**Last session (2026-06-24, session 17, continued):** Knowledge layer additions.
+extract_design_facts() - no-LLM structural extraction (entry points, dead code, hot symbols, stub files).
+knowledge_status tool - coverage report vs corpus. get_findings now searches both knowledge_artifacts
+and semantic_summaries. Tool chaining friction documented in TRACKER items 10-11.
+Wire extract_design_facts into --source ingestion path (item 11) still open.
+274/274 passing.
+
+**Before that (2026-06-24, session 17):** Ran tool against dj2 corpus, found and fixed 5 real bugs.
 is_hot was hardcoded False (now bool(mutations)); is_stub column missing from old DBs (migration added);
 graph_most_connected returned builtins/externals (now project-only); find_todos only scanned docstrings
 (now scans file content); task_generator had tools/analysis branding. Also fixed 2 stale regression tests.
@@ -422,13 +429,47 @@ Last cleaned: 2026-06-24 (session 17 - verified against live tool run).
    or delete all three (contract_types.py, tool_system_contract.json,
    orchestration/). Must decide before anything tries to use contracts.
 
-8. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
-   trace-weighted ranking from expansion provenance. After real usage patterns
-   are clear.
+8. **[MEDIUM] Auto-populate semantic summaries at ingestion** - `describe_file`
+   writes to `semantic_summaries` on demand (requires Ollama). Currently 17/150
+   dj2 files are covered. Add an opt-in `--summarize` flag to `local_agent
+   --source` that calls `describe_file` for every file after ingestion and
+   stores the result. Gracefully skips if Ollama is unreachable. After this,
+   `knowledge_status` would show full coverage without requiring prior queries.
 
-9. **[FUTURE] Self-Harness pattern** - mine failure patterns from ADVERSARIAL
-   suite traces to propose minimal harness changes. Good after active churn
-   settles.
+9. **[MEDIUM] Distillation pass: compress verbose LLM text to compact facts** -
+   `semantic_summaries` and `file_purpose` artifacts store 3-4 paragraph LLM
+   responses verbatim. Add a distillation step: pass each verbose blob back to
+   Ollama with a compression prompt ("one sentence: what does this file/symbol
+   do?") and store the result as a separate `distilled` kind in
+   `knowledge_artifacts`. The distilled form is what `symbol_brief` and the
+   agent resolver use as a quick-scan; the verbose form stays for full context.
+   Subject naming convention: `distilled::<subject>`.
+
+10. **[MEDIUM] Tool chaining: structured output mode** - every tool returns a
+    string (right for LLM consumption). When one tool's output drives another
+    programmatically (e.g. `list_callers` -> `risk_profile` for each caller,
+    or `graph_subgraph` nodes -> `symbol_intent` for each node), the agent has
+    to re-parse its own text. Add an internal `_raw` variant for key tools that
+    returns structured data (list of dicts), used by agent_resolver's auto-
+    expansion phase (phase 2b) instead of text-parsing. External API stays
+    string-only. Affected tools: `list_callers`, `list_callees`,
+    `graph_most_connected`, `graph_subgraph`, `search_symbols`.
+
+11. **[MEDIUM] Knowledge extraction: auto-run after ingestion** - `extract_design_facts()`
+    now exists but must be called manually. Wire it into the `--source` ingestion
+    path in `local_agent.py` so structural facts are always populated immediately
+    after a corpus is ingested. Zero-cost (no LLM), takes < 1s.
+
+12. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
+    trace-weighted ranking from expansion provenance. After real usage patterns
+    are clear.
+
+13. **[FUTURE] Self-Harness pattern** - knowledge.db is the natural store for
+    harvested failure patterns. After ADVERSARIAL traces accumulate, mine them
+    into `known_issue` artifacts keyed by failure category, then use those
+    artifacts to tune agent_resolver heuristics. Loop: ADVERSARIAL run ->
+    extract failure patterns -> store as known_issue -> harness reads on next
+    run -> better routing. Closes the improvement loop without touching Ollama.
 
 ---
 
