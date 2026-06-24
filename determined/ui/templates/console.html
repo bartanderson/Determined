@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Determined — dev console</title>
 <link rel="stylesheet" href="/static/style.css">
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.socket.io/4.6.2/socket.io.min.js"></script>
 </head>
 <body>
 
@@ -104,13 +104,16 @@
 </div><!-- .shell -->
 
 <script>
-const socket = io();
-const input   = document.getElementById("q-input");
-const sendBtn = document.getElementById("send-btn");
-const results = document.getElementById("results");
-const connDot = document.getElementById("conn-dot");
-const connLbl = document.getElementById("conn-label");
-const elapsed = document.getElementById("elapsed");
+const socket    = io();
+const input     = document.getElementById("q-input");
+const sendBtn   = document.getElementById("send-btn");
+const results   = document.getElementById("results");
+const connDot   = document.getElementById("conn-dot");
+const connLbl   = document.getElementById("conn-label");
+const elapsed   = document.getElementById("elapsed");
+const ingestBtn = document.getElementById("ingest-btn");
+const ingestPath = document.getElementById("ingest-path");
+const resumeBtn = document.getElementById("resume-btn");
 
 let _t0 = 0;
 
@@ -128,7 +131,10 @@ socket.on("disconnect", () => {
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
   sendBtn.disabled = false;
-  ingestBtn.textContent = "New Analysis ↵";
+  ingestBtn.textContent = "New analysis ↵";
+  ingestBtn.disabled = false;
+  ingestBtn.dataset.mode = "replace";
+  resumeBtn.disabled = true;
 
   // show quiet stats card first
   const block = document.createElement("div");
@@ -192,10 +198,6 @@ document.getElementById("btn-clear-history").addEventListener("click", () => {
 });
 
 // ── analyze ───────────────────────────────────────────────
-const ingestPath = document.getElementById("ingest-path");
-const ingestBtn  = document.getElementById("ingest-btn");
-const resumeBtn  = document.getElementById("resume-btn");
-
 resumeBtn.addEventListener("click", () => {
   const existing = document.getElementById("db-picker");
   if (existing) { existing.remove(); return; }
@@ -255,7 +257,7 @@ function startIngest(path) {
 
 ingestBtn.addEventListener("click", () => {
   // "New Analysis" mode: warn before replacing the loaded corpus
-  if (ingestBtn.textContent.startsWith("New")) {
+  if (ingestBtn.dataset.mode === "replace") {
     const existing = document.getElementById("new-analysis-warn");
     if (existing) return; // already showing
     const warn = document.createElement("div");
@@ -274,6 +276,8 @@ ingestBtn.addEventListener("click", () => {
     document.getElementById("new-analysis-confirm").addEventListener("click", () => {
       warn.remove();
       ingestBtn.textContent = "Analyze ↵";
+      ingestBtn.dataset.mode = "";
+      resumeBtn.disabled = false;
       ingestPath.value = "";
       ingestPath.focus();
     });
