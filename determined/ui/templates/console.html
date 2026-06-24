@@ -127,6 +127,8 @@ socket.on("disconnect", () => {
   connLbl.textContent = "disconnected";
 });
 
+let _startupFired = false;
+
 // server sends this immediately on connect if a corpus is already loaded
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
@@ -149,9 +151,12 @@ socket.on("corpus_ready", data => {
     </div>`;
   results.appendChild(block);
 
-  // auto-fire session startup — tool should be useful on arrival
-  input.value = "session startup";
-  sendQuery();
+  // auto-fire session startup once — tool should be useful on arrival
+  if (!_startupFired) {
+    _startupFired = true;
+    input.value = "session startup";
+    sendQuery();
+  }
 });
 
 // ── send query ────────────────────────────────────────────
