@@ -53,8 +53,11 @@ on a state mutation, without already knowing the file layout.
 2. Build the minimum to exercise the paradigm on the fixed task.
 3. Run the task once. Capture: 1 screenshot + a 3-line verdict below
    (worked / failed / friction).
-4. Kill or mark PROMISING. Do not refine. Return to `main`.
-5. Hard stop at the first decisive signal.
+4. **3-fix budget:** you get up to 3 fixes to prove the paradigm. If it isn't
+   working after the third, stop — that IS the verdict (untenable, or sitting on
+   a deeper engine problem worth a lighthouse). Do not spend fix #4.
+5. Kill or mark PROMISING. Do not refine. Return to `main`.
+6. Hard stop at the first decisive signal, win or lose.
 
 After all four: compare verdicts, decide what (if anything) graduates to `main`.
 
