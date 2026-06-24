@@ -20,7 +20,8 @@ def build_identity(builder, name, env):
 
 def test_runtime_resolution_real_lock():
 
-    fixture = "tools/analysis/tests/fixtures/sample_project/runtime_case.py"
+    import os
+    fixture = os.path.join(os.path.dirname(__file__), "..", "fixtures", "sample_project", "runtime_case.py")
 
     with open(fixture, "r", encoding="utf-8") as f:
         source = f.read()

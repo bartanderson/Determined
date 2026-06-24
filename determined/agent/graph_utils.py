@@ -158,6 +158,9 @@ def most_connected(oracle: "DBOracle", n: int = 20, filter_substr: str = "") -> 
     results = []
     for sym in all_syms:
         fp = file_map.get(sym, "")
+        # Skip builtins and external library symbols (no project file known)
+        if not fp:
+            continue
         if filter_substr and filter_substr.lower() not in sym.lower() and filter_substr.lower() not in fp.lower():
             continue
         total = in_deg[sym] + out_deg[sym]

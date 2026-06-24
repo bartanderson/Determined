@@ -132,7 +132,7 @@ def _render(symbol: str, direct: list[dict], impact_only: list[str],
     today = date.today().isoformat()
     lines = [
         f"# task: review impact of changes to `{symbol}`",
-        f"Generated {today} by tools/analysis task_generator.",
+        f"Generated {today} by determined task_generator.",
         "",
         "---",
         "",

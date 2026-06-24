@@ -493,25 +493,42 @@ def missing_docstrings(oracle: "DBOracle", args: dict) -> str:
 
 def find_todos(oracle: "DBOracle", args: dict) -> str:
     """
-    find_todos(limit?) - functions whose docstring or body contains TODO/FIXME/HACK/XXX.
-    Searches the docstring column; body-level TODOs require a file scan (not available here).
+    find_todos(limit?) - scan project files for TODO/FIXME/HACK/XXX comments.
+    Returns file, line number, and the comment text.
     """
-    limit = int(args.get("limit", 20))
-    rows = oracle.conn.execute(
-        "SELECT name, file_path, line_number, docstring FROM functions "
-        "WHERE docstring LIKE '%TODO%' OR docstring LIKE '%FIXME%' "
-        "OR docstring LIKE '%HACK%' OR docstring LIKE '%XXX%' "
-        "LIMIT ?",
-        (limit,),
-    ).fetchall()
-    if not rows:
-        return "No TODO/FIXME/HACK/XXX found in function docstrings."
+    import os
+    limit = int(args.get("limit", 30))
     root = oracle.get_project_root() or ""
-    lines = [f"Functions with TODO/FIXME in docstring ({len(rows)} found):"]
-    for name, fpath, lineno, doc in rows:
-        rel = fpath.replace("\\", "/").replace(root.replace("\\", "/") + "/", "")
-        snippet = (doc or "")[:80].replace("\n", " ")
-        lines.append(f"  {name} in {rel} line {lineno}: {snippet}")
+    tags = ("TODO", "FIXME", "HACK", "XXX")
+
+    # Get all known project files from corpus
+    file_paths = [
+        r[0] for r in oracle.conn.execute("SELECT file_path FROM files").fetchall()
+    ]
+
+    hits = []
+    for fpath in file_paths:
+        try:
+            with open(fpath, encoding="utf-8", errors="ignore") as fh:
+                for lineno, line in enumerate(fh, 1):
+                    stripped = line.strip()
+                    if any(tag in stripped for tag in tags):
+                        rel = fpath.replace("\\", "/").replace(
+                            root.replace("\\", "/") + "/", ""
+                        )
+                        hits.append((rel, lineno, stripped[:120]))
+                        if len(hits) >= limit:
+                            break
+        except OSError:
+            continue
+        if len(hits) >= limit:
+            break
+
+    if not hits:
+        return "No TODO/FIXME/HACK/XXX found in project files."
+    lines = [f"TODO/FIXME/HACK/XXX in project files ({len(hits)} found):"]
+    for rel, lineno, text in hits:
+        lines.append(f"  {rel}:{lineno}  {text}")
     return "\n".join(lines)
 
 

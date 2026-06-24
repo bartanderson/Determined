@@ -114,13 +114,15 @@ def test_shortest_path_same_symbol():
 
 def test_most_connected_ordering():
     from determined.agent.graph_utils import most_connected
+    # Provide file_path entries so project-symbol filter doesn't drop them all
+    fns = [("A", "mod.py"), ("B", "mod.py"), ("C", "mod.py"), ("D", "mod.py"), ("X", "mod.py")]
     oracle = _make_oracle(edges=[
         ("A", "B"), ("A", "C"), ("A", "D"),  # A has out=3
         ("X", "B"),                            # B has in=2
-    ])
+    ], functions=fns)
     results = most_connected(oracle, n=10)
     syms = [r["symbol"] for r in results]
-    # A (out=3, total=3) and B (in=2, total=2+1=3 with X->B) should be near top
+    # A (out=3, total=3) and B (in=2+1=3 with X->B) should be near top
     assert syms[0] in ("A", "B")
 
 

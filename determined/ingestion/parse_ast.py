@@ -595,7 +595,7 @@ def parse_ast(
         file_path=str(path).replace("\\", "/"),
         metadata=FileMetadata(
             line_count=len(source.splitlines()),
-            is_hot=False,
+            is_hot=bool(mutations),
             role=None,
         ),
 

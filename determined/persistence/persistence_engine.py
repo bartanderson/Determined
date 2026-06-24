@@ -292,6 +292,11 @@ def create_indexes(connection: sqlite3.Connection, include_composite: bool = Tru
     if "caller_file" not in existing:
         cursor.execute("ALTER TABLE graph_edges ADD COLUMN caller_file TEXT")
 
+    # migrate existing DBs that predate the is_stub column
+    fn_cols = {row[1] for row in cursor.execute("PRAGMA table_info(functions)")}
+    if "is_stub" not in fn_cols:
+        cursor.execute("ALTER TABLE functions ADD COLUMN is_stub INTEGER DEFAULT 0")
+
     connection.commit()
 
 
