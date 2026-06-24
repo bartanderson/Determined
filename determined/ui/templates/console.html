@@ -29,12 +29,13 @@
       <div class="sidebar-ingest">
         <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
         <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
+        <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;margin-top:4px;background:var(--surface2)">Resume…</button>
       </div>
     </div>
 
     <div class="sidebar-section">
       <div class="sidebar-label">Start here</div>
-      <div class="sidebar-item" data-fill="what should I work on">
+      <div class="sidebar-item" data-submit="what should I work on">
         <span class="icon">☑</span>work queue
       </div>
       <div class="sidebar-item" data-submit="find dead code">
@@ -46,7 +47,7 @@
       <div class="sidebar-item" data-submit="discover more">
         <span class="icon">🔍</span>discover more
       </div>
-      <div class="sidebar-item" data-fill="what functions are missing docstrings">
+      <div class="sidebar-item" data-submit="what functions are missing docstrings">
         <span class="icon">⚠</span>missing docstrings
       </div>
       <div class="sidebar-item" data-submit="find todos">
@@ -127,6 +128,7 @@ socket.on("disconnect", () => {
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
   sendBtn.disabled = false;
+  ingestBtn.textContent = "New Analysis ↵";
 
   // show quiet stats card first
   const block = document.createElement("div");
@@ -192,6 +194,52 @@ document.getElementById("btn-clear-history").addEventListener("click", () => {
 // ── analyze ───────────────────────────────────────────────
 const ingestPath = document.getElementById("ingest-path");
 const ingestBtn  = document.getElementById("ingest-btn");
+const resumeBtn  = document.getElementById("resume-btn");
+
+resumeBtn.addEventListener("click", () => {
+  const existing = document.getElementById("db-picker");
+  if (existing) { existing.remove(); return; }
+  resumeBtn.disabled = true;
+  socket.emit("list_dbs");
+});
+
+socket.on("db_list", data => {
+  resumeBtn.disabled = false;
+  const existing = document.getElementById("db-picker");
+  if (existing) existing.remove();
+  const block = document.createElement("div");
+  block.id = "db-picker";
+  block.className = "result-block";
+  const rows = data.dbs.length
+    ? data.dbs.map(db => {
+        const cls   = db.valid ? "db-pick-item" : "db-pick-item db-pick-invalid";
+        const label = db.valid ? "" : ' <span style="color:var(--text3);font-size:.8em">(incompatible)</span>';
+        return `<div class="${cls}" data-path="${escHtml(db.path)}" style="padding:6px 8px;cursor:${db.valid?'pointer':'default'};border-radius:4px;display:flex;justify-content:space-between;align-items:center">
+          <span>${escHtml(db.name)}${label}</span>
+          <span style="color:var(--text3);font-size:.8em">${db.size_mb} MB</span>
+        </div>`;
+      }).join("")
+    : `<div style="color:var(--text3);padding:6px 0">No .db files found in current directory.</div>`;
+  block.innerHTML = `
+    <div class="result-header">
+      <span class="kind-tag kind-survey">resume</span>
+      <span class="result-subject">Select a corpus to load</span>
+      <button class="send-btn" style="background:var(--surface2);margin-left:auto" id="db-picker-close">Cancel</button>
+    </div>
+    <div class="result-body" style="flex-direction:column;gap:2px">${rows}</div>`;
+  results.appendChild(block);
+  results.scrollTop = results.scrollHeight;
+  document.getElementById("db-picker-close").addEventListener("click", () => block.remove());
+  block.querySelectorAll(".db-pick-item:not(.db-pick-invalid)").forEach(el => {
+    el.addEventListener("mouseenter", () => el.style.background = "var(--surface2)");
+    el.addEventListener("mouseleave", () => el.style.background = "");
+    el.addEventListener("click", () => {
+      block.remove();
+      addStatusMsg("Loading corpus…");
+      socket.emit("load_db", { path: el.dataset.path });
+    });
+  });
+});
 
 function startScan(path) {
   ingestBtn.disabled = true;
@@ -206,6 +254,32 @@ function startIngest(path) {
 }
 
 ingestBtn.addEventListener("click", () => {
+  // "New Analysis" mode: warn before replacing the loaded corpus
+  if (ingestBtn.textContent.startsWith("New")) {
+    const existing = document.getElementById("new-analysis-warn");
+    if (existing) return; // already showing
+    const warn = document.createElement("div");
+    warn.id = "new-analysis-warn";
+    warn.className = "result-block";
+    warn.innerHTML = `
+      <div class="result-header"><span class="kind-tag" style="background:var(--risk-hot)">warning</span>
+        <span class="result-subject">Replace current corpus?</span></div>
+      <div class="result-body" style="display:flex;align-items:center;gap:1rem">
+        <span style="color:var(--text2)">This will discard the loaded corpus and conversation history.</span>
+        <button class="send-btn" id="new-analysis-confirm">Yes, replace</button>
+        <button class="send-btn" style="background:var(--surface2)" id="new-analysis-cancel">Cancel</button>
+      </div>`;
+    results.appendChild(warn);
+    results.scrollTop = results.scrollHeight;
+    document.getElementById("new-analysis-confirm").addEventListener("click", () => {
+      warn.remove();
+      ingestBtn.textContent = "Analyze ↵";
+      ingestPath.value = "";
+      ingestPath.focus();
+    });
+    document.getElementById("new-analysis-cancel").addEventListener("click", () => warn.remove());
+    return;
+  }
   const p = ingestPath.value.trim();
   if (p) { startScan(p); return; }
   ingestBtn.disabled = true;

@@ -428,6 +428,55 @@ def _check_ollama() -> str:
         return f"Ollama unreachable: {exc}"
 
 
+_REQUIRED_TABLES = {"files", "functions", "graph_edges"}
+
+def _is_valid_corpus(path: str) -> bool:
+    """Return True if the .db file has the expected Determined schema tables."""
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        conn.close()
+        return _REQUIRED_TABLES.issubset(tables)
+    except Exception:
+        return False
+
+
+@socketio.on("list_dbs")
+def handle_list_dbs():
+    """Scan CWD for .db files and return list with schema validity flag."""
+    import os
+    cwd = Path(os.getcwd())
+    dbs = []
+    for p in sorted(cwd.glob("*.db")):
+        valid = _is_valid_corpus(str(p))
+        size_mb = round(p.stat().st_size / (1024 * 1024), 1)
+        dbs.append({"name": p.name, "path": str(p), "valid": valid, "size_mb": size_mb})
+    emit("db_list", {"dbs": dbs})
+
+
+@socketio.on("load_db")
+def handle_load_db(data):
+    """Load an existing corpus DB without re-ingesting."""
+    path = (data.get("path") or "").strip()
+    if not path or not Path(path).exists():
+        emit("error", {"message": f"DB not found: {path}"}); return
+    if not _is_valid_corpus(path):
+        emit("error", {"message": f"Not a valid Determined corpus: {path}"}); return
+    try:
+        init(path)
+        s = _corpus_status()
+        emit("corpus_ready", {
+            "db_name": Path(path).name,
+            "db_path": path,
+            "files": s.get("files", 0),
+            "hot": s.get("hot", 0),
+            "stubs": s.get("stubs", 0),
+            "artifacts": s.get("artifacts", 0),
+        })
+    except Exception as exc:
+        emit("error", {"message": f"Failed to load {path}: {exc}"})
+
+
 def _warmup_ollama() -> None:
     """Send a trivial prompt to load the model into memory, then keepalive every 4 min."""
     import requests as _req
