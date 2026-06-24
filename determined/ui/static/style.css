@@ -174,8 +174,24 @@ body {
 }
 .tab:hover { color: var(--text2); background: var(--bg3); }
 .tab.active { color: var(--text); background: var(--bg); border-color: var(--border); }
-.tab.tab-loading { color: var(--text3); font-style: italic; }
-.tab.tab-loading::after { content: " …"; }
+
+/* status dot before the label */
+.tab::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--green);   /* ready by default (Chat tab) */
+}
+/* loading: muted label + amber pulsing dot */
+.tab.tab-loading { color: var(--text3); }
+.tab.tab-loading::before {
+  background: var(--orange);
+  animation: tab-pulse 1s ease-in-out infinite;
+}
+@keyframes tab-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
 /* ── tab content ─────────────────────────────────────────── */
 .tab-content {
