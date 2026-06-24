@@ -23,6 +23,10 @@ _SESSION_FILE = Path(__file__).parent.parent.parent / ".determined_session.json"
 
 app = Flask(__name__, template_folder=_TEMPLATE_DIR, static_folder=_STATIC_DIR)
 app.config["SECRET_KEY"] = "dev-console-local"
+# dev tool: re-read templates from disk on every request so edits take effect
+# on browser reload without a server restart
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # shared state (single-user local tool)
