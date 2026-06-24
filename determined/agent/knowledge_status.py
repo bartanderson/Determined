@@ -57,10 +57,12 @@ def coverage_report(oracle: "DBOracle", assessor: "Assessor", unknown_limit: int
             if kind == "strategy_decision" and subj.startswith("chain::"):
                 known_chains.add(subj[7:])  # strip "chain::" prefix
 
+    unknown = sorted(all_files - known_files)
     return {
         "total_files": len(all_files),
         "known_files": len(known_files & all_files),
-        "unknown_files": sorted(all_files - known_files)[:unknown_limit],
+        "unknown_files": unknown[:unknown_limit],
+        "unknown_total": len(unknown),
         "total_symbols": len(all_syms),
         "known_symbols": len(known_syms & all_syms),
         "unknown_symbols": len(all_syms - known_syms),

@@ -80,9 +80,18 @@ def handle_query(data):
         def _run_discover():
             try:
                 from determined.agent.discovery_agent import run as discover_run
-                from determined.agent.knowledge_status import coverage_summary
-                socketio.emit("status", {"message": "Running discovery…"}, to=sid)
-                discover_run(_db_path, limit=20, verbose=False)
+                from determined.agent.knowledge_status import coverage_summary, coverage_report
+                batch = 0
+                while True:
+                    batch += 1
+                    rpt = coverage_report(_oracle, _assessor)
+                    remaining = rpt.get("unknown_total", 0)
+                    if remaining == 0:
+                        break
+                    socketio.emit("status", {"message": f"Discovering… batch {batch} ({remaining} files remaining)"}, to=sid)
+                    found = discover_run(_db_path, limit=20, verbose=False)
+                    if found == 0:
+                        break
                 answer = coverage_summary(_oracle, _assessor)
                 socketio.emit("answer", {"question": question, "answer": answer}, to=sid)
             except Exception as exc:
@@ -191,10 +200,24 @@ def handle_ingest(data):
             conn.close()
 
             init(db_path)
-            socketio.emit("ingest_status", {"message": "Building discovery index…"}, to=sid)
             try:
                 from determined.agent.discovery_agent import run as discover_run
-                discover_run(db_path, limit=10, verbose=False)
+                from determined.agent.knowledge_status import coverage_report
+                batch = 0
+                while True:
+                    batch += 1
+                    rpt = coverage_report(_oracle, _assessor)
+                    remaining = rpt.get("unknown_total", 0)
+                    if remaining == 0:
+                        socketio.emit("ingest_status", {"message": "Discovery complete — all files surveyed."}, to=sid)
+                        break
+                    socketio.emit("ingest_status", {
+                        "message": f"Discovering… batch {batch} ({remaining} files remaining)"
+                    }, to=sid)
+                    found = discover_run(db_path, limit=20, verbose=False)
+                    if found == 0:
+                        socketio.emit("ingest_status", {"message": f"Discovery stalled — {remaining} files unreachable."}, to=sid)
+                        break
             except Exception as disc_exc:
                 socketio.emit("ingest_status", {"message": f"Discovery skipped: {disc_exc}"}, to=sid)
             socketio.emit("ingest_done", {

@@ -177,7 +177,8 @@ def survey_call_chains(
 # Main
 # ------------------------------------------------------------------
 
-def run(db_path: str, limit: int = 5, verbose: bool = False) -> None:
+def run(db_path: str, limit: int = 5, verbose: bool = False) -> int:
+    """Run one discovery batch. Returns total new findings stored (0 = nothing left to find)."""
     print(f"\nLoading corpus: {db_path}")
     try:
         oracle = DBOracle(db_path)
@@ -188,19 +189,25 @@ def run(db_path: str, limit: int = 5, verbose: bool = False) -> None:
 
     print(f"Discovery run (limit={limit} per phase)\n")
 
+    total = 0
+
     print("Phase A: surveying files...")
     n = survey_files(oracle, assessor, limit=limit, verbose=verbose)
     print(f"  {n} file_purpose findings stored")
+    total += n
 
     print("Phase B: entry points...")
     n = survey_entry_points(oracle, assessor, limit=limit, verbose=verbose)
     print(f"  {n} design_note findings stored")
+    total += n
 
     print("Phase C: call chains...")
     n = survey_call_chains(oracle, assessor, limit=min(limit, 3), verbose=verbose)
     print(f"  {n} strategy_decision findings stored")
+    total += n
 
     print("\nDone. Run again to continue (already-stored subjects are skipped).")
+    return total
 
 
 if __name__ == "__main__":
