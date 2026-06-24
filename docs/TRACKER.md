@@ -35,12 +35,18 @@ repeated each other.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-24, session 16):** Migration complete.
+**Last session (2026-06-24, session 17):** Ran tool against dj2 corpus, found and fixed 5 real bugs.
+is_hot was hardcoded False (now bool(mutations)); is_stub column missing from old DBs (migration added);
+graph_most_connected returned builtins/externals (now project-only); find_todos only scanned docstrings
+(now scans file content); task_generator had tools/analysis branding. Also fixed 2 stale regression tests.
+274/274 passing. dj2 corpus re-ingested: 150 files, 132 hot, 47 stubs detected.
+
+**Previously (2026-06-24, session 16):** Migration complete.
 tools/analysis/ deleted from dj2. Engine now lives exclusively in Determined.
 28 regression test files (279 tests) passing. knowledge.db intact (77KB).
 dj2 is game code only. Both repos committed and pushed.
 
-**Previously (2026-06-23, session 15):** Items 16/17/18 done.
+**Before that (2026-06-23, session 15):** Items 16/17/18 done.
 Item 16: subgraph_around() tracks reasons dict (explainability).
 Item 17: debug_query/mutation_query intents in query_router.py + agent_resolver.py heuristics.
 Item 18: risk_annotator.py (HOT/WARM/SAFE), symbol_brief risk line, risk_profile tool.
@@ -377,70 +383,52 @@ clear sidecar files for that exact DB path first.
 ## 3. Open items / next steps
 
 All closed items have been moved to HISTORY.md. Items below are genuinely open.
-Last cleaned: 2026-06-24.
+Last cleaned: 2026-06-24 (session 17 - verified against live tool run).
 
-1. **[LOW] Triage broken test files** - `tests/test_ai_dungeon_master.py`
-   and `tests/test_character_creation.py` have genuine syntax errors and are
-   silently skipped by the ingestion pipeline. Fix or delete.
+1. **[LOW] `files.role` is never populated** - `parse_ast.py` sets `role=None`
+   and has a comment "DO NOT recompute elsewhere." The `describe_file` and
+   `find_files(role=...)` tools return no role info. Either implement role
+   classification at ingestion time or remove the column and tool parameter.
 
-2. **[MEDIUM] Collaborative editor surface** - minimal editing panel in the
-   Determined UI where AI projection and human edits meet. Projection is the
-   opening move; edits committed here feed back into truth via re-ingestion.
-   Not a scratchpad - a commit surface. Lives as a panel next to the query area.
+2. **[LOW] `search_symbols` only finds 2 results for 'game_state'** but there
+   are likely more (GameState class, game_state parameter names, etc.).
+   Current query hits `symbols.name` substring match only - doesn't search
+   behavioral_contracts.description or docstrings. Expand when it proves
+   insufficient in real use.
 
-3. **[MEDIUM] Wire stub projector into Determined UI** - "fill stub" button
-   that picks the highest-priority stub (by neighbor complexity from
-   stub_density chart) and shows projection in the collab editor (item 2).
-   Prerequisite for item 2 to be useful.
+3. **[LOW] `missing_docstrings` limit is hardcoded 20** with no way to get
+   the full list or filter by file/module. Fine for now; revisit when the
+   user actually needs coverage reporting.
 
-4. **[MEDIUM] Live sync loop: edit -> re-analyze -> update truth** - when a
-   file is edited and applied, re-ingest only that file, propagate changes
-   through the truth kernel, update downstream projections. Before application:
-   speculative "what-if" mode. After: authoritative. Stale projections show red.
-   Requires: incremental re-ingestion (single file), propagation via graph edges
-   to find downstream affected symbols.
+4. **[MEDIUM] Wire stub projector into Determined UI** - "fill stub" button
+   that picks highest-priority stub (by caller count / neighbor complexity)
+   and shows Ollama projection inline. 47 stubs detected in dj2 corpus, all
+   with 0 callers (phases.py stubs), so this is real work waiting.
+   Requires Ollama running; gracefully degrade when it isn't.
 
-5. **[LOW] Token-aware symbol search** - current `search_symbols` uses substring
-   matching, so `world_controller` finds `set_world_controller` before
-   `WorldController`. `_camel_variant()` workaround (added 2026-06-21) handles
-   the common case. Principled fix: split into tokens, rank by type
-   (class > function > variable). Defer until workaround proves insufficient.
+5. **[MEDIUM] Collaborative editor surface** - minimal edit panel in UI where
+   projection output and human edits meet. Edits committed here re-ingest the
+   file. Not a scratchpad - a commit surface. Depends on item 4 being useful.
 
-6. **[LOW] Wire `utilities/reachable_print_trace.py`** - `explore_call_routes()`
-   returns explicit traversal paths with depth and fanout (different from
-   `impact_query`'s node-set expansion). Wire into Phase 5 trace API
-   (`expansion_explanation()`) when that work starts.
+6. **[MEDIUM] Live sync loop: edit -> re-ingest -> update** - re-ingest a
+   single changed file without full corpus re-run. Currently the only option
+   is full re-ingest (fast at 150 files, but won't scale to large corpora).
+   Requires: incremental re-ingestion by file_path, edge delta propagation.
 
 7. **[DEFERRED] contracts/orchestration feature decision** -
-   `contracts/contract_types.py` + `specification/tool_system_contract.json`
-   are a matched pair (typed dataclasses + domains-shaped spec) but nothing
-   loads the JSON into the dataclasses. The empty `orchestration/` directory
-   is the third piece. Decision needed: finish wiring the typed loader and
-   build the orchestration layer, or consciously shelve all three together.
-   `contracts/load_contract.py` has a dormant KeyError bug (loads wrong JSON
-   file, calls `contract["domains"]` which doesn't exist in it) - fix before
-   wiring any consumer.
+   `contracts/load_contract.py` has a dormant KeyError bug (loads wrong JSON,
+   calls `contract["domains"]` which doesn't exist). Nothing calls it yet so
+   it's silent. Decision: wire the typed loader + build orchestration layer,
+   or delete all three (contract_types.py, tool_system_contract.json,
+   orchestration/). Must decide before anything tries to use contracts.
 
-8. **[FUTURE] Truth Kernel Tier 3/4** - Assessor fully on Truth Layer,
-   Oracle fully routed through it, engine introspection migrated, legacy
-   dual-path removed, query language frozen. Explicitly future-state.
+8. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
+   trace-weighted ranking from expansion provenance. After real usage patterns
+   are clear.
 
-9. **[FUTURE] Trace-weighted ranking** - replace heuristic pruning/scoring
-   with trace-weighted ranking from expansion provenance. Revisit after
-   real usage patterns are clear.
-
-10. **[FUTURE] Self-Harness pattern** - arXiv 2606.09498. Mine failure
-    patterns from ADVERSARIAL suite traces, propose minimal harness changes,
-    validate via regression. Good upgrade once tool is past active churn.
-
-11. **[CONSIDER] showDirectoryPicker for collab editor** - File System Access
-    API (Chrome). OS folder picker instead of typing a path. Chrome-only,
-    fine for a local dev tool. Relevant when building item 2.
-
-12. **[MAC-ONLY] treedocs + md-utils** - dandylyons/treedocs (Swift CLI,
-    repo-tree descriptions with staleness detection) + DandyLyons/md-utils
-    (Swift CLI, programmatic Markdown manipulation). Complementary to truth
-    kernel; drive the sync loop (item 4). Mac/Swift only, lower priority.
+9. **[FUTURE] Self-Harness pattern** - mine failure patterns from ADVERSARIAL
+   suite traces to propose minimal harness changes. Good after active churn
+   settles.
 
 ---
 
