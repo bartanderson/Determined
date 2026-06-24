@@ -75,6 +75,36 @@ def handle_query(data):
         emit("answer", {"question": question, "answer": answer})
         return
 
+    if q_lower in ("reprioritize", "suggest priorities", "suggest order"):
+        status = _assessor.workflow_status()
+        if status == "No active workflow items.":
+            emit("answer", {"question": question, "answer": status})
+            return
+        import requests as _req
+        msgs = [
+            {"role": "system", "content":
+                "You are a project planning assistant. Given a list of workflow items, "
+                "suggest a priority ordering with brief reasoning for each position. "
+                "End with: 'To apply this order, type: reorder as <id>,<id>,...'"},
+            {"role": "user", "content":
+                f"Here are the current workflow items:\n\n{status}\n\n"
+                "Suggest a priority order for the active backlog/next_up items, "
+                "considering dependencies and logical sequencing."},
+        ]
+        try:
+            resp = _req.post(
+                "http://localhost:11434/api/chat",
+                json={"model": "llama3.2:3b", "messages": msgs, "stream": False,
+                      "options": {"temperature": 0.1}},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            answer = resp.json()["message"]["content"].strip()
+        except Exception as exc:
+            answer = f"(reprioritize unavailable: {exc})"
+        emit("answer", {"question": question, "answer": answer})
+        return
+
     if q_lower in ("discover", "discover more"):
         sid = request.sid
         def _run_discover():
