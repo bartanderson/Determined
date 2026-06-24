@@ -478,6 +478,8 @@ def test_dispatch_all_tools_registered():
         "find_todos",
         "git_log_for",
         "risk_profile",
+        "knowledge_status",
+        "extract_design_facts",
     }
     assert set(TOOLS.keys()) == expected
 

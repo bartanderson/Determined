@@ -603,6 +603,130 @@ class Assessor:
             return False
         return _delete_artifact(self._knowledge_conn, artifact_id)
 
+    def extract_design_facts(self, *, min_in_degree: int = 5) -> dict:
+        """
+        Extract structural facts from the corpus DB and store them as
+        knowledge_artifacts. No LLM required. Safe to re-run: skips any
+        subject that already has an artifact of the same kind.
+
+        Extracts:
+          - entry_points: public functions with in_degree == 0
+          - dead_code:    functions with in_degree == 0 AND out_degree == 0
+          - hot_symbols:  functions with in_degree >= min_in_degree
+          - stub_files:   files containing stubs (is_stub=1)
+
+        Returns a summary dict of counts written.
+        """
+        if self._knowledge_conn is None:
+            return {"error": "No knowledge DB configured."}
+
+        # existing subjects to avoid duplicates
+        existing = {
+            r[0]
+            for r in self._knowledge_conn.execute(
+                "SELECT subject FROM knowledge_artifacts WHERE kind IN "
+                "('design_note','known_issue')"
+            ).fetchall()
+        }
+
+        counts = {"entry_points": 0, "dead_code": 0, "hot_symbols": 0, "stub_files": 0}
+
+        # Build degree maps from project functions only (have a file_path entry)
+        project_fns = {
+            r[0]
+            for r in self.oracle.conn.execute(
+                "SELECT name FROM functions"
+            ).fetchall()
+        }
+        in_deg: dict[str, int] = {}
+        out_deg: dict[str, int] = {}
+        for name in project_fns:
+            in_deg[name] = 0
+            out_deg[name] = 0
+        for row in self.oracle.conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
+            if row[0] in out_deg:
+                out_deg[row[0]] = out_deg.get(row[0], 0) + 1
+            if row[1] in in_deg:
+                in_deg[row[1]] = in_deg.get(row[1], 0) + 1
+
+        fn_file = {
+            r[0]: r[1]
+            for r in self.oracle.conn.execute("SELECT name, file_path FROM functions").fetchall()
+        }
+
+        for name in project_fns:
+            if name.startswith("_"):
+                continue  # skip private/dunder
+            fp = fn_file.get(name, "")
+            file_label = fp.replace("\\", "/").split("/")[-1] if fp else "?"
+            i = in_deg.get(name, 0)
+            o = out_deg.get(name, 0)
+
+            # entry points: public, in_degree=0 but out_degree > 0
+            subject_ep = f"entry::{name}"
+            if i == 0 and o > 0 and subject_ep not in existing:
+                _add_artifact(
+                    self._knowledge_conn,
+                    subject_ep,
+                    "design_note",
+                    f"Entry point in {file_label}: {name} has no callers in corpus "
+                    f"but calls {o} other functions.",
+                    "ai-generated",
+                )
+                existing.add(subject_ep)
+                counts["entry_points"] += 1
+
+            # dead code: public, no callers, no callees
+            subject_dc = f"dead::{name}"
+            if i == 0 and o == 0 and subject_dc not in existing:
+                _add_artifact(
+                    self._knowledge_conn,
+                    subject_dc,
+                    "known_issue",
+                    f"Potential dead code in {file_label}: {name} has no callers "
+                    f"and no callees in corpus.",
+                    "ai-generated",
+                )
+                existing.add(subject_dc)
+                counts["dead_code"] += 1
+
+            # hot symbols: high in_degree
+            subject_hot = f"hot::{name}"
+            if i >= min_in_degree and subject_hot not in existing:
+                _add_artifact(
+                    self._knowledge_conn,
+                    subject_hot,
+                    "design_note",
+                    f"Hot symbol in {file_label}: {name} has {i} callers "
+                    f"(in_degree={i}, out_degree={o}).",
+                    "ai-generated",
+                )
+                existing.add(subject_hot)
+                counts["hot_symbols"] += 1
+
+        # stub-bearing files
+        stub_files = self.oracle.conn.execute(
+            "SELECT file_path, COUNT(*) as n FROM functions "
+            "WHERE is_stub=1 GROUP BY file_path ORDER BY n DESC"
+        ).fetchall()
+        for row in stub_files:
+            fp, n = row[0], row[1]
+            file_label = fp.replace("\\", "/").split("/")[-1]
+            subject_sf = f"stubs::{file_label}"
+            if subject_sf not in existing:
+                _add_artifact(
+                    self._knowledge_conn,
+                    subject_sf,
+                    "design_note",
+                    f"{file_label} contains {n} stub function(s) with no implementation.",
+                    "ai-generated",
+                )
+                existing.add(subject_sf)
+                counts["stub_files"] += 1
+
+        self._knowledge_conn.commit()
+        return counts
+
     # =====================================================
     # WORKFLOW STATE (mutable ranked planning items)
     # =====================================================

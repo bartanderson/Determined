@@ -320,13 +320,27 @@ def get_findings(assessor: "Assessor", args: dict) -> str:
         from determined.intent.knowledge_artifact import _row_to_dict, _PROVENANCE_RANK
         artifacts = [_row_to_dict(r) for r in rows]
         artifacts.sort(key=lambda r: _PROVENANCE_RANK.get(r["provenance"], 0), reverse=True)
-    if not artifacts:
+    # Also search semantic_summaries (file-level LLM summaries stored separately)
+    semantic_hits = []
+    if assessor._knowledge_conn:
+        sem_rows = assessor._knowledge_conn.execute(
+            "SELECT subject, content FROM semantic_summaries "
+            "WHERE subject LIKE ? ORDER BY generated_at DESC LIMIT 3",
+            (f"%{symbol}%",),
+        ).fetchall()
+        for row in sem_rows:
+            semantic_hits.append({"subject": row[0], "content": row[1]})
+
+    if not artifacts and not semantic_hits:
         return f"No stored findings for '{symbol}'"
     lines = [f"Findings for '{symbol}':"]
     for a in artifacts:
         stale = " [STALE - needs review]" if a.get("needs_review") else ""
         lines.append(f"  [{a['kind']} / {a['provenance']}]{stale}")
-        lines.append(f"    {a['content']}")
+        lines.append(f"    {a['content'][:300]}")
+    for s in semantic_hits:
+        lines.append(f"  [semantic_summary / ai-generated]")
+        lines.append(f"    {s['content'][:300]}")
     return "\n".join(lines)
 
 
@@ -582,6 +596,72 @@ def git_log_for(oracle: "DBOracle", args: dict) -> str:
 
 
 # ------------------------------------------------------------------
+# KNOWLEDGE COVERAGE TOOLS
+# ------------------------------------------------------------------
+
+def knowledge_status(assessor: "Assessor", args: dict) -> str:
+    """
+    knowledge_status() - what the tool knows vs what's in the corpus.
+    Reports coverage of semantic summaries and knowledge artifacts against
+    total file/symbol counts. Useful before starting a session to know
+    what's already been analyzed.
+    """
+    if assessor._knowledge_conn is None:
+        return "No knowledge DB configured."
+
+    total_files = assessor.oracle.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+    total_fns = assessor.oracle.conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
+
+    sem_count = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM semantic_summaries"
+    ).fetchone()[0]
+    artifact_count = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts"
+    ).fetchone()[0]
+
+    # artifact breakdown by kind
+    by_kind = assessor._knowledge_conn.execute(
+        "SELECT kind, COUNT(*) FROM knowledge_artifacts GROUP BY kind ORDER BY COUNT(*) DESC"
+    ).fetchall()
+
+    stale_count = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE needs_review=1"
+    ).fetchone()[0]
+
+    # structural facts extracted (prefixed subjects)
+    entry_pts = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'entry::%'"
+    ).fetchone()[0]
+    dead_code = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'dead::%'"
+    ).fetchone()[0]
+    hot_syms = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'hot::%'"
+    ).fetchone()[0]
+    stub_files = assessor._knowledge_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'stubs::%'"
+    ).fetchone()[0]
+
+    lines = [
+        f"Knowledge coverage for corpus ({total_files} files, {total_fns} functions):",
+        f"  File summaries (semantic_summaries): {sem_count}/{total_files} files covered",
+        f"  Total knowledge artifacts: {artifact_count}",
+        f"    by kind: " + ", ".join(f"{k}={n}" for k, n in by_kind),
+        f"  Structural facts extracted:",
+        f"    entry points: {entry_pts}  dead code candidates: {dead_code}  "
+        f"hot symbols: {hot_syms}  stub files: {stub_files}",
+    ]
+    if stale_count:
+        lines.append(f"  STALE artifacts needing review: {stale_count}")
+    if sem_count < total_files:
+        lines.append(
+            f"  TIP: run extract_design_facts() then describe_file() on uncovered files "
+            f"to improve coverage."
+        )
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
 # WORKFLOW TOOLS
 # ------------------------------------------------------------------
 
@@ -750,6 +830,22 @@ def ask_truth_layer(assessor: "Assessor", args: dict) -> str:
 # layer: 'oracle' | 'assessor' (determines which object to pass)
 # ------------------------------------------------------------------
 
+def extract_design_facts(assessor: "Assessor", args: dict) -> str:
+    """
+    extract_design_facts() - scan corpus for structural facts and store in knowledge.db.
+    No LLM required. Writes: entry points, dead code candidates, hot symbols, stub files.
+    Safe to re-run; skips subjects already stored. Run after ingestion to seed knowledge.
+    """
+    counts = assessor.extract_design_facts()
+    if "error" in counts:
+        return f"ERROR: {counts['error']}"
+    total = sum(counts.values())
+    return (
+        f"Extracted {total} structural facts into knowledge.db: "
+        + ", ".join(f"{k}={v}" for k, v in counts.items() if v)
+    )
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -760,8 +856,10 @@ TOOLS = {
     "describe_file":     (describe_file,     "assessor"),
     "symbol_intent":     (symbol_intent,     "oracle"),
     "symbol_brief":      (symbol_brief,      "assessor"),
-    "get_findings":      (get_findings,      "assessor"),
-    "store_finding":     (store_finding,     "assessor"),
+    "get_findings":         (get_findings,         "assessor"),
+    "store_finding":        (store_finding,        "assessor"),
+    "knowledge_status":     (knowledge_status,     "assessor"),
+    "extract_design_facts": (extract_design_facts, "assessor"),
     "ask_truth_layer":      (ask_truth_layer,      "assessor"),
     "graph_path":           (graph_path,           "oracle"),
     "graph_entry_points":   (graph_entry_points,   "oracle"),
