@@ -35,22 +35,22 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">Start here</div>
-      <div class="sidebar-item" data-submit="what should I work on">
+      <div class="sidebar-item" data-tab="work_queue">
         <span class="icon">☑</span>work queue
       </div>
-      <div class="sidebar-item" data-submit="find dead code">
+      <div class="sidebar-item" data-tab="dead_code">
         <span class="icon">∅</span>find dead code
       </div>
-      <div class="sidebar-item" data-submit="what haven't you explored?">
+      <div class="sidebar-item" data-tab="unexplored">
         <span class="icon">○</span>unexplored
       </div>
-      <div class="sidebar-item" data-submit="discover more">
+      <div class="sidebar-item" data-tab="discover">
         <span class="icon">🔍</span>discover more
       </div>
-      <div class="sidebar-item" data-submit="what functions are missing docstrings">
+      <div class="sidebar-item" data-tab="docstrings">
         <span class="icon">⚠</span>missing docstrings
       </div>
-      <div class="sidebar-item" data-submit="find todos">
+      <div class="sidebar-item" data-tab="todos">
         <span class="icon">✓</span>find todos
       </div>
     </div>
@@ -72,7 +72,29 @@
       <button id="send-btn" class="send-btn">Ask ↵</button>
     </div>
 
-    <div id="results" class="results-area"></div>
+    <!-- tab bar -->
+    <div class="tab-bar" id="tab-bar">
+      <button class="tab active" data-tab="chat">Chat</button>
+      <button class="tab tab-loading" data-tab="work_queue">Work queue</button>
+      <button class="tab tab-loading" data-tab="dead_code">Dead code</button>
+      <button class="tab tab-loading" data-tab="unexplored">Unexplored</button>
+      <button class="tab tab-loading" data-tab="discover">Discover</button>
+      <button class="tab tab-loading" data-tab="docstrings">Docstrings</button>
+      <button class="tab tab-loading" data-tab="todos">Todos</button>
+    </div>
+
+    <!-- tab panels -->
+    <div class="tab-content">
+      <div class="tab-panel active" id="panel-chat">
+        <div id="results" class="results-area"></div>
+      </div>
+      <div class="tab-panel" id="panel-work_queue"><div class="results-area tab-results" id="tab-work_queue"><div class="tab-spinner">Loading…</div></div></div>
+      <div class="tab-panel" id="panel-dead_code"><div class="results-area tab-results" id="tab-dead_code"><div class="tab-spinner">Loading…</div></div></div>
+      <div class="tab-panel" id="panel-unexplored"><div class="results-area tab-results" id="tab-unexplored"><div class="tab-spinner">Loading…</div></div></div>
+      <div class="tab-panel" id="panel-discover"><div class="results-area tab-results" id="tab-discover"><div class="tab-spinner">Loading…</div></div></div>
+      <div class="tab-panel" id="panel-docstrings"><div class="results-area tab-results" id="tab-docstrings"><div class="tab-spinner">Loading…</div></div></div>
+      <div class="tab-panel" id="panel-todos"><div class="results-area tab-results" id="tab-todos"><div class="tab-spinner">Loading…</div></div></div>
+    </div>
 
   </div>
 
@@ -129,6 +151,15 @@ socket.on("disconnect", () => {
 
 let _startupFired = false;
 
+const TAB_QUERIES = {
+  work_queue:  "what should I work on",
+  dead_code:   "find dead code",
+  unexplored:  "what haven't you explored?",
+  discover:    "discover more",
+  docstrings:  "what functions are missing docstrings",
+  todos:       "find todos",
+};
+
 // server sends this immediately on connect if a corpus is already loaded
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
@@ -151,9 +182,10 @@ socket.on("corpus_ready", data => {
     </div>`;
   results.appendChild(block);
 
-  // auto-fire session startup once — tool should be useful on arrival
+  // fire all tab queries once on load
   if (!_startupFired) {
     _startupFired = true;
+    Object.entries(TAB_QUERIES).forEach(([tab, q]) => socket.emit("tab_query", { tab, question: q }));
     input.value = "session startup";
     sendQuery();
   }
@@ -195,6 +227,34 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
     sendBtn.disabled = false;
     sendQuery();
   });
+});
+
+// ── tabs ──────────────────────────────────────────────────
+function activateTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + name));
+}
+
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => activateTab(t.dataset.tab));
+});
+
+document.querySelectorAll(".sidebar-item[data-tab]").forEach(el => {
+  el.addEventListener("click", () => activateTab(el.dataset.tab));
+});
+
+socket.on("tab_answer", data => {
+  const panel = document.getElementById("tab-" + data.tab);
+  if (!panel) return;
+  panel.innerHTML = "";
+  const block = document.createElement("div");
+  block.className = "result-block";
+  block.innerHTML = `<div class="result-body"><div class="answer-text">${markdownToHtml(data.answer)}</div></div>`;
+  panel.appendChild(block);
+  // mark tab as loaded
+  const tabBtn = document.querySelector(`.tab[data-tab="${data.tab}"]`);
+  if (tabBtn) tabBtn.classList.remove("tab-loading");
+  attachSymbolHandlers(panel);
 });
 
 const clearHistBtn = document.getElementById("btn-clear-history");

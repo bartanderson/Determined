@@ -144,10 +144,55 @@ body {
 /* ── main area ───────────────────────────────────────────── */
 .main {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* ── tab bar ─────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .1s, background .1s;
+}
+.tab:hover { color: var(--text2); background: var(--bg3); }
+.tab.active { color: var(--text); background: var(--bg); border-color: var(--border); }
+.tab.tab-loading { color: var(--text3); font-style: italic; }
+.tab.tab-loading::after { content: " …"; }
+
+/* ── tab content ─────────────────────────────────────────── */
+.tab-content {
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.tab-panel {
+  display: none;
+  height: 100%;
+}
+.tab-panel.active { display: flex; flex-direction: column; }
+.tab-spinner {
+  color: var(--text3);
+  font-size: 12px;
+  padding: 20px;
+  text-align: center;
 }
 
 /* query bar */
@@ -188,7 +233,7 @@ body {
 
 /* results area */
 .results-area {
-  grid-row: 3;
+  flex: 1;
   overflow-y: auto;
   min-height: 0;
   padding: 10px 12px;

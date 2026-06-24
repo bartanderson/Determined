@@ -204,6 +204,44 @@ def handle_query(data):
         emit("error", {"message": f"Pipeline error: {exc}"})
 
 
+@socketio.on("tab_query")
+def handle_tab_query(data):
+    """Run a named tab query - same pipeline as query but result goes to tab_answer."""
+    tab      = (data.get("tab") or "").strip()
+    question = (data.get("question") or "").strip()
+    if not question or not tab or _oracle is None:
+        emit("tab_answer", {"tab": tab, "answer": "No corpus loaded.", "question": question})
+        return
+
+    sid = request.sid
+
+    def _run():
+        try:
+            q_lower = question.lower().rstrip("?")
+
+            if q_lower in ("what haven't you explored", "what havent you explored", "unexplored"):
+                from determined.agent.knowledge_status import coverage_report
+                r = coverage_report(_oracle, _assessor)
+                unknown = r["unknown_files"]
+                answer = ("\n".join([f"Unexplored files ({len(unknown)} of {r['total_files']}):"]
+                          + [f"  {f}" for f in unknown]) if unknown else "All files have been surveyed.")
+
+            elif q_lower in ("discover", "discover more"):
+                from determined.agent.knowledge_status import coverage_summary
+                answer = coverage_summary(_oracle, _assessor)
+
+            else:
+                from determined.agent.local_agent import _answer
+                with _lock:
+                    answer, _ = _answer(question, [], _oracle, _assessor, verbose=False)
+
+            socketio.emit("tab_answer", {"tab": tab, "answer": answer, "question": question}, to=sid)
+        except Exception as exc:
+            socketio.emit("tab_answer", {"tab": tab, "answer": f"Error: {exc}", "question": question}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @socketio.on("clear_history")
 def handle_clear():
     global _history
