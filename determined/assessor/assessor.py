@@ -644,10 +644,15 @@ class Assessor:
             in_deg[name] = 0
             out_deg[name] = 0
         for row in self.oracle.conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
-            if row[0] in out_deg:
-                out_deg[row[0]] = out_deg.get(row[0], 0) + 1
-            if row[1] in in_deg:
-                in_deg[row[1]] = in_deg.get(row[1], 0) + 1
+            caller = row[0]
+            # callees are stored as receiver.method (e.g. character.is_alive) or
+            # module.func; match on the final segment so method calls count toward
+            # the bare project function's in_degree
+            callee_last = row[1].rsplit(".", 1)[-1] if row[1] else row[1]
+            if caller in out_deg:
+                out_deg[caller] = out_deg.get(caller, 0) + 1
+            if callee_last in in_deg:
+                in_deg[callee_last] = in_deg.get(callee_last, 0) + 1
 
         fn_file = {
             r[0]: r[1]
