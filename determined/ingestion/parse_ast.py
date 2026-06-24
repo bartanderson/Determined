@@ -250,8 +250,14 @@ def _extract_symbol_references(
                         raw = f"{base_name}.{node.func.attr}"
                         resolved = raw
                     else:
-                        self.generic_visit(node)
-                        return
+                        # obj.method() where obj is a local/param/self - we can't
+                        # resolve obj's type without inference, but record the call
+                        # keyed on receiver.method so in_degree counts it
+                        # (matched downstream by callee LIKE '%.method'). Without
+                        # this, every method only ever called as instance.method()
+                        # looks like dead code.
+                        raw = f"{base.id}.{node.func.attr}"
+                        resolved = raw
 
                 # chained.attr.call()
                 elif isinstance(base, ast.Attribute):
@@ -271,7 +277,7 @@ def _extract_symbol_references(
                         )
 
                         raw = ".".join(
-                            reversed(parts + [node.func.attr])
+                            list(reversed(parts)) + [node.func.attr]
                         )
 
                         resolved = raw
