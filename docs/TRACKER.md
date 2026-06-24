@@ -35,16 +35,17 @@ repeated each other.
 
 ## Dashboard - at a glance
 
-**Recently done (2026-06-23 session 15):** Items 17+18 done - intent routing profiles + risk annotation.
-Item 17: debug_query/mutation_query intents in query_router.py + agent_resolver.py heuristics.
-Item 18: risk_annotator.py (HOT/WARM/SAFE scoring), wired into symbol_brief output, risk_profile tool.
+**Last session (2026-06-24, session 16):** Migration complete.
+tools/analysis/ deleted from dj2. Engine now lives exclusively in Determined.
+28 regression test files (279 tests) passing. knowledge.db intact (77KB).
+dj2 is game code only. Both repos committed and pushed.
 
-**Previously done (session 15 earlier):** Item 17 done - debug_query and mutation_query intents.
-Added to `query_router.py` (`_detect_intent`, `intent_budget`, `_select_primitives`) and matching
-heuristics in `agent_resolver.py`. Debug queries get reverse-heavy traversal + findings/todos/callers.
-Mutation queries get balanced traversal + callers/callees. 279/279 tests passing.
-Also earlier this session: stub detection (is_stub field), stub projector (Ollama-driven), explainability
-on graph_subgraph (reason_included per node), auto-discovery to completion (loop until stalled/done).
+**Previously (2026-06-23, session 15):** Items 16/17/18 done.
+Item 16: subgraph_around() tracks reasons dict (explainability).
+Item 17: debug_query/mutation_query intents in query_router.py + agent_resolver.py heuristics.
+Item 18: risk_annotator.py (HOT/WARM/SAFE), symbol_brief risk line, risk_profile tool.
+Also: is_stub detection chain, stub projector (Ollama-driven), auto-discovery to completion loop.
+279/279 tests passing throughout.
 
 **Recently done (2026-06-22 session 9, continued):** game_corpus.db merge DONE.
 Added `caller_file` column to `graph_edges` (schema + idempotent migration in `ensure_schema`).
@@ -649,558 +650,71 @@ clear sidecar files for that exact DB path first.
 
 ## 3. Open items / next steps
 
-Closed/no-action items previously numbered 1 and 15-20 have been removed
-from this list (2026-06-18 cleanup) - nothing deleted, see the Dashboard
-above for the at-a-glance "recently done" line and HISTORY.md section B
-for full writeups. Items 3+4+7, 9+13 (step 2), and 6+8 below have been
-merged from the prior numbering to remove duplication while preserving
-every source document's nuance - see each merged item's body for the
-distinct angles folded in.
+All closed items have been moved to HISTORY.md. Items below are genuinely open.
+Last cleaned: 2026-06-24.
 
-1. **[LOW, 2026-06-23] Triage broken test files** — `tests/test_ai_dungeon_master.py`
-   and `tests/test_character_creation.py` have genuine syntax errors (stray closing
-   braces, truncated `with` blocks) and are silently skipped by the Determined
-   ingestion pipeline. Determine whether they have value, then fix or delete.
+1. **[LOW] Triage broken test files** - `tests/test_ai_dungeon_master.py`
+   and `tests/test_character_creation.py` have genuine syntax errors and are
+   silently skipped by the ingestion pipeline. Fix or delete.
 
-2. **[DONE, 2026-06-23] Run stub projector against game corpus** — ingested
-   `world/` + `dungeon_neo/` into `game_corpus.db`, ran projector against 6 stubs.
-   Found and fixed caller resolution bug (qualified vs bare callee names in graph_edges).
-   Results: stub with resolved caller (semantic_match_subrace) produced best output;
-   others got plausible-but-generic results from sibling context. Pattern confirmed:
-   more caller context = better projections. Temp DB cleaned up.
+2. **[MEDIUM] Collaborative editor surface** - minimal editing panel in the
+   Determined UI where AI projection and human edits meet. Projection is the
+   opening move; edits committed here feed back into truth via re-ingestion.
+   Not a scratchpad - a commit surface. Lives as a panel next to the query area.
 
-3. **[READY, 2026-06-23] Cut over tools/analysis/ui -> Determined, then prune** —
-   `local_agent.py --ui` (line 569) is the last live wire to `tools/analysis/ui/`.
-   Cutover: redirect that import to `determined.ui.ui_server` (or remove the flag
-   if Determined is the canonical entry point now). Then delete `tools/analysis/ui/`
-   (4 source files: ui_server.py, console.html, style.css, preview.html, __init__.py).
-   Determined UI has full feature parity + more. Gate: smoke test --ui flag works
-   after redirect before deleting old files.
+3. **[MEDIUM] Wire stub projector into Determined UI** - "fill stub" button
+   that picks the highest-priority stub (by neighbor complexity from
+   stub_density chart) and shows projection in the collab editor (item 2).
+   Prerequisite for item 2 to be useful.
 
-3. **[MEDIUM, 2026-06-23] Collaborative editor surface** — minimal editing panel
-   in the Determined UI where AI projection and human edits meet. Projection is
-   the opening move; both parties edit within the visible constraints (contracts,
-   callers, callees shown alongside). Key property: edits committed here feed
-   back into truth via re-ingestion of the changed file — not a scratchpad, a
-   commit surface. Lives as a panel in the existing Determined UI next to query area.
+4. **[MEDIUM] Live sync loop: edit -> re-analyze -> update truth** - when a
+   file is edited and applied, re-ingest only that file, propagate changes
+   through the truth kernel, update downstream projections. Before application:
+   speculative "what-if" mode. After: authoritative. Stale projections show red.
+   Requires: incremental re-ingestion (single file), propagation via graph edges
+   to find downstream affected symbols.
 
-4. **[MEDIUM, 2026-06-23] Wire stub projector into Determined UI** — "fill stub"
-   button or sidebar shortcut that picks the highest-priority stub (by neighbor
-   complexity from stub_density chart) and shows projection in the collab editor
-   surface (item 3 above). Prerequisite for item 3 to be useful.
+5. **[LOW] Token-aware symbol search** - current `search_symbols` uses substring
+   matching, so `world_controller` finds `set_world_controller` before
+   `WorldController`. `_camel_variant()` workaround (added 2026-06-21) handles
+   the common case. Principled fix: split into tokens, rank by type
+   (class > function > variable). Defer until workaround proves insufficient.
 
-5. **[MEDIUM, 2026-06-23] Live sync loop: edit -> re-analyze -> update truth** —
-   When a file is edited and applied (via collab editor or directly), re-ingest
-   only that file, propagate changes through the truth kernel, and update all
-   downstream projections (YAML, stubs, docs). Before application: speculative
-   "what-if" mode. After application: authoritative — truth changes and all
-   recordings of it must match. Stale projections show red. This is what makes
-   the system live rather than a one-shot analysis snapshot.
-   Requires: file watching or explicit "apply" trigger, incremental re-ingestion
-   (single file, not full corpus), propagation through graph edges to find
-   downstream affected symbols.
+6. **[LOW] Wire `utilities/reachable_print_trace.py`** - `explore_call_routes()`
+   returns explicit traversal paths with depth and fanout (different from
+   `impact_query`'s node-set expansion). Wire into Phase 5 trace API
+   (`expansion_explanation()`) when that work starts.
 
-6. **[LOW/MAC-ONLY, 2026-06-23] treedocs integration** — dandylyons/treedocs
-   (https://dandylyons.github.io/treedocs/) is a Swift CLI that maintains a
-   `treedocs.yaml` mapping the repo file tree with human-readable descriptions,
-   version-controlled, with staleness detection (descriptions that no longer match
-   files show red). Complementary to the truth kernel: treedocs projects truth
-   outward into document design space; the kernel projects inward from code.
-   Mac-only (Swift). Lower priority. Explore after sync loop (item 5) is solid.
+7. **[DEFERRED] contracts/orchestration feature decision** -
+   `contracts/contract_types.py` + `specification/tool_system_contract.json`
+   are a matched pair (typed dataclasses + domains-shaped spec) but nothing
+   loads the JSON into the dataclasses. The empty `orchestration/` directory
+   is the third piece. Decision needed: finish wiring the typed loader and
+   build the orchestration layer, or consciously shelve all three together.
+   `contracts/load_contract.py` has a dormant KeyError bug (loads wrong JSON
+   file, calls `contract["domains"]` which doesn't exist in it) - fix before
+   wiring any consumer.
 
-8. **[FUTURE, 2026-06-23] Self-Harness pattern for autonomous eval improvement**
-   — arXiv 2606.09498. Three-stage loop: mine failure patterns from execution
-   traces, propose minimal harness changes, validate via regression before
-   accepting. Direct application: the ADVERSARIAL suite in claude_eval.py
-   currently finds routing gaps that are fixed by hand. Self-Harness is the
-   version where the agent proposes the fix itself. Prerequisite: traces must
-   be trustworthy signal, meaning the tool needs to be stable first. Good
-   upgrade target once the tool is past active development churn.
+8. **[FUTURE] Truth Kernel Tier 3/4** - Assessor fully on Truth Layer,
+   Oracle fully routed through it, engine introspection migrated, legacy
+   dual-path removed, query language frozen. Explicitly future-state.
 
-9. **[CONSIDER, 2026-06-23] showDirectoryPicker for collab editor** —
-   File System Access API (Chrome). Instead of typing a path into Determined's
-   Analyze field, user clicks and picks a folder via OS dialog. Local-first,
-   no upload. Relevant when building the collab editor surface (item 3).
-   Chrome-only currently, which is fine for a local dev tool.
+9. **[FUTURE] Trace-weighted ranking** - replace heuristic pruning/scoring
+   with trace-weighted ranking from expansion provenance. Revisit after
+   real usage patterns are clear.
 
+10. **[FUTURE] Self-Harness pattern** - arXiv 2606.09498. Mine failure
+    patterns from ADVERSARIAL suite traces, propose minimal harness changes,
+    validate via regression. Good upgrade once tool is past active churn.
 
-7. **[LOW/MAC-ONLY, 2026-06-23] md-utils integration** — DandyLyons/md-utils
-   (https://github.com/DandyLyons/md-utils). Swift CLI + library for programmatic
-   Markdown manipulation: frontmatter CRUD (12+ subcommands, JMESPath search),
-   TOC generation, section reordering, Obsidian wikilink parsing + broken link
-   detection, Open Knowledge Format (OKF) bundle support. Not staleness-checking
-   itself, but the infrastructure that staleness detection sits on top of.
-   Relationship to this system: truth kernel produces facts per file; treedocs
-   records them in treedocs.yaml; md-utils is the machinery for keeping that
-   document in sync (read frontmatter, update it, flag stale entries). The sync
-   loop (item 5) drives all three. Mac/Swift, lower priority.
+11. **[CONSIDER] showDirectoryPicker for collab editor** - File System Access
+    API (Chrome). OS folder picker instead of typing a path. Chrome-only,
+    fine for a local dev tool. Relevant when building item 2.
 
-2. **[TOP PRIORITY, NEW 2026-06-18] Evaluate widening the ingestion test
-   corpus.** The analysis tool has so far only ever ingested itself (157
-   files, its own self-corpus) plus regression fixtures - DESIGN.md
-   section 3 flags this explicitly as an open assumption: the reasoning
-   layer is "proven, but only proven on one corpus," unverified on a
-   differently-shaped codebase. Candidates to evaluate as additional test
-   cases, each exercising different capabilities:
-   - The game's own source: `world/`, `engine/`, `resolver/`,
-     `dungeon_neo/` - real target-domain code, generalizes old item 13
-     step 1 ("widen ingestion scope") from a fixed first-step into part
-     of this broader evaluation.
-   - `tools.old/` - already in-repo, untouched by the self-analysis run
-     so far, a reasonable next corpus before the game code.
-   - Possibly downloadable open-source projects, for capabilities (or
-     codebase shapes/sizes) the in-repo corpora don't exercise.
-   Sequencing across these is intentionally **not** fixed - Bart was
-   explicit that this is "a listing... not an ordering," and wants
-   proposed impacts of alternative orderings rather than one imposed
-   priority. Items 13 and 14 below (old items 22/23) were a stated
-   prerequisite before widening scope, since both bugs could otherwise
-   produce misleading or crashing results on a differently-shaped corpus
-   - both are now fixed, so this item is unblocked. Verify whichever
-   corpus is chosen first with a regression test asserting a known real
-   symbol from that corpus appears correctly in `graph_edges` after
-   ingestion (the same bar old item 13 step 1 set).
-
-   **Status update 2026-06-19 (later, this session): ingestion actually
-   run against all three non-game-code candidates, all three landed.**
-   Used `EngineRunner().run(corpus=..., project_prefixes=[], repo_root=...,
-   connection=...)` directly (the headless invocation pattern from
-   `tests/core/test_engine_smoke.py` - `run_engine.py`'s own `__main__` is
-   GUI-only via tkinter and unusable here). Row counts confirmed by direct
-   query against each resulting DB:
-   - `tools.old/`: 73 files, 2764 `graph_edges`.
-   - `external_corpora/flask/src`: 24 files, 800 `graph_edges`.
-   - `external_corpora/sqlalchemy/lib`: 255 files, 20769 `graph_edges`.
-
-   Verification bar this item set ("a regression test asserting a known
-   real symbol from that corpus appears correctly in `graph_edges`") is
-   met at the time; test file later removed 2026-06-19 - `tools.old/`
-   is not actively maintained and the 45-second ingestion run added noise
-   to the suite with no ongoing value.
-
-   Hit two new environment issues doing this, both now logged as standing
-   defects rather than one-offs: a `disk I/O error` on any brand-new
-   sqlite DB write to this mount (section 2d - fixed with
-   `PRAGMA journal_mode=MEMORY`), and the delete-path "Operation not
-   permitted" bug (2c) turning out not to be scoped to
-   `external_corpora/` after all - reproduced on new files anywhere in
-   the mount, worked around the same way (`mv` aside).
-
-   Remaining candidate from this item's original list: the game's own
-   source (`world/`/`engine/`/`resolver/`/`dungeon_neo/`) - **decided
-   2026-06-19 (later session) to do this next, ahead of item 2 below** -
-   see Dashboard "Now / next" item 1 for the reasoning (Row 5's new
-   ingestion-capture design should be informed by real target-domain
-   mutation shapes, not guessed). Not yet started. Cleanup from last
-   session's run is fully resolved as of 2026-06-19 (later):
-   `_sandbox_cleanup_needed/` deleted by Bart, and the two
-   `.git_broken_skeleton` dirs are confirmed gone on his actual machine -
-   their lingering visibility to `stat`/`rm` inside the sandbox is a stale
-   virtiofs mount-cache artifact, not a real file (Cowork sandbox defect,
-   now resolved). No outstanding Windows-side action remains.
-2. **Truth.md Phase 1 Row 1 remainder + Row 5: DONE 2026-06-19.**
-   Docstring-based intent capture wired end-to-end:
-   - `MutationEvent.intent` field added - populated from the containing
-     function's docstring first line at parse time.
-   - `ClassRepresentation.docstring` field added - captured via
-     `ast.get_docstring()` at parse time (functions already had this field,
-     it just wasn't being persisted).
-   - `functions` and `classes` tables gained `docstring` column;
-     `mutations` table gained `intent` column. All three INSERT paths updated.
-   - `IntentView` added as the 7th Truth Layer view (`build_intent_view()`
-     in `truth/views.py`) - queries `functions`/`classes`/`mutations` tables
-     directly, returns per-item docstrings + coverage stats.
-   - `INTENT` registered in `QueryPlan.VALID_METRICS` and
-     `QuerySemanticsRegistry.VALID_FILTER_KEYS`. `Assessor.intent_view()`
-     and `Assessor.all_views()` updated (now returns 7 views).
-   - 7 regression tests in `tests/regression/test_intent_view_wiring.py`.
-   - Full suite: 127/127 passing (was 120).
-3. **Engine/Assessor boundary completion - DONE 2026-06-19** (merged old
-   items 3, 4, and 7):
-   - [x] Move query execution fully into Assessor: `route_query` moved to
-     `assessor/query_router.py`. New signature: `route_query(text, oracle, ...)`
-     - no graph/fn params. `api/oracle_router.py` is now a thin re-export.
-     `task_generator.generate_task_md` and `task_rereferencer.rereference_task_md`
-     take `oracle` directly. `Assessor.generate_task_md/rereference_task_md`
-     simplified (no longer fetch graph snapshot). DBOracle is pure data
-     access: `get_edge_maps`, `discover_seed_symbols`, `builtin_symbols`.
-   - [x] DB-only execution mode: `QuerySession.run_query()` no longer calls
-     `get_snapshot_graph()`. Expansion uses `DBOracle.get_edge_maps()` -
-     plain `(forward, reverse)` dicts from `graph_edges`, no GraphBundle.
-     `_bind_snapshot()` retained as legacy stub for non-query callers only.
-   - Old item 7 (architecture split / contracts layer): partially addressed
-     by moving routing to assessor layer. Remaining: enforce the DB-only
-     boundary more formally, formalize the contracts layer. Still open as
-     future cleanup (low urgency now that the query path is clean).
-4. **Engine refactor Phase 5: DONE 2026-06-19.** Named reasoning primitives
-   (`seed_explanation()`, `expansion_explanation()`, `intent_mapping_trace()`,
-   `node_reasons()`, `seed_paths()`, `expansion_edges()`) are implemented on
-   `QuerySessionResult` and backed by live trace data from `_route_expand()`.
-   Verified: `node_reasons` and `seed_paths` are populated by `_route_expand`
-   and flow through `route_query` -> `run_query` -> `QuerySessionResult`.
-5. **Trace-weighted ranking (explicitly deferred - merges old items 6 and
-   8, same upgrade described from two angles):** replace heuristic
-   pruning/scoring with trace-weighted ranking derived from expansion
-   provenance (old Phase 6); equivalently, upgrade the ranking refinement
-   layer from heuristic scoring to trace-informed scoring (old item 8).
-   "Later" per the original Phase 6 note - revisit once query-expansion
-   quality (item 6 below) has been validated against real usage, since
-   that validation will inform what "trace-informed" should actually
-   weight.
-6. **Query-expansion validation / `impact_query` semantics audit: DONE
-   2026-06-19.** Audited against real self-corpus DB using
-   `tools.analysis.truth.query_ast.Select` (69 incoming callers, most-called
-   project symbol) as the probe target. Findings:
-   - `impact_query` is NOT a pure transitive reverse-dependency closure.
-     It expands from a seed SET (token-matched related symbols, not just
-     the target), then walks reverse edges at depth-2 from all seeds.
-     Result is a neighborhood superset - 86 nodes vs. 47 in the real
-     BFS closure. The depth-2 budget was not the limiting factor for this
-     corpus (real graph was only depth-2 deep for this symbol anyway);
-     seed over-broadness is the real shape of the behavior.
-   - The one node BFS found that router missed (`<module>`) is a noise
-     artifact already correctly filtered by `symbol_noise.py` line 65
-     (`startswith("<")`). Fix #4 is already done - not a gap.
-   - `<module>` aside, router returns a SUPERSET of the BFS closure, not
-     a subset - the depth budget is not silently truncating anything for
-     this corpus.
-   **Implications for task.md (item 10):**
-   - task.md must NOT present router results as "exact caller set" -
-     they are "impact zone" (neighborhood). Call it that explicitly.
-   - task.md should show TWO tiers: "Direct callers (confirmed)" from
-     `graph_edges WHERE callee = ?` and "Impact zone (may need review)"
-     from the router. Both are useful; conflating them is misleading.
-   - Fix #2 (implemented 2026-06-19): added `seeds` override parameter
-     to `route_query()` - when the caller passes seeds directly, seed
-     discovery is skipped. This makes "what depends on X" when X is a
-     known symbol use X as the only seed, giving a true reverse closure
-     from that specific symbol rather than a token-match neighborhood.
-   - Game corpus depth audit DONE 2026-06-20: depth-2 is sufficient for
-     world_corpus.db. Max real game chain depth is 3 (random_fill_all ->
-     random_fill_field -> get_skill_list callers); depth-3 miss is a
-     low-level utility, not an architectural chokepoint. The <module>
-     depth-3 miss is noise (already filtered). The DM->world->dungeon_neo
-     concern is NOT a depth budget problem - it is a per-corpus-DB
-     limitation: cross-corpus calls (3 edges: calculate_movement ->
-     dungeon_neo.constants, generate_quest -> dungeon_neo.campaign.Quest,
-     __init__ -> dungeon_neo.movement_service.CharacterMovementService)
-     are recorded as callee names but dungeon_neo symbols have no entries
-     in world_corpus's symbols table, so reverse chains can't cross the
-     corpus boundary. Fix is the merged game_corpus.db (TRACKER item 3
-     prerequisite). Depth budget itself: no change needed.
-7. **Reasoning layer remainder:** answer architectural questions from
-   graph truth directly; identify structural influence/dependency zones;
-   support oracle-style interrogation queries; an oracle execution
-   feedback loop (query -> refinement signal).
-8. **Test suite hygiene:**
-   - [x] Oracle CLI smoke test harness: DONE 2026-06-19.
-     `tests/regression/test_oracle_cli_smoke.py` (4 tests). Exercises
-     `DBOracle` + `route_query` + `QuerySession.run_query` against the
-     real self-corpus DB. Skips gracefully if DB absent. Suite: 146/146.
-   - [x] Symbol ordering DB-deterministic: verified 2026-06-19. All
-     production queries use `ORDER BY`; Python sorts used for
-     provenance ranking. No test asserts insertion-order positions.
-   - [x] Dual routing paths in tests: DONE 2026-06-20. Deleted
-     `tests/core/` and `tests/debug/` - both tested the deprecated
-     pre-oracle graph/identity layer, neither was in the regression suite.
-   - ACCEPTED DEBT (2026-06-20): alias_map normalization, identity factory
-     double-construction in parse_ast.py, and classification import
-     inconsistency in graph/symbol_classifier.py are all pre-oracle layer
-     issues with zero correctness impact on the production query path.
-     Leave until the graph/identity layer is formally deprecated or a
-     specific bug forces it.
-9. **Truth Kernel Tier 3/4 (system replacement / closed-world complete):**
-   all items open and explicitly future-state - Assessor fully on the
-   Truth Layer exclusively, Oracle fully routed through it, engine
-   introspection migrated, legacy dual-path removed, no ad-hoc graph
-   inspection paths remaining anywhere, query language frozen.
-10. **Agent Capability Layer build order, remainder (old item 13 steps 4
-    and 5 - steps 1 and 2 folded into items 1 and 6 above):**
-    1. [x] Build the task.md generator off the ripple query from item 6
-       above. Markdown, plain checklist format, matching this doc's
-       voice. DONE 2026-06-19: `tools/analysis/agent/task_generator.py`,
-       wired as `Assessor.generate_task_md(symbol, out_path=None)`.
-       Two-tier output: direct callers (graph_edges WHERE callee=?) +
-       impact zone (route_query seeds override). 7 regression tests in
-       `test_task_generator.py`. 102/102 passing.
-    2. [x] Build the "re-reference a task.md" path: read file -> extract
-       the originating query -> re-run against current DB -> diff ->
-       report. DONE 2026-06-19: `tools/analysis/agent/task_rereferencer.py`,
-       wired as `Assessor.rereference_task_md(path, diff_out_path=None)`.
-       Returns diff dict + rendered Markdown. 12 regression tests in
-       `test_task_rereferencer.py`. 114/114 passing.
-    As with item 1 above, Bart's direction is that this is a listing of
-    capability pieces, not a locked sequence - propose impacts of
-    alternative orderings (e.g. doing corpus-widening work in parallel
-    with this rather than strictly before it) rather than assuming one.
-12b. **Intent Layer - semantic summaries + knowledge artifacts: DONE
-    2026-06-19.**
-    - Sub-layer A (AI-generated semantic summaries): `semantic_summaries`
-      table added via `ensure_schema()`. `intent/semantic_summary.py`:
-      `get_or_generate_summary()` (lazy generation + cache), `get_summary_if_fresh()`
-      (read-only, no side effects), `list_summaries()`. LLM backend: local
-      Ollama (same model as query_compiler.py); heuristic stub fallback if
-      Ollama unreachable. Source_hash staleness detection. Wired as
-      `Assessor.semantic_summary()`, `Assessor.semantic_summary_if_fresh()`,
-      `Assessor.list_semantic_summaries()`.
-    - Sub-layer B (knowledge artifacts): `knowledge_artifacts` table added
-      via `ensure_schema()`. `intent/knowledge_artifact.py`:
-      `add_artifact()`, `get_artifacts()` (provenance-ranked), `list_artifacts()`,
-      `delete_artifact()`, `highest_provenance()`. Valid kinds:
-      file_purpose / strategy_decision / query_finding / design_note /
-      known_issue. Provenance rank: human-confirmed > ai-confirmed-by-human
-      > ai-generated. Wired as `Assessor.add_artifact()`,
-      `Assessor.get_artifacts()`, `Assessor.list_artifacts()`,
-      `Assessor.delete_artifact()`, `Assessor.highest_provenance_artifact()`.
-    - 27 regression tests in `tests/regression/test_intent_layer_ab.py`.
-      Full suite: 142/142 passing (was 127).
-13. **Truth Kernel Board Tier 0 (DONE 2026-06-20):** DESIGN.md
-    view-legality and Combine-legality lists updated to list all 7 views
-    (STRUCTURE/STABILITY/INTEGRITY/SUMMARY/SUBSYSTEM/ROLE/INTENT with dates),
-    added missing `(STABILITY, INTEGRITY)` pair, noted ROLE/INTENT are
-    Select-only. Stale "5 views, now 6" prose fixed throughout.
-14. **knowledge.db - shared knowledge overlay: DONE 2026-06-20.**
-    Design: DESIGN.md section 7. All steps complete:
-    - [x] `oracle/knowledge_oracle.py`: `KnowledgeOracle` wrapping
-      `knowledge.db`; creates `knowledge_artifacts` (with `file_hash`,
-      `needs_review` columns) and `semantic_summaries` tables.
-      `KnowledgeOracle.alongside(corpus_db_path)` opens `knowledge.db`
-      next to any corpus DB.
-    - [x] `persistence/persistence_engine.py`: `ensure_schema()` now
-      creates corpus tables only; knowledge tables live in KnowledgeOracle.
-    - [x] `intent/knowledge_artifact.py`: added `file_hash`/`needs_review`
-      columns + migration (ALTER TABLE, idempotent); added
-      `flag_stale_artifacts()` for ingestion hook. SELECT queries updated.
-    - [x] `assessor/assessor.py`: `Assessor.__init__` takes optional
-      `knowledge` param; auto-opens `knowledge.db` alongside corpus DB
-      when oracle has `db_path`. All artifact methods route to knowledge
-      conn; return [] / raise if knowledge is None.
-    - [x] `agent/task_generator.py`: `generate_task_md` takes optional
-      `knowledge_conn`; `_known_findings()` queries knowledge conn with
-      exact + `file::symbol` LIKE match; stale artifacts flagged
-      `[STALE - needs review]` in output. Template bug fixed (unsubstituted
-      `{symbol}` in direct-callers prose).
-    - [x] Existing `generate_location_from_potential` artifact migrated
-      from self-corpus DB to `knowledge.db` (row id 1 in knowledge.db).
-    - [x] Tests updated: `test_intent_layer_ab.py` (ensure_schema tests
-      now call table-create fns directly), `test_task_generator.py`
-      (artifact tests use separate knowledge conn). Suite: 148/148.
-    - Ingestion staleness hook (`flag_stale_artifacts` call in
-      `EngineRunner.run()`) left as a follow-on - schema and function are
-      ready, just not wired into the ingest loop yet (low urgency until
-      game corpus files start changing actively).
-12. **Orphaned-module disposition review (hole vs. dead): INVESTIGATED
-    AND REPORTED 2026-06-19.** Evaluated all 9 originally-listed
-    candidates - `resolution/symbol_origin_resolver.py`,
-    `inspection/explain_file.py`, `utilities/reachable_print_trace.py`,
-    `context/build_context_packet.py`, the `contracts/` cluster
-    (`contract_validator.py`, `contract_lifecycle.py`,
-    `contract_health_aggregator.py`, `contract_types.py`, plus 3 empty
-    stub files), `api/get_llm_context.py`, `api/query_entry.py`, the
-    empty `orchestration/` directory, and
-    `specification/tool_system_contract.json` - via actual import/call-site
-    wiring checks (whole-tree grep for each symbol/module), not just
-    surface-reading file contents, per this project's standing principle
-    of never assuming dead from surface signals alone. **No
-    integrate/dispose/delete action taken on any of it - this item's own
-    gate requires reporting to Bart first, which is what this entry is.**
-    Per-item disposition:
-    - **Deleted 2026-06-19 (superseded/empty):** `context/build_context_packet.py`
-      (superseded by `context/build_context_bundle.py` - same structural
-      fetch, bundle has the correct authority model; packet explicitly
-      empties `dependencies`/`referenced_symbols` with "don't trust"
-      comments); `api/query_entry.py` (superseded by
-      `inspection/explain_file.py` which is now being wired - returns
-      only raw counts, no callers/callees/violations/summary); 3 empty
-      stub files (`analysis_contract.py`, `failure_contract.py`,
-      `representation_contract.py`, confirmed 0 bytes). Also confirmed
-      dead, though this is not a new finding:
-      `contracts/contract_map.py` -> `contracts/contract_observer.py` ->
-      `validation/contract_validation_pass.py` - existing regression
-      tests (`tests/regression/test_drift_signals_wiring.py` line 15,
-      `tests/regression/test_integrity_view_wiring.py`) already document
-      this exact path as zero-caller, and `assessor/assessor.py`'s own
-      comment (line 264) confirms the live pipeline replaced it with
-      direct DB queries (`evaluate_file_contracts()` is explicitly
-      labelled "a no-op stub" there).
-    - **Kept - real capability, wire when conditions are met:**
-      `utilities/reachable_print_trace.py` - `explore_call_routes()`
-      returns explicit traversal *paths* with depth and fanout at each
-      node, not just node membership. Different from `impact_query`'s
-      node-set expansion. Wire into the Phase 5 trace API
-      (`expansion_explanation()`) when that work starts - the `main()`
-      at the bottom is a throwaway dev script, ignore it.
-      `contracts/contract_health_aggregator.py` +
-      `contracts/contract_lifecycle.py` - correct, complete pipeline:
-      drift rows -> stability scores + trend direction ->
-      ACTIVE/STABLE/DEGRADING/UNSTABLE/STALE/OBSOLETE states with
-      recommendations. Not wired because the drift signal they'd consume
-      is trivially clean (contracts only catch ingestion-time null checks
-      today, not real architectural drift). Wire when the contract layer
-      tracks real architectural concerns - these plug straight in without
-      changes. `contracts/contract_validator.py` - `ContractRuntimeValidator`
-      validates pipeline stages at runtime (edge conservation,
-      classification-not-leaking-into-persistence,
-      snapshot-graph consistency) - different from `SystemValidator`'s
-      post-build checks. Blocker: `load_contract.py`'s broken JSON path
-      (loads wrong file, KeyErrors on `domains`). Wire when that chain
-      is fixed.
-    - **One genuine hole (missing capability that should be wired):**
-      `inspection/explain_file.py` is a complete, working, DB-backed
-      per-file report generator (imports, symbol density, top
-      callers/callees, contract violations, a heuristic semantic
-      summary) that nothing currently calls. TIER 2's Role-view
-      evaluation above already wants exactly this kind of per-file
-      explainability signal - this looks ready to serve that need
-      directly rather than needing to be built from scratch.
-    - **Not actually orphaned despite zero in-repo callers:**
-      `api/get_llm_context.py` - its own docstring identifies it as "the
-      ONLY function external systems should call" for LLM-context
-      retrieval. Zero in-repo callers is expected here, not a sign of
-      dead code: its intended consumer is the future agent CLAUDE.md
-      describes, which doesn't exist yet. Recommend: keep as-is, revisit
-      only once an actual external consumer exists to confirm the shape
-      still fits.
-    - **An unfinished-but-coherent feature, not three unrelated items:**
-      `contracts/contract_types.py` (typed dataclasses - `SystemContract`,
-      `DomainContract`, `OutputContract`, `DependencyRules`,
-      `CoreInvariants`, `StabilityPrinciple`) and
-      `specification/tool_system_contract.json` (the domains-shaped spec
-      those dataclasses exactly mirror: ingestion/representation/
-      analysis/indexing/orchestration domains, output_contract,
-      dependency_rules, core_invariants, stability_principle) are a
-      matched pair - confirmed nothing ever actually loads that JSON file
-      into those dataclasses anywhere. The empty `orchestration/`
-      directory is the third piece of this same unfinished thread: that
-      same spec file's own "orchestration" domain definition ("Controls
-      execution flow across all other domains... must not implement
-      domain logic") describes exactly what should live there, and
-      nothing has been written yet. Recommend treating these three as one
-      decision, not three: either finish wiring the typed loader + start
-      building the orchestration layer the spec describes, or
-      consciously shelve all three together as a deferred design, not
-      "delete the loader, ignore the spec, leave the directory empty by
-      accident."
-    - **New finding, outside the original 9-item list but same
-      directory, worth flagging alongside it:** `contracts/
-      load_contract.py` (and its consumers `parse_contract.py`/
-      `scan_contract.py`) load a *different* `tool_system_contract.json`
-      - the one physically sitting in `contracts/` itself
-      (`schema_version: 3`, a "modules" pipeline-status document, not the
-      "domains" spec above) - and then call `contract["domains"][...]`
-      on it. That file has no `domains` key at all, so this chain would
-      raise `KeyError` immediately if anything ever called it. Currently
-      zero callers, so this is dormant rather than actively broken in
-      production - flagging so nobody tries to wire `parse_contract.py`/
-      `scan_contract.py` in as-is without first fixing which JSON file
-      they're meant to read.
-    - **Confirmed no overlap with item 2 (Truth.md Row 1/Row 5):** none
-      of the above touch `MutationEvent`, intent/description capture, or
-      "why was this change made" semantics at ingestion time - the
-      "intent" hits in the contracts cluster are all the word
-      "intentionally"/"system intent" in docstrings describing contract
-      *design* intent, unrelated to mutation-author intent. Row 5
-      remains genuinely unstarted new ingestion work, not something this
-      review accidentally already solved or could accidentally break.
-13. **Embedding-fallback crash risk in seed discovery: DONE 2026-06-18.**
-    `oracle/db_oracle.py`'s `discover_seed_symbols_semantic()` previously
-    only caught `ImportError` around the top-level
-    `import numpy`/`from ...embedding_model import embed_text`
-    statements - any failure *after* that point (the actual model load
-    inside `embedding_model.get_model()`, which can fail at call time due
-    to a missing model cache, no network access, a corrupted download,
-    etc.) propagated uncaught all the way to every `ask.py` query. Fixed:
-    the embedding-index build and lookup are now wrapped in
-    `except Exception`, logging a warning (`_logger.warning(...)`, new
-    module logger added) and falling back directly to `_discover_token()`
-    - not via `discover_seed_symbols()`, since that path re-enters
-    `discover_seed_symbols_semantic()` through `_discover_combined()` and
-    would recurse forever against a failure that won't go away on retry.
-    Proof: `tests/regression/test_embedding_seed_discovery_fallback.py`
-    (3 tests) - one against the real environment (sentence-transformers
-    genuinely not installed in this sandbox, confirming the fix handles
-    the exact naturally-occurring case), one simulating a non-ImportError
-    failure (`OSError`) to prove the broader exception net works and
-    doesn't recurse, one confirming the public `discover_seed_symbols()`
-    entrypoint used by `route_query()`/`QuerySession.run_query()` doesn't
-    crash either. Full regression suite: 80/80 after.
-14. **Dead `runtime_bindings` wiring: DONE 2026-06-18.** `parse_ast()`
-    (`ingestion/parse_ast.py`) previously set `FileAnalysis.runtime_bindings`
-    directly from its caller-supplied parameter - always `{}`, since
-    `scan_project_files.py` line 192 hardcodes
-    `runtime_bindings = {}  # still placeholder for now` - even though
-    `_extract_runtime_bindings()` was already being called for real
-    inside `_extract_symbol_references()`, just discarded after its own
-    internal use. Production classification
-    (`classify_references.py`'s `route_symbol(runtime_bindings=
-    analysis.runtime_bindings, ...)`) therefore always received `{}`, so
-    the "runtime" bucket was permanently empty in real output. Fixed:
-    `parse_ast()` now also calls `_extract_runtime_bindings()` itself and
-    merges the result onto `runtime_bindings` before it's stored on
-    `FileAnalysis` - deliberately redundant with
-    `_extract_symbol_references()`'s internal call rather than changing
-    that function's return signature, to avoid touching its other direct
-    caller (`tests/debug/test_symbol_pipeline_trace.py`).
-    `scan_project_files.py`'s placeholder line is left untouched (still
-    correctly describes the parameter it passes; the fix lives entirely
-    inside `parse_ast()`). Proof:
-    `tests/regression/test_runtime_bindings_wiring.py` (3 tests) - new
-    fixture `tests/fixtures/sample_project/runtime_bucket_case.py`
-    (`ai = engine.ai_system; ai()`) run through the real pipeline
-    (`parse_ast()` -> `classify_references()`, the same two calls
-    `analyze_files()` chains in production) confirms the reference is
-    classified `bucket='runtime'`; a regression-guard test confirms
-    forcing `runtime_bindings` back to `{}` (the exact pre-fix production
-    state) loses the bucket on the same fixture, proving this test would
-    have caught the original bug. Full regression suite: 80/80 after.
-
-15. **Agent search layer: token-aware symbol lookup (open).** Current
-    `search_symbols` uses substring matching on the full term. This means
-    `world_controller` finds `set_world_controller` (a function) before
-    `WorldController` (the class), because no substring of the class name
-    matches the snake_case query. The CamelCase conversion in
-    `_camel_variant()` (added 2026-06-21) is a workaround for the common
-    case, but doesn't generalize: a query with tokens that don't form a
-    clean CamelCase class name still hits the wrong symbol. The principled
-    fix is a token-aware search: split `world_controller` into
-    `["world", "controller"]`, find all symbols containing both tokens,
-    rank by type (class > function > variable). Side benefit: would surface
-    naming-convention relationships (`WorldController` class vs
-    `set_world_controller` function) as useful context rather than a
-    collision to route around. Requires changes to `search_symbols` in
-    `agent_tools.py` and the NEED-resolution path in `agent_resolver.py`.
-    Defer until substring workaround proves insufficient on more queries.
-
-16. **"Why was this file included?" explainability on context bundles (open).**
-    Every retrieved node should carry a `reason_included` annotation - e.g.,
-    "included because `run_analysis_pipeline` imports `scan_project_files`."
-    Currently only `query_session.py` mentions this concept; the context
-    assembly layer does not surface traversal reasons on its output. This is
-    a real debugging aid when AI retrieval goes wrong - the LLM (and the
-    developer) can see why a file is present, not just that it is. Gap
-    identified 2026-06-23 from Tool Plan.md section 3.2.
-
-17. **Retrieval modes: heuristic profiles per task type (done 2026-06-23).**
-    Added `debug_query` and `mutation_query` intents to `query_router.py`:
-    detection in `_detect_intent`, traversal budgets in `intent_budget`,
-    primitive selection in `_select_primitives`. `debug_query` gets
-    reverse-heavy traversal (depth 2) + findings/impact/context primitives.
-    `mutation_query` gets balanced traversal + mutations/impact/context primitives.
-    Both have matching heuristic patterns in `agent_resolver.py` `_HEURISTICS`
-    that map natural-language debug/mutation questions to pre-wired NEED sequences
-    (findings, todos, callers, callees). 279/279 regression tests passing.
-
-18. **Safe-zone / hot-zone risk annotation on context output (done 2026-06-23).**
-    New `risk_annotator.py` with `score_risk(oracle, symbol)`: pure DB scoring
-    (in_degree, out_degree, mutation_count) -> HOT/WARM/SAFE + reasons.
-    HOT: in_degree >= 5, or (in_degree >= 3 AND mutations > 0).
-    WARM: in_degree >= 2, or mutations > 0. SAFE: everything else.
-    Wired into `symbol_brief` (risk line prepended to every brief output).
-    New `risk_profile` standalone tool registered in TOOLS dispatch table.
-    Pattern added to _PATTERNS ("risk profile for X"), heuristic added to
-    _HEURISTICS for "is X safe to modify / how risky is X / blast radius of X".
-    Smoke test on self-corpus: _detect_intent correctly scores WARM (2 callers).
-    279/279 regression tests passing.
+12. **[MAC-ONLY] treedocs + md-utils** - dandylyons/treedocs (Swift CLI,
+    repo-tree descriptions with staleness detection) + DandyLyons/md-utils
+    (Swift CLI, programmatic Markdown manipulation). Complementary to truth
+    kernel; drive the sync loop (item 4). Mac/Swift only, lower priority.
 
 ---
 
