@@ -184,7 +184,8 @@ socket.on("disconnect", () => {
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
   sendBtn.disabled = false;
-  // show a quiet status card — no query, no LLM, just facts
+
+  // show quiet stats card first
   const block = document.createElement("div");
   block.className = "result-block";
   block.innerHTML = `
@@ -193,13 +194,13 @@ socket.on("corpus_ready", data => {
       <span class="result-subject">${escHtml(data.db_name)}</span>
     </div>
     <div class="result-body">
-      <div class="answer-text" style="color:var(--text2)">
-${data.files} files · ${data.hot} hot · ${data.stubs} stubs · ${data.artifacts} knowledge artifacts
-
-Ready. Try a workflow button on the left, or ask anything.
-      </div>
+      <div class="answer-text" style="color:var(--text2)">${data.files} files · ${data.hot} hot · ${data.stubs} stubs · ${data.artifacts} knowledge artifacts</div>
     </div>`;
   results.appendChild(block);
+
+  // auto-fire session startup — tool should be useful on arrival
+  input.value = "session startup";
+  sendQuery();
 });
 
 // ── send query ────────────────────────────────────────────
