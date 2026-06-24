@@ -538,6 +538,22 @@ def _ingest_source(source_dir: str) -> str:
     EngineRunner().run(corpus=corpus, project_prefixes=[], repo_root=str(src), connection=db)
     db.close()
     print(f"Ingestion complete: {db_path}")
+
+    # Auto-extract structural design facts (no LLM, < 1s)
+    from determined.oracle.db_oracle import DBOracle
+    from determined.assessor.assessor import Assessor
+    oracle = DBOracle(db_path)
+    assessor = Assessor(oracle)
+    if assessor._knowledge_conn is not None:
+        counts = assessor.extract_design_facts()
+        total = sum(counts.values())
+        print(f"Knowledge extracted: {total} structural facts "
+              f"({counts.get('entry_points',0)} entry points, "
+              f"{counts.get('dead_code',0)} dead code candidates, "
+              f"{counts.get('hot_symbols',0)} hot symbols, "
+              f"{counts.get('stub_files',0)} stub files)")
+    oracle.conn.close()
+
     return db_path
 
 
