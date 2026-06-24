@@ -67,9 +67,13 @@ Also: is_stub detection chain, stub projector (Ollama-driven), auto-discovery to
 24 tools, 30+ heuristic patterns, PICK/ADVERSARIAL eval commands, game_corpus.db merged,
 adversarial validation found and fixed 9 routing gaps. Full detail: HISTORY.md.
 
-**Core unvalidated assumption (item 14):** Can llama3.2:3b follow a multi-step task pattern
-end-to-end without drifting? All the registry/knowledge/pattern work assumes yes. Needs a
-cold test against an unfamiliar corpus before we can claim the orientation problem is solved.
+**Item 15 done (session 18):** Pattern executor built and wired in. Model no longer picks
+tools when a named pattern matches - executor drives the sequence, model only interprets
+each step result. 293/293 tests passing.
+
+**Core unvalidated assumption (item 14):** Can the pattern executor + llama3.2:3b correctly
+orient a user to an unfamiliar codebase end-to-end? The executor runs deterministically;
+the open question is whether the model's per-step interpretations are useful. Cold test needed.
 
 **Full history:** HISTORY.md.
 
@@ -398,6 +402,45 @@ clear sidecar files for that exact DB path first.
 
 All closed items have been moved to HISTORY.md. Items below are genuinely open.
 Last cleaned: 2026-06-24 (session 17 - verified against live tool run).
+
+---
+
+### UI DESIGN DIRECTIVE (standing, applies to all future UI work)
+
+**Knowable things should be known. Known things should be expressed in the UI
+in a discoverable, chained fashion — not in isolation.**
+
+Before building or evaluating any UI feature, ask:
+- How would a user actually arrive at this? What did they just do or see?
+- Does it require the user to supply something the tool already knows? If so, offer it.
+- Does it live in isolation or does it connect to what came before and what comes next?
+- What is the user's actual need here — and is this the right shape for it?
+- Is there a contextual version of this action that is more natural than a cold one?
+
+**The principle:** the UI is a window into a connected body of knowledge. Every result
+should suggest next steps. Every action that takes a symbol name should offer the corpus's
+known symbols. Every investigation should leave a breadcrumb to related ones. The developer
+should never be in a blank field with no hints; the tool knows things and should say so.
+
+**Practical rules:**
+- Sidebar cold-start actions: only for things with no required input, or where the
+  fill-then-type pattern is genuinely natural (callers of..., explore file...).
+- Two-input actions (trace X to Y): never a blank dual form. Always contextual —
+  triggered from a result where X is already known, with corpus-backed suggestions for Y.
+- Follow-up chips on every result: the tool should always suggest what to look at next
+  based on what the result actually contained.
+- Symbol names in results should be interactive where possible — click to investigate,
+  not copy-paste into a search box.
+- "Knowable without LLM" facts (entry points, dead code, hot symbols, stub files)
+  should be pre-populated and surfaced automatically, not waiting to be queried.
+
+**Corollary — trace path specifically:**
+"Trace X to Y" is not a sidebar action. It is a contextual action on a result.
+When a result surfaces symbol A, the user can say "trace from A" and the UI
+offers corpus-known symbols as the destination. The tool has the symbol list;
+it should use it. A blank two-field form is the wrong shape entirely.
+
+---
 
 1. **[LOW] `files.role` is never populated** - `parse_ast.py` sets `role=None`
    and has a comment "DO NOT recompute elsewhere." The `describe_file` and
