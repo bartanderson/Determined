@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_single_file_filter_scoping.py
+﻿# tools/analysis/tests/regression/test_single_file_filter_scoping.py
 #
 # Locks in the 2026-06-17 single-named-file ROLE scoping fix (the bug Bart
 # hit directly on his Windows machine: "what is the purpose of

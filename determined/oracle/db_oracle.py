@@ -809,6 +809,19 @@ class DBOracle:
         rows = cur.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
+    def find_stubs(self, limit: int = None) -> List[Dict[str, Any]]:
+        """
+        find_stubs() - return all functions marked is_stub=1, with their
+        file_path, name, line_number, and docstring. Ordered by file_path.
+        """
+        query = "SELECT file_path, name, line_number, docstring FROM functions WHERE is_stub = 1 ORDER BY file_path"
+        params: list = []
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
     def find_modules(self, limit: int = None) -> List[Dict[str, Any]]:
         """
         find_modules() - derive module grouping from the real `files`

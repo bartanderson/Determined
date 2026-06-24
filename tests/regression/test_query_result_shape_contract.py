@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_query_result_shape_contract.py
+﻿# tools/analysis/tests/regression/test_query_result_shape_contract.py
 #
 # CLAUDE-EDIT 2026-06-17: new regression suite closing out the "full
 # mapping" audit Bart asked for after the Windows-only

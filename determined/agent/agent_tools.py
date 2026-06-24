@@ -265,11 +265,35 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     """
     symbol_brief(symbol) - full two-tier brief: direct callers + impact zone.
     Calls generate_task_md. Richest single-symbol output available.
+    Prepends a risk annotation line (HOT/WARM/SAFE).
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
-    return assessor.generate_task_md(symbol)
+    from determined.agent.risk_annotator import score_risk, risk_badge
+    r = score_risk(assessor.oracle, symbol)
+    badge = risk_badge(r["level"])
+    brief = assessor.generate_task_md(symbol)
+    risk_line = f"Risk: {badge}  ({'; '.join(r['reasons'])})"
+    return risk_line + "\n" + brief
+
+
+def risk_profile(oracle: "DBOracle", args: dict) -> str:
+    """
+    risk_profile(symbol) - structural change-risk rating for a symbol.
+    Returns HOT/WARM/SAFE with the reasons: in-degree, mutations, blast radius.
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    from determined.agent.risk_annotator import score_risk, risk_badge
+    r = score_risk(oracle, symbol)
+    badge = risk_badge(r["level"])
+    lines = [f"Risk profile for '{symbol}': {badge}"]
+    for reason in r["reasons"]:
+        lines.append(f"  - {reason}")
+    lines.append(f"  in_degree={r['in_degree']}  out_degree={r['out_degree']}  mutations={r['mutation_count']}")
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------
@@ -735,6 +759,7 @@ TOOLS = {
     "prioritize_work":      (prioritize_work,      "assessor"),
     "store_workflow_item":  (store_workflow_item,  "assessor"),
     "rerank_workflow":      (rerank_workflow,      "assessor"),
+    "risk_profile":         (risk_profile,         "oracle"),
 }
 
 

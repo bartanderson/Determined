@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_run_algebra_end_to_end.py
+﻿# tools/analysis/tests/regression/test_run_algebra_end_to_end.py
 #
 # Locks in the 2026-06-16 agent-readiness fix: QuerySession.run_algebra()
 # previously had ZERO callers anywhere in the codebase and had never been

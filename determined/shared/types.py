@@ -44,6 +44,7 @@ class FunctionRepresentation:
     arguments: List[str] = field(default_factory=list)
     return_type: Optional[str] = None
     docstring: Optional[str] = None
+    is_stub: bool = False
 
 
 @dataclass

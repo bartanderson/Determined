@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_task_generator.py
+﻿# tools/analysis/tests/regression/test_task_generator.py
 #
 # Locks in task.md generator (TRACKER item 10, step 1, 2026-06-19).
 # Two-tier model: direct callers (graph_edges WHERE callee=?) and impact zone

@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_oracle_router_persistence_lock.py
+﻿# tools/analysis/tests/regression/test_oracle_router_persistence_lock.py
 #
 # Locks in the "close the small holes" fixes (2026-06-16):
 #   1. Builtin exclusion during graph expansion is decided by the DB's
@@ -9,11 +9,11 @@
 #   3. The dead _apply_intent_weights() stub does not exist.
 #   4. QuerySession.run_query() durably persists every result to the
 #      query_sessions table, not just the in-memory _history list.
-#   5. A persistence failure never breaks the query contract — run_query()
+#   5. A persistence failure never breaks the query contract â€” run_query()
 #      still returns a valid result even if the DB write fails.
 #
 # Uses a real temp sqlite DB built through the real schema (ensure_schema),
-# no mocking of the DB layer — only test 6 mocks the persistence call
+# no mocking of the DB layer â€” only test 6 mocks the persistence call
 # itself, since that's the one thing we WANT to fail on purpose.
 
 import os
@@ -34,7 +34,7 @@ def _seeded_oracle():
     project symbol, and an accessor-chain noise symbol.
 
     Uses DBOracle's own connection for everything (rather than opening a
-    second sqlite3 connection to the same file) — Windows holds file
+    second sqlite3 connection to the same file) â€” Windows holds file
     handles for the lifetime of an open sqlite3.Connection, so a second,
     separate connection to the same temp file caused os.remove() to fail
     with WinError 32 in CI/local runs even after the "active" connection
@@ -51,7 +51,7 @@ def _seeded_oracle():
         # (file_path, caller, callee, line_number, bucket)
         ("file.py", "ConnectionManager.connect", "do_thing", 10, "project"),
         # "enumerate" was NEVER in oracle_router's old hardcoded noise set
-        # (run/len/print/getattr/set/int/str/any/all/dict/list) — if this
+        # (run/len/print/getattr/set/int/str/any/all/dict/list) â€” if this
         # test passes, the filter is reading the DB, not a leftover list.
         ("file.py", "do_thing", "enumerate", 11, "builtin"),
         ("file.py", "cursor.self.oracle.conn", "do_thing", 13, "project"),
@@ -93,7 +93,7 @@ def test_builtin_filtering_uses_db_not_wordlist():
         )
         assert _is_valid_symbol("enumerate", builtins) is False, (
             "_is_valid_symbol must reject builtins via the DB-backed set "
-            "— 'enumerate' was never in the old hardcoded word list, so "
+            "â€” 'enumerate' was never in the old hardcoded word list, so "
             "this only passes if the DB classification is actually used"
         )
     finally:
@@ -132,7 +132,7 @@ def test_accessor_chain_noise_still_filtered():
 def test_apply_intent_weights_removed():
     assert not hasattr(oracle_router, "_apply_intent_weights"), (
         "_apply_intent_weights was deleted as dead code (never called, "
-        "returned input unchanged) — it must not silently come back"
+        "returned input unchanged) â€” it must not silently come back"
     )
 
 

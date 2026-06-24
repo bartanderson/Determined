@@ -50,6 +50,15 @@ def _detect_intent(text: str) -> str:
     if "what does" in t or "surface" in t:
         return "surface_query"
 
+    if any(k in t for k in ("broken", "failing", "crashed", "erroring", "not working")) or \
+       ("why" in t and any(k in t for k in ("fail", "wrong", "error", "bug", "crash", "exception"))):
+        return "debug_query"
+
+    if "mutates" in t or "who mutates" in t or \
+       ("modif" in t and any(k in t for k in ("where", "what", "who"))) or \
+       ("changes" in t and any(k in t for k in ("where", "what", "who"))):
+        return "mutation_query"
+
     if "purpose" in t or "why does" in t or "why is" in t or "role of" in t or "what role" in t or "what kind of" in t:
         return "role_query"
 
@@ -69,6 +78,10 @@ def _select_primitives(intent: str) -> List[str]:
         return ["surface", "context"]
     if intent == "role_query":
         return ["role"]
+    if intent == "debug_query":
+        return ["findings", "impact", "context"]
+    if intent == "mutation_query":
+        return ["mutations", "impact", "context"]
     return ["context", "surface", "impact"]
 
 
@@ -136,6 +149,8 @@ def _route_expand(forward: dict, reverse: dict, seeds: List[str], intent: str, b
         "reverse_query":  {"forward_depth": 0, "reverse": True,  "reverse_depth": 1},
         "general_query":  {"forward_depth": 1, "reverse": True,  "reverse_depth": 1},
         "role_query":     {"forward_depth": 0, "reverse": False, "reverse_depth": 0},
+        "debug_query":    {"forward_depth": 0, "reverse": True,  "reverse_depth": 2},
+        "mutation_query": {"forward_depth": 1, "reverse": True,  "reverse_depth": 1},
     }
 
     budget = intent_budget.get(intent, intent_budget["general_query"])

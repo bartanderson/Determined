@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_oracle_cli_smoke.py
+﻿# tools/analysis/tests/regression/test_oracle_cli_smoke.py
 #
 # Minimal oracle CLI smoke test against the real self-corpus DB.
 # Exercises the full route_query path (DBOracle -> route_query ->
@@ -21,7 +21,7 @@ import sys
 SELF_CORPUS_DB = os.path.normpath(os.path.join(
     os.path.dirname(__file__),
     "..", "..", "..", "..",  # repo root
-    "corpus.db",
+    "C_Users_bartl_dev_dj2_tools_analysis.db",
 ))
 
 _DB_PRESENT = os.path.exists(SELF_CORPUS_DB)

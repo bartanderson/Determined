@@ -1,8 +1,8 @@
-# tools/analysis/tests/regression/test_subsystem_path_pollution_fix.py
+﻿# tools/analysis/tests/regression/test_subsystem_path_pollution_fix.py
 #
 # Locks in the 2026-06-17 fix for TRACKER.md open item 16: SUBSYSTEM /
 # find_modules() identity strings were carrying the full absolute
-# filesystem path (e.g. "sessions.<id>.mnt.myproject.determined.oracle"
+# filesystem path (e.g. "sessions.<id>.mnt.dj2.determined.oracle"
 # in this session's sandbox, or a drive-letter-polluted equivalent on
 # Bart's Windows checkout) instead of a clean project-relative module
 # name ("determined.oracle"), because oracle/db_oracle.py's
@@ -76,15 +76,15 @@ def _seed_symbol(oracle, file_path, name):
 # =========================================================
 
 def test_file_path_to_module_trims_with_project_root():
-    abs_path = "/sessions/eloquent-magical-bohr/mnt/myproject/determined/oracle/db_oracle.py"
-    root = "/sessions/eloquent-magical-bohr/mnt/myproject"
+    abs_path = "/sessions/eloquent-magical-bohr/mnt/Determined/determined/oracle/db_oracle.py"
+    root = "/sessions/eloquent-magical-bohr/mnt/Determined"
 
     assert _file_path_to_module(abs_path, root) == "determined.oracle"
 
     # no project_root supplied -> exact prior (polluted) behavior,
     # nothing silently changes for a caller that hasn't opted in
     assert _file_path_to_module(abs_path) == (
-        "sessions.eloquent-magical-bohr.mnt.myproject.determined.oracle"
+        "sessions.eloquent-magical-bohr.mnt.Determined.determined.oracle"
     )
 
     # file IS the project root itself -> top-level module, no leading dot
@@ -104,13 +104,13 @@ def test_get_project_root_reads_persisted_value():
     # Compare against the *normalized* form, not the raw literal string.
     # set_project_root() normalizes via normalize_file_path(), which
     # resolves to a platform-specific absolute path - on Windows that
-    # means gaining a drive letter (Path("/sessions/x/mnt/myproject").resolve()
-    # != "/sessions/x/mnt/myproject" there). A bare hardcoded POSIX-style
+    # means gaining a drive letter (Path("/sessions/x/mnt/dj2").resolve()
+    # != "/sessions/x/mnt/dj2" there). A bare hardcoded POSIX-style
     # string broke this test on a real Windows run (2026-06-18); fixed
     # by running the same normalization on both sides of the assertion.
     oracle, tmp_path = _make_db()
     try:
-        raw_root = "/sessions/x/mnt/myproject"
+        raw_root = "/sessions/x/mnt/dj2"
         set_project_root(oracle.conn, raw_root)
         expected = normalize_file_path(raw_root)
         assert oracle.get_project_root() == expected
@@ -130,18 +130,18 @@ def test_get_project_root_infers_from_files_when_unset():
     oracle, tmp_path = _make_db()
     try:
         # os.path.commonpath() of just these two converges no higher than
-        # their shared parent, "/sessions/x/mnt/myproject/tools/analysis" - that
+        # their shared parent, "/sessions/x/mnt/dj2/tools/analysis" - that
         # IS the correct inferred root for this fixture (it's a directory
         # common to every seeded file, exactly what _infer_project_root()
         # promises). A third file under a different top-level dir pulls
-        # the common ancestor up to "/sessions/x/mnt/myproject", which is the
+        # the common ancestor up to "/sessions/x/mnt/dj2", which is the
         # case this test wants to demonstrate.
         _seed_files(oracle, [
-            "/sessions/x/mnt/myproject/determined/oracle/db_oracle.py",
-            "/sessions/x/mnt/myproject/determined/truth/views.py",
-            "/sessions/x/mnt/myproject/README.md",
+            "/sessions/x/mnt/dj2/tools/analysis/oracle/db_oracle.py",
+            "/sessions/x/mnt/dj2/tools/analysis/truth/views.py",
+            "/sessions/x/mnt/dj2/README.md",
         ])
-        assert oracle.get_project_root() == "/sessions/x/mnt/myproject"
+        assert oracle.get_project_root() == "/sessions/x/mnt/dj2"
     finally:
         oracle.conn.close()
         os.remove(tmp_path)
@@ -154,7 +154,7 @@ def test_get_project_root_empty_when_insufficient_signal():
         # a directory without risking the filename itself being treated
         # as a path segment, so this must stay "" (no trimming) rather
         # than guess.
-        _seed_files(oracle, ["/sessions/x/mnt/myproject/determined/only_file.py"])
+        _seed_files(oracle, ["/sessions/x/mnt/dj2/tools/analysis/only_file.py"])
         assert oracle.get_project_root() == ""
     finally:
         oracle.conn.close()
@@ -180,7 +180,7 @@ def test_find_modules_and_symbol_module_map_use_persisted_root():
     # so the seeded file_path values and the persisted project_root
     # normalize the same way set_project_root()/normalize_file_path()
     # do in production, on any platform. The previous hardcoded
-    # "/sessions/x/mnt/myproject" root broke this test on a real Windows run
+    # "/sessions/x/mnt/dj2" root broke this test on a real Windows run
     # (2026-06-18): set_project_root() normalizes via Path.resolve(),
     # which adds a drive letter there, so the persisted root no longer
     # matched as a literal prefix of the (un-normalized) seeded

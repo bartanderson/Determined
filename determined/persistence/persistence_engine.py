@@ -90,7 +90,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         line_number INTEGER,
         return_type TEXT,
         arguments_json TEXT,
-        docstring TEXT
+        docstring TEXT,
+        is_stub INTEGER DEFAULT 0
     )
     """)
 
@@ -353,9 +354,10 @@ def persist_file_analysis(
             line_number,
             return_type,
             arguments_json,
-            docstring
+            docstring,
+            is_stub
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             analysis.file_path,
             _canonical_symbol(function.name),
@@ -363,6 +365,7 @@ def persist_file_analysis(
             function.return_type,
             json.dumps(function.arguments),
             function.docstring,
+            1 if getattr(function, "is_stub", False) else 0,
         ))
 
         # CLAUDE-EDIT 2026-06-17: was gated on

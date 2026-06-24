@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_local_agent.py
+﻿# tools/analysis/tests/regression/test_local_agent.py
 #
 # Smoke tests for local_agent.py (three-phase pipeline).
 # Does not call Ollama - patches _call_ollama to return controlled responses.

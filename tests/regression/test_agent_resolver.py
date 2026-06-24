@@ -1,4 +1,4 @@
-# tests/regression/test_agent_resolver.py
+﻿# tests/regression/test_agent_resolver.py
 #
 # Regression tests for agent_resolver.py - parse_needs and resolve_need.
 # These are pure-Python tests; no DB or Ollama needed.

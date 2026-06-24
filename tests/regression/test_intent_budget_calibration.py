@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_intent_budget_calibration.py
+﻿# tools/analysis/tests/regression/test_intent_budget_calibration.py
 #
 # Locks in the 2026-06-17 Track A calibration pass to api/oracle_router.py's
 # intent_budget table (see CLAUDE-EDIT 2026-06-17 comment at the call site):

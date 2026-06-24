@@ -90,6 +90,32 @@ def _extract_imports(
     return imports, alias_map
 
 
+def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True if the function body contains only stub-like statements."""
+    body = node.body
+    # skip leading docstring
+    start = 1 if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)) else 0
+    stmts = body[start:]
+    if not stmts:
+        return True
+    for stmt in stmts:
+        if isinstance(stmt, ast.Pass):
+            continue
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value is ...:
+            continue  # bare `...`
+        if isinstance(stmt, ast.Raise):
+            exc = stmt.exc
+            if exc is None:
+                continue
+            name = getattr(exc, "id", None) or getattr(getattr(exc, "func", None), "id", None)
+            if name == "NotImplementedError":
+                continue
+        if isinstance(stmt, ast.Return) and (stmt.value is None or (isinstance(stmt.value, ast.Constant) and stmt.value.value is None)):
+            continue
+        return False
+    return True
+
+
 def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
     results: List[FunctionRepresentation] = []
 
@@ -108,6 +134,7 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                     arguments=args,
                     return_type=ast.unparse(node.returns) if getattr(node, "returns", None) else None,
                     docstring=ast.get_docstring(node),
+                    is_stub=_is_stub(node),
                 )
             )
 

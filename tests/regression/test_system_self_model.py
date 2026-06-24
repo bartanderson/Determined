@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_system_self_model.py
+﻿# tools/analysis/tests/regression/test_system_self_model.py
 #
 # Coverage for SystemSelfModelBuilder (inspection/meta/system_self_model.py)
 # - TRACKER.md open item 19. This capability was found, during the

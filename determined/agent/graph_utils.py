@@ -214,26 +214,32 @@ def find_clusters(oracle: "DBOracle", min_edges: int = 2) -> list[dict]:
 def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
     """
     Pull all nodes and edges within `radius` hops of `symbol` in either direction.
-    Returns {nodes: [str], edges: [(caller, callee)]}.
+    Returns {nodes: [str], edges: [(caller, callee)],
+             reasons: {node: reason_string}}.
     """
+    reasons: dict[str, str] = {symbol: "root (queried symbol)"}
     visited: set[str] = {symbol}
     frontier = {symbol}
 
-    for _ in range(radius):
+    for hop in range(1, radius + 1):
         next_frontier: set[str] = set()
         for node in frontier:
             for row in oracle.conn.execute(
                 "SELECT callee FROM graph_edges WHERE caller = ?", (node,)
             ).fetchall():
-                if row[0] not in visited:
-                    visited.add(row[0])
-                    next_frontier.add(row[0])
+                callee = row[0]
+                if callee not in visited:
+                    visited.add(callee)
+                    next_frontier.add(callee)
+                    reasons[callee] = f"called by {node} (hop {hop}, outbound)"
             for row in oracle.conn.execute(
                 "SELECT caller FROM graph_edges WHERE callee = ?", (node,)
             ).fetchall():
-                if row[0] not in visited:
-                    visited.add(row[0])
-                    next_frontier.add(row[0])
+                caller = row[0]
+                if caller not in visited:
+                    visited.add(caller)
+                    next_frontier.add(caller)
+                    reasons[caller] = f"calls {node} (hop {hop}, inbound)"
         frontier = next_frontier
 
     edges = oracle.conn.execute(
@@ -241,4 +247,4 @@ def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
     ).fetchall()
     edges = [(r[0], r[1]) for r in edges if r[0] in visited and r[1] in visited]
 
-    return {"nodes": sorted(visited), "edges": edges}
+    return {"nodes": sorted(visited), "edges": edges, "reasons": reasons}

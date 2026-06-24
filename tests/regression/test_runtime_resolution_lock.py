@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_runtime_resolution_lock.py
+﻿# tools/analysis/tests/regression/test_runtime_resolution_lock.py
 
 import ast
 
@@ -20,7 +20,7 @@ def build_identity(builder, name, env):
 
 def test_runtime_resolution_real_lock():
 
-    fixture = "tests/fixtures/sample_project/runtime_case.py"
+    fixture = "tools/analysis/tests/fixtures/sample_project/runtime_case.py"
 
     with open(fixture, "r", encoding="utf-8") as f:
         source = f.read()

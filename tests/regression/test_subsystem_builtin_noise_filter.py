@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_subsystem_builtin_noise_filter.py
+﻿# tools/analysis/tests/regression/test_subsystem_builtin_noise_filter.py
 #
 # Locks in the 2026-06-18 fix for TRACKER.md open item 18: SUBSYSTEM
 # dependency lists had no equivalent of the builtin filtering hotspot

@@ -1,4 +1,4 @@
-# tools/analysis/tests/regression/test_explain_file_wiring.py
+﻿# tools/analysis/tests/regression/test_explain_file_wiring.py
 #
 # Locks in the 2026-06-19 wiring of inspection/explain_file.py into
 # Assessor.explain_file(). The function existed and was complete but had

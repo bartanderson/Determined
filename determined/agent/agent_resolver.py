@@ -252,6 +252,10 @@ _PATTERNS = [
     (re.compile(r"(?:reorder|rerank)\s+(?:as\s+)?(\d[\d,\s]*)$", re.I),
      "rerank_workflow", "order", 1),
 
+    # "risk profile for X" / "risk of X"
+    (re.compile(r"(?:risk\s+profile\s+(?:for|of)|risk\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
+     "risk_profile", "symbol", 1),
+
     # "search <query>" / "find <query>" - fallback to search_symbols
     (re.compile(r"(?:search|find)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "search_symbols", "query", 1),
@@ -357,6 +361,63 @@ _HEURISTICS: list[tuple] = [
             re.I,
         ),
         lambda m: ["entry points"],
+    ),
+
+    # --- Risk heuristics ---
+
+    # "is X safe to modify/change" / "how risky is X" / "can I safely change X"
+    # / "risk profile for X" / "what is the blast radius of X"
+    (
+        re.compile(
+            r"(?:is\s+['\"]?([A-Za-z_]\w*)['\"]?\s+safe\s+to\s+(?:modify|change|edit|touch)|"
+            r"(?:how\s+risky|what\s+is\s+the\s+risk)\s+(?:is\s+|of\s+)['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"can\s+I\s+safely\s+(?:change|modify|edit)\s+['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"(?:blast\s+radius|change\s+risk)\s+(?:of|for)\s+['\"]?([A-Za-z_]\w*)['\"]?)",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"risk profile for {t}",
+            f"symbols named {t}",
+            f"what calls {t}",
+        ])(next(g for g in m.groups() if g)),
+    ),
+
+    # --- Debug heuristics ---
+
+    # "why is X broken/failing/wrong" / "what's wrong with X" / "why does X fail/error/crash"
+    (
+        re.compile(
+            r"(?:why\s+(?:is|does|did|won'?t|doesn'?t|can'?t)\s+['\"]?([A-Za-z_]\w*)['\"]?\s+"
+            r"(?:fail|break|crash|error|hang|not\s+work|return\s+wrong|throw)|"
+            r"what'?s?\s+wrong\s+with\s+['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"['\"]?([A-Za-z_]\w*)['\"]?\s+(?:is\s+)?(?:broken|failing|crashed|erroring|not\s+working))",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"symbols named {t}",
+            f"findings for {t}",
+            "find todos",
+            f"what calls {t}",
+            f"brief for {t}",
+        ])(next(g for g in m.groups() if g)),
+    ),
+
+    # --- Mutation heuristics ---
+
+    # "what mutates X" / "who mutates X" / "where is X modified/changed/set" / "what changes X"
+    (
+        re.compile(
+            r"(?:what|who|where)\s+(?:mutates?|modifi(?:es|ed)|changes?|sets?|writes?\s+to)\s+"
+            r"['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"['\"]?([A-Za-z_]\w*)['\"]?\s+(?:is\s+)?(?:mutated|modified|changed|set)\s+(?:by|in|where)",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"symbols named {t}",
+            f"findings for {t}",
+            f"what calls {t}",
+            f"callees of {t}",
+        ])(next(g for g in m.groups() if g)),
     ),
 
     # --- Connection (two-symbol) heuristics first - must beat single-symbol patterns ---

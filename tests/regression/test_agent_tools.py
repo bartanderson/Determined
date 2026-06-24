@@ -1,8 +1,8 @@
-# tools/analysis/tests/regression/test_agent_tools.py
+﻿# tools/analysis/tests/regression/test_agent_tools.py
 #
 # Regression tests for agent/agent_tools.py (DESIGN.md section 8).
 # All 12 tools tested against a controlled in-memory fixture.
-# No dependency on corpus.db, Ollama, or network.
+# No dependency on world_corpus.db, Ollama, or network.
 
 import os
 import sqlite3
@@ -477,6 +477,7 @@ def test_dispatch_all_tools_registered():
         "missing_docstrings",
         "find_todos",
         "git_log_for",
+        "risk_profile",
     }
     assert set(TOOLS.keys()) == expected
 

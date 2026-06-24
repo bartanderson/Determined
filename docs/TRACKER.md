@@ -35,6 +35,17 @@ repeated each other.
 
 ## Dashboard - at a glance
 
+**Recently done (2026-06-23 session 15):** Items 17+18 done - intent routing profiles + risk annotation.
+Item 17: debug_query/mutation_query intents in query_router.py + agent_resolver.py heuristics.
+Item 18: risk_annotator.py (HOT/WARM/SAFE scoring), wired into symbol_brief output, risk_profile tool.
+
+**Previously done (session 15 earlier):** Item 17 done - debug_query and mutation_query intents.
+Added to `query_router.py` (`_detect_intent`, `intent_budget`, `_select_primitives`) and matching
+heuristics in `agent_resolver.py`. Debug queries get reverse-heavy traversal + findings/todos/callers.
+Mutation queries get balanced traversal + callers/callees. 279/279 tests passing.
+Also earlier this session: stub detection (is_stub field), stub projector (Ollama-driven), explainability
+on graph_subgraph (reason_included per node), auto-discovery to completion (loop until stalled/done).
+
 **Recently done (2026-06-22 session 9, continued):** game_corpus.db merge DONE.
 Added `caller_file` column to `graph_edges` (schema + idempotent migration in `ensure_schema`).
 `GraphEdge` + `add_reference` carry caller_file; `run_engine.py` populates it from `analysis.file_path`.
@@ -646,7 +657,85 @@ merged from the prior numbering to remove duplication while preserving
 every source document's nuance - see each merged item's body for the
 distinct angles folded in.
 
-1. **[TOP PRIORITY, NEW 2026-06-18] Evaluate widening the ingestion test
+1. **[LOW, 2026-06-23] Triage broken test files** — `tests/test_ai_dungeon_master.py`
+   and `tests/test_character_creation.py` have genuine syntax errors (stray closing
+   braces, truncated `with` blocks) and are silently skipped by the Determined
+   ingestion pipeline. Determine whether they have value, then fix or delete.
+
+2. **[DONE, 2026-06-23] Run stub projector against game corpus** — ingested
+   `world/` + `dungeon_neo/` into `game_corpus.db`, ran projector against 6 stubs.
+   Found and fixed caller resolution bug (qualified vs bare callee names in graph_edges).
+   Results: stub with resolved caller (semantic_match_subrace) produced best output;
+   others got plausible-but-generic results from sibling context. Pattern confirmed:
+   more caller context = better projections. Temp DB cleaned up.
+
+3. **[READY, 2026-06-23] Cut over tools/analysis/ui -> Determined, then prune** —
+   `local_agent.py --ui` (line 569) is the last live wire to `tools/analysis/ui/`.
+   Cutover: redirect that import to `determined.ui.ui_server` (or remove the flag
+   if Determined is the canonical entry point now). Then delete `tools/analysis/ui/`
+   (4 source files: ui_server.py, console.html, style.css, preview.html, __init__.py).
+   Determined UI has full feature parity + more. Gate: smoke test --ui flag works
+   after redirect before deleting old files.
+
+3. **[MEDIUM, 2026-06-23] Collaborative editor surface** — minimal editing panel
+   in the Determined UI where AI projection and human edits meet. Projection is
+   the opening move; both parties edit within the visible constraints (contracts,
+   callers, callees shown alongside). Key property: edits committed here feed
+   back into truth via re-ingestion of the changed file — not a scratchpad, a
+   commit surface. Lives as a panel in the existing Determined UI next to query area.
+
+4. **[MEDIUM, 2026-06-23] Wire stub projector into Determined UI** — "fill stub"
+   button or sidebar shortcut that picks the highest-priority stub (by neighbor
+   complexity from stub_density chart) and shows projection in the collab editor
+   surface (item 3 above). Prerequisite for item 3 to be useful.
+
+5. **[MEDIUM, 2026-06-23] Live sync loop: edit -> re-analyze -> update truth** —
+   When a file is edited and applied (via collab editor or directly), re-ingest
+   only that file, propagate changes through the truth kernel, and update all
+   downstream projections (YAML, stubs, docs). Before application: speculative
+   "what-if" mode. After application: authoritative — truth changes and all
+   recordings of it must match. Stale projections show red. This is what makes
+   the system live rather than a one-shot analysis snapshot.
+   Requires: file watching or explicit "apply" trigger, incremental re-ingestion
+   (single file, not full corpus), propagation through graph edges to find
+   downstream affected symbols.
+
+6. **[LOW/MAC-ONLY, 2026-06-23] treedocs integration** — dandylyons/treedocs
+   (https://dandylyons.github.io/treedocs/) is a Swift CLI that maintains a
+   `treedocs.yaml` mapping the repo file tree with human-readable descriptions,
+   version-controlled, with staleness detection (descriptions that no longer match
+   files show red). Complementary to the truth kernel: treedocs projects truth
+   outward into document design space; the kernel projects inward from code.
+   Mac-only (Swift). Lower priority. Explore after sync loop (item 5) is solid.
+
+8. **[FUTURE, 2026-06-23] Self-Harness pattern for autonomous eval improvement**
+   — arXiv 2606.09498. Three-stage loop: mine failure patterns from execution
+   traces, propose minimal harness changes, validate via regression before
+   accepting. Direct application: the ADVERSARIAL suite in claude_eval.py
+   currently finds routing gaps that are fixed by hand. Self-Harness is the
+   version where the agent proposes the fix itself. Prerequisite: traces must
+   be trustworthy signal, meaning the tool needs to be stable first. Good
+   upgrade target once the tool is past active development churn.
+
+9. **[CONSIDER, 2026-06-23] showDirectoryPicker for collab editor** —
+   File System Access API (Chrome). Instead of typing a path into Determined's
+   Analyze field, user clicks and picks a folder via OS dialog. Local-first,
+   no upload. Relevant when building the collab editor surface (item 3).
+   Chrome-only currently, which is fine for a local dev tool.
+
+
+7. **[LOW/MAC-ONLY, 2026-06-23] md-utils integration** — DandyLyons/md-utils
+   (https://github.com/DandyLyons/md-utils). Swift CLI + library for programmatic
+   Markdown manipulation: frontmatter CRUD (12+ subcommands, JMESPath search),
+   TOC generation, section reordering, Obsidian wikilink parsing + broken link
+   detection, Open Knowledge Format (OKF) bundle support. Not staleness-checking
+   itself, but the infrastructure that staleness detection sits on top of.
+   Relationship to this system: truth kernel produces facts per file; treedocs
+   records them in treedocs.yaml; md-utils is the machinery for keeping that
+   document in sync (read frontmatter, update it, flag stale entries). The sync
+   loop (item 5) drives all three. Mac/Swift, lower priority.
+
+2. **[TOP PRIORITY, NEW 2026-06-18] Evaluate widening the ingestion test
    corpus.** The analysis tool has so far only ever ingested itself (157
    files, its own self-corpus) plus regression fixtures - DESIGN.md
    section 3 flags this explicitly as an open assumption: the reasoning
@@ -1081,6 +1170,37 @@ distinct angles folded in.
     collision to route around. Requires changes to `search_symbols` in
     `agent_tools.py` and the NEED-resolution path in `agent_resolver.py`.
     Defer until substring workaround proves insufficient on more queries.
+
+16. **"Why was this file included?" explainability on context bundles (open).**
+    Every retrieved node should carry a `reason_included` annotation - e.g.,
+    "included because `run_analysis_pipeline` imports `scan_project_files`."
+    Currently only `query_session.py` mentions this concept; the context
+    assembly layer does not surface traversal reasons on its output. This is
+    a real debugging aid when AI retrieval goes wrong - the LLM (and the
+    developer) can see why a file is present, not just that it is. Gap
+    identified 2026-06-23 from Tool Plan.md section 3.2.
+
+17. **Retrieval modes: heuristic profiles per task type (done 2026-06-23).**
+    Added `debug_query` and `mutation_query` intents to `query_router.py`:
+    detection in `_detect_intent`, traversal budgets in `intent_budget`,
+    primitive selection in `_select_primitives`. `debug_query` gets
+    reverse-heavy traversal (depth 2) + findings/impact/context primitives.
+    `mutation_query` gets balanced traversal + mutations/impact/context primitives.
+    Both have matching heuristic patterns in `agent_resolver.py` `_HEURISTICS`
+    that map natural-language debug/mutation questions to pre-wired NEED sequences
+    (findings, todos, callers, callees). 279/279 regression tests passing.
+
+18. **Safe-zone / hot-zone risk annotation on context output (done 2026-06-23).**
+    New `risk_annotator.py` with `score_risk(oracle, symbol)`: pure DB scoring
+    (in_degree, out_degree, mutation_count) -> HOT/WARM/SAFE + reasons.
+    HOT: in_degree >= 5, or (in_degree >= 3 AND mutations > 0).
+    WARM: in_degree >= 2, or mutations > 0. SAFE: everything else.
+    Wired into `symbol_brief` (risk line prepended to every brief output).
+    New `risk_profile` standalone tool registered in TOOLS dispatch table.
+    Pattern added to _PATTERNS ("risk profile for X"), heuristic added to
+    _HEURISTICS for "is X safe to modify / how risky is X / blast radius of X".
+    Smoke test on self-corpus: _detect_intent correctly scores WARM (2 callers).
+    279/279 regression tests passing.
 
 ---
 
