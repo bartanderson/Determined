@@ -455,12 +455,7 @@ Last cleaned: 2026-06-24 (session 17 - verified against live tool run).
     string-only. Affected tools: `list_callers`, `list_callees`,
     `graph_most_connected`, `graph_subgraph`, `search_symbols`.
 
-11. **[MEDIUM] Knowledge extraction: auto-run after ingestion** - `extract_design_facts()`
-    now exists but must be called manually. Wire it into the `--source` ingestion
-    path in `local_agent.py` so structural facts are always populated immediately
-    after a corpus is ingested. Zero-cost (no LLM), takes < 1s.
-
-12. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
+11. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
 
