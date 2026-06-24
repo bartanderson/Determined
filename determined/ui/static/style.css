@@ -142,7 +142,7 @@ body {
 }
 
 /* ── main area ───────────────────────────────────────────── */
-.main { display: flex; flex-direction: column; overflow: hidden; }
+.main { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 
 /* query bar */
 .query-bar {
