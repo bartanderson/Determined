@@ -405,6 +405,86 @@ Last cleaned: 2026-06-24 (session 17 - verified against live tool run).
 
 ---
 
+### UI VISION: WHERE THIS IS GOING (session 18)
+
+The current UI is a query box that produces text blocks. That is the wrong shape.
+The right shape is a living, interactive graph where:
+
+**Every symbol is a node.**
+Every result is a subgraph expansion in place. Hovering a node shows its
+context inline: name, type, HOT/WARM/SAFE badge, in-degree, whether it has
+findings, whether it's a stub. Clicking expands it — shows its callers and
+callees as new nodes attached to it. The graph grows as you investigate.
+
+**Trace is visual, not textual.**
+"Trace X to Y" is not a form. When two nodes are visible, you can draw a
+path between them. The shortest call chain highlights across the graph that's
+already on screen. No new query needed — the graph already knows the edges.
+
+**Breadcrumbs are spatial.**
+Each investigation adds to a trail you can walk back along. The session
+history is not a vertical scroll of text; it's a map of where you went.
+You can return to any prior node and branch from it differently.
+
+**Leaves invite exploration.**
+Nodes at the edge of an expanded subgraph are marked: explored vs unknown,
+hot vs safe, has-findings vs empty. The "knowable without LLM" facts
+(risk badge, stub, dead, entry point) show immediately on every node
+without a query. Structural knowledge is ambient, not on-demand.
+
+**Context-sensitive actions live on nodes, not in a sidebar.**
+Every node has an action menu: expand callers, expand callees, understand,
+risk profile, see findings, trace from here, git history. The sidebar cold-
+start actions are for session setup only. Once a graph is on screen, all
+further investigation flows from what's visible.
+
+**The investigation accumulates.**
+Results don't scroll off. They build spatially. The whole session is visible
+as a connected structure. You can see your own reasoning as a graph.
+
+---
+
+### CURRENT UI AUDIT — what is clunky right now (session 18)
+
+1. **Results are static text.** Symbols appear as plain text — you can read
+   them but not touch them. Every symbol in every result should be a clickable
+   node that opens its context. Currently: copy, paste, retype.
+
+2. **Sidebar knows nothing about screen context.** "Callers of…" fills a blank
+   input. It should offer the symbols currently visible in results as options.
+   The sidebar is a cold-start panel; it should step back once there's context.
+
+3. **Follow-up chips are text phrases, not structured actions.** They work, but
+   they're the LLM's guess at what to ask next. They should be replaced or
+   supplemented by structured contextual actions derived from what the result
+   actually contains (symbols found → "expand this one", callers found →
+   "what calls the caller", risk badge found → "see all HOT symbols").
+
+4. **No visual graph.** The call graph is fully computed and stored in the DB.
+   The UI never shows it. Every "callers of X" result is a list of names that
+   should be a mini-graph node expansion.
+
+5. **No breadcrumbs.** Once a result scrolls out of view it is gone. There is
+   no way to see the shape of the investigation so far or return to a branch.
+
+6. **"Jump to" requires cold symbol knowledge.** "Callers of…" means nothing
+   without a symbol name. Should show recently seen / corpus entry points as
+   quick options. The tool knows the most-connected symbols; the sidebar should
+   offer them.
+
+7. **Risk information is hidden until asked.** HOT/WARM/SAFE is computed for
+   every symbol. It should appear passively on every symbol mention in every
+   result — not require a separate "risk of changing X" query.
+
+8. **Trace is missing entirely.** Noted above — wrong shape for the feature.
+   Belongs on nodes, not in the sidebar.
+
+9. **No investigation state.** The tool has a workflow queue (next_up, backlog).
+   The UI shows it only when asked. It should be ambient — visible in a corner,
+   updating as items are completed or added.
+
+---
+
 ### UI DESIGN DIRECTIVE (standing, applies to all future UI work)
 
 **Knowable things should be known. Known things should be expressed in the UI
