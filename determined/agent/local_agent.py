@@ -27,6 +27,7 @@ from determined.agent.agent_resolver import (
     detect_heuristic,
 )
 from determined.agent.knowledge_status import coverage_summary, suggest_followups
+from determined.agent.pattern_executor import PatternExecutor, detect_pattern
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 OLLAMA_MODEL = "llama3.2:3b"
@@ -362,7 +363,18 @@ def _answer(
     History is a list of {role, content} dicts (user/assistant pairs),
     extended in place with the (question, answer) pair.
     """
-    # Phase 0: GROUND
+    # Phase 0a: PATTERN EXECUTOR - check for named task patterns before anything else
+    pattern_name, subject = detect_pattern(user_input)
+    if pattern_name:
+        if verbose:
+            print(f"\n[pattern detected] {pattern_name} / subject={subject}", flush=True)
+        executor = PatternExecutor(OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT)
+        answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
+        history.append({"role": "user",      "content": user_input})
+        history.append({"role": "assistant", "content": answer})
+        return answer, history
+
+    # Phase 0b: GROUND
     grounding = ground_question(user_input, oracle, assessor)
     if verbose and grounding:
         print(f"\n[phase0-ground]\n{grounding}\n[/phase0-ground]", flush=True)
