@@ -142,7 +142,12 @@ body {
 }
 
 /* ── main area ───────────────────────────────────────────── */
-.main { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.main {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
 
 /* query bar */
 .query-bar {
@@ -182,9 +187,8 @@ body {
 
 /* results area */
 .results-area {
-  flex: 1;
-  min-height: 0;
   overflow-y: auto;
+  min-height: 0;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
