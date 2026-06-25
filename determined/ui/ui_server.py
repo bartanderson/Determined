@@ -510,6 +510,136 @@ def _is_valid_corpus(path: str) -> bool:
         return False
 
 
+@socketio.on("graph_subgraph")
+def handle_graph_subgraph(data):
+    """
+    BFS N hops out from a root symbol in both directions.
+    Returns {root, nodes:[{id,label,risk,file,line}], edges:[{source,target}]}.
+    Caps at 80 nodes to avoid hairball. No LLM.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    hops   = max(1, min(3, int(data.get("hops", 2))))
+    if not symbol or _oracle is None:
+        emit("graph_result", {"error": "no corpus"}); return
+
+    import builtins as _bi
+
+    # Build a last-segment → canonical-name map for all functions/classes.
+    # If a bare name maps to exactly one function, dotted callees like
+    # self.foo or obj.bar.foo resolve to that function for graph traversal.
+    # Ambiguous bare names (two+ functions named 'process') are kept dotted.
+    def _build_name_index():
+        idx: dict[str, list[str]] = {}
+        for (name,) in _oracle.conn.execute("SELECT name FROM functions").fetchall():
+            idx.setdefault(name, []).append(name)
+        for (name,) in _oracle.conn.execute("SELECT name FROM classes").fetchall():
+            idx.setdefault(name, []).append(name)
+        return idx
+
+    name_idx = _build_name_index()
+
+    def _resolve(callee: str) -> str:
+        """Return the best resolvable name for a callee string."""
+        bare = callee.rsplit(".", 1)[-1] if "." in callee else callee
+        if bare in dir(_bi):
+            return ""  # builtin, skip
+        # exact match wins
+        if callee in name_idx:
+            return callee
+        # bare segment unambiguous → resolve
+        if bare in name_idx and len(name_idx[bare]) == 1:
+            return bare
+        # ambiguous or unknown — keep bare for edge recording but don't expand
+        return bare if bare not in dir(_bi) else ""
+
+    try:
+        bare_root = _resolve(symbol) or symbol
+
+        visited: set[str] = set()
+        edges_set: set[tuple] = set()
+        frontier: set[str] = {bare_root}
+
+        for _ in range(hops):
+            next_frontier: set[str] = set()
+            for sym in frontier:
+                if sym in visited:
+                    continue
+                visited.add(sym)
+                bare = sym.rsplit(".", 1)[-1]
+                # callees
+                rows = _oracle.conn.execute(
+                    "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? OR caller = ?",
+                    (sym, bare),
+                ).fetchall()
+                for (callee,) in rows:
+                    resolved = _resolve(callee)
+                    if not resolved: continue
+                    edges_set.add((sym, resolved))
+                    if resolved not in visited:
+                        next_frontier.add(resolved)
+                # callers
+                rows2 = _oracle.conn.execute(
+                    "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? OR callee LIKE ? OR callee = ? OR callee LIKE ?",
+                    (sym, f"%.{sym}", bare, f"%.{bare}"),
+                ).fetchall()
+                for (caller,) in rows2:
+                    resolved = _resolve(caller)
+                    if not resolved: continue
+                    edges_set.add((resolved, sym))
+                    if resolved not in visited:
+                        next_frontier.add(resolved)
+                if len(visited) + len(next_frontier) > 80:
+                    break
+            frontier = next_frontier - visited
+            if not frontier or len(visited) > 80:
+                break
+
+        # trim to 80 nodes closest to root (visited is BFS order)
+        keep = set(list(visited)[:80])
+        filtered_edges = [(s, t) for s, t in edges_set if s in keep and t in keep]
+
+        # look up file/line for each node
+        def node_info(sym):
+            row = _oracle.conn.execute(
+                "SELECT file_path, line_number FROM functions WHERE name = ? LIMIT 1", (sym,)
+            ).fetchone()
+            if not row:
+                row = _oracle.conn.execute(
+                    "SELECT file_path, line_number FROM classes WHERE name = ? LIMIT 1", (sym,)
+                ).fetchone()
+            fp = (row[0] if row else "").replace("\\", "/").split("/")[-1]
+            ln = row[1] if row else 0
+            return fp, ln
+
+        # risk level from knowledge.db if available
+        def node_risk(sym):
+            if not (_assessor and _assessor._knowledge_conn):
+                return "cool"
+            row = _assessor._knowledge_conn.execute(
+                "SELECT content FROM knowledge_artifacts WHERE subject = ? AND kind = 'risk' LIMIT 1",
+                (f"risk::{sym}",)
+            ).fetchone()
+            if row:
+                body = (row[0] or "").lower()
+                if "hot" in body: return "hot"
+                if "warm" in body: return "warm"
+            return "cool"
+
+        nodes = []
+        for sym in keep:
+            fp, ln = node_info(sym)
+            nodes.append({"id": sym, "label": sym.rsplit(".", 1)[-1],
+                          "risk": node_risk(sym), "file": fp, "line": ln})
+
+        emit("graph_result", {
+            "root": bare_root,
+            "nodes": nodes,
+            "edges": [{"source": s, "target": t} for s, t in filtered_edges],
+        })
+    except Exception as exc:
+        emit("graph_result", {"error": str(exc)})
+
+
 @socketio.on("call_tree_expand")
 def handle_call_tree_expand(data):
     """

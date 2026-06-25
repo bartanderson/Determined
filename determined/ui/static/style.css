@@ -196,7 +196,7 @@ body {
 /* ── tab content ─────────────────────────────────────────── */
 .tab-content {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
 }
 .tab-panel {
@@ -618,3 +618,26 @@ body {
 }
 .ct-children { width: 100%; }
 .ct-leaf { padding: .1rem 0; }
+
+/* ── graph view (exp/graph) ─────────────────────────────── */
+#panel-graph {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#gx-status {
+  flex-shrink: 0;
+}
+#gx-cy {
+  height: calc(100vh - 200px);
+  min-height: 200px;
+}
