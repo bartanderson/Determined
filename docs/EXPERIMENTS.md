@@ -138,22 +138,42 @@ Fixed evaluation task (same for both):
 > `handle_player_action` via symbol hops, then view its source and open it
 > in an editor at the correct line.
 
+Minimum capability for all three: given a symbol already open in spotlight,
+one click surfaces the function body at the correct line. That's the bar.
+Additional tests run only if minimum passes.
+
 ### 5. Inline viewer  — branch `exp/editor-inline`
-Show function source directly in the UI — server reads the file, slices the
-relevant lines, returns them as a code block in the spotlight or a new panel.
-No external editor dependency.
-- Kill if: reading code in a tiny panel is worse than just opening the file.
-- Keep if: seeing the body inline is faster for quick inspection without
-  breaking flow (staying in the tool).
+"View source" button in spotlight → function body renders as a code block
+inside the panel. No external dependency, no context switch.
+- Minimum test: navigate to `handle_player_action`, click View source, see
+  the function body with correct line numbers.
+- Additional if passing: line count, scroll for long functions, expand/collapse.
+- Kill if: the panel is too cramped to be useful, or reading code in a side
+  panel is worse than just opening a file.
+- Keep if: inline peek is genuinely faster for "is this the right function"
+  confirmation before committing to an editor jump.
 - Verdict: _pending_
 
-### 6. Sublime Text integration  — branch `exp/editor-sublime`
-"Open in Sublime" button in the spotlight panel. Server-side handler shells
-out `subl path:line`. One click lands in Sublime at the right function.
-- Kill if: the context switch to Sublime breaks the investigation flow, or
-  `subl` is unreliable on this machine.
-- Keep if: landing in the real editor at the right line is the natural exit
-  from a navigation session.
+### 6. Sublime Text  — branch `exp/editor-sublime`
+"Open in Sublime" button in spotlight → server shells `subl "path:line"`.
+Full editor, lands at the function definition.
+- Minimum test: navigate to `handle_player_action`, click Open in Sublime,
+  Sublime opens at the correct line.
+- Additional if passing: check if already open (avoid duplicate windows),
+  confirm `subl` is on PATH on this machine.
+- Kill if: `subl` is not on PATH or doesn't support `:line` syntax reliably.
+- Keep if: one click lands in the right place with no friction.
+- Verdict: _pending_
+
+### 7. Lite-XL  — branch `exp/editor-litexl`
+"Open in Lite-XL" button in spotlight → server shells the Lite-XL CLI.
+Lighter weight than Sublime, potentially faster to launch.
+- Minimum test: same as Sublime — navigate to `handle_player_action`, click,
+  land at the correct line in Lite-XL.
+- Additional if passing: startup time vs Sublime, CLI argument syntax.
+- Kill if: CLI doesn't support line targeting, or launch is slower than
+  just opening Sublime.
+- Keep if: faster/lighter than Sublime for quick inspections.
 - Verdict: _pending_
 
 ## Outcome
