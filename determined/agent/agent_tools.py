@@ -99,6 +99,8 @@ def list_callees(oracle: "DBOracle", args: dict) -> str:
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
+    # No SQL LIMIT: a function calling print() 30x would otherwise crowd out
+    # every real callee. Pull all, drop builtins, dedupe by callee, then cap.
     rows = oracle.conn.execute(
         """
         SELECT ge.callee, sr.file_path, ge.line_number
@@ -107,16 +109,27 @@ def list_callees(oracle: "DBOracle", args: dict) -> str:
             ON ge.caller = sr.caller AND ge.callee = sr.callee
         WHERE ge.caller = ?
         ORDER BY ge.line_number
-        LIMIT 30
         """,
         (symbol,),
     ).fetchall()
-    if not rows:
-        return f"No callees found for '{symbol}' (symbol may not exist or makes no calls)"
+    import builtins as _bi
+    seen: dict[str, tuple] = {}
+    counts: dict[str, int] = {}
+    for callee, fp, ln in rows:
+        bare = (callee or "").rsplit(".", 1)[-1]
+        if not bare or bare in dir(_bi):
+            continue  # skip builtins (print, len, ...) - not navigable symbols
+        counts[callee] = counts.get(callee, 0) + 1
+        if callee not in seen:
+            seen[callee] = (fp, ln)
+    if not seen:
+        return f"No project callees for '{symbol}' (only builtins, or makes no calls)"
     lines = [f"'{symbol}' calls:"]
-    for r in rows:
-        file_short = (r[1] or "?").replace("\\", "/").split("/")[-1]
-        lines.append(f"  {r[0]} in {file_short} line {r[2]}")
+    for callee, (fp, ln) in list(seen.items())[:30]:
+        file_short = (fp or "?").replace("\\", "/").split("/")[-1]
+        n = counts[callee]
+        suffix = f" (x{n})" if n > 1 else ""
+        lines.append(f"  {callee} in {file_short} line {ln}{suffix}")
     return "\n".join(lines)
 
 
