@@ -195,6 +195,7 @@ body {
 
 /* ── tab content ─────────────────────────────────────────── */
 .tab-content {
+  grid-row: 4;
   min-height: 0;
   overflow: visible;
   position: relative;
@@ -638,6 +639,6 @@ body {
   flex-shrink: 0;
 }
 #gx-cy {
-  height: calc(100vh - 200px);
-  min-height: 200px;
+  flex: 1;
+  min-height: 0;
 }

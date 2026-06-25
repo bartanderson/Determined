@@ -413,17 +413,7 @@ function gxMap(symbol) {
   if (_cy) { _cy.destroy(); _cy = null; }
   const cyEl = document.getElementById("gx-cy");
   cyEl.innerHTML = "";
-  // position fixed so Cytoscape gets a real viewport-measured box
-  // regardless of the broken flex/grid parent chain
-  const toolbar = document.querySelector(".graph-toolbar");
-  const tbRect  = toolbar.getBoundingClientRect();
-  const sbRect  = document.querySelector(".statusbar").getBoundingClientRect();
-  cyEl.style.position = "fixed";
-  cyEl.style.left   = tbRect.left + "px";
-  cyEl.style.top    = (tbRect.bottom + 2) + "px";
-  cyEl.style.width  = tbRect.width + "px";
-  cyEl.style.height = (sbRect.top - tbRect.bottom - 4) + "px";
-  cyEl.style.zIndex = "10";
+  cyEl.style.cssText = "";
   socket.emit("graph_subgraph", { symbol, hops: parseInt(gxHops.value) });
 }
 
