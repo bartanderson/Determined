@@ -67,7 +67,25 @@ After all four: compare verdicts, decide what (if anything) graduates to `main`.
 Click a symbol → side panel with its facts + related symbols; breadcrumb trail.
 - Kill if: clicks hit dead ends, or the panel adds nothing over inline text.
 - Keep if: you can follow a thread symbol→symbol without losing your place.
-- Verdict: _pending_
+- **Verdict: PROMISING** (2026-06-24). The panel is genuinely strong — click
+  `process_message` and you get risk profile (WARM, in=4/out=36), intent, callers,
+  calls, findings: exactly the graph-neighbor data needed to walk the chain.
+  3 fixes spent, each surfaced a real bug:
+    1. Symbol detection tagged prose words ("Key", "The") as clickable and missed
+       backticked identifiers. Switched to backtick-based detection → only real
+       symbols are navigable.
+    2. Panel section symbols were dead text. Linkified `<name> in <file> line N`
+       lines → callers/calls now clickable to re-center.
+    3. `list_callees` was flooded by `print` ×N under a SQL LIMIT 30, burying real
+       next-hops. Filter builtins + dedupe + count → revealed the true spine
+       (`adjudication_engine.process`, `IntentParser`, `IntentFrame`). Engine win,
+       graduates to main regardless of UI outcome.
+  Bare-name hops work (process_player_input, test fns). Tenable and valuable.
+- **Lighthouse (open):** real callees are dotted method names
+  (`self.adjudication_engine.process`); the panel linkifier grabs the leading
+  token (`self`) not the method, so dotted next-hops don't navigate yet. Needs
+  callee→last-segment resolution + symbol disambiguation. This is where graph
+  navigation meets the no-type-inference limit. Closing this graduates spotlight.
 
 ### 2. Call-tree  — branch `exp/call-tree`
 Pick a root symbol; lazily expandable caller/callee tree.
