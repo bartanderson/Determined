@@ -756,7 +756,9 @@ function addResultBlock(question, answer) {
 // Called after innerHTML is set; walks rendered spans and upgrades them.
 function attachSymbolHandlers(container) {
   container.querySelectorAll(".sym, .fn").forEach(el => {
-    const name = el.textContent.replace(/\($/, "").trim();
+    const raw  = el.textContent.replace(/\($/, "").trim();
+    // data-nav carries the resolved last-segment when the display text is dotted
+    const name = el.dataset.nav || raw.split(".").pop() || raw;
     el.className = "sym-link";
     el.dataset.sym = name;
   });
@@ -908,9 +910,9 @@ socket.on("spotlight_section", data => {
   el.className = "sp-section-content";
   // linkify "<name> in <file>.py line N" lines so callers/calls are walkable
   el.innerHTML = escHtml(data.content).replace(
-    /^(\s*)([A-Za-z_]\w*)(\s+in\s+)(\S+\.py)(\s+line\s+\d+)/gm,
+    /^(\s*)([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(\s+in\s+)(\S+\.py)(\s+line\s+\d+)/gm,
     (m, ind, name, inw, fp, tail) =>
-      `${ind}<span class="sym">${name}</span>${inw}<span class="fp">${fp}</span>${tail}`
+      `${ind}<span class="sym" data-nav="${escHtml(name.split('.').pop())}">${escHtml(name)}</span>${inw}<span class="fp">${fp}</span>${tail}`
   );
   attachSymbolHandlers(el);
 
