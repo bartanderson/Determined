@@ -81,11 +81,10 @@ Click a symbol → side panel with its facts + related symbols; breadcrumb trail
        (`adjudication_engine.process`, `IntentParser`, `IntentFrame`). Engine win,
        graduates to main regardless of UI outcome.
   Bare-name hops work (process_player_input, test fns). Tenable and valuable.
-- **Lighthouse (open):** real callees are dotted method names
-  (`self.adjudication_engine.process`); the panel linkifier grabs the leading
-  token (`self`) not the method, so dotted next-hops don't navigate yet. Needs
-  callee→last-segment resolution + symbol disambiguation. This is where graph
-  navigation meets the no-type-inference limit. Closing this graduates spotlight.
+- **Lighthouse (CLOSED 2026-06-25):** dotted callee linkification fixed.
+  Regex extended to capture full dotted names; `attachSymbolHandlers` resolves
+  to last segment for navigation. `self.adjudication_engine.process` now
+  displays the full chain and navigates to `process`.
 
 ### 2. Call-tree  — branch `exp/call-tree`
 Pick a root symbol; lazily expandable caller/callee tree.
