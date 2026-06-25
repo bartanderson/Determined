@@ -81,6 +81,7 @@
       <button class="tab tab-loading" data-tab="discover">Discover</button>
       <button class="tab tab-loading" data-tab="docstrings">Docstrings</button>
       <button class="tab tab-loading" data-tab="todos">Todos</button>
+      <button class="tab" data-tab="call_tree">Call tree</button>
     </div>
 
     <!-- tab panels -->
@@ -94,6 +95,16 @@
       <div class="tab-panel" id="panel-discover"><div class="results-area tab-results" id="tab-discover"><div class="tab-spinner">Loading…</div></div></div>
       <div class="tab-panel" id="panel-docstrings"><div class="results-area tab-results" id="tab-docstrings"><div class="tab-spinner">Loading…</div></div></div>
       <div class="tab-panel" id="panel-todos"><div class="results-area tab-results" id="tab-todos"><div class="tab-spinner">Loading…</div></div></div>
+      <div class="tab-panel" id="panel-call_tree">
+        <div class="call-tree-toolbar">
+          <input id="ct-input" class="path-input" placeholder="Symbol to trace (e.g. process_message)" style="flex:1">
+          <button class="send-btn" id="ct-go">Trace ↵</button>
+          <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
+            <input type="checkbox" id="ct-up"> callers
+          </label>
+        </div>
+        <div class="results-area tab-results" id="tab-call_tree" style="font-family:monospace;font-size:.85em"></div>
+      </div>
     </div>
 
   </div>
@@ -255,6 +266,89 @@ socket.on("tab_answer", data => {
   const tabBtn = document.querySelector(`.tab[data-tab="${data.tab}"]`);
   if (tabBtn) tabBtn.classList.remove("tab-loading");
   attachSymbolHandlers(panel);
+});
+
+// ── call tree ─────────────────────────────────────────────
+const ctInput  = document.getElementById("ct-input");
+const ctGo     = document.getElementById("ct-go");
+const ctUp     = document.getElementById("ct-up");
+const ctPanel  = document.getElementById("tab-call_tree");
+
+function ctTrace(symbol) {
+  if (!symbol) return;
+  ctPanel.innerHTML = "";
+  const dir = ctUp.checked ? "up" : "down";
+  const root = ctMakeNode(symbol, dir, 0);
+  ctPanel.appendChild(root);
+  ctExpand(root, symbol, dir);
+}
+
+function ctMakeNode(symbol, dir, depth) {
+  const li = document.createElement("div");
+  li.className = "ct-node";
+  li.dataset.symbol = symbol;
+  li.dataset.dir = dir;
+  li.dataset.depth = depth;
+  li.style.paddingLeft = (depth * 1.4) + "rem";
+  li.innerHTML = `<span class="ct-toggle">▶</span> <span class="ct-sym sym-link">${escHtml(symbol)}</span> <span class="ct-children-wrap"></span>`;
+  li.querySelector(".ct-sym").addEventListener("click", e => {
+    e.stopPropagation();
+    ctInput.value = symbol;
+    ctTrace(symbol);
+  });
+  li.querySelector(".ct-toggle").addEventListener("click", e => {
+    e.stopPropagation();
+    const wrap = li.querySelector(".ct-children");
+    if (!wrap) { ctExpand(li, symbol, dir); return; }
+    const open = wrap.style.display !== "none";
+    wrap.style.display = open ? "none" : "";
+    li.querySelector(".ct-toggle").textContent = open ? "▶" : "▼";
+  });
+  return li;
+}
+
+function ctExpand(li, symbol, dir) {
+  const toggle = li.querySelector(".ct-toggle");
+  toggle.textContent = "…";
+  socket.emit("call_tree_expand", { symbol, direction: dir });
+  li._ctPending = true;
+}
+
+socket.on("call_tree_result", data => {
+  if (data.error) {
+    ctPanel.innerHTML = `<div style="color:var(--risk-hot);padding:.5rem">${escHtml(data.error)}</div>`;
+    return;
+  }
+  // find the node waiting for this symbol
+  const pending = ctPanel.querySelector(`.ct-node[data-symbol="${CSS.escape(data.symbol)}"]`);
+  if (!pending) return;
+  pending._ctPending = false;
+  const toggle = pending.querySelector(".ct-toggle");
+  const wrap   = document.createElement("div");
+  wrap.className = "ct-children";
+  if (!data.children || data.children.length === 0) {
+    toggle.textContent = "·";
+    wrap.innerHTML = `<div class="ct-leaf" style="padding-left:${(+pending.dataset.depth + 1) * 1.4}rem;color:var(--text3)">(no ${data.direction === "down" ? "callees" : "callers"})</div>`;
+  } else {
+    toggle.textContent = "▼";
+    for (const c of data.children) {
+      const child = ctMakeNode(c.symbol, data.direction, +pending.dataset.depth + 1);
+      const meta  = document.createElement("span");
+      meta.className = "ct-meta";
+      meta.textContent = c.file ? ` — ${c.file}:${c.line}` : "";
+      child.appendChild(meta);
+      wrap.appendChild(child);
+    }
+  }
+  pending.appendChild(wrap);
+});
+
+ctGo.addEventListener("click", () => ctTrace(ctInput.value.trim()));
+ctInput.addEventListener("keydown", e => { if (e.key === "Enter") ctTrace(ctInput.value.trim()); });
+// clicking a symbol in any panel seeds the call-tree input
+document.addEventListener("click", e => {
+  const el = e.target.closest(".sym-link, .spotlight-sym-link");
+  if (el && el.dataset && el.dataset.symbol) ctInput.value = el.dataset.symbol;
 });
 
 const clearHistBtn = document.getElementById("btn-clear-history");

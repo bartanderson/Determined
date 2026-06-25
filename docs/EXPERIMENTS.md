@@ -91,7 +91,18 @@ Click a symbol → side panel with its facts + related symbols; breadcrumb trail
 Pick a root symbol; lazily expandable caller/callee tree.
 - Kill if: trees explode or cycle unmanageably.
 - Keep if: expand/collapse reveals flow faster than typing queries.
-- Verdict: _pending_
+- **Verdict: KILL** (2026-06-24). The tree degenerates into a clickable list —
+  same information as `list_callees` in chat, just with expand arrows. It does
+  not show shape, purpose, or how a symbol sits in the architecture. More clicks
+  for identical data. Fix 1 spent on dotted-name re-rooting (bare-segment
+  fallback), which works, but doesn't change the fundamental problem.
+  Root cause: flat expansion can't reveal spatial position or inline annotation.
+  Both are prerequisites for "terrain" — which is the real ask.
+- **Lighthouse:** what's missing is two things together: (1) spatial position
+  (where does this symbol live relative to the rest of the graph), and (2) inline
+  annotation (what does each node do). A tree can't provide either. Points at
+  Trial 3 (graph) for spatial layout and spotlight for annotation; the combination
+  may be the real answer.
 
 ### 3. Graph view (cytoscape)  — branch `exp/graph`
 Subgraph around a symbol; nodes clickable to re-center.
