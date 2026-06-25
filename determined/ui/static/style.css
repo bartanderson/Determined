@@ -581,3 +581,40 @@ body {
 .status-dot.offline { background: var(--red); }
 .statusbar .spacer  { flex: 1; }
 .elapsed { color: var(--text3); }
+
+/* ── call tree (exp/call-tree) ──────────────────────────── */
+.call-tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ct-node {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .25rem;
+  padding: .15rem 0;
+  line-height: 1.4;
+}
+.ct-toggle {
+  cursor: pointer;
+  color: var(--text3);
+  width: 1em;
+  display: inline-block;
+  flex-shrink: 0;
+  user-select: none;
+}
+.ct-sym {
+  color: var(--cyan);
+  cursor: pointer;
+}
+.ct-sym:hover { text-decoration: underline; }
+.ct-meta {
+  color: var(--text3);
+  font-size: .8em;
+}
+.ct-children { width: 100%; }
+.ct-leaf { padding: .1rem 0; }

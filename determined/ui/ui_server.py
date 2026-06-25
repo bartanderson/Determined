@@ -510,6 +510,73 @@ def _is_valid_corpus(path: str) -> bool:
         return False
 
 
+@socketio.on("call_tree_expand")
+def handle_call_tree_expand(data):
+    """
+    Expand one node of the call tree.
+    Returns direct callees (direction='down') or callers (direction='up') for a symbol.
+    No LLM — pure DB query.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    direction = data.get("direction", "down")  # 'down' = callees, 'up' = callers
+    if not symbol or _oracle is None:
+        emit("call_tree_result", {"error": "no corpus", "symbol": symbol}); return
+    import builtins as _bi
+    # dotted names (self.foo, obj.bar) won't match as callers in the DB;
+    # fall back to the bare last segment so re-rooting on a dotted callee works
+    bare_symbol = symbol.rsplit(".", 1)[-1] if "." in symbol else symbol
+    try:
+        if direction == "down":
+            rows = _oracle.conn.execute(
+                """
+                SELECT ge.callee, sr.file_path, ge.line_number
+                FROM graph_edges ge
+                LEFT JOIN symbol_references sr
+                    ON ge.caller = sr.caller AND ge.callee = sr.callee
+                WHERE ge.caller = ? OR ge.caller = ?
+                ORDER BY ge.line_number
+                """,
+                (symbol, bare_symbol),
+            ).fetchall()
+            seen: dict[str, dict] = {}
+            for callee, fp, ln in rows:
+                bare = (callee or "").rsplit(".", 1)[-1]
+                if not bare or bare in dir(_bi):
+                    continue
+                if callee not in seen:
+                    file_short = (fp or "").replace("\\", "/").split("/")[-1]
+                    seen[callee] = {"symbol": callee, "file": file_short, "line": ln or 0}
+            children = list(seen.values())
+        else:
+            rows = _oracle.conn.execute(
+                """
+                SELECT ge.caller, sr.file_path, ge.line_number
+                FROM graph_edges ge
+                LEFT JOIN symbol_references sr
+                    ON ge.caller = sr.caller AND ge.callee = sr.callee
+                WHERE ge.callee = ? OR ge.callee LIKE ? OR ge.callee = ? OR ge.callee LIKE ?
+                ORDER BY sr.file_path, ge.line_number
+                """,
+                (symbol, f"%.{symbol}", bare_symbol, f"%.{bare_symbol}"),
+            ).fetchall()
+            seen2: dict[str, dict] = {}
+            for caller, fp, ln in rows:
+                bare = (caller or "").rsplit(".", 1)[-1]
+                if not bare or bare in dir(_bi):
+                    continue
+                if caller not in seen2:
+                    file_short = (fp or "").replace("\\", "/").split("/")[-1]
+                    seen2[caller] = {"symbol": caller, "file": file_short, "line": ln or 0}
+            children = list(seen2.values())
+        emit("call_tree_result", {
+            "symbol": symbol,
+            "direction": direction,
+            "children": children,
+        })
+    except Exception as exc:
+        emit("call_tree_result", {"error": str(exc), "symbol": symbol})
+
+
 @socketio.on("list_dbs")
 def handle_list_dbs():
     """Scan CWD for .db files and return list with schema validity flag."""
