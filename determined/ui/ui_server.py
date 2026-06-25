@@ -510,6 +510,64 @@ def _is_valid_corpus(path: str) -> bool:
         return False
 
 
+@socketio.on("get_source")
+def handle_get_source(data):
+    """
+    Return the source lines for a symbol (function or class).
+    Uses ast.end_lineno for accurate function boundary detection.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol or _oracle is None:
+        emit("source_result", {"error": "no corpus"}); return
+    try:
+        # look up in functions first, then classes
+        row = _oracle.conn.execute(
+            "SELECT file_path, line_number FROM functions WHERE name = ? LIMIT 1", (symbol,)
+        ).fetchone()
+        if not row:
+            row = _oracle.conn.execute(
+                "SELECT file_path, line_number FROM classes WHERE name = ? LIMIT 1", (symbol,)
+            ).fetchone()
+        if not row:
+            emit("source_result", {"error": f"'{symbol}' not found in corpus"}); return
+
+        file_path, start_line = row
+        if not file_path or not Path(file_path).exists():
+            emit("source_result", {"error": f"source file not found: {file_path}"}); return
+
+        src = Path(file_path).read_text(encoding="utf-8", errors="replace")
+        lines = src.splitlines()
+
+        # use AST to find the actual end line
+        end_line = start_line + 60  # fallback cap
+        try:
+            import ast as _ast
+            tree = _ast.parse(src)
+            for node in _ast.walk(tree):
+                if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+                    if node.name == symbol and node.lineno == start_line:
+                        end_line = node.end_lineno
+                        break
+        except Exception:
+            pass
+
+        # clamp and extract
+        start_idx = max(0, start_line - 1)
+        end_idx   = min(len(lines), end_line)
+        snippet   = lines[start_idx:end_idx]
+
+        emit("source_result", {
+            "symbol":    symbol,
+            "file":      file_path.replace("\\", "/"),
+            "file_short": Path(file_path).name,
+            "start_line": start_line,
+            "end_line":   end_line,
+            "lines":      snippet,
+        })
+    except Exception as exc:
+        emit("source_result", {"error": str(exc)})
+
+
 @socketio.on("graph_subgraph")
 def handle_graph_subgraph(data):
     """

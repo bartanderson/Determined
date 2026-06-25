@@ -121,6 +121,29 @@ Subgraph around a symbol; nodes clickable to re-center.
   found. Worked around with `position:fixed` on `#gx-cy`. Fix properly
   before shipping.
 
+### 5. Inline viewer  — branch `exp/editor-inline`
+Read file + slice lines server-side; render in a panel below spotlight with line numbers.
+- Kill if: adds friction vs. just opening the file; slow; hard to read in context.
+- Keep if: quick "what does this function actually do" without leaving the tool.
+- **Verdict: PROMISING** (2026-06-25). Zero external dependency. Server reads file,
+  uses `ast.end_lineno` for accurate function boundaries, returns lines with metadata.
+  Panel renders below spotlight with padded line numbers (`355 │ def process_message...`).
+  Tested on `process_message` (dm_chat_handler.py:355-570, 216 lines) — correct boundary,
+  scrollable, no performance issue. One fix: source button toggle/close UX.
+  Fits the "quick inspection without breaking flow" use case well.
+
+### 6. Sublime Text  — branch `exp/editor-sublime`
+"Open in Sublime" button in spotlight → server shells `subl path:line`.
+- Kill if: shell-out is too slow, Sublime not always open, or the round-trip breaks flow.
+- Keep if: one click lands in the real editor at the right line.
+- Verdict: _pending_
+
+### 7. Lite-XL  — branch `exp/editor-litexl`
+"Open in Lite-XL" button → server shells Lite-XL CLI with path:line.
+- Kill if: CLI argument handling is awkward or the editor feels heavy for the task.
+- Keep if: lightweight feel + good CLI integration justify it alongside Sublime.
+- Verdict: _pending_
+
 ### 4. Trail / notebook  — branch `exp/trail`
 Investigation recorded as a replayable, deletable step sequence.
 - Kill if: capture overhead exceeds its reuse value.

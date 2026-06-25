@@ -642,3 +642,45 @@ body {
   flex: 1;
   min-height: 0;
 }
+
+/* ── inline source viewer (exp/editor-inline) ───────────── */
+.sp-source {
+  display: none;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 45%;
+  min-height: 120px;
+}
+.sp-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--bg2);
+  font-size: .78em;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.sp-source-close {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: .9em;
+  padding: 0 2px;
+}
+.sp-source-close:hover { color: var(--text); }
+.sp-source-code {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: .78em;
+  line-height: 1.5;
+  color: var(--text2);
+  white-space: pre;
+  background: var(--bg);
+}
+.sp-source-btn { margin-left: auto; }
