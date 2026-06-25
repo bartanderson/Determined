@@ -540,6 +540,26 @@ should suggest next steps. Every action that takes a symbol name should offer th
 known symbols. Every investigation should leave a breadcrumb to related ones. The developer
 should never be in a blank field with no hints; the tool knows things and should say so.
 
+**Sidebar / menu directive (session 18, standing):**
+The sidebar is for genuine cold-start actions only — things useful before any
+result exists. If an action requires a symbol, file, or prior result to make
+sense, it belongs in context (spotlight actions, node menus, follow-up chips),
+not the sidebar. Before adding or removing any sidebar item, discuss with Bart
+first — menu decisions are user-centric and need his sign-off. Bring suggestions
+with reasoning; don't just change.
+
+Agreed cold-start sidebar items (session 18):
+  - Analyze (ingest a new project)
+  - Work queue (where am I, what's next)
+  - Find dead code (corpus-wide, no context needed)
+  - Unexplored (where hasn't the tool looked)
+  - Discover more (expand knowledge layer)
+  - Missing docstrings (hygiene sweep)
+  - Find todos (corpus-wide scan)
+
+Everything else moves to context: spotlight panel actions, node menus,
+follow-up chips on results.
+
 **Practical rules:**
 - Sidebar cold-start actions: only for things with no required input, or where the
   fill-then-type pattern is genuinely natural (callers of..., explore file...).
