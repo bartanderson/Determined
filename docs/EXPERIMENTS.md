@@ -179,25 +179,24 @@ inside the panel. No external dependency, no context switch.
 
 ### 6. Sublime Text  — branch `exp/editor-sublime`
 "Open in Sublime" button in spotlight → server shells `subl "path:line"`.
-Full editor, lands at the function definition.
-- Minimum test: navigate to `handle_player_action`, click Open in Sublime,
-  Sublime opens at the correct line.
-- Additional if passing: check if already open (avoid duplicate windows),
-  confirm `subl` is on PATH on this machine.
-- Kill if: `subl` is not on PATH or doesn't support `:line` syntax reliably.
-- Keep if: one click lands in the right place with no friction.
-- Verdict: _pending_
+- **Verdict: KILL** (2026-06-25). `subl path:line` works from CLI and PATH
+  was correctly set up. Socket event never reached the server handler — root
+  cause not fully diagnosed (likely a socket namespace or server restart
+  issue). Scrapped before full diagnosis: decision made that external editors
+  are out of scope. The tool does the examination; users open their own editor
+  if they want to follow along.
 
 ### 7. Lite-XL  — branch `exp/editor-litexl`
-"Open in Lite-XL" button in spotlight → server shells the Lite-XL CLI.
-Lighter weight than Sublime, potentially faster to launch.
-- Minimum test: same as Sublime — navigate to `handle_player_action`, click,
-  land at the correct line in Lite-XL.
-- Additional if passing: startup time vs Sublime, CLI argument syntax.
-- Kill if: CLI doesn't support line targeting, or launch is slower than
-  just opening Sublime.
-- Keep if: faster/lighter than Sublime for quick inspections.
-- Verdict: _pending_
+"Open in Lite-XL" button → server shells Lite-XL CLI.
+- **Verdict: KILL** (2026-06-25). Lite-XL has no CLI argument for line
+  numbers — it treats all arguments as file paths. Opens files fine but
+  can't land at a specific line. Same scoping decision as Trial 6 applies.
 
 ## Outcome
-_decided after editor trials_
+
+Editor integration: **inline viewer graduates to main** (Trial 5). External
+editor launch (Trials 6, 7) scrapped — the tool is the examination surface,
+not a launcher. Users open their own editor independently if needed.
+
+Navigation experiments: spotlight (1) + graph (3) both PROMISING and on main.
+Call-tree (2) killed. Trail (4) deferred.
