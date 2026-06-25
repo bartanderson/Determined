@@ -6,6 +6,7 @@
 <title>Determined — dev console</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://cdn.socket.io/4.6.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 </head>
 <body>
 
@@ -82,6 +83,7 @@
       <button class="tab tab-loading" data-tab="docstrings">Docstrings</button>
       <button class="tab tab-loading" data-tab="todos">Todos</button>
       <button class="tab" data-tab="call_tree">Call tree</button>
+      <button class="tab" data-tab="graph">Graph</button>
     </div>
 
     <!-- tab panels -->
@@ -104,6 +106,21 @@
           </label>
         </div>
         <div class="results-area tab-results" id="tab-call_tree" style="font-family:monospace;font-size:.85em"></div>
+      </div>
+      <div class="tab-panel" id="panel-graph">
+        <div class="graph-toolbar">
+          <input id="gx-input" class="path-input" placeholder="Symbol (e.g. process_message)" style="flex:1">
+          <button class="send-btn" id="gx-go">Map ↵</button>
+          <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
+            hops <select id="gx-hops" style="background:var(--surface2);color:var(--text1);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
+              <option value="1">1</option>
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+        </div>
+        <div id="gx-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
+        <div id="gx-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
       </div>
     </div>
 
@@ -244,6 +261,11 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
 function activateTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + name));
+  // gx-cy is position:fixed so it persists across tab switches; hide when not on graph tab
+  const cyEl = document.getElementById("gx-cy");
+  if (cyEl && cyEl.style.position === "fixed") {
+    cyEl.style.display = name === "graph" ? "" : "none";
+  }
 }
 
 document.querySelectorAll(".tab").forEach(t => {
@@ -349,6 +371,106 @@ ctInput.addEventListener("keydown", e => { if (e.key === "Enter") ctTrace(ctInpu
 document.addEventListener("click", e => {
   const el = e.target.closest(".sym-link, .spotlight-sym-link");
   if (el && el.dataset && el.dataset.symbol) ctInput.value = el.dataset.symbol;
+});
+
+// ── graph (cytoscape) ────────────────────────────────────
+const gxInput  = document.getElementById("gx-input");
+const gxGo     = document.getElementById("gx-go");
+const gxHops   = document.getElementById("gx-hops");
+const gxStatus = document.getElementById("gx-status");
+let _cy = null;
+
+const GX_STYLE = [
+  { selector: "node", style: {
+      label: "data(label)",
+      "font-size": 10,
+      "font-family": "monospace",
+      "text-valign": "bottom",
+      "text-margin-y": 4,
+      color: "#a0a8b8",
+      "background-color": "#3a4055",
+      "border-width": 1,
+      "border-color": "#555e7a",
+      width: 22, height: 22,
+  }},
+  { selector: "node[risk='hot']",  style: { "background-color": "#7a2228", "border-color": "#d44" } },
+  { selector: "node[risk='warm']", style: { "background-color": "#5a4010", "border-color": "#c80" } },
+  { selector: "node.gx-root",     style: {
+      "background-color": "#1a4a7a", "border-color": "#4af", "border-width": 2,
+      width: 30, height: 30, "font-size": 11, color: "#cde",
+  }},
+  { selector: "edge", style: {
+      width: 1, "line-color": "#3a4055",
+      "target-arrow-color": "#3a4055", "target-arrow-shape": "triangle",
+      "curve-style": "bezier", opacity: 0.7,
+  }},
+  { selector: "node:selected", style: { "border-color": "#8af", "border-width": 2 } },
+];
+
+function gxMap(symbol) {
+  if (!symbol) return;
+  gxStatus.textContent = `Mapping ${symbol}…`;
+  if (_cy) { _cy.destroy(); _cy = null; }
+  const cyEl = document.getElementById("gx-cy");
+  cyEl.innerHTML = "";
+  // position fixed so Cytoscape gets a real viewport-measured box
+  // regardless of the broken flex/grid parent chain
+  const toolbar = document.querySelector(".graph-toolbar");
+  const tbRect  = toolbar.getBoundingClientRect();
+  const sbRect  = document.querySelector(".statusbar").getBoundingClientRect();
+  cyEl.style.position = "fixed";
+  cyEl.style.left   = tbRect.left + "px";
+  cyEl.style.top    = (tbRect.bottom + 2) + "px";
+  cyEl.style.width  = tbRect.width + "px";
+  cyEl.style.height = (sbRect.top - tbRect.bottom - 4) + "px";
+  cyEl.style.zIndex = "10";
+  socket.emit("graph_subgraph", { symbol, hops: parseInt(gxHops.value) });
+}
+
+socket.on("graph_result", data => {
+  if (data.error) { gxStatus.textContent = `Error: ${data.error}`; return; }
+  const nodes = data.nodes.map(n => ({ data: {
+    id: n.id, label: n.label || n.id.split(".").pop(),
+    risk: n.risk || "cool", file: n.file || "", line: n.line || 0,
+  }, classes: n.id === data.root ? "gx-root" : "" }));
+  const edges = data.edges.map(e => ({ data: {
+    id: `${e.source}__${e.target}`, source: e.source, target: e.target,
+  }}));
+  gxStatus.textContent = `${nodes.length} nodes · ${edges.length} edges`;
+  _cy = cytoscape({
+    container: document.getElementById("gx-cy"),
+    elements: [...nodes, ...edges],
+    style: GX_STYLE,
+    layout: { name: "cose", animate: false, randomize: false,
+               nodeRepulsion: 8000, idealEdgeLength: 80, nodeDimensionsIncludeLabels: true },
+  });
+  _cy.on("tap", "node", evt => {
+    const sym = evt.target.data("id");
+    gxInput.value = sym;
+    ctInput.value = sym;
+    // single tap = open spotlight for inspect
+    openSpotlight(sym);
+  });
+  _cy.on("dblclick dbltap", "node", evt => {
+    // double tap = re-center graph on this node
+    gxMap(evt.target.data("id"));
+  });
+  _cy.on("mouseover", "node", evt => {
+    const d = evt.target.data();
+    gxStatus.textContent = `${d.id}${d.file ? "  —  " + d.file + ":" + d.line : ""}  [${d.risk}]`;
+  });
+  _cy.on("mouseout", "node", () => {
+    gxStatus.textContent = `${nodes.length} nodes · ${edges.length} edges`;
+  });
+});
+
+gxGo.addEventListener("click", () => gxMap(gxInput.value.trim()));
+gxInput.addEventListener("keydown", e => { if (e.key === "Enter") gxMap(gxInput.value.trim()); });
+
+// when a symbol is clicked anywhere, also seed the graph input
+document.addEventListener("click", e => {
+  const el = e.target.closest(".sym-link, .spotlight-sym-link, .ct-sym");
+  if (el && el.dataset && el.dataset.symbol) gxInput.value = el.dataset.symbol;
 });
 
 const clearHistBtn = document.getElementById("btn-clear-history");

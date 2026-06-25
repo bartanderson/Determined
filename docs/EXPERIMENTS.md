@@ -108,7 +108,19 @@ Pick a root symbol; lazily expandable caller/callee tree.
 Subgraph around a symbol; nodes clickable to re-center.
 - Kill if: hairball / unreadable / slow at corpus scale.
 - Keep if: spatial layout surfaces clusters or hotspots lists hide.
-- Verdict: _pending_
+- **Verdict: PROMISING** (2026-06-25). The graph renders and the force-directed
+  layout does show structure. 3 fixes spent:
+    1. `body`→`content` column name in knowledge.db risk query.
+    2. Last-segment name resolution: dotted callees (`self.foo`) now resolve to
+       their bare function name if unambiguous in the DB. 5→24 nodes at 3 hops.
+    3. `position:fixed` sizing workaround for broken flex/grid height chain.
+  What works: spatial neighborhood, risk coloring, click-to-recenter.
+  What's next: wire node tap → spotlight panel so graph = terrain and
+  spotlight = inspect; the two together answer "where is it + what is it."
+- **Lighthouse (open):** flex/grid height chain broken in `.tab-content` —
+  the `1fr` grid row gives the tab-content only 62px; root cause not yet
+  found. Worked around with `position:fixed` on `#gx-cy`. Fix properly
+  before shipping.
 
 ### 4. Trail / notebook  — branch `exp/trail`
 Investigation recorded as a replayable, deletable step sequence.
