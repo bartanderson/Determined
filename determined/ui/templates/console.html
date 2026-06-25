@@ -136,6 +136,13 @@
     </div>
     <div class="spotlight-actions" id="sp-actions"></div>
     <div class="spotlight-body" id="sp-body"></div>
+    <div class="sp-source" id="sp-source" style="display:none">
+      <div class="sp-source-header">
+        <span class="sp-source-file" id="sp-source-file"></span>
+        <button class="sp-source-close" id="sp-source-close">✕</button>
+      </div>
+      <pre class="sp-source-code" id="sp-source-code"></pre>
+    </div>
   </div>
 
   <!-- ── hover tooltip ── -->
@@ -878,6 +885,21 @@ function openSpotlight(sym) {
     spActions.appendChild(btn);
   });
 
+  // view source button
+  const srcBtn = document.createElement("button");
+  srcBtn.className = "sp-action sp-source-btn";
+  srcBtn.textContent = "view source";
+  srcBtn.id = "sp-source-btn";
+  srcBtn.addEventListener("click", () => {
+    const panel = document.getElementById("sp-source");
+    if (panel.style.display !== "none") { panel.style.display = "none"; return; }
+    document.getElementById("sp-source-code").textContent = "loading…";
+    document.getElementById("sp-source-file").textContent = "";
+    panel.style.display = "flex";
+    socket.emit("get_source", { symbol: _currentSpotlight });
+  });
+  spActions.appendChild(srcBtn);
+
   spotlight.style.display = "flex";
   shell.classList.add("spotlight-open");
   trailAdd(sym);
@@ -892,6 +914,25 @@ function closeSpotlight() {
 }
 
 spClose.addEventListener("click", closeSpotlight);
+
+document.getElementById("sp-source-close").addEventListener("click", () => {
+  document.getElementById("sp-source").style.display = "none";
+});
+
+socket.on("source_result", data => {
+  const panel = document.getElementById("sp-source");
+  const code  = document.getElementById("sp-source-code");
+  const file  = document.getElementById("sp-source-file");
+  if (data.error) {
+    code.textContent = data.error;
+    return;
+  }
+  file.textContent = `${data.file_short}  :${data.start_line}–${data.end_line}`;
+  // render with line numbers
+  code.textContent = data.lines
+    .map((ln, i) => `${String(data.start_line + i).padStart(4)} │ ${ln}`)
+    .join("\n");
+});
 
 socket.on("spotlight_section", data => {
   if (data.symbol !== _currentSpotlight) return;
