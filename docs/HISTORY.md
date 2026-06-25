@@ -918,3 +918,33 @@ Also re-sequenced TRACKER.md's Dashboard "Now / next" list: game-code
 corpora ingestion now comes ahead of Row 1/Row 5, since Row 5's new
 ingestion-capture design should be informed by real target-domain mutation
 patterns.
+
+---
+
+## UI Navigation + Editor Experiments (2026-06-25)
+
+Ran 7 time-boxed trials to find the right navigation and code-viewing
+paradigm. Each branch deleted after verdict. Full protocol was in
+docs/EXPERIMENTS.md, which is also now retired.
+
+Results:
+- Trial 1 (spotlight panel): PROMISING → graduated to main. Click symbol,
+  get risk/callers/callees/intent/findings in a side panel. Backtick-based
+  symbol detection, dotted-callee linkification, builtin filtering.
+- Trial 2 (call-tree): KILL. Degenerates to a clickable list — no spatial
+  position, no inline annotation.
+- Trial 3 (graph/Cytoscape): PROMISING → graduated to main. Force-directed
+  neighborhood, risk coloring, node tap opens spotlight. Graph = terrain,
+  spotlight = inspect.
+- Trial 4 (trail/notebook): DEFERRED. Not enough saved investigations yet.
+- Trial 5 (inline viewer): PROMISING → graduated to main. "View source"
+  button in spotlight renders function body with line numbers in-panel.
+  Uses ast.end_lineno for accurate boundaries. No external dependency.
+- Trial 6 (Sublime Text): KILL. subl path:line works from CLI but socket
+  event never reached server handler. Scrapped: external editor launch is
+  out of scope — the tool is the examination surface.
+- Trial 7 (Lite-XL): KILL. No CLI argument for line numbers; treats all
+  args as file paths. Same scoping decision as Trial 6.
+
+Navigation loop on main: graph (terrain) → spotlight (inspect) → inline
+viewer (read). External editors: users open independently if needed.
