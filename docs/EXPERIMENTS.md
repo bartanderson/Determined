@@ -125,7 +125,36 @@ Subgraph around a symbol; nodes clickable to re-center.
 Investigation recorded as a replayable, deletable step sequence.
 - Kill if: capture overhead exceeds its reuse value.
 - Keep if: a saved investigation is genuinely worth replaying.
+- **Verdict: DEFERRED**. Not enough saved investigations yet to know if replay
+  pays off. Revisit once the tool is in regular use and investigations accumulate.
+
+## Editor integration experiments
+
+Navigation loop is functional (graph + spotlight). Next: close the loop by
+landing in actual code. Two approaches run in parallel, one branch each.
+
+Fixed evaluation task (same for both):
+> Starting from `process_message` in the spotlight, navigate to
+> `handle_player_action` via symbol hops, then view its source and open it
+> in an editor at the correct line.
+
+### 5. Inline viewer  — branch `exp/editor-inline`
+Show function source directly in the UI — server reads the file, slices the
+relevant lines, returns them as a code block in the spotlight or a new panel.
+No external editor dependency.
+- Kill if: reading code in a tiny panel is worse than just opening the file.
+- Keep if: seeing the body inline is faster for quick inspection without
+  breaking flow (staying in the tool).
+- Verdict: _pending_
+
+### 6. Sublime Text integration  — branch `exp/editor-sublime`
+"Open in Sublime" button in the spotlight panel. Server-side handler shells
+out `subl path:line`. One click lands in Sublime at the right function.
+- Kill if: the context switch to Sublime breaks the investigation flow, or
+  `subl` is unreliable on this machine.
+- Keep if: landing in the real editor at the right line is the natural exit
+  from a navigation session.
 - Verdict: _pending_
 
 ## Outcome
-_decided after all four trials_
+_decided after editor trials_
