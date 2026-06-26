@@ -15,6 +15,13 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from determined.agent.edge_tools import (
+    edges_of,
+    edge_detail,
+    list_import_deps,
+    add_edge,
+)
+
 if TYPE_CHECKING:
     from determined.oracle.db_oracle import DBOracle
     from determined.assessor.assessor import Assessor
@@ -902,6 +909,11 @@ TOOLS = {
     "rerank_workflow":      (rerank_workflow,      "assessor"),
     "risk_profile":         (risk_profile,         "oracle"),
     "describe_tool":        (_describe_tool_wrapper, "oracle"),
+    # Level-4 edge tools
+    "edges_of":             (edges_of,             "oracle"),
+    "edge_detail":          (edge_detail,           "oracle"),
+    "list_import_deps":     (list_import_deps,      "oracle"),
+    "add_edge":             (add_edge,              "assessor"),
 }
 
 

@@ -269,6 +269,58 @@ REGISTRY: dict[str, dict] = {
         "use_when": "When you need to know how to use a specific tool or what it returns.",
         "category": "meta",
     },
+
+    # ── EDGE (Level 4) ─────────────────────────────────────────────
+    "edges_of": {
+        "purpose": "All edges touching a symbol or file: calls in/out and imports in/out.",
+        "args": {
+            "name": "symbol name or file path (relative or basename)",
+            "direction": "(optional) 'in' | 'out' | 'both' (default 'both')",
+            "type": "(optional) 'call' | 'import' | 'all' (default 'all')",
+        },
+        "output": "grouped edge list by type and direction with line numbers",
+        "feeds": ["edge_detail", "risk_profile", "list_import_deps"],
+        "use_when": "Understanding all connections to/from a symbol or file at once.",
+        "category": "edge",
+    },
+    "edge_detail": {
+        "purpose": "Richest view of one specific connection: call sites, risk, import metadata.",
+        "args": {
+            "src": "source symbol name or file path",
+            "dst": "destination symbol name or file path",
+            "type": "(optional) 'call' | 'import' | 'all' (default 'all')",
+        },
+        "output": "call site count, line numbers, endpoint risk badges, import type/line",
+        "feeds": ["risk_profile", "add_edge", "store_finding"],
+        "use_when": "Deep dive on why two specific things are connected.",
+        "category": "edge",
+    },
+    "list_import_deps": {
+        "purpose": "Show project-internal import dependencies resolved to file paths.",
+        "args": {
+            "file_path": "(optional) relative path or basename to scope to one file; "
+                         "omit to see all file-to-file import edges in the corpus",
+        },
+        "output": "resolved import edges: source file → target file (internal only); "
+                  "stdlib/external imports shown separately",
+        "feeds": ["edges_of", "describe_file", "graph_clusters"],
+        "use_when": "Understanding module coupling via imports; finding import chains.",
+        "category": "edge",
+    },
+    "add_edge": {
+        "purpose": "Manually assert a connection and store it in knowledge.db.",
+        "args": {
+            "src": "source symbol or file name",
+            "dst": "destination symbol or file name",
+            "type": "(optional) edge type label: 'manual', 'data_flow', 'co_change', etc. (default 'manual')",
+            "note": "(optional) why this connection matters",
+        },
+        "output": "confirmation of stored edge",
+        "feeds": ["list_findings_by_kind"],
+        "use_when": "Capturing a connection the graph doesn't show: data flow, conceptual coupling, "
+                    "indirect dependency you want to track.",
+        "category": "edge",
+    },
 }
 
 

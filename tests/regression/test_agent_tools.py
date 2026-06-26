@@ -481,6 +481,11 @@ def test_dispatch_all_tools_registered():
         "knowledge_status",
         "extract_design_facts",
         "describe_tool",
+        # Level-4 edge tools
+        "edges_of",
+        "edge_detail",
+        "list_import_deps",
+        "add_edge",
     }
     assert set(TOOLS.keys()) == expected
 
