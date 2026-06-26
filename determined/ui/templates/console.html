@@ -25,6 +25,7 @@
 
   <!-- ── sidebar ── -->
   <div class="sidebar">
+    <button class="panel-fold" id="sidebar-fold" title="Collapse sidebar">‹</button>
     <div class="sidebar-section">
       <div class="sidebar-label">Analyze</div>
       <div class="sidebar-ingest">
@@ -1516,6 +1517,15 @@ edPopoutBtn.addEventListener("click", () => {
     edPopoutBtn.textContent = "⤢";
     edPopoutBtn.title = "Pop out to full viewport";
   }
+});
+
+// ── sidebar fold ─────────────────────────────────────────
+const sidebarFold = document.getElementById("sidebar-fold");
+const shell = document.querySelector(".shell");
+sidebarFold.addEventListener("click", () => {
+  const collapsed = shell.classList.toggle("sidebar-collapsed");
+  sidebarFold.textContent = collapsed ? "›" : "‹";
+  sidebarFold.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
 });
 
 // wire bag file items: clicking a file path opens it in editor

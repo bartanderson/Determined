@@ -43,7 +43,33 @@ body {
   grid-template-rows: 36px 1fr 36px;
   height: 100vh;
   overflow: hidden;
+  transition: grid-template-columns .18s ease;
 }
+.shell.sidebar-collapsed {
+  grid-template-columns: 32px 1fr;
+}
+
+/* ── panel fold buttons ──────────────────────────────────── */
+.panel-fold {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 40px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text3);
+  z-index: 50;
+  transition: color .1s, background .1s;
+  right: -16px;
+}
+.panel-fold:hover { color: var(--text); background: var(--border); }
 
 /* ── topbar ─────────────────────────────────────────────── */
 .topbar {
@@ -77,6 +103,14 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  position: relative;
+  transition: width .18s ease;
+}
+.sidebar-collapsed .sidebar > *:not(.panel-fold) {
+  display: none;
+}
+.sidebar-collapsed .sidebar .panel-fold {
+  border-radius: 0 4px 4px 0;
 }
 .sidebar-section { padding: 6px 0; }
 .sidebar-label {
