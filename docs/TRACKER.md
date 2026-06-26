@@ -812,6 +812,21 @@ it should use it. A blank two-field form is the wrong shape entirely.
     not "here is a raw dump." Redo tabs as actionable notes, combine where
     redundant.
 
+21. **[HIGH] UI rewrite: interactive graph, context-aware actions, executable results**
+    - Full design documented in "UI VISION" and "CURRENT UI AUDIT" sections of this
+      file (session 18). Core principle: every symbol in every result is a clickable
+      node, not static text. Every action that takes a symbol should offer known
+      corpus symbols. Investigations accumulate spatially as a graph, not a text scroll.
+    - Concrete work: (a) results as interactive nodes with spotlight panel; (b)
+      Cytoscape.js graph replaces text for callers/callees/subgraph; (c) context-
+      sensitive action menus on nodes (expand, understand, risk, trace from here);
+      (d) follow-up chips derived from result content, not LLM guesses; (e)
+      HOT/WARM/SAFE badges ambient on every symbol mention, not on-demand.
+    - Branch order from session 18: spotlight first, then cytoscape-subgraph,
+      then file-module-graph, then trail, then call-tree/list-enhanced.
+    - Item 20 (corpus-generic tools, actionable tabs) is a prerequisite - fix the
+      data layer before rebuilding the display layer.
+
 11. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
