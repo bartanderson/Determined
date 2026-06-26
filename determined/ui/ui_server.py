@@ -807,6 +807,9 @@ def handle_load_db(data):
     try:
         init(path)
         s = _corpus_status()
+        from determined.agent.graph_utils import find_entry_points
+        eps = find_entry_points(_oracle)
+        top_entry = eps[0]["name"] if eps else ""
         emit("corpus_ready", {
             "db_name": Path(path).name,
             "db_path": path,
@@ -814,6 +817,7 @@ def handle_load_db(data):
             "hot": s.get("hot", 0),
             "stubs": s.get("stubs", 0),
             "artifacts": s.get("artifacts", 0),
+            "top_entry": top_entry,
         })
         # Auto-orient on corpus load
         import threading

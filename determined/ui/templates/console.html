@@ -99,7 +99,7 @@
       <div class="tab-panel" id="panel-todos"><div class="results-area tab-results" id="tab-todos"><div class="tab-spinner">Loading…</div></div></div>
       <div class="tab-panel" id="panel-call_tree">
         <div class="call-tree-toolbar">
-          <input id="ct-input" class="path-input" placeholder="Symbol to trace (e.g. process_message)" style="flex:1">
+          <input id="ct-input" class="path-input" placeholder="Symbol to trace" style="flex:1">
           <button class="send-btn" id="ct-go">Trace ↵</button>
           <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
             <input type="checkbox" id="ct-up"> callers
@@ -109,7 +109,7 @@
       </div>
       <div class="tab-panel" id="panel-graph">
         <div class="graph-toolbar">
-          <input id="gx-input" class="path-input" placeholder="Symbol (e.g. process_message)" style="flex:1">
+          <input id="gx-input" class="path-input" placeholder="Symbol" style="flex:1">
           <button class="send-btn" id="gx-go">Map ↵</button>
           <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
             hops <select id="gx-hops" style="background:var(--surface2);color:var(--text1);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
@@ -216,6 +216,12 @@ socket.on("corpus_ready", data => {
       <div class="answer-text" style="color:var(--text2)">${data.files} files · ${data.hot} hot · ${data.stubs} stubs · ${data.artifacts} knowledge artifacts</div>
     </div>`;
   results.appendChild(block);
+
+  // seed graph inputs with actual entry point from this corpus
+  if (data.top_entry) {
+    document.getElementById("ct-input").placeholder = data.top_entry;
+    document.getElementById("gx-input").placeholder = data.top_entry;
+  }
 
   // fire tab queries once on load; orient fires server-side automatically
   if (_startupFiredFor !== data.db_path) {
