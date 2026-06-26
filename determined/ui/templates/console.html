@@ -86,6 +86,7 @@
       <button class="tab" data-tab="graph">Graph</button>
       <button class="tab" data-tab="imports">Imports</button>
       <button class="tab" data-tab="bag">Bag</button>
+      <button class="tab" data-tab="editor">Editor</button>
     </div>
 
     <!-- tab panels -->
@@ -146,6 +147,43 @@
           <span id="bag-status-label" style="margin-left:.5rem;font-size:.82em;color:var(--text3)"></span>
         </div>
         <div class="results-area tab-results" id="tab-bag" style="flex:1;overflow-y:auto;padding:.5rem"></div>
+      </div>
+
+      <!-- ── editor tab ── -->
+      <div class="tab-panel" id="panel-editor" style="flex-direction:column;min-height:0;position:relative">
+
+        <!-- file tab bar -->
+        <div id="ed-tabbar" style="display:flex;align-items:center;gap:2px;padding:3px 6px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;min-height:30px">
+          <span id="ed-no-file" style="color:var(--text3);font-size:.82em;padding:0 4px">No file open — click a file in Bag or type a path below</span>
+        </div>
+
+        <!-- toolbar -->
+        <div id="ed-toolbar" style="display:flex;align-items:center;gap:.4rem;padding:4px 8px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0">
+          <input id="ed-path-input" class="path-input" placeholder="File path (relative or absolute)…" style="flex:1;font-size:.82em">
+          <button class="send-btn" id="ed-open-btn" style="padding:3px 8px;font-size:.82em">Open ↵</button>
+          <span style="color:var(--border)">|</span>
+          <input id="ed-intent-input" class="path-input" placeholder="Intent label for this file…" style="flex:1;font-size:.82em">
+          <button class="send-btn" id="ed-intent-run" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Run intent-directed pass and fill system bag">Analyze intent</button>
+          <button class="send-btn" id="ed-capture-btn" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Add current file to system bag">+ Bag</button>
+          <span style="color:var(--border)">|</span>
+          <button class="send-btn" id="ed-popout-btn" style="padding:3px 8px;font-size:.82em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
+        </div>
+
+        <!-- body: symbol sidebar + code -->
+        <div id="ed-body" style="display:flex;flex:1;min-height:0;overflow:hidden">
+          <!-- symbol sidebar -->
+          <div id="ed-symbols" style="width:180px;min-width:140px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);font-size:.78em;font-family:var(--font-mono);padding:4px 0">
+            <div style="padding:4px 8px;color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);margin-bottom:2px">Symbols</div>
+            <div id="ed-sym-list"></div>
+          </div>
+          <!-- code area -->
+          <div id="ed-code-wrap" style="flex:1;overflow:auto;background:var(--bg)">
+            <table id="ed-code-table" style="border-collapse:collapse;width:100%;font-family:var(--font-mono);font-size:.82em;line-height:1.5">
+              <tbody id="ed-code-body"></tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -1277,7 +1315,7 @@ socket.on("bag_data", data => {
           + note;
       } else if (itype === "file") {
         const fp = (it.file_path || "").replace(/\\/g, "/");
-        row.innerHTML = `<span style="color:var(--grey)">${escHtml(fp)}</span>`;
+        row.innerHTML = `<span class="ed-open-link" data-path="${escAttr(fp)}" style="color:var(--grey);cursor:pointer;text-decoration:underline dotted" title="Open in Editor">${escHtml(fp)}</span>`;
       } else {
         row.innerHTML = `<span style="color:var(--text2)">${escHtml(String(it.text || JSON.stringify(it)).slice(0, 120))}</span>`;
       }
@@ -1286,6 +1324,7 @@ socket.on("bag_data", data => {
     bagPanel.appendChild(section);
   }
   attachSymbolHandlers(bagPanel);
+  edAttachBagFileLinks(bagPanel);
 });
 
 bagRefresh.addEventListener("click", bagFetch);
@@ -1299,6 +1338,192 @@ bagClearBtn.addEventListener("click", () => {
 document.querySelectorAll(".tab[data-tab='bag']").forEach(t => {
   t.addEventListener("click", bagFetch);
 });
+
+// ── editor ────────────────────────────────────────────────
+const edTabbar    = document.getElementById("ed-tabbar");
+const edNoFile    = document.getElementById("ed-no-file");
+const edPathInput = document.getElementById("ed-path-input");
+const edOpenBtn   = document.getElementById("ed-open-btn");
+const edIntentInput = document.getElementById("ed-intent-input");
+const edIntentRun = document.getElementById("ed-intent-run");
+const edCaptureBtn = document.getElementById("ed-capture-btn");
+const edPopoutBtn = document.getElementById("ed-popout-btn");
+const edSymList   = document.getElementById("ed-sym-list");
+const edCodeBody  = document.getElementById("ed-code-body");
+const edPanel     = document.getElementById("panel-editor");
+
+// open files: [{path, rel_path, lines, symbols}]
+let _edFiles = [];
+let _edActive = -1;   // index into _edFiles
+
+function edOpenFile(path) {
+  activateTab("editor");
+  socket.emit("open_file", { path });
+}
+
+function edRenderTabs() {
+  // keep ed-no-file sentinel node, rebuild everything else
+  Array.from(edTabbar.children).forEach(c => { if (c !== edNoFile) c.remove(); });
+  edNoFile.style.display = _edFiles.length ? "none" : "";
+  _edFiles.forEach((f, i) => {
+    const tab = document.createElement("div");
+    const short = f.rel_path.split("/").pop();
+    tab.className = "ed-ftab" + (i === _edActive ? " active" : "");
+    tab.style.cssText = "display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px 3px 0 0;cursor:pointer;font-size:.8em;font-family:var(--font-mono);white-space:nowrap;border:1px solid transparent;border-bottom:none";
+    if (i === _edActive) tab.style.cssText += ";background:var(--bg);border-color:var(--border);color:var(--text1)";
+    else tab.style.cssText += ";color:var(--text3)";
+    tab.innerHTML = `<span title="${escHtml(f.rel_path)}">${escHtml(short)}</span>`
+      + `<span class="ed-ftab-close" style="opacity:.5;margin-left:2px;font-size:1em">✕</span>`;
+    tab.addEventListener("click", e => {
+      if (e.target.classList.contains("ed-ftab-close")) { edCloseFile(i); return; }
+      edActivateFile(i);
+    });
+    edTabbar.appendChild(tab);
+  });
+}
+
+function edActivateFile(i) {
+  _edActive = i;
+  edRenderTabs();
+  if (i < 0 || i >= _edFiles.length) { edSymList.innerHTML = ""; edCodeBody.innerHTML = ""; return; }
+  const f = _edFiles[i];
+  edPathInput.value = f.rel_path;
+  edRenderSymbols(f.symbols);
+  edRenderCode(f.lines, f.symbols);
+}
+
+function edCloseFile(i) {
+  _edFiles.splice(i, 1);
+  if (_edActive >= _edFiles.length) _edActive = _edFiles.length - 1;
+  edActivateFile(_edActive);
+}
+
+function edRenderSymbols(symbols) {
+  edSymList.innerHTML = "";
+  symbols.forEach(s => {
+    const el = document.createElement("div");
+    el.style.cssText = "padding:2px 8px;cursor:pointer;color:" + (s.kind === "cls" ? "var(--purple)" : "var(--blue)");
+    el.title = `${s.kind} · line ${s.line}`;
+    el.innerHTML = `<span style="opacity:.5;font-size:.85em">${s.kind === "cls" ? "C" : "ƒ"}</span> ${escHtml(s.name)}`;
+    el.addEventListener("click", () => edScrollToLine(s.line));
+    el.addEventListener("mouseenter", () => el.style.background = "var(--bg3)");
+    el.addEventListener("mouseleave", () => el.style.background = "");
+    edSymList.appendChild(el);
+  });
+}
+
+function edRenderCode(lines, symbols) {
+  // build a set of symbol start lines for gutter markers
+  const symLines = new Set((symbols || []).map(s => s.line));
+  const frag = document.createDocumentFragment();
+  lines.forEach((text, idx) => {
+    const lineno = idx + 1;
+    const tr = document.createElement("tr");
+    tr.id = `ed-ln-${lineno}`;
+    const marker = symLines.has(lineno) ? "▸" : " ";
+    tr.innerHTML = `<td style="text-align:right;padding:0 6px 0 8px;color:var(--text3);user-select:none;min-width:2.5rem;border-right:1px solid var(--border)">${lineno}</td>`
+      + `<td style="color:var(--text3);padding:0 4px;user-select:none;width:1em">${marker}</td>`
+      + `<td style="padding:0 8px 0 4px;color:var(--text1);white-space:pre">${escHtml(text)}</td>`;
+    frag.appendChild(tr);
+  });
+  edCodeBody.innerHTML = "";
+  edCodeBody.appendChild(frag);
+}
+
+function edScrollToLine(lineno) {
+  const row = document.getElementById(`ed-ln-${lineno}`);
+  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+socket.on("file_content", data => {
+  if (data.error) {
+    const b = document.createElement("div");
+    b.style.cssText = "padding:.5rem;color:var(--red)";
+    b.textContent = data.error;
+    edCodeBody.innerHTML = ""; edCodeBody.appendChild(b);
+    return;
+  }
+  // check if already open
+  const existing = _edFiles.findIndex(f => f.path === data.path);
+  if (existing >= 0) {
+    _edFiles[existing] = data;
+    edActivateFile(existing);
+  } else {
+    _edFiles.push(data);
+    edActivateFile(_edFiles.length - 1);
+  }
+});
+
+// open via path input
+edOpenBtn.addEventListener("click", () => {
+  const p = edPathInput.value.trim();
+  if (p) edOpenFile(p);
+});
+edPathInput.addEventListener("keydown", e => { if (e.key === "Enter") edOpenBtn.click(); });
+
+socket.on("bag_add_result", data => {
+  const msg = data.error ? `Bag error: ${data.error}` : (data.added ? `Added to bag: ${data.value}` : `Already in bag: ${data.value}`);
+  bagStatusLabel.textContent = msg;
+  setTimeout(() => { bagStatusLabel.textContent = ""; }, 3000);
+});
+
+// capture current file to bag
+edCaptureBtn.addEventListener("click", () => {
+  if (_edActive < 0 || !_edFiles[_edActive]) return;
+  const f = _edFiles[_edActive];
+  const intent = edIntentInput.value.trim() || undefined;
+  socket.emit("bag_add", { type: "file", value: f.rel_path, note: intent });
+});
+
+// intent-directed pass
+edIntentRun.addEventListener("click", () => {
+  const intent = edIntentInput.value.trim();
+  if (!intent) return;
+  edIntentRun.disabled = true;
+  edIntentRun.textContent = "…";
+  socket.emit("direct_intent", { intent });
+});
+
+socket.on("intent_result", data => {
+  edIntentRun.disabled = false;
+  edIntentRun.textContent = "Analyze intent";
+  // append to chat results
+  const block = document.createElement("div");
+  block.className = "result-block";
+  if (data.error) {
+    block.innerHTML = `<div class="result-body"><div class="answer-text" style="color:var(--red)">${escHtml(data.error)}</div></div>`;
+  } else {
+    block.innerHTML = `<div class="result-header"><span class="kind-tag" style="background:var(--surface2)">intent</span></div>`
+      + `<div class="result-body"><div class="answer-text">${colorize(data.summary)}</div></div>`;
+  }
+  results.appendChild(block);
+  results.scrollTop = results.scrollHeight;
+  // switch to bag tab so user sees what was collected
+  if (!data.error) { activateTab("bag"); bagFetch(); }
+});
+
+// pop-out / restore
+let _edPopped = false;
+edPopoutBtn.addEventListener("click", () => {
+  _edPopped = !_edPopped;
+  if (_edPopped) {
+    edPanel.style.cssText = "position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;background:var(--bg)";
+    edPopoutBtn.textContent = "✕ Restore";
+    edPopoutBtn.title = "Restore to panel";
+  } else {
+    edPanel.style.cssText = "";
+    edPanel.classList.add("active");
+    edPopoutBtn.textContent = "⤢";
+    edPopoutBtn.title = "Pop out to full viewport";
+  }
+});
+
+// wire bag file items: clicking a file path opens it in editor
+function edAttachBagFileLinks(container) {
+  container.querySelectorAll(".ed-open-link").forEach(el => {
+    el.addEventListener("click", () => edOpenFile(el.dataset.path));
+  });
+}
 </script>
 </body>
 </html>

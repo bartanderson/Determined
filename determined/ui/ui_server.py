@@ -917,6 +917,85 @@ def handle_bag_clear(data):
     handle_bag_query({"bag": bag_id})
 
 
+@socketio.on("open_file")
+def handle_open_file(data):
+    """Return full file content + DB symbol list for the editor panel."""
+    path = (data.get("path") or "").strip()
+    if not path or _oracle is None:
+        emit("file_content", {"error": "no corpus loaded"}); return
+    try:
+        fp = Path(path)
+        if not fp.is_absolute():
+            root = Path(_oracle.get_project_root())
+            fp = root / path
+        if not fp.exists():
+            emit("file_content", {"error": f"not found: {path}"}); return
+        content = fp.read_text(encoding="utf-8", errors="replace")
+        # symbols from DB, keyed by filename suffix match
+        name_pat = f"%{fp.name}"
+        fns = _oracle.conn.execute(
+            "SELECT name, line_number FROM functions "
+            "WHERE replace(file_path,'\\\\','/') LIKE ? OR file_path LIKE ? ORDER BY line_number",
+            (name_pat, name_pat)
+        ).fetchall()
+        cls = _oracle.conn.execute(
+            "SELECT name, line_number FROM classes "
+            "WHERE replace(file_path,'\\\\','/') LIKE ? OR file_path LIKE ? ORDER BY line_number",
+            (name_pat, name_pat)
+        ).fetchall()
+        symbols = sorted(
+            [{"name": n, "line": ln, "kind": "fn"} for n, ln in fns] +
+            [{"name": n, "line": ln, "kind": "cls"} for n, ln in cls],
+            key=lambda s: s["line"]
+        )
+        rel = str(fp).replace("\\", "/")
+        root_str = _oracle.get_project_root().replace("\\", "/").rstrip("/") + "/"
+        rel = rel.replace(root_str, "")
+        emit("file_content", {
+            "path": str(fp).replace("\\", "/"),
+            "rel_path": rel,
+            "lines": content.splitlines(),
+            "symbols": symbols,
+        })
+    except Exception as exc:
+        emit("file_content", {"error": str(exc)})
+
+
+@socketio.on("bag_add")
+def handle_bag_add(data):
+    """Add a single item to the system bag from the editor."""
+    if _assessor is None or _assessor.bags is None:
+        emit("bag_add_result", {"error": "no corpus"}); return
+    item_type = (data.get("type") or "file").strip()
+    value     = (data.get("value") or "").strip()
+    note      = data.get("note") or None
+    try:
+        if item_type == "file":
+            added = _assessor.bags.add_file("system", value, note=note)
+        elif item_type == "symbol":
+            added = _assessor.bags.add_symbol("system", value, note=note)
+        else:
+            added = False
+        emit("bag_add_result", {"ok": True, "added": added, "value": value})
+    except Exception as exc:
+        emit("bag_add_result", {"error": str(exc)})
+
+
+@socketio.on("direct_intent")
+def handle_direct_intent(data):
+    """Run intent-directed analysis pass, fill system bag, return chat summary."""
+    intent = (data.get("intent") or "").strip()
+    if not intent or _oracle is None:
+        emit("intent_result", {"error": "no corpus or empty intent"}); return
+    try:
+        from determined.agent.intent_director import direct_from_intent, summary_text
+        bags = _assessor.bags if _assessor else None
+        result = direct_from_intent(_oracle, bags, intent)
+        emit("intent_result", {"summary": summary_text(result), "result": result})
+    except Exception as exc:
+        emit("intent_result", {"error": str(exc)})
+
+
 def _warmup_ollama() -> None:
     """Send a trivial prompt to load the model into memory, then keepalive every 4 min."""
     import requests as _req
