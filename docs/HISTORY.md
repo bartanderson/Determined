@@ -49,6 +49,34 @@ files for that DB path first.
 
 ## B. Chronological session log
 
+### (pre-history) Founding design intent - stub detection and visualization
+
+**Core concept (Bart's original session opener):**
+The shape of missing code - functions that exist as stubs - combined with
+their surrounding behavioral contracts and call graph context, forms a safe
+work queue for guided development. Filling a stub cannot silently break
+callers because existing contracts act as guardrails.
+
+**Step 1 - Stub detection in parse_ast.py:**
+During the AST walk, flag any function whose body is exclusively `pass`,
+`...`, `raise NotImplementedError`, or a bare `return None`. Emit stub
+metadata into the symbol graph including: module, function name, cyclomatic
+complexity of neighbors, and what calls into it.
+
+**Step 2 - DBOracle query:**
+Stubs should be first-class queryable facts, not just annotations.
+
+**Step 3 - Plotnine visualization:**
+Stub density per module as a sorted bar chart, colored by neighbor
+complexity. This is the development guidance interface - showing where the
+work is and how risky each gap is to fill.
+
+This intent drove the initial parse_ast.py + DBOracle + stub projector work.
+The visualization (plotnine) was deferred; stub detection and querying landed.
+Item 4 (stub projector in UI) is the direct descendant of Step 3.
+
+---
+
 ### 2026-06-25/26 (session 19)
 
 **Items 16/17/18 fixed. Corpus scoping complete. Item 14 unblocked.**
