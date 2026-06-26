@@ -168,7 +168,6 @@ if __name__ == "__main__":
 
     print("Begin analysis.")
     project_prefixes = []
-    repo_root = "."
 
     if args.path:
         selected_target = str(Path(args.path).resolve())
@@ -183,6 +182,7 @@ if __name__ == "__main__":
         print("No path selected. Exiting.")
         raise SystemExit(1)
 
+    repo_root = selected_target
     corpus = type("Corpus", (), {"root_path": selected_target})()
     db_path = resolve_analysis_db_path(corpus.root_path)
 

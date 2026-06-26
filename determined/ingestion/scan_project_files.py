@@ -37,6 +37,9 @@ DEFAULT_IGNORED_DIRECTORIES = {
     "build",
     "archive",
     "tools_old",
+    "3.10",
+    "3.11",
+    "3.12",
 }
 
 DETERMINEDIGNORE_FILENAME = ".determinedignore"

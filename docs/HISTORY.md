@@ -49,6 +49,45 @@ files for that DB path first.
 
 ## B. Chronological session log
 
+### 2026-06-25/26 (session 19)
+
+**Items 16/17/18 fixed. Corpus scoping complete. Item 14 unblocked.**
+
+Item 16 (DB lock WinError 32 on re-analysis): Fixed in `ui/ui_server.py` `handle_ingest`.
+Close oracle connection before deleting DB file: `_oracle.conn.close()`, `_oracle = None`,
+`_assessor = None` before `Path(db_path).unlink()`.
+
+Item 17 (UI corpus switch tabs not refreshing): Fixed in `ui/templates/console.html`.
+`_startupFired` boolean replaced with `_startupFiredFor` that tracks DB path, so tab
+refresh fires on corpus switch not just first connect. `ingest_done` event now emits
+`socket.emit("corpus_status")` which triggers `corpus_ready` and the full tab refresh
+flow, instead of manually firing a query.
+
+Item 18 (knowledge.db no corpus scope): Fixed across 8 files. Added `corpus TEXT` column
+to `knowledge_artifacts` and `semantic_summaries` (with migrations for existing rows).
+`KnowledgeOracle.alongside()` now sets `corpus_key = os.path.basename(corpus_db_path)`
+and passes to `__init__`. All reads/writes in `assessor.py`, `agent_tools.py`, and
+`knowledge_artifact.py` now scope to `corpus_key`. `get_artifacts()` / `list_artifacts()`
+filter `(corpus = ? OR corpus IS NULL)` to treat legacy rows as belonging to all corpora.
+
+Also fixed: `run_engine.py` __main__ had `repo_root = "."` hardcoded - caused
+`ValueError: not in subpath` for any corpus outside the Determined directory.
+Fixed to `repo_root = selected_target`. `scan_project_files.py`: added "3.10", "3.11",
+"3.12" to `DEFAULT_IGNORED_DIRECTORIES` to exclude Python version-named venvs.
+
+Regression fix: `test_list_callees_no_callees` checked for "No callees found" but
+message had changed; updated to `"No" in result and "callee" in result.lower()`.
+
+298/298 tests passing.
+
+dj2 design docs committed: `docs/design/00E AI_LAYER_OPPORTUNITIES.md` (tool-calling DM,
+EventLog as AI memory, structured adjudication outputs, NPC as deterministic state,
+Persona UI eval, trust boundaries). `docs/design/00F ASPIRATIONAL_DESIGN_INTENT.md`
+(authority boundaries, AI DM vision, world architecture, audio, reactive world, decision
+checklist; section H links back to Determined item 19 with specific extraction targets).
+
+
+
 ### 2026-06-16 (morning)
 
 **Noise-filter unification.** `split.i.surface` and `cursor.self.oracle.conn`

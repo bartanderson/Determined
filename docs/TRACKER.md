@@ -35,7 +35,17 @@ repeated each other.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-24, session 17, continued):** Tool registry. New file:
+**Last session (2026-06-25/26, session 19):** Multiple bug fixes + corpus scoping + dj2 design docs.
+Items 16/17/18 all fixed and closed. run_engine.py repo_root hardcoded to "." - fixed. scan_project_files.py:
+3.10/3.11/3.12 venv dirs now excluded. knowledge.db corpus scoping complete (corpus column on knowledge_artifacts
++ semantic_summaries, scoped across all read/write paths: intent, oracle, assessor, agent layers). UI corpus
+switch tab refresh fixed (_startupFiredFor tracks DB path). DB lock on re-analysis fixed (close oracle before
+unlink). ingest_done now triggers corpus_status -> corpus_ready -> tab refresh. Regression fix: stale
+test_list_callees_no_callees assertion. 298/298 passing. dj2 design docs written: 00E AI_LAYER_OPPORTUNITIES,
+00F ASPIRATIONAL_DESIGN_INTENT (section H links back to item 19). Item 14 (validate small-model) is now
+unblocked - all blockers resolved, harrow corpus clean and scoped.
+
+**Before that (2026-06-24, session 17, continued):** Tool registry. New file:
 determined/agent/tool_registry.py - REGISTRY (28 tools, full metadata: purpose/args/output/feeds/use_when/category),
 TASK_PATTERNS (7 named workflows), describe_tool (callable from agent). agent_prompt.py now generates
 TOOL_DESCRIPTIONS from the registry (all 28 tools, grouped by category). describe_tool wired into TOOLS.
@@ -579,6 +589,51 @@ offers corpus-known symbols as the destination. The tool has the symbol list;
 it should use it. A blank two-field form is the wrong shape entirely.
 
 ---
+
+19. **[HIGH] Design intent layer: ingest and cross-reference authoritative docs alongside code**
+
+   The tool analyzes code structure but has no awareness of what the code is *supposed*
+   to do. Design docs (architectural constitutions, subsystem specs, authority boundaries)
+   are the authoritative intent for a project — currently they live entirely outside
+   the tool's knowledge layer.
+
+   **The gap:** The tool can find that dm_chat_handler.py bypasses the authority layer,
+   but cannot tell you *why* that's wrong or what the correct boundary is. Design intent
+   has no representation in knowledge.db.
+
+   **What this enables:**
+   - Ingest design docs (markdown) as a separate artifact class alongside code
+   - Extract aspirational constraints: authority boundaries, layer rules, forbidden patterns,
+     named invariants, "must not" / "only X may" rules
+   - Cross-reference code findings against design intent:
+     "This symbol violates a documented boundary" not just "this symbol calls that one"
+   - Surface drift: "ContextBuilder re-resolves entities — constitution says it must not"
+   - Inform every "where does this go" coding decision without dictating order
+
+   **Nature of this item:** Living, aspirational, off-and-on. Not a one-time feature —
+   a capability that deepens as the tool matures. Early stab: extract key constraints
+   from design docs into knowledge_artifacts (kind=design_note, provenance=human-confirmed).
+   Later: automated cross-reference against structural findings.
+
+   **First concrete step:** Write a doc extractor that reads markdown design docs,
+   pulls out named invariants and authority rules, and stores them as human-confirmed
+   design_note artifacts scoped to the corpus. Then wire findings to check against them.
+
+   **Primary target docs (dj2 corpus, all committed 2026-06-26):**
+   - `docs/design/00A ARCHITECTURAL_CONSTITUTION.md` - the authority hierarchy and invariants
+   - `docs/design/00B SYSTEM_CONSTRAINTS.md` - hard constraints
+   - `docs/design/00F ASPIRATIONAL_DESIGN_INTENT.md` - authority boundaries (section B), AI DM
+     vision (section C), world architecture (section D); section H explicitly describes what
+     Determined should eventually extract and cross-reference from these docs
+   - `docs/design/00E AI_LAYER_OPPORTUNITIES.md` - AI layer constraints and patterns
+
+   When dj2 is the active corpus, these docs are the authoritative intent surface.
+   The extractor should prioritize "must not", "only X may", "never", "must" phrases
+   in these docs as the highest-signal invariants to store as design_note artifacts.
+
+   **Why HIGH:** Without this, the tool cannot help maintain design integrity as code
+   grows. It finds structural facts but misses the most important class of bugs:
+   architectural violations.
 
 1. **[LOW] `files.role` is never populated** - `parse_ast.py` sets `role=None`
    and has a comment "DO NOT recompute elsewhere." The `describe_file` and

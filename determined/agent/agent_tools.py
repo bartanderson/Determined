@@ -622,37 +622,45 @@ def knowledge_status(assessor: "Assessor", args: dict) -> str:
     if assessor._knowledge_conn is None:
         return "No knowledge DB configured."
 
+    corpus = assessor.knowledge.corpus_key if assessor.knowledge else None
+    corpus_filter = "(corpus = ? OR corpus IS NULL)" if corpus else "1=1"
+    corpus_params = [corpus] if corpus else []
+
     total_files = assessor.oracle.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     total_fns = assessor.oracle.conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
 
     sem_count = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM semantic_summaries"
+        f"SELECT COUNT(*) FROM semantic_summaries WHERE {corpus_filter}", corpus_params
     ).fetchone()[0]
     artifact_count = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM knowledge_artifacts"
+        f"SELECT COUNT(*) FROM knowledge_artifacts WHERE {corpus_filter}", corpus_params
     ).fetchone()[0]
 
-    # artifact breakdown by kind
     by_kind = assessor._knowledge_conn.execute(
-        "SELECT kind, COUNT(*) FROM knowledge_artifacts GROUP BY kind ORDER BY COUNT(*) DESC"
+        f"SELECT kind, COUNT(*) FROM knowledge_artifacts WHERE {corpus_filter} "
+        f"GROUP BY kind ORDER BY COUNT(*) DESC", corpus_params
     ).fetchall()
 
     stale_count = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM knowledge_artifacts WHERE needs_review=1"
+        f"SELECT COUNT(*) FROM knowledge_artifacts WHERE needs_review=1 AND {corpus_filter}",
+        corpus_params
     ).fetchone()[0]
 
-    # structural facts extracted (prefixed subjects)
     entry_pts = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'entry::%'"
+        f"SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'entry::%' AND {corpus_filter}",
+        corpus_params
     ).fetchone()[0]
     dead_code = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'dead::%'"
+        f"SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'dead::%' AND {corpus_filter}",
+        corpus_params
     ).fetchone()[0]
     hot_syms = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'hot::%'"
+        f"SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'hot::%' AND {corpus_filter}",
+        corpus_params
     ).fetchone()[0]
     stub_files = assessor._knowledge_conn.execute(
-        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'stubs::%'"
+        f"SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'stubs::%' AND {corpus_filter}",
+        corpus_params
     ).fetchone()[0]
 
     lines = [

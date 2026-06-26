@@ -54,7 +54,8 @@ def ensure_knowledge_artifacts_table(cursor: sqlite3.Cursor) -> None:
         provenance TEXT NOT NULL,
         created_at TEXT NOT NULL,
         file_hash TEXT,
-        needs_review INTEGER NOT NULL DEFAULT 0
+        needs_review INTEGER NOT NULL DEFAULT 0,
+        corpus TEXT
     )
     """)
     cursor.execute(
@@ -65,8 +66,16 @@ def ensure_knowledge_artifacts_table(cursor: sqlite3.Cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_ka_kind "
         "ON knowledge_artifacts(kind)"
     )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ka_corpus "
+        "ON knowledge_artifacts(corpus)"
+    )
     # Migrate existing DBs: add columns if absent (idempotent)
-    for col, definition in [("file_hash", "TEXT"), ("needs_review", "INTEGER NOT NULL DEFAULT 0")]:
+    for col, definition in [
+        ("file_hash", "TEXT"),
+        ("needs_review", "INTEGER NOT NULL DEFAULT 0"),
+        ("corpus", "TEXT"),
+    ]:
         try:
             cursor.execute(f"ALTER TABLE knowledge_artifacts ADD COLUMN {col} {definition}")
         except Exception:
@@ -84,6 +93,7 @@ def add_artifact(
     content: str,
     provenance: str = "ai-generated",
     file_hash: Optional[str] = None,
+    corpus: Optional[str] = None,
 ) -> int:
     """
     Store a knowledge artifact. Returns the new row id.
@@ -93,8 +103,8 @@ def add_artifact(
     content    - the finding or decision text.
     provenance - one of VALID_PROVENANCES; defaults to 'ai-generated'.
     file_hash  - SHA-256 of the subject file at creation time (optional).
-                 When set, the ingestion pipeline can flag this artifact
-                 needs_review=1 if the file changes.
+    corpus     - basename of the corpus DB this artifact belongs to (optional).
+                 When set, queries scoped to this corpus will filter by it.
     """
     if kind not in VALID_KINDS:
         raise ValueError(f"kind must be one of {VALID_KINDS}, got {kind!r}")
@@ -106,10 +116,10 @@ def add_artifact(
     cursor.execute(
         """
         INSERT INTO knowledge_artifacts
-            (subject, kind, content, provenance, created_at, file_hash, needs_review)
-        VALUES (?, ?, ?, ?, ?, ?, 0)
+            (subject, kind, content, provenance, created_at, file_hash, needs_review, corpus)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
         """,
-        (subject, kind, content, provenance, created_at, file_hash),
+        (subject, kind, content, provenance, created_at, file_hash, corpus),
     )
     connection.commit()
     return cursor.lastrowid
@@ -146,29 +156,30 @@ def get_artifacts(
     subject: str,
     *,
     kind: Optional[str] = None,
+    corpus: Optional[str] = None,
 ) -> list[dict]:
     """
     Retrieve all artifacts for `subject`, sorted by provenance rank
-    (highest first) then recency. Optionally filter by kind.
+    (highest first) then recency. Optionally filter by kind and/or corpus.
+    When corpus is set, returns artifacts for that corpus OR unscoped (NULL) artifacts.
     """
     cursor = connection.cursor()
+    clauses = ["subject = ?"]
+    params: list = [subject]
     if kind:
-        cursor.execute(
-            "SELECT id, subject, kind, content, provenance, created_at, file_hash, needs_review "
-            "FROM knowledge_artifacts WHERE subject = ? AND kind = ? "
-            "ORDER BY created_at DESC",
-            (subject, kind),
-        )
-    else:
-        cursor.execute(
-            "SELECT id, subject, kind, content, provenance, created_at, file_hash, needs_review "
-            "FROM knowledge_artifacts WHERE subject = ? "
-            "ORDER BY created_at DESC",
-            (subject,),
-        )
+        clauses.append("kind = ?")
+        params.append(kind)
+    if corpus:
+        clauses.append("(corpus = ? OR corpus IS NULL)")
+        params.append(corpus)
+    where = "WHERE " + " AND ".join(clauses)
+    cursor.execute(
+        f"SELECT id, subject, kind, content, provenance, created_at, file_hash, needs_review "
+        f"FROM knowledge_artifacts {where} ORDER BY created_at DESC",
+        params,
+    )
     rows = cursor.fetchall()
     results = [_row_to_dict(r) for r in rows]
-    # Sort by provenance rank descending, stable (created_at already used above)
     results.sort(key=lambda r: _PROVENANCE_RANK.get(r["provenance"], 0), reverse=True)
     return results
 
@@ -178,20 +189,25 @@ def list_artifacts(
     *,
     kind: Optional[str] = None,
     provenance: Optional[str] = None,
+    corpus: Optional[str] = None,
 ) -> list[dict]:
     """
-    List all stored artifacts, optionally filtered by kind and/or provenance.
+    List all stored artifacts, optionally filtered by kind, provenance, and/or corpus.
+    When corpus is set, returns artifacts for that corpus OR unscoped (NULL) artifacts.
     Sorted by provenance rank desc, then created_at desc.
     """
     cursor = connection.cursor()
     clauses = []
-    params = []
+    params: list = []
     if kind:
         clauses.append("kind = ?")
         params.append(kind)
     if provenance:
         clauses.append("provenance = ?")
         params.append(provenance)
+    if corpus:
+        clauses.append("(corpus = ? OR corpus IS NULL)")
+        params.append(corpus)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     cursor.execute(
         f"SELECT id, subject, kind, content, provenance, created_at, file_hash, needs_review "

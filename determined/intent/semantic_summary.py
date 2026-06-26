@@ -45,9 +45,15 @@ def ensure_semantic_summaries_table(cursor: sqlite3.Cursor) -> None:
         source_hash TEXT NOT NULL,
         model_version TEXT NOT NULL,
         generated_at TEXT NOT NULL,
-        UNIQUE(subject, kind)
+        corpus TEXT,
+        UNIQUE(subject, kind, corpus)
     )
     """)
+    # Migrate existing DBs: add corpus column if absent (idempotent)
+    try:
+        cursor.execute("ALTER TABLE semantic_summaries ADD COLUMN corpus TEXT")
+    except Exception:
+        pass  # column already exists
 
 
 # ------------------------------------------------------------------

@@ -580,22 +580,25 @@ class Assessor:
         """
         if self._knowledge_conn is None:
             raise RuntimeError("No knowledge DB configured on this Assessor.")
-        return _add_artifact(self._knowledge_conn, subject, kind, content, provenance, file_hash)
+        corpus = self.knowledge.corpus_key if self.knowledge else None
+        return _add_artifact(self._knowledge_conn, subject, kind, content, provenance, file_hash, corpus=corpus)
 
     def get_artifacts(self, subject: str, kind: str = None) -> list:
         """
-        Retrieve artifacts for `subject` from knowledge.db, sorted by
-        provenance rank (human-confirmed first) then recency.
+        Retrieve artifacts for `subject` from knowledge.db, scoped to the
+        active corpus. Unscoped (legacy) artifacts are also returned.
         """
         if self._knowledge_conn is None:
             return []
-        return _get_artifacts(self._knowledge_conn, subject, kind=kind)
+        corpus = self.knowledge.corpus_key if self.knowledge else None
+        return _get_artifacts(self._knowledge_conn, subject, kind=kind, corpus=corpus)
 
     def list_artifacts(self, kind: str = None, provenance: str = None) -> list:
-        """List all stored artifacts, optionally filtered by kind/provenance."""
+        """List stored artifacts scoped to active corpus, optionally filtered by kind/provenance."""
         if self._knowledge_conn is None:
             return []
-        return _list_artifacts(self._knowledge_conn, kind=kind, provenance=provenance)
+        corpus = self.knowledge.corpus_key if self.knowledge else None
+        return _list_artifacts(self._knowledge_conn, kind=kind, provenance=provenance, corpus=corpus)
 
     def delete_artifact(self, artifact_id: int) -> bool:
         """Delete a single artifact by id. Returns True if removed."""
@@ -659,6 +662,8 @@ class Assessor:
             for r in self.oracle.conn.execute("SELECT name, file_path FROM functions").fetchall()
         }
 
+        corpus = self.knowledge.corpus_key if self.knowledge else None
+
         for name in project_fns:
             if name.startswith("_"):
                 continue  # skip private/dunder
@@ -677,6 +682,7 @@ class Assessor:
                     f"Entry point in {file_label}: {name} has no callers in corpus "
                     f"but calls {o} other functions.",
                     "ai-generated",
+                    corpus=corpus,
                 )
                 existing.add(subject_ep)
                 counts["entry_points"] += 1
@@ -691,6 +697,7 @@ class Assessor:
                     f"Potential dead code in {file_label}: {name} has no callers "
                     f"and no callees in corpus.",
                     "ai-generated",
+                    corpus=corpus,
                 )
                 existing.add(subject_dc)
                 counts["dead_code"] += 1
@@ -705,6 +712,7 @@ class Assessor:
                     f"Hot symbol in {file_label}: {name} has {i} callers "
                     f"(in_degree={i}, out_degree={o}).",
                     "ai-generated",
+                    corpus=corpus,
                 )
                 existing.add(subject_hot)
                 counts["hot_symbols"] += 1
@@ -725,6 +733,7 @@ class Assessor:
                     "design_note",
                     f"{file_label} contains {n} stub function(s) with no implementation.",
                     "ai-generated",
+                    corpus=corpus,
                 )
                 existing.add(subject_sf)
                 counts["stub_files"] += 1

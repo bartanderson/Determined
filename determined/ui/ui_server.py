@@ -91,9 +91,7 @@ def index():
     return render_template("console.html", db_name=db_name, status=status)
 
 
-@socketio.on("connect")
-def handle_connect():
-    """On browser connect, send current corpus status so the UI updates immediately."""
+def _emit_corpus_ready():
     if _oracle:
         s = _corpus_status()
         emit("corpus_ready", {
@@ -104,6 +102,18 @@ def handle_connect():
             "stubs": s.get("stubs", 0),
             "artifacts": s.get("artifacts", 0),
         })
+
+
+@socketio.on("connect")
+def handle_connect():
+    """On browser connect, send current corpus status so the UI updates immediately."""
+    _emit_corpus_ready()
+
+
+@socketio.on("corpus_status")
+def handle_corpus_status():
+    """Client requests a corpus_ready refresh (e.g. after ingest completes)."""
+    _emit_corpus_ready()
 
 
 @socketio.on("query")
@@ -346,6 +356,14 @@ def handle_ingest(data):
 
             db_path = resolve_analysis_db_path(str(target))
             if Path(db_path).exists():
+                # close active connection before deleting to avoid WinError 32
+                with _lock:
+                    global _oracle, _assessor
+                    if _oracle and str(Path(_db_path).resolve()) == str(Path(db_path).resolve()):
+                        try: _oracle.conn.close()
+                        except Exception: pass
+                        _oracle = None
+                        _assessor = None
                 Path(db_path).unlink()
             socketio.emit("ingest_status", {"message": f"Analyzing {target.name}…"}, to=sid)
 

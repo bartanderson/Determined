@@ -20,8 +20,9 @@ class KnowledgeOracle:
     None means no persistent knowledge store (tests, one-off scripts).
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, corpus_key: str = ""):
         self.db_path = db_path
+        self.corpus_key = corpus_key  # basename of the active corpus DB, e.g. "C_Users_bartl_dev_dj2.db"
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._ensure_schema()
@@ -41,4 +42,5 @@ class KnowledgeOracle:
         """Open knowledge.db in the same directory as the given corpus DB."""
         directory = os.path.dirname(os.path.abspath(corpus_db_path))
         knowledge_path = os.path.join(directory, "knowledge.db")
-        return cls(knowledge_path)
+        corpus_key = os.path.basename(corpus_db_path)
+        return cls(knowledge_path, corpus_key=corpus_key)

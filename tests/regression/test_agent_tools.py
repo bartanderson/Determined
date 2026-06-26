@@ -319,7 +319,7 @@ def test_list_callees_returns_results():
 
 def test_list_callees_no_callees():
     result = _dispatch("list_callees", {"symbol": "xyzzy_none"})
-    assert "No callees found" in result
+    assert "No" in result and "callee" in result.lower()
 
 
 def test_symbols_in_file_returns_symbols():

@@ -184,7 +184,7 @@ socket.on("disconnect", () => {
   connLbl.textContent = "disconnected";
 });
 
-let _startupFired = false;
+let _startupFiredFor = null;
 
 const TAB_QUERIES = {
   work_queue:  "what should I work on",
@@ -218,8 +218,8 @@ socket.on("corpus_ready", data => {
   results.appendChild(block);
 
   // fire all tab queries once on load
-  if (!_startupFired) {
-    _startupFired = true;
+  if (_startupFiredFor !== data.db_path) {
+    _startupFiredFor = data.db_path;
     Object.entries(TAB_QUERIES).forEach(([tab, q]) => socket.emit("tab_query", { tab, question: q }));
     input.value = "session startup";
     sendQuery();
@@ -621,8 +621,9 @@ socket.on("ingest_done", data => {
   if (data.skipped > 0) {
     addStatusMsg(`${data.skipped} file${data.skipped === 1 ? '' : 's'} skipped (syntax errors)`);
   }
-  input.value = "what do you know?";
-  sendQuery();
+  // re-run tabs and startup for the new corpus
+  _startupFiredFor = null;
+  socket.emit("corpus_status");
 });
 
 socket.on("ingest_error", data => {
