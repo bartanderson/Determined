@@ -208,7 +208,7 @@ def handle_query(data):
     try:
         with _lock:
             answer, _history = _answer(
-                question, _history, _oracle, _assessor, verbose=False
+                question, _history, _oracle, _assessor, verbose=True
             )
         emit("answer", {
             "question": question,

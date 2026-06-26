@@ -66,11 +66,8 @@ def ensure_knowledge_artifacts_table(cursor: sqlite3.Cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_ka_kind "
         "ON knowledge_artifacts(kind)"
     )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ka_corpus "
-        "ON knowledge_artifacts(corpus)"
-    )
     # Migrate existing DBs: add columns if absent (idempotent)
+    # Must run before any index that references these columns.
     for col, definition in [
         ("file_hash", "TEXT"),
         ("needs_review", "INTEGER NOT NULL DEFAULT 0"),
@@ -80,6 +77,10 @@ def ensure_knowledge_artifacts_table(cursor: sqlite3.Cursor) -> None:
             cursor.execute(f"ALTER TABLE knowledge_artifacts ADD COLUMN {col} {definition}")
         except Exception:
             pass  # column already exists
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ka_corpus "
+        "ON knowledge_artifacts(corpus)"
+    )
 
 
 # ------------------------------------------------------------------
