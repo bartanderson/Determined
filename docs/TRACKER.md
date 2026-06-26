@@ -796,12 +796,21 @@ it should use it. A blank two-field form is the wrong shape entirely.
     string-only. Affected tools: `list_callers`, `list_callees`,
     `graph_most_connected`, `graph_subgraph`, `search_symbols`.
 
-20. **[MEDIUM] Tools revamp: eliminate corpus-specific assumptions** - several
-    tools and UI surfaces were built with dj2 as the implicit test corpus and
-    never generalized. Known instances fixed (process_message placeholder, graph
-    inputs seeded from entry points). Broader pass needed: audit all hardcoded
-    symbol names, file paths, and heuristics that assume dj2 structure; replace
-    with corpus-derived values at load time.
+20. **[HIGH] Tools revamp: make tools corpus-generic and actionable** - tools
+    were built with dj2 as the implicit corpus and produce noise instead of
+    signal. Two concrete problems driving this:
+    (a) Corpus-specific assumptions: hardcoded symbol names, file paths,
+        heuristics that assume dj2 structure. Known instances fixed
+        (process_message placeholder, graph inputs seeded from entry points).
+        Audit remaining tools for same.
+    (b) Docstrings tab is useless as currently implemented: returns 33+ lint
+        warnings about missing docstrings in the target corpus - not actionable
+        for understanding code. Should be combined with other "health" signals
+        into a single actionable summary (e.g. "files with no coverage AND no
+        docstrings = highest-priority to explore"), not a flat lint list.
+    General principle: every tab result should answer "what should I do next"
+    not "here is a raw dump." Redo tabs as actionable notes, combine where
+    redundant.
 
 11. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
     trace-weighted ranking from expansion provenance. After real usage patterns
