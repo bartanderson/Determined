@@ -796,6 +796,13 @@ it should use it. A blank two-field form is the wrong shape entirely.
     string-only. Affected tools: `list_callers`, `list_callees`,
     `graph_most_connected`, `graph_subgraph`, `search_symbols`.
 
+20. **[MEDIUM] Tools revamp: eliminate corpus-specific assumptions** - several
+    tools and UI surfaces were built with dj2 as the implicit test corpus and
+    never generalized. Known instances fixed (process_message placeholder, graph
+    inputs seeded from entry points). Broader pass needed: audit all hardcoded
+    symbol names, file paths, and heuristics that assume dj2 structure; replace
+    with corpus-derived values at load time.
+
 11. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
