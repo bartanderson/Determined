@@ -832,6 +832,91 @@ def handle_load_db(data):
         emit("error", {"message": f"Failed to load {path}: {exc}"})
 
 
+@socketio.on("bag_query")
+def handle_bag_query(data):
+    """Return bag contents as JSON for the Bag tab."""
+    if _oracle is None:
+        emit("bag_data", {"error": "no corpus loaded"})
+        return
+    bag_id = (data.get("bag") or "system").strip()
+    try:
+        if not _assessor or _assessor.bags is None:
+            emit("bag_data", {"bag_id": bag_id, "items": [], "status": {}, "all_bags": []})
+            return
+        bags = _assessor.bags
+        items = bags.list_items(bag_id=bag_id)
+        status = bags.status()
+        emit("bag_data", {
+            "bag_id": bag_id,
+            "items": [
+                {**it["content"], "item_type": it["item_type"], "note": it.get("note") or ""}
+                for it in items
+            ],
+            "status": status.get(bag_id, {}),
+            "all_bags": sorted(status.keys()),
+        })
+    except Exception as exc:
+        emit("bag_data", {"error": str(exc)})
+
+
+@socketio.on("import_graph")
+def handle_import_graph(data):
+    """
+    Return project-internal import graph as Cytoscape-compatible JSON.
+    Nodes = files, edges = import relationships, grouped by top-level package.
+    """
+    if _oracle is None:
+        emit("import_graph_result", {"error": "no corpus loaded"})
+        return
+    try:
+        from determined.agent.edge_tools import _resolve_module_to_file, _rel
+        rows = _oracle.conn.execute(
+            "SELECT DISTINCT from_file, to_module FROM file_edges"
+        ).fetchall()
+        nodes_set: set[str] = set()
+        edges: list[dict] = []
+        for from_file, to_module in rows:
+            resolved = _resolve_module_to_file(_oracle, to_module)
+            if resolved:
+                src = _rel(_oracle, from_file)
+                dst = _rel(_oracle, resolved)
+                nodes_set.add(src)
+                nodes_set.add(dst)
+                if src != dst:
+                    edges.append({"source": src, "target": dst})
+
+        def _group(path: str) -> str:
+            parts = path.replace("\\", "/").split("/")
+            return parts[0] if len(parts) > 1 else "root"
+
+        # Assign a stable color index per group
+        groups = sorted({_group(p) for p in nodes_set})
+        group_idx = {g: i for i, g in enumerate(groups)}
+        nodes = [
+            {"id": p,
+             "label": p.split("/")[-1].replace(".py", ""),
+             "group": _group(p),
+             "group_idx": group_idx[_group(p)]}
+            for p in sorted(nodes_set)
+        ]
+        emit("import_graph_result", {
+            "nodes": nodes,
+            "edges": edges,
+            "groups": groups,
+        })
+    except Exception as exc:
+        emit("import_graph_result", {"error": str(exc)})
+
+
+@socketio.on("bag_clear")
+def handle_bag_clear(data):
+    """Clear a bag and return updated bag_data."""
+    bag_id = (data.get("bag") or "system").strip()
+    if _assessor and _assessor.bags is not None:
+        _assessor.bags.clear(bag_id)
+    handle_bag_query({"bag": bag_id})
+
+
 def _warmup_ollama() -> None:
     """Send a trivial prompt to load the model into memory, then keepalive every 4 min."""
     import requests as _req
