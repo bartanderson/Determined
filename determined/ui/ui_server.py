@@ -815,6 +815,15 @@ def handle_load_db(data):
             "stubs": s.get("stubs", 0),
             "artifacts": s.get("artifacts", 0),
         })
+        # Auto-orient on corpus load
+        import threading
+        sid = request.sid
+        def _auto_orient():
+            from determined.agent.local_agent import _answer
+            global _history
+            answer, _history = _answer("orient", _history, _oracle, _assessor, verbose=True)
+            socketio.emit("answer", {"question": "orient", "answer": answer}, to=sid)
+        threading.Thread(target=_auto_orient, daemon=True).start()
     except Exception as exc:
         emit("error", {"message": f"Failed to load {path}: {exc}"})
 
