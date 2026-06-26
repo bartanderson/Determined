@@ -486,6 +486,13 @@ def test_dispatch_all_tools_registered():
         "edge_detail",
         "list_import_deps",
         "add_edge",
+        # Bag tools
+        "bag_status",
+        "bag_list",
+        "bag_add",
+        "bag_label",
+        "bag_clear",
+        "bag_report",
     }
     assert set(TOOLS.keys()) == expected
 

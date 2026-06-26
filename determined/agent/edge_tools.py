@@ -75,7 +75,7 @@ def _find_file_for_symbol(oracle: "DBOracle", name: str) -> Optional[str]:
 # Tool: edges_of
 # ---------------------------------------------------------------------------
 
-def edges_of(oracle: "DBOracle", args: dict) -> str:
+def edges_of(oracle: "DBOracle", args: dict) -> tuple[str, list]:
     """
     All edges touching a named symbol or file.
 
@@ -84,17 +84,18 @@ def edges_of(oracle: "DBOracle", args: dict) -> str:
       direction - "in" | "out" | "both" (default "both")
       type      - "call" | "import" | "all" (default "all")
 
-    Returns a text summary of all found edges grouped by type and direction.
+    Returns (text, [EdgeRef]) - text for display, EdgeRef list for the system bag.
     """
     name = args.get("name", "").strip()
     if not name:
-        return "ERROR: name is required"
+        return "ERROR: name is required", []
     direction = args.get("direction", "both").strip()
     etype = args.get("type", "all").strip()
 
     is_file = name.endswith(".py") or "/" in name or "\\" in name
     lines = [f"Edges of '{name}'  (direction={direction}, type={etype}):"]
     found = False
+    collected: list[EdgeRef] = []
 
     # ---- call edges ----
     if etype in ("call", "all"):
@@ -108,6 +109,9 @@ def edges_of(oracle: "DBOracle", args: dict) -> str:
                 lines.append(f"\n  calls out ({len(rows)}):")
                 for callee, ln in rows[:20]:
                     lines.append(f"    → {callee}  [line {ln}]")
+                    collected.append(EdgeRef(src=name, src_type="symbol",
+                                            dst=callee, dst_type="symbol",
+                                            edge_type="call", line=ln))
                 if len(rows) > 20:
                     lines.append(f"    ... +{len(rows)-20} more")
 
@@ -122,6 +126,9 @@ def edges_of(oracle: "DBOracle", args: dict) -> str:
                 lines.append(f"\n  called by ({len(rows)}):")
                 for caller, ln in rows[:20]:
                     lines.append(f"    ← {caller}  [line {ln}]")
+                    collected.append(EdgeRef(src=caller, src_type="symbol",
+                                            dst=name, dst_type="symbol",
+                                            edge_type="call", line=ln))
                 if len(rows) > 20:
                     lines.append(f"    ... +{len(rows)-20} more")
 
@@ -146,17 +153,21 @@ def edges_of(oracle: "DBOracle", args: dict) -> str:
                         resolved = _resolve_module_to_file(oracle, mod)
                         rel = _rel(oracle, resolved) if resolved else mod
                         lines.append(f"    → {mod}  ({rel})")
+                        collected.append(EdgeRef(src=norm, src_type="file",
+                                                 dst=rel, dst_type="file",
+                                                 edge_type="import", is_internal=True))
                 if external:
                     lines.append(f"\n  imports stdlib/external ({len(external)}):")
                     for mod, _ in sorted(external)[:8]:
                         lines.append(f"    → {mod}")
+                        collected.append(EdgeRef(src=norm, src_type="file",
+                                                 dst=mod, dst_type="module",
+                                                 edge_type="import", is_internal=False))
                     if len(external) > 8:
                         lines.append(f"    ... +{len(external)-8} more")
 
         if direction in ("in", "both"):
-            # Convert the file path to a module name pattern to find reverse imports
             module_guess = norm.replace(".py", "").replace("/__init__", "").replace("/", ".")
-            # Trim leading path components until we match something useful
             parts = module_guess.split(".")
             candidates = [".".join(parts[i:]) for i in range(len(parts))]
             reverse_rows = []
@@ -175,6 +186,9 @@ def edges_of(oracle: "DBOracle", args: dict) -> str:
                     if rel not in seen:
                         seen.add(rel)
                         lines.append(f"    ← {rel}")
+                        collected.append(EdgeRef(src=rel, src_type="file",
+                                                 dst=norm, dst_type="file",
+                                                 edge_type="import", is_internal=True))
                 if len(reverse_rows) > 15:
                     lines.append(f"    ... +{len(reverse_rows)-15} more")
 
@@ -182,7 +196,7 @@ def edges_of(oracle: "DBOracle", args: dict) -> str:
         lines.append("  no edges found")
         lines.append("  (check spelling; for files use relative path or basename)")
 
-    return "\n".join(lines)
+    return "\n".join(lines), collected
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +282,7 @@ def edge_detail(oracle: "DBOracle", args: dict) -> str:
 # Tool: list_import_deps
 # ---------------------------------------------------------------------------
 
-def list_import_deps(oracle: "DBOracle", args: dict) -> str:
+def list_import_deps(oracle: "DBOracle", args: dict) -> tuple[str, list]:
     """
     Show project-internal import dependencies.
 
@@ -276,9 +290,10 @@ def list_import_deps(oracle: "DBOracle", args: dict) -> str:
       file_path - (optional) relative path or basename to scope to one file.
                   Without this, shows all file-to-file import edges in the corpus.
 
-    External/stdlib imports are shown separately, capped to avoid clutter.
+    Returns (text, [EdgeRef]) - text for display, EdgeRef list for the system bag.
     """
     file_path = args.get("file_path", "").strip()
+    collected: list[EdgeRef] = []
 
     if file_path:
         rows = oracle.conn.execute(
@@ -287,16 +302,23 @@ def list_import_deps(oracle: "DBOracle", args: dict) -> str:
             (f"%{file_path.replace(chr(92), '/')}%",)
         ).fetchall()
         if not rows:
-            return f"No imports found for '{file_path}'"
+            return f"No imports found for '{file_path}'", []
 
         lines = [f"Imports in '{file_path}':"]
         internal, external = [], []
         for mod, itype in rows:
             resolved = _resolve_module_to_file(oracle, mod)
             if resolved:
-                internal.append((mod, _rel(oracle, resolved)))
+                rel = _rel(oracle, resolved)
+                internal.append((mod, rel))
+                collected.append(EdgeRef(src=file_path, src_type="file",
+                                         dst=rel, dst_type="file",
+                                         edge_type="import", is_internal=True))
             else:
                 external.append(mod)
+                collected.append(EdgeRef(src=file_path, src_type="file",
+                                         dst=mod, dst_type="module",
+                                         edge_type="import", is_internal=False))
 
         if internal:
             lines.append(f"\n  project deps ({len(internal)}):")
@@ -308,14 +330,14 @@ def list_import_deps(oracle: "DBOracle", args: dict) -> str:
                 lines.append(f"    {mod}")
             if len(external) > 12:
                 lines.append(f"    ... +{len(external)-12} more")
-        return "\n".join(lines)
+        return "\n".join(lines), collected
 
     else:
         rows = oracle.conn.execute(
             "SELECT DISTINCT from_file, to_module FROM file_edges"
         ).fetchall()
         if not rows:
-            return "file_edges table is empty - re-ingest corpus to populate"
+            return "file_edges table is empty - re-ingest corpus to populate", []
 
         internal_edges: list[tuple[str, str]] = []
         for from_file, to_module in rows:
@@ -324,10 +346,13 @@ def list_import_deps(oracle: "DBOracle", args: dict) -> str:
                 from_rel = _rel(oracle, from_file)
                 to_rel = _rel(oracle, resolved)
                 internal_edges.append((from_rel, to_rel))
+                collected.append(EdgeRef(src=from_rel, src_type="file",
+                                         dst=to_rel, dst_type="file",
+                                         edge_type="import", is_internal=True))
 
         if not internal_edges:
             return ("No project-internal import edges found.\n"
-                    f"Total file_edges rows: {len(rows)} (all imports are stdlib/external)")
+                    f"Total file_edges rows: {len(rows)} (all imports are stdlib/external)"), []
 
         deduped = sorted(set(internal_edges))
         lines = [f"Project-internal import edges ({len(deduped)}):"]
@@ -335,7 +360,7 @@ def list_import_deps(oracle: "DBOracle", args: dict) -> str:
             lines.append(f"  {src}  →  {dst}")
         if len(deduped) > 40:
             lines.append(f"  ... +{len(deduped)-40} more (use file_path arg to scope)")
-        return "\n".join(lines)
+        return "\n".join(lines), collected
 
 
 # ---------------------------------------------------------------------------

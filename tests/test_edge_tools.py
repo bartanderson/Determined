@@ -59,29 +59,41 @@ def test_resolve_external_module_returns_none(oracle):
 # list_import_deps
 # ---------------------------------------------------------------------------
 
+def _text(result) -> str:
+    """Unpack (text, items) or plain string from a tool return."""
+    return result[0] if isinstance(result, tuple) else result
+
+
 def test_list_import_deps_whole_corpus(oracle):
     from determined.agent.edge_tools import list_import_deps
-    result = list_import_deps(oracle, {})
-    # Should not be an error
+    result = _text(list_import_deps(oracle, {}))
     assert "ERROR" not in result
-    # Should either find edges or say the table is empty
     assert "import" in result.lower() or "edge" in result.lower()
 
 
 def test_list_import_deps_scoped_to_file(oracle):
     from determined.agent.edge_tools import list_import_deps
-    # Should handle unknown file gracefully
-    result = list_import_deps(oracle, {"file_path": "this_file_does_not_exist.py"})
+    result = _text(list_import_deps(oracle, {"file_path": "this_file_does_not_exist.py"}))
     assert "No imports found" in result or "ERROR" not in result
 
 
 def test_list_import_deps_labels_internal_and_external(oracle):
     from determined.agent.edge_tools import list_import_deps
-    result = list_import_deps(oracle, {})
+    result = _text(list_import_deps(oracle, {}))
     if "No project-internal" in result:
         pytest.skip("Corpus has no internal import edges")
-    # Internal edges should be present
     assert "→" in result
+
+
+def test_list_import_deps_returns_edge_items(oracle):
+    from determined.agent.edge_tools import list_import_deps
+    from determined.agent.edge_types import EdgeRef
+    text, items = list_import_deps(oracle, {})
+    if "No project-internal" in text:
+        pytest.skip("Corpus has no internal import edges")
+    assert len(items) > 0
+    assert all(isinstance(e, EdgeRef) for e in items)
+    assert all(e.edge_type == "import" for e in items)
 
 
 # ---------------------------------------------------------------------------
@@ -90,32 +102,44 @@ def test_list_import_deps_labels_internal_and_external(oracle):
 
 def test_edges_of_file_returns_imports(oracle):
     from determined.agent.edge_tools import edges_of, list_import_deps
-    # Get a file that has internal imports
-    deps = list_import_deps(oracle, {})
-    if "No project-internal" in deps:
+    deps_text = _text(list_import_deps(oracle, {}))
+    if "No project-internal" in deps_text:
         pytest.skip("No internal import edges available")
-    # Extract first source file from the output
-    first_arrow = [line for line in deps.splitlines() if "→" in line]
+    first_arrow = [line for line in deps_text.splitlines() if "→" in line]
     assert first_arrow, "Expected import edge lines"
     src = first_arrow[0].split("→")[0].strip()
     if not src:
         pytest.skip("Could not extract source file name")
     basename = src.split("/")[-1]
-    result = edges_of(oracle, {"name": basename, "type": "import"})
+    result = _text(edges_of(oracle, {"name": basename, "type": "import"}))
     assert "ERROR" not in result
     assert "imports" in result.lower() or "no edges" in result.lower()
 
 
 def test_edges_of_empty_name_returns_error(oracle):
     from determined.agent.edge_tools import edges_of
-    result = edges_of(oracle, {"name": ""})
+    result = _text(edges_of(oracle, {"name": ""}))
     assert "ERROR" in result
 
 
 def test_edges_of_unknown_name_returns_no_edges(oracle):
     from determined.agent.edge_tools import edges_of
-    result = edges_of(oracle, {"name": "TOTALLY_UNKNOWN_SYMBOL_XYZ_123"})
+    result = _text(edges_of(oracle, {"name": "TOTALLY_UNKNOWN_SYMBOL_XYZ_123"}))
     assert "no edges found" in result.lower() or "ERROR" not in result
+
+
+def test_edges_of_returns_edge_items(oracle):
+    from determined.agent.edge_tools import edges_of
+    from determined.agent.edge_types import EdgeRef
+    # Find a real caller from graph_edges
+    row = oracle.conn.execute(
+        "SELECT DISTINCT caller FROM graph_edges WHERE caller NOT LIKE '%.__init__%' LIMIT 1"
+    ).fetchone()
+    if not row:
+        pytest.skip("No call edges in corpus")
+    text, items = edges_of(oracle, {"name": row[0], "type": "call", "direction": "out"})
+    # May be empty if no callees, but items should be EdgeRef if present
+    assert all(isinstance(e, EdgeRef) for e in items)
 
 
 # ---------------------------------------------------------------------------

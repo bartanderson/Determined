@@ -21,6 +21,14 @@ from determined.agent.edge_tools import (
     list_import_deps,
     add_edge,
 )
+from determined.agent.bag_tools import (
+    bag_status,
+    bag_list,
+    bag_add,
+    bag_label,
+    bag_clear,
+    bag_report,
+)
 
 if TYPE_CHECKING:
     from determined.oracle.db_oracle import DBOracle
@@ -914,17 +922,38 @@ TOOLS = {
     "edge_detail":          (edge_detail,           "oracle"),
     "list_import_deps":     (list_import_deps,      "oracle"),
     "add_edge":             (add_edge,              "assessor"),
+    # Bag tools
+    "bag_status":           (bag_status,            "assessor"),
+    "bag_list":             (bag_list,              "assessor"),
+    "bag_add":              (bag_add,               "assessor"),
+    "bag_label":            (bag_label,             "assessor"),
+    "bag_clear":            (bag_clear,             "assessor"),
+    "bag_report":           (bag_report,            "assessor"),
 }
 
 
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
-    """Execute a tool by name. Returns result string."""
+    """
+    Execute a tool by name. Returns result string.
+
+    If a tool returns (text, items) instead of a plain string, the items
+    list is forwarded to the system bag (auto-accumulation). The display
+    text is returned as usual. This lets tools like edges_of emit EdgeRefs
+    into the bag without the caller needing to do anything extra.
+    """
     if tool_name not in TOOLS:
         available = ", ".join(TOOLS)
         return f"ERROR: unknown tool '{tool_name}'. Available: {available}"
     fn, layer = TOOLS[tool_name]
     obj = oracle if layer == "oracle" else assessor
     try:
-        return fn(obj, args)
+        result = fn(obj, args)
+        if isinstance(result, tuple) and len(result) == 2:
+            text, items = result
+            # Auto-populate system bag if assessor has bags available
+            if items and hasattr(assessor, "bags") and assessor.bags is not None:
+                assessor.bags.auto_add_items(items)
+            return text
+        return result
     except Exception as e:
         return f"ERROR in {tool_name}: {type(e).__name__}: {e}"

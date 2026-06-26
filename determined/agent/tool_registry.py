@@ -316,10 +316,71 @@ REGISTRY: dict[str, dict] = {
             "note": "(optional) why this connection matters",
         },
         "output": "confirmation of stored edge",
-        "feeds": ["list_findings_by_kind"],
+        "feeds": ["bag_list", "list_findings_by_kind"],
         "use_when": "Capturing a connection the graph doesn't show: data flow, conceptual coupling, "
                     "indirect dependency you want to track.",
         "category": "edge",
+    },
+
+    # ── BAG ────────────────────────────────────────────────────────
+    "bag_status": {
+        "purpose": "Show all bags and their item counts (edges, symbols, files, findings).",
+        "args": {},
+        "output": "bag name, total items, and type breakdown for each bag",
+        "feeds": ["bag_list", "bag_report"],
+        "use_when": "Starting a session; seeing what has accumulated so far.",
+        "category": "bag",
+    },
+    "bag_list": {
+        "purpose": "List the contents of a bag, grouped by item type.",
+        "args": {
+            "bag": "(optional) bag id (default 'system')",
+            "type": "(optional) filter to one type: 'edge' | 'symbol' | 'file' | 'finding'",
+        },
+        "output": "typed item list with edge labels, symbol names, file paths",
+        "feeds": ["bag_report", "edge_detail", "risk_profile"],
+        "use_when": "Reviewing what you've accumulated; navigating the session workspace.",
+        "category": "bag",
+    },
+    "bag_add": {
+        "purpose": "Manually add a symbol, file, edge, or finding to a bag.",
+        "args": {
+            "bag": "(optional) target bag (default 'user:default')",
+            "type": "item type: 'symbol' | 'file' | 'edge' | 'finding'",
+            "ref": "symbol name, file path, or 'src->dst' for edges",
+            "note": "(optional) why you're keeping this",
+        },
+        "output": "confirmation",
+        "feeds": ["bag_list", "bag_report"],
+        "use_when": "Curating a user bag with things you want to track or report on.",
+        "category": "bag",
+    },
+    "bag_label": {
+        "purpose": "Set a human-readable label on a bag.",
+        "args": {
+            "bag": "bag id (e.g. 'user:1' or 'user:auth-flow')",
+            "label": "display name",
+        },
+        "output": "confirmation",
+        "feeds": ["bag_status"],
+        "use_when": "Naming a user bag for an investigation thread.",
+        "category": "bag",
+    },
+    "bag_clear": {
+        "purpose": "Empty a bag.",
+        "args": {"bag": "(optional) bag id to clear (default 'system')"},
+        "output": "count of items removed",
+        "feeds": ["bag_status"],
+        "use_when": "Starting a fresh investigation; cleaning up the system bag between sessions.",
+        "category": "bag",
+    },
+    "bag_report": {
+        "purpose": "Generate a structured summary of everything in a bag.",
+        "args": {"bag": "(optional) bag id (default 'system')"},
+        "output": "grouped summary: edges by type, symbols with risk badges, files, findings",
+        "feeds": ["store_finding", "store_workflow_item"],
+        "use_when": "End of an investigation; writing a report; deciding what to act on.",
+        "category": "bag",
     },
 }
 

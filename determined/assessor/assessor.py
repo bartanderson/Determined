@@ -67,10 +67,23 @@ class Assessor:
             except Exception:
                 knowledge = None
         self.knowledge = knowledge
+        self._bags: "BagStore | None" = None
 
     @property
     def _knowledge_conn(self):
         return self.knowledge.conn if self.knowledge else None
+
+    @property
+    def bags(self) -> "BagStore | None":
+        """Lazy-init BagStore using the knowledge.db connection."""
+        if self._bags is None and self.knowledge is not None:
+            try:
+                from determined.agent.bag_store import BagStore
+                corpus_path = getattr(self.oracle, "db_path", "")
+                self._bags = BagStore(self.knowledge.conn, corpus_path)
+            except Exception:
+                pass
+        return self._bags
 
     def run(self, symbol: str):
         graph = self.oracle.get_snapshot_graph()
