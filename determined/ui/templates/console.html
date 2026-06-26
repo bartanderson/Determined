@@ -363,8 +363,6 @@ socket.on("tab_answer", data => {
     block.innerHTML = `<div class="result-body">
       <div style="color:var(--red);font-size:.85em;margin-bottom:.3rem">Load failed — ${escHtml(data.tab)}</div>
       <div class="answer-text" style="color:var(--text3);font-size:.82em;font-family:var(--font-mono)">${escHtml(data.answer)}</div>
-      <button style="margin-top:.4rem;font-size:.8em;padding:2px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer"
-        onclick="socket.emit('tab_query',{tab:'${escHtml(data.tab)}',question:${JSON.stringify(data.question||'')}});this.textContent='Retrying…';this.disabled=true">Retry</button>
     </div>`;
   } else {
     block.innerHTML = `<div class="result-body"><div class="answer-text">${colorize(data.answer)}</div></div>`;
@@ -388,8 +386,6 @@ setTimeout(() => {
     if (panel) panel.innerHTML = `<div class="result-block"><div class="result-body">
       <div style="color:var(--red);font-size:.85em;margin-bottom:.3rem">Timed out — ${escHtml(tab)}</div>
       <div class="answer-text" style="color:var(--text3);font-size:.82em">No response after 30s. Is a corpus loaded?</div>
-      <button style="margin-top:.4rem;font-size:.8em;padding:2px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer"
-        onclick="socket.emit('tab_query',{tab:'${escHtml(tab)}',question:''});this.textContent='Retrying…';this.disabled=true">Retry</button>
     </div></div>`;
   });
 }, 30000);
