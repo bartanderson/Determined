@@ -225,6 +225,8 @@ body {
   background: var(--orange);
   animation: tab-pulse 1s ease-in-out infinite;
 }
+.tab.tab-error { color: var(--red); }
+.tab.tab-error::before { background: var(--red); animation: none; }
 @keyframes tab-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
 /* ── tab content ─────────────────────────────────────────── */

@@ -356,15 +356,43 @@ socket.on("tab_answer", data => {
   const panel = document.getElementById("tab-" + data.tab);
   if (!panel) return;
   panel.innerHTML = "";
+  const isErr = typeof data.answer === "string" && data.answer.startsWith("Error:");
   const block = document.createElement("div");
   block.className = "result-block";
-  block.innerHTML = `<div class="result-body"><div class="answer-text">${colorize(data.answer)}</div></div>`;
+  if (isErr) {
+    block.innerHTML = `<div class="result-body">
+      <div style="color:var(--red);font-size:.85em;margin-bottom:.3rem">Load failed — ${escHtml(data.tab)}</div>
+      <div class="answer-text" style="color:var(--text3);font-size:.82em;font-family:var(--font-mono)">${escHtml(data.answer)}</div>
+      <button style="margin-top:.4rem;font-size:.8em;padding:2px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer"
+        onclick="socket.emit('tab_query',{tab:'${escHtml(data.tab)}',question:${JSON.stringify(data.question||'')}});this.textContent='Retrying…';this.disabled=true">Retry</button>
+    </div>`;
+  } else {
+    block.innerHTML = `<div class="result-body"><div class="answer-text">${colorize(data.answer)}</div></div>`;
+  }
   panel.appendChild(block);
-  // mark tab as loaded
   const tabBtn = document.querySelector(`.tab[data-tab="${data.tab}"]`);
-  if (tabBtn) tabBtn.classList.remove("tab-loading");
-  attachSymbolHandlers(panel);
+  if (tabBtn) {
+    tabBtn.classList.remove("tab-loading");
+    tabBtn.classList.toggle("tab-error", isErr);
+  }
+  if (!isErr) attachSymbolHandlers(panel);
 });
+
+// timeout: any tab still loading after 30s marks itself as timed out
+setTimeout(() => {
+  document.querySelectorAll(".tab.tab-loading").forEach(tabBtn => {
+    const tab = tabBtn.dataset.tab;
+    const panel = document.getElementById("tab-" + tab);
+    tabBtn.classList.remove("tab-loading");
+    tabBtn.classList.add("tab-error");
+    if (panel) panel.innerHTML = `<div class="result-block"><div class="result-body">
+      <div style="color:var(--red);font-size:.85em;margin-bottom:.3rem">Timed out — ${escHtml(tab)}</div>
+      <div class="answer-text" style="color:var(--text3);font-size:.82em">No response after 30s. Is a corpus loaded?</div>
+      <button style="margin-top:.4rem;font-size:.8em;padding:2px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer"
+        onclick="socket.emit('tab_query',{tab:'${escHtml(tab)}',question:''});this.textContent='Retrying…';this.disabled=true">Retry</button>
+    </div></div>`;
+  });
+}, 30000);
 
 // ── call tree ─────────────────────────────────────────────
 const ctInput  = document.getElementById("ct-input");
