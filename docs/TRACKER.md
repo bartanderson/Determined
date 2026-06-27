@@ -590,7 +590,7 @@ it should use it. A blank two-field form is the wrong shape entirely.
 
 ---
 
-19. **[HIGH] Design intent layer: ingest and cross-reference authoritative docs alongside code**
+19. **[DEFERRED] Design intent layer: ingest and cross-reference authoritative docs alongside code**
 
    The tool analyzes code structure but has no awareness of what the code is *supposed*
    to do. Design docs (architectural constitutions, subsystem specs, authority boundaries)
