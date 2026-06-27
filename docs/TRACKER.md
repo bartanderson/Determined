@@ -731,6 +731,123 @@ it should use it. A blank two-field form is the wrong shape entirely.
 
 ---
 
+---
+
+### MENTOR CAPABILITY ARC (session 26, 2026-06-27)
+
+The goal of Determined is to approximate what Claude does when a developer brings
+it an unfamiliar codebase: orient quickly, identify what is dangerous vs safe,
+surface mismatches between design intent and code reality, and guide the developer
+toward the right approach for their goal. Not answer queries - navigate.
+
+This requires three capabilities that do not yet exist, plus one prerequisite.
+All four build on existing infrastructure rather than replacing it.
+
+**What the tool already has that these build on:**
+- knowledge_artifacts (design_note kind) - foundation for design intent storage
+- pattern_executor + orient_to_codebase - structured orientation, extendable
+- risk_annotator - already scores hot/warm/safe per symbol
+- stub detection - already knows what scaffolding exists but is unimplemented
+- bag_store - already accumulates session context across queries
+- mine_design_docs.py - hand-authored design notes in the right shape, wrong source
+
+**The 3B model's role:** connector of pieces, not memory. DB holds structured
+knowledge; the model reasons over what it is given. Architecture is: assemble
+the right context for each step, let the model connect it.
+
+---
+
+22. **[OPEN] Design doc extraction: auto-mine markdown into design_note artifacts**
+
+   `mine_design_docs.py` has the right shape (design_note artifacts keyed to
+   system names and filenames) but is a hardcoded Python list. The actual design
+   docs (dj2: 00A ARCHITECTURAL_CONSTITUTION.md, 00B SYSTEM_CONSTRAINTS.md,
+   00F ASPIRATIONAL_DESIGN_INTENT.md) are the authoritative source and should
+   drive the artifacts, not a manually maintained file.
+
+   **What to build:** A doc extractor that reads markdown design docs, uses the
+   3B model to pull named invariants, authority rules, layer boundaries, and
+   forbidden patterns, and stores them as knowledge_artifacts (kind=design_note,
+   provenance=llm-extracted, human_confirmed=False). Human review promotes to
+   human-confirmed. Re-running updates changed docs, does not duplicate.
+
+   **Extraction language is explicit:** design docs use "must", "must not",
+   "only X may", "is responsible for", "is prohibited" - extractable with
+   guided prompting. Output shape matches existing DESIGN_NOTES tuples.
+
+   **Prerequisite for item 23.**
+
+   Builds on: mine_design_docs.py (shape), knowledge_artifact.py (storage),
+   pattern_executor (can host the extraction pattern).
+
+---
+
+23. **[OPEN] Frame comparison: surface design intent automatically when code touches documented areas**
+
+   Design notes sit in knowledge.db unused unless explicitly queried. The tool
+   should surface them automatically when code analysis touches a relevant area -
+   without the developer asking.
+
+   **Mechanism:** When the tool analyzes a symbol in file Y (spotlight, risk_profile,
+   orient step), look up design_note artifacts whose subject matches Y's filename
+   or the class names defined in Y. Include matching notes in the LLM context for
+   that analysis. The model compares the code finding against the design rule and
+   surfaces any tension: "design says ContextBuilder is strictly a consumer - this
+   call pattern may cross that boundary."
+
+   **This is the "desired frame" side of navigation.** Current frame = code graph.
+   Desired frame = design notes. The tool holds both simultaneously and reasons
+   about the delta rather than answering structural questions in isolation.
+
+   Builds on: knowledge_artifact retrieval, spotlight/risk_profile handlers in
+   ui_server.py, symbol_spotlight dispatch. Subject-key lookup, not semantic search.
+   Requires item 22 to have meaningful design note coverage.
+
+---
+
+24. **[OPEN] Goal intake: developer states intent, tool assembles goal-directed context**
+
+   Current mode: developer asks a structural question, tool answers it.
+   Needed mode: developer states a goal ("I want to add persuasion mechanics"),
+   tool translates that to: what layer does this belong to (design rules), what
+   already exists near this concept (current frame), what is hot/risky in that
+   area, what stubs are scaffolding for it, what is the safe insertion point.
+
+   **Goal intake is a different query shape.** It requires:
+   - Identifying the relevant area from natural language goal description
+   - Pulling design notes for that area (item 23 wiring)
+   - Pulling entry points, hot symbols, stubs near that area
+   - Sequencing findings into a path: what to understand first, what to touch last
+   - Returning a navigation plan, not a fact answer
+
+   **The developer's workflow:** state goal -> tool orients to relevant area ->
+   surfaces design constraints that apply -> identifies safe path through current
+   structure -> flags what is load-bearing (do not touch) vs scaffolding (extend here).
+
+   This is path projection: given current frame + desired frame + goal, produce
+   an ordered approach the developer can follow. The 3B model does the connecting;
+   the tool assembles the context window from DB-held structured knowledge.
+
+   Builds on: orient_to_codebase (reuse as goal-scoped orientation), risk_annotator,
+   find_entry_points, stub detection, design_note lookup (item 23). New: goal
+   translation layer that maps developer intent to structural search parameters.
+
+---
+
+25. **[OPEN] Corpus map: merge ui/corpus-map branch, evaluate in practice**
+
+   Branch ui/corpus-map (2 commits, 2026-06-27) adds a pinned panel above the
+   chat scroll showing corpus Roots (uncalled entry points by fan-out) and Core
+   (most-called symbols). Risk badges from pre-computed knowledge_artifacts.
+   Collapses with toggle. No LLM at connect time.
+
+   Needs: merge to main after Bart validates in the running UI. Then evaluate:
+   does the map actually orient, or is it just data? If the Roots/Core framing
+   communicates the architecture skeleton clearly, keep. If it is noise, revise.
+   This is the first visible piece of the mentor capability arc.
+
+---
+
 ## 4. Chronological session log
 
 Moved to HISTORY.md (section B) as part of the 2026-06-18 TRACKER/HISTORY
