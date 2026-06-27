@@ -348,11 +348,8 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
 function activateTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + name));
-  // gx-cy is position:fixed so it persists across tab switches; hide when not on graph tab
   const cyEl = document.getElementById("gx-cy");
-  if (cyEl && cyEl.style.position === "fixed") {
-    cyEl.style.display = name === "graph" ? "" : "none";
-  }
+  if (cyEl) cyEl.style.display = name === "graph" ? "" : "none";
 }
 
 document.querySelectorAll(".tab").forEach(t => {
