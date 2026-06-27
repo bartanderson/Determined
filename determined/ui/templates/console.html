@@ -37,23 +37,23 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">Start here</div>
-      <div class="sidebar-item" data-tab="work_queue">
+      <div class="sidebar-item" data-submit="what should I work on">
         <span class="icon">☑</span>work queue
       </div>
-      <div class="sidebar-item" data-tab="dead_code">
-        <span class="icon">∅</span>find dead code
+      <div class="sidebar-item" data-submit="find dead code">
+        <span class="icon">∅</span>dead code
       </div>
-      <div class="sidebar-item" data-tab="unexplored">
+      <div class="sidebar-item" data-submit="what haven't you explored">
         <span class="icon">○</span>unexplored
       </div>
-      <div class="sidebar-item" data-tab="discover">
-        <span class="icon">🔍</span>discover more
+      <div class="sidebar-item" data-submit="discover more">
+        <span class="icon">◎</span>discover
       </div>
-      <div class="sidebar-item" data-tab="docstrings">
-        <span class="icon">⚠</span>missing docstrings
+      <div class="sidebar-item" data-submit="what functions are missing docstrings">
+        <span class="icon">⚠</span>docstrings
       </div>
-      <div class="sidebar-item" data-tab="todos">
-        <span class="icon">✓</span>find todos
+      <div class="sidebar-item" data-submit="find todos">
+        <span class="icon">✓</span>todos
       </div>
     </div>
   </div>
@@ -77,12 +77,6 @@
     <!-- tab bar -->
     <div class="tab-bar" id="tab-bar">
       <button class="tab active" data-tab="chat">Chat</button>
-      <button class="tab" data-tab="work_queue">Work queue</button>
-      <button class="tab" data-tab="dead_code">Dead code</button>
-      <button class="tab" data-tab="unexplored">Unexplored</button>
-      <button class="tab" data-tab="discover">Discover</button>
-      <button class="tab" data-tab="docstrings">Docstrings</button>
-      <button class="tab" data-tab="todos">Todos</button>
       <button class="tab tab-nodot" data-tab="call_tree">Call tree</button>
       <button class="tab tab-nodot" data-tab="graph">Graph</button>
       <button class="tab tab-nodot" data-tab="imports">Imports</button>
@@ -95,12 +89,6 @@
       <div class="tab-panel active" id="panel-chat">
         <div id="results" class="results-area"></div>
       </div>
-      <div class="tab-panel" id="panel-work_queue"><div class="results-area tab-results" id="tab-work_queue"><div class="tab-spinner">Loading…</div></div></div>
-      <div class="tab-panel" id="panel-dead_code"><div class="results-area tab-results" id="tab-dead_code"><div class="tab-spinner">Loading…</div></div></div>
-      <div class="tab-panel" id="panel-unexplored"><div class="results-area tab-results" id="tab-unexplored"><div class="tab-spinner">Loading…</div></div></div>
-      <div class="tab-panel" id="panel-discover"><div class="results-area tab-results" id="tab-discover"><div class="tab-spinner">Loading…</div></div></div>
-      <div class="tab-panel" id="panel-docstrings"><div class="results-area tab-results" id="tab-docstrings"><div class="tab-spinner">Loading…</div></div></div>
-      <div class="tab-panel" id="panel-todos"><div class="results-area tab-results" id="tab-todos"><div class="tab-spinner">Loading…</div></div></div>
       <div class="tab-panel" id="panel-call_tree">
         <div class="call-tree-toolbar">
           <input id="ct-input" class="path-input" placeholder="Symbol to trace" style="flex:1">
@@ -252,15 +240,6 @@ socket.on("disconnect", () => {
 
 let _startupFiredFor = null;
 
-const TAB_QUERIES = {
-  work_queue:  "what should I work on",
-  dead_code:   "find dead code",
-  unexplored:  "what haven't you explored?",
-  discover:    "discover more",
-  docstrings:  "what functions are missing docstrings",
-  todos:       "find todos",
-};
-
 // server sends this immediately on connect if a corpus is already loaded
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
@@ -290,18 +269,11 @@ socket.on("corpus_ready", data => {
     document.getElementById("gx-input").placeholder = data.top_entry;
   }
 
-  // fire tab queries and auto-loads once on corpus load
+  // auto-loads once on corpus load
   if (_startupFiredFor !== data.db_path) {
     _startupFiredFor = data.db_path;
-    Object.entries(TAB_QUERIES).forEach(([tab, q]) => {
-      const btn = document.querySelector(`.tab[data-tab="${tab}"]`);
-      if (btn) btn.classList.add("tab-loading");
-      socket.emit("tab_query", { tab, question: q });
-    });
-    // auto-load non-visual tabs at startup
     bagFetch();
     if (data.top_entry) ctTrace(data.top_entry);
-    // Cytoscape tabs (graph, imports) lazy-load on first click — can't render into hidden container
   }
 });
 
@@ -366,44 +338,6 @@ document.querySelectorAll(".sidebar-item[data-tab]").forEach(el => {
   el.addEventListener("click", () => activateTab(el.dataset.tab));
 });
 
-socket.on("tab_answer", data => {
-  const panel = document.getElementById("tab-" + data.tab);
-  if (!panel) return;
-  panel.innerHTML = "";
-  const isErr = typeof data.answer === "string" && data.answer.startsWith("Error:");
-  const block = document.createElement("div");
-  block.className = "result-block";
-  if (isErr) {
-    block.innerHTML = `<div class="result-body">
-      <div style="color:var(--red);font-size:.85em;margin-bottom:.3rem">Load failed — ${escHtml(data.tab)}</div>
-      <div class="answer-text" style="color:var(--text3);font-size:.82em;font-family:var(--font-mono)">${escHtml(data.answer)}</div>
-    </div>`;
-  } else {
-    block.innerHTML = `<div class="result-body"><div class="answer-text">${colorize(data.answer)}</div></div>`;
-  }
-  panel.appendChild(block);
-  const tabBtn = document.querySelector(`.tab[data-tab="${data.tab}"]`);
-  if (tabBtn) {
-    tabBtn.classList.remove("tab-loading");
-    tabBtn.classList.toggle("tab-error", isErr);
-    tabBtn.classList.toggle("tab-ready", !isErr);
-  }
-  if (!isErr) attachSymbolHandlers(panel);
-});
-
-// timeout: any tab still loading after 30s marks itself as timed out
-setTimeout(() => {
-  document.querySelectorAll(".tab.tab-loading").forEach(tabBtn => {
-    const tab = tabBtn.dataset.tab;
-    const panel = document.getElementById("tab-" + tab);
-    tabBtn.classList.remove("tab-loading");
-    tabBtn.classList.add("tab-error");
-    if (panel) panel.innerHTML = `<div class="result-block"><div class="result-body">
-      <div style="color:var(--red);font-size:.85em;margin-bottom:.3rem">Timed out — ${escHtml(tab)}</div>
-      <div class="answer-text" style="color:var(--text3);font-size:.82em">No response after 30s. Is a corpus loaded?</div>
-    </div></div>`;
-  });
-}, 30000);
 
 // ── call tree ─────────────────────────────────────────────
 const ctInput  = document.getElementById("ct-input");
