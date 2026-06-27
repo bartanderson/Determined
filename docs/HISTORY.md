@@ -77,6 +77,29 @@ Item 4 (stub projector in UI) is the direct descendant of Step 3.
 
 ---
 
+### 2026-06-27 (session 25)
+
+**Item 4 done. Stub projector wired into UI and agent. Stale item 15 removed.**
+
+Item 15 was already implemented in session 18 but never removed from the open items list.
+Cleaned up.
+
+Item 4 (stub projector in UI):
+
+Two new agent tools: `list_stubs` ranks stubs by caller count; `project_stub` calls
+`stub_projector.project_stub(db_path, symbol)` and returns the suggested body with context.
+Both registered in TOOLS and REGISTRY.
+
+UI: `handle_symbol_quick` now returns `is_stub`; `handle_project_stub` socket handler runs
+in a background thread and emits `stub_projection`. Client: when spotlight opens for a stub
+symbol (detected from `symbol_quick_result.is_stub`), a "fill stub" button appears in the
+spotlight action bar. Clicking it fires `project_stub`, disables the button, and shows the
+suggested body in the `sp-source` panel with caller/contract context in the header.
+
+298/298 tests throughout.
+
+---
+
 ### 2026-06-27 (session 24)
 
 **Items 20 and 21 closed. Bag wiring for graph_most_connected + risk_profile. Ambient risk badges.**
