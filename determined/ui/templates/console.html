@@ -238,6 +238,7 @@ const ingestPath = document.getElementById("ingest-path");
 const resumeBtn = document.getElementById("resume-btn");
 
 let _t0 = 0;
+let _topEntry = "";
 
 // ── connection state ──────────────────────────────────────
 socket.on("connect", () => {
@@ -284,6 +285,7 @@ socket.on("corpus_ready", data => {
 
   // seed graph inputs with actual entry point from this corpus
   if (data.top_entry) {
+    _topEntry = data.top_entry;
     document.getElementById("ct-input").placeholder = data.top_entry;
     document.getElementById("gx-input").placeholder = data.top_entry;
   }
@@ -296,13 +298,10 @@ socket.on("corpus_ready", data => {
       if (btn) btn.classList.add("tab-loading");
       socket.emit("tab_query", { tab, question: q });
     });
-    // auto-load interactive tabs
-    igLoad_();
+    // auto-load non-visual tabs at startup
     bagFetch();
-    if (data.top_entry) {
-      ctTrace(data.top_entry);
-      gxMap(data.top_entry);
-    }
+    if (data.top_entry) ctTrace(data.top_entry);
+    // Cytoscape tabs (graph, imports) lazy-load on first click — can't render into hidden container
   }
 });
 
@@ -352,8 +351,15 @@ function activateTab(name) {
   if (cyEl) cyEl.style.display = name === "graph" ? "" : "none";
 }
 
+let _gxLoaded = false;
 document.querySelectorAll(".tab").forEach(t => {
-  t.addEventListener("click", () => activateTab(t.dataset.tab));
+  t.addEventListener("click", () => {
+    activateTab(t.dataset.tab);
+    if (t.dataset.tab === "graph" && !_gxLoaded && _topEntry) {
+      _gxLoaded = true;
+      gxMap(_topEntry);
+    }
+  });
 });
 
 document.querySelectorAll(".sidebar-item[data-tab]").forEach(el => {
