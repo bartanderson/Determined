@@ -422,19 +422,21 @@ def handle_symbol_quick(data):
         from determined.agent.risk_annotator import score_risk, risk_badge
         # Find symbol in DB
         row = _oracle.conn.execute(
-            "SELECT name, file_path, line_number, docstring FROM functions WHERE name = ? LIMIT 1",
+            "SELECT name, file_path, line_number, docstring, is_stub FROM functions WHERE name = ? LIMIT 1",
             (symbol,)
         ).fetchone()
         sym_type = "function"
+        is_stub = False
         if not row:
             row = _oracle.conn.execute(
-                "SELECT name, file_path, line_number, docstring FROM classes WHERE name = ? LIMIT 1",
+                "SELECT name, file_path, line_number, docstring, 0 FROM classes WHERE name = ? LIMIT 1",
                 (symbol,)
             ).fetchone()
             sym_type = "class"
         if not row:
             emit("symbol_quick_result", {"error": f"'{symbol}' not in corpus"})
             return
+        is_stub = bool(row[4])
         caller_count = _oracle.conn.execute(
             "SELECT COUNT(*) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
             (symbol, f"%.{symbol}")
@@ -465,6 +467,7 @@ def handle_symbol_quick(data):
             "caller_count": caller_count,
             "callee_count": callee_count,
             "findings_count": findings_count,
+            "is_stub": is_stub,
         })
     except Exception as exc:
         emit("symbol_quick_result", {"error": str(exc)})
@@ -499,6 +502,33 @@ def handle_symbol_spotlight(data):
             socketio.emit("spotlight_done", {"symbol": symbol}, to=sid)
         except Exception as exc:
             socketio.emit("spotlight_error", {"message": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+@socketio.on("project_stub")
+def handle_project_stub(data):
+    """
+    Run stub projector for a symbol. Background thread (Ollama call may take ~30s).
+    Emits stub_projection: {stub_name, file_path, line_number, suggested_body, context_summary}
+    or {error: str}.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol or _oracle is None:
+        emit("stub_projection", {"error": "no symbol or corpus not loaded"})
+        return
+    if not _db_path:
+        emit("stub_projection", {"error": "no corpus DB path available"})
+        return
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.stub_projector import project_stub
+            result = project_stub(_db_path, symbol)
+            socketio.emit("stub_projection", result, to=sid)
+        except Exception as exc:
+            socketio.emit("stub_projection", {"error": str(exc)}, to=sid)
 
     threading.Thread(target=_run, daemon=True).start()
 

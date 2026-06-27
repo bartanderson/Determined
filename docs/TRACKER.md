@@ -650,12 +650,6 @@ it should use it. A blank two-field form is the wrong shape entirely.
    the full list or filter by file/module. Fine for now; revisit when the
    user actually needs coverage reporting.
 
-4. **[MEDIUM] Wire stub projector into Determined UI** - "fill stub" button
-   that picks highest-priority stub (by caller count / neighbor complexity)
-   and shows Ollama projection inline. 47 stubs detected in dj2 corpus, all
-   with 0 callers (phases.py stubs), so this is real work waiting.
-   Requires Ollama running; gracefully degrade when it isn't.
-
 5. **[MEDIUM] Collaborative editor surface** - minimal edit panel in UI where
    projection output and human edits meet. Edits committed here re-ingest the
    file. Not a scratchpad - a commit surface. Depends on item 4 being useful.
@@ -729,48 +723,6 @@ it should use it. A blank two-field form is the wrong shape entirely.
    **Conclusion:** Item 14 is closed. The pattern executor works. Use orient_to_codebase
    as-is for real sessions. Synthesis quality is a function of the model size — the
    per-step interpretation infrastructure is sound.
-
-15. **[HIGH] Pattern executor: separate tool selection from model interpretation**
-
-   Current design: the model both decides which tool to call AND interprets the result.
-   For named task patterns this is the wrong split - the model is the weakest link for
-   tool sequencing, and a 3B model holding a 7-step plan in context is asking for drift.
-
-   Better architecture: when a recognized pattern is active, the executor drives the
-   tool sequence mechanically. The model's only job is to interpret each result and
-   decide whether the pattern step is satisfied or needs a follow-up before moving on.
-   Separation: **pattern decides WHICH tool, model decides WHAT IT MEANS.**
-
-   **What to build:**
-   - PatternExecutor class in local_agent.py (or agent_executor.py): takes a pattern
-     name from TASK_PATTERNS, runs each step in order, feeds result to model for
-     interpretation, advances when model signals ready
-   - Pattern detection in agent_resolver: recognize when a user query matches a known
-     pattern (e.g. "understand X", "orient to this codebase") and hand off to executor
-     instead of the free-form decompose/resolve loop
-   - Model prompt per step: instead of full tool list, inject only "Here is the result
-     of {tool}. What does this tell you? Say NEXT when ready to continue." - keeps
-     the model focused on interpretation not navigation
-   - Executor handles: step ordering, result passing, early exit if a step returns
-     empty/error, summary at pattern completion
-
-   **Why this matters beyond fixing drift:** even with a capable model, mechanical
-   pattern execution is faster, cheaper (fewer tokens deciding what to do), and
-   auditable - you can see exactly which steps ran and what each returned.
-
-   **The core insight:** The model is genuinely good at one thing - reading a result
-   and saying what it means - and genuinely unreliable at another - holding a multi-step
-   plan and executing it faithfully. The pattern executor stops asking the model to do
-   the thing it's bad at.
-
-   It also makes the task patterns built in session 17 actually load-bearing rather than
-   advisory. Right now they're documentation the model may or may not follow. With the
-   executor, orient_to_codebase becomes a thing that runs deterministically, every time,
-   and the model just narrates what it sees at each step. The patterns go from "hints"
-   to "guarantees."
-
-   Depends on: item 14 (validation tells us which failure modes to harden against).
-   Informs: item 13 (self-harness mines executor traces for failure patterns).
 
 8. **[MEDIUM] Auto-populate semantic summaries at ingestion** - `describe_file`
    writes to `semantic_summaries` on demand (requires Ollama). Currently 17/150

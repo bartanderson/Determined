@@ -203,6 +203,24 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── STUB TOOLS ─────────────────────────────────────────────────
+    "list_stubs": {
+        "purpose": "List stub functions ranked by caller count (highest priority first).",
+        "args": {"limit": "(optional) max results, default 20"},
+        "output": "stub name, file, caller count",
+        "feeds": ["project_stub", "risk_profile"],
+        "use_when": "Finding which stubs are blocking the most callers; deciding what to implement next.",
+        "category": "discovery",
+    },
+    "project_stub": {
+        "purpose": "Generate a concrete implementation for a stub function using call-graph context.",
+        "args": {"symbol": "name of the stub function to implement"},
+        "output": "suggested function body with context summary",
+        "feeds": ["store_finding", "symbol_intent"],
+        "use_when": "You want to fill a stub with a reasonable implementation guided by callers and contracts.",
+        "category": "understanding",
+    },
+
     # ── CODE HYGIENE ───────────────────────────────────────────────
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",

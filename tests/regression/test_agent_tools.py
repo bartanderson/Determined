@@ -493,6 +493,8 @@ def test_dispatch_all_tools_registered():
         "bag_label",
         "bag_clear",
         "bag_report",
+        "list_stubs",
+        "project_stub",
     }
     assert set(TOOLS.keys()) == expected
 

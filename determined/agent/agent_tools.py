@@ -522,6 +522,61 @@ def graph_clusters(oracle: "DBOracle", args: dict) -> str:
 
 
 # ------------------------------------------------------------------
+# STUB TOOLS
+# ------------------------------------------------------------------
+
+def list_stubs(oracle: "DBOracle", args: dict) -> str:
+    """
+    list_stubs(limit?) - stub functions ranked by caller count (highest priority first).
+    """
+    limit = int(args.get("limit", 20))
+    rows = oracle.conn.execute(
+        """
+        SELECT f.name, f.file_path, COUNT(ge.caller) AS callers
+        FROM functions f
+        LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        WHERE f.is_stub = 1
+        GROUP BY f.name, f.file_path
+        ORDER BY callers DESC, f.file_path, f.name
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    if not rows:
+        return "No stub functions found in corpus."
+    lines = [f"Stub functions ({len(rows)} shown, ranked by caller count):"]
+    for r in rows:
+        fp = (r[1] or "").replace("\\", "/").split("/")[-1]
+        callers = r[2] or 0
+        lines.append(f"  {r[0]} in {fp}  ({callers} callers)")
+    return "\n".join(lines)
+
+
+def project_stub(oracle: "DBOracle", args: dict) -> str:
+    """
+    project_stub(symbol) - generate a concrete implementation for a stub function
+    using its call-graph context, behavioral contracts, and sibling code.
+    Requires Ollama running. May take 20-40 seconds.
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    from determined.agent.stub_projector import project_stub as _proj
+    result = _proj(oracle.db_path, symbol)
+    if "error" in result:
+        return f"Cannot project '{symbol}': {result['error']}"
+    ctx = result.get("context_summary", {})
+    lines = [
+        f"Stub projection for '{symbol}' ({result.get('file_path', '?')} line {result.get('line_number', '?')})",
+        f"Context: {ctx.get('callers', 0)} callers · {ctx.get('contracts', 0)} contracts · {ctx.get('sibling_callees', 0)} sibling callees",
+        "",
+        "Suggested implementation:",
+        result.get("suggested_body", "(no suggestion)"),
+    ]
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
 # QUALITY SWEEP TOOLS
 # ------------------------------------------------------------------
 
@@ -983,6 +1038,9 @@ TOOLS = {
     "bag_label":            (bag_label,             "assessor"),
     "bag_clear":            (bag_clear,             "assessor"),
     "bag_report":           (bag_report,            "assessor"),
+    # Stub tools
+    "list_stubs":           (list_stubs,            "oracle"),
+    "project_stub":         (project_stub,          "oracle"),
 }
 
 

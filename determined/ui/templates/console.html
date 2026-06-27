@@ -845,6 +845,21 @@ socket.on("symbol_quick_result", data => {
       });
     }
   }
+  // Fill stub button: inject into spotlight actions when this symbol is a stub
+  if (!data.error && data.is_stub && data.symbol === _currentSpotlight
+      && !document.getElementById("sp-fill-stub-btn")) {
+    const btn = document.createElement("button");
+    btn.id = "sp-fill-stub-btn";
+    btn.className = "sp-action";
+    btn.style.background = "var(--surface2)";
+    btn.textContent = "fill stub";
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      btn.textContent = "projecting…";
+      socket.emit("project_stub", { symbol: _currentSpotlight });
+    });
+    spActions.appendChild(btn);
+  }
   // Tooltip: only show when this result matches the currently-hovered symbol
   if (data.error || _pendingSym !== data.symbol) return;
   const riskCls = { HOT: "risk-hot", WARM: "risk-warm", SAFE: "risk-safe" }[data.risk] || "";
@@ -961,6 +976,8 @@ function openSpotlight(sym) {
   shell.classList.add("spotlight-open");
   trailAdd(sym);
   socket.emit("symbol_spotlight", { symbol: sym });
+  // Quick lookup to get is_stub and ambient badge for this symbol
+  socket.emit("symbol_quick", { symbol: sym });
 }
 
 function closeSpotlight() {
@@ -1023,6 +1040,23 @@ socket.on("spotlight_done", data => {
 
 socket.on("spotlight_error", data => {
   spBody.innerHTML = `<div class="sp-section"><div class="sp-section-content" style="color:var(--red)">${escHtml(data.message)}</div></div>`;
+});
+
+socket.on("stub_projection", data => {
+  const btn = document.getElementById("sp-fill-stub-btn");
+  if (btn) { btn.disabled = false; btn.textContent = "fill stub"; }
+  if (data.error) return;  // silently ignore if not a stub
+  const panel = document.getElementById("sp-source");
+  const code  = document.getElementById("sp-source-code");
+  const file  = document.getElementById("sp-source-file");
+  const ctx   = data.context_summary || {};
+  const hint  = [
+    ctx.callers   ? `${ctx.callers} callers`    : null,
+    ctx.contracts ? `${ctx.contracts} contracts` : null,
+  ].filter(Boolean).join(" · ");
+  file.textContent = `${data.file_path || ""}  :${data.line_number || ""}  [stub projection${hint ? " — " + hint : ""}]`;
+  code.textContent = data.suggested_body || "(no suggestion)";
+  panel.style.display = "flex";
 });
 
 // ── trail / breadcrumbs ───────────────────────────────────
