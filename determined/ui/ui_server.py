@@ -94,6 +94,9 @@ def index():
 def _emit_corpus_ready():
     if _oracle:
         s = _corpus_status()
+        from determined.agent.graph_utils import find_entry_points
+        eps = find_entry_points(_oracle)
+        top_entry = eps[0]["name"] if eps else ""
         emit("corpus_ready", {
             "db_name": Path(_db_path).name,
             "db_path": _db_path,
@@ -101,6 +104,7 @@ def _emit_corpus_ready():
             "hot": s.get("hot", 0),
             "stubs": s.get("stubs", 0),
             "artifacts": s.get("artifacts", 0),
+            "top_entry": top_entry,
         })
 
 
