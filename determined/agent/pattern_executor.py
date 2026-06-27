@@ -219,7 +219,7 @@ class PatternExecutor:
                     {"role": "user", "content":
                         f"Subject: {subject_label}\n"
                         f"Tool: {tool} — {why}\n\n"
-                        f"Result:\n{result[:800]}\n\n"
+                        f"Result:\n{result[:1500]}\n\n"
                         f"What does this tell you about {subject_label}? (1-2 sentences)"},
                 ]
                 interpretation = self._call_ollama(msgs, label=f"step-{i+1}-interp", verbose=verbose)
@@ -234,7 +234,7 @@ class PatternExecutor:
         # Final synthesis
         findings_text = "\n\n".join(
             f"[Step {f['step']}: {f['tool']}]\n"
-            f"Result: {f['result'][:400]}\n"
+            f"Result: {f['result'][:800]}\n"
             f"Interpretation: {f['interpretation']}"
             for f in findings
         )

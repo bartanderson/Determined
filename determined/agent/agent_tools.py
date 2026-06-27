@@ -905,6 +905,23 @@ def extract_design_facts(assessor: "Assessor", args: dict) -> str:
     if "error" in counts:
         return f"ERROR: {counts['error']}"
     total = sum(counts.values())
+    if total == 0:
+        # Already populated — report what's in the DB rather than "0 extracted"
+        conn = getattr(assessor, "_knowledge_conn", None)
+        if conn:
+            summary = {}
+            for kind in ("entry", "dead", "hot", "stub"):
+                n = conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind = ?", (kind,)
+                ).fetchone()[0]
+                if n:
+                    summary[kind] = n
+            if summary:
+                return (
+                    "Structural facts already populated (nothing new to extract): "
+                    + ", ".join(f"{k}={v}" for k, v in summary.items())
+                )
+        return "No new structural facts to extract (already populated or corpus has no graph data)."
     return (
         f"Extracted {total} structural facts into knowledge.db: "
         + ", ".join(f"{k}={v}" for k, v in counts.items() if v)

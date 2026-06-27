@@ -25,6 +25,11 @@ VALID_KINDS = {
     "query_finding",
     "design_note",
     "known_issue",
+    # structural facts written by extract_design_facts
+    "entry",
+    "dead",
+    "hot",
+    "stub",
 }
 
 VALID_PROVENANCES = {
