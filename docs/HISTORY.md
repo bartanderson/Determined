@@ -77,6 +77,25 @@ Item 4 (stub projector in UI) is the direct descendant of Step 3.
 
 ---
 
+### 2026-06-27 (session 26)
+
+**Item 5 done. Editable editor + save to disk.**
+
+Editor tab (panel-editor) is now read/write. "Edit" button switches the read-only code
+table to a full-height textarea pre-filled with the file's content. "Cancel" discards
+changes; "Save" emits `save_file` to the server, which validates the path is within the
+project root, writes the file (UTF-8), and emits `save_result` back. On success the file
+reloads and a toast confirms the save. `stub_projection` now also opens the stub's source
+file in the Editor tab and scrolls to the function's line number, landing the user directly
+at the stub to review or apply the projection.
+
+Server: new `handle_save_file` socket handler in ui_server.py (path-safety check via
+`Path.resolve().relative_to(project_root)`, write via `fp.write_text(content, encoding="utf-8")`).
+
+298/298 tests throughout.
+
+---
+
 ### 2026-06-27 (session 25)
 
 **Item 4 done. Stub projector wired into UI and agent. Stale item 15 removed.**

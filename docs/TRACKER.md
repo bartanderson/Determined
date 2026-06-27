@@ -650,38 +650,6 @@ it should use it. A blank two-field form is the wrong shape entirely.
    the full list or filter by file/module. Fine for now; revisit when the
    user actually needs coverage reporting.
 
-5. **[MEDIUM] Collaborative editor surface** - minimal edit panel in UI where
-   projection output and human edits meet. Edits committed here re-ingest the
-   file. Not a scratchpad - a commit surface. Depends on item 4 being useful.
-   Editor integration options (Bart's preference): Sublime Text first (packages
-   exist for external control/automation; Bart uses it for its power and
-   flexibility). Fallback: Lite-XL (lightweight, scriptable). Prefer driving
-   the real editor over an in-browser textarea if the package ecosystem allows it.
-
-   **Sublime Text integration research:**
-   Sublime runs an internal Python plugin host - full programmatic read/write
-   access via the `sublime` module. Two viable approaches:
-
-   Option A - existing packages (install via Package Control):
-   - Agentic: passes files/selections to Ollama-compatible APIs, streams back
-     into editor. Directly relevant - supports local models.
-   - AI Bridge + MCPHelper: MCP protocol bridge; external agent sends get/set
-     commands and triggers native editor commands. Best fit for our architecture.
-   - MCPHelper specifically: lightweight, exposes search/read/trigger primitives.
-
-   Option B - custom Python plugin using sublime API:
-   ```python
-   view = sublime.active_window().active_view()
-   text = view.substr(sublime.Region(0, view.size()))   # read file
-   view.run_command("insert", {"characters": "..."})    # write at cursor
-   ```
-   An external Python agent wrapper or MCP server can drive this directly -
-   grants full read/write over files, active tabs, and workspace config.
-
-   Recommended path: MCPHelper (MCP bridge) so Determined's agent can talk to
-   Sublime via the same MCP protocol pattern, without hardcoding Sublime-specific
-   logic into the tool. Agentic is a useful reference for the Ollama plumbing.
-
 6. **[MEDIUM] Live sync loop: edit -> re-ingest -> update** - re-ingest a
    single changed file without full corpus re-run. Currently the only option
    is full re-ingest (fast at 150 files, but won't scale to large corpora).
