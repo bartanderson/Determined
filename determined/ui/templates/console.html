@@ -155,6 +155,10 @@
           <button class="send-btn" id="ed-intent-run" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Run intent-directed pass and fill system bag">Analyze intent</button>
           <button class="send-btn" id="ed-capture-btn" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Add current file to system bag">+ Bag</button>
           <span style="color:var(--border)">|</span>
+          <button class="send-btn" id="ed-edit-btn"   style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Edit file in place">Edit</button>
+          <button class="send-btn" id="ed-save-btn"   style="padding:3px 8px;font-size:.82em;display:none" title="Save file to disk">Save ↵</button>
+          <button class="send-btn" id="ed-cancel-btn" style="padding:3px 8px;font-size:.82em;background:var(--surface2);display:none" title="Discard changes">Cancel</button>
+          <span style="color:var(--border)">|</span>
           <button class="send-btn" id="ed-popout-btn" style="padding:3px 8px;font-size:.82em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
 
@@ -166,10 +170,12 @@
             <div id="ed-sym-list"></div>
           </div>
           <!-- code area -->
-          <div id="ed-code-wrap" style="flex:1;overflow:auto;background:var(--bg)">
+          <div id="ed-code-wrap" style="flex:1;overflow:auto;background:var(--bg);position:relative">
             <table id="ed-code-table" style="border-collapse:collapse;width:100%;font-family:var(--font-mono);font-size:.82em;line-height:1.5">
               <tbody id="ed-code-body"></tbody>
             </table>
+            <textarea id="ed-textarea" spellcheck="false"
+              style="display:none;position:absolute;inset:0;width:100%;height:100%;box-sizing:border-box;background:var(--bg);color:var(--text1);font-family:var(--font-mono);font-size:.82em;line-height:1.5;border:none;outline:none;resize:none;padding:8px 12px;tab-size:4"></textarea>
           </div>
         </div>
 
@@ -1045,7 +1051,11 @@ socket.on("spotlight_error", data => {
 socket.on("stub_projection", data => {
   const btn = document.getElementById("sp-fill-stub-btn");
   if (btn) { btn.disabled = false; btn.textContent = "fill stub"; }
-  if (data.error) return;  // silently ignore if not a stub
+  if (data.error) return;
+  if (data.file_path) {
+    _edPendingLine = data.line_number || null;
+    edOpenFile(data.file_path);
+  }
   const panel = document.getElementById("sp-source");
   const code  = document.getElementById("sp-source-code");
   const file  = document.getElementById("sp-source-file");
@@ -1373,10 +1383,68 @@ const edPopoutBtn = document.getElementById("ed-popout-btn");
 const edSymList   = document.getElementById("ed-sym-list");
 const edCodeBody  = document.getElementById("ed-code-body");
 const edPanel     = document.getElementById("panel-editor");
+const edEditBtn   = document.getElementById("ed-edit-btn");
+const edSaveBtn   = document.getElementById("ed-save-btn");
+const edCancelBtn = document.getElementById("ed-cancel-btn");
+const edTextarea  = document.getElementById("ed-textarea");
+const edCodeTable = document.getElementById("ed-code-table");
 
 // open files: [{path, rel_path, lines, symbols}]
 let _edFiles = [];
-let _edActive = -1;   // index into _edFiles
+let _edActive = -1;      // index into _edFiles
+let _edEditMode = false;
+let _edPendingLine = null; // line to scroll to after next file_content
+
+function edEnterEditMode() {
+  if (_edActive < 0 || !_edFiles[_edActive]) return;
+  _edEditMode = true;
+  edTextarea.value = _edFiles[_edActive].lines.join("\n");
+  edCodeTable.style.display = "none";
+  edTextarea.style.display  = "";
+  edEditBtn.style.display   = "none";
+  edSaveBtn.style.display   = "";
+  edCancelBtn.style.display = "";
+  edTextarea.focus();
+}
+
+function edExitEditMode() {
+  _edEditMode = false;
+  edTextarea.style.display  = "none";
+  edCodeTable.style.display = "";
+  edEditBtn.style.display   = "";
+  edSaveBtn.style.display   = "none";
+  edCancelBtn.style.display = "none";
+}
+
+edEditBtn.addEventListener("click", edEnterEditMode);
+edCancelBtn.addEventListener("click", edExitEditMode);
+edSaveBtn.addEventListener("click", () => {
+  if (_edActive < 0 || !_edFiles[_edActive]) return;
+  edSaveBtn.disabled = true;
+  edSaveBtn.textContent = "Saving…";
+  socket.emit("save_file", { path: _edFiles[_edActive].path, content: edTextarea.value });
+});
+
+socket.on("save_result", data => {
+  edSaveBtn.disabled = false;
+  edSaveBtn.textContent = "Save ↵";
+  const toast = document.createElement("div");
+  toast.style.cssText = "position:absolute;bottom:8px;right:8px;padding:4px 12px;border-radius:4px;font-size:.8em;z-index:10;color:#000";
+  if (data.error) {
+    toast.style.background = "var(--red)";
+    toast.style.color = "#fff";
+    toast.textContent = "Save error: " + data.error;
+    edPanel.appendChild(toast);
+  } else {
+    edExitEditMode();
+    if (_edActive >= 0 && _edFiles[_edActive])
+      socket.emit("open_file", { path: _edFiles[_edActive].path });
+    toast.style.background = "var(--green)";
+    toast.textContent = "Saved — re-analyze corpus to update graph";
+    edPanel.appendChild(toast);
+  }
+  setTimeout(() => toast.remove(), 4000);
+});
 
 function edOpenFile(path) {
   activateTab("editor");
@@ -1473,6 +1541,12 @@ socket.on("file_content", data => {
   } else {
     _edFiles.push(data);
     edActivateFile(_edFiles.length - 1);
+  }
+  if (_edEditMode) edExitEditMode();
+  if (_edPendingLine !== null) {
+    const ln = _edPendingLine;
+    _edPendingLine = null;
+    setTimeout(() => edScrollToLine(ln), 50);
   }
 });
 

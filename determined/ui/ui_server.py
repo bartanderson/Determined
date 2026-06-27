@@ -995,6 +995,31 @@ def handle_open_file(data):
         emit("file_content", {"error": str(exc)})
 
 
+@socketio.on("save_file")
+def handle_save_file(data):
+    """Write edited file content back to disk."""
+    path = (data.get("path") or "").strip()
+    content = data.get("content", "")
+    if not path:
+        emit("save_result", {"error": "no path given"}); return
+    try:
+        fp = Path(path)
+        if not fp.is_absolute():
+            if _oracle is None:
+                emit("save_result", {"error": "no corpus loaded"}); return
+            fp = Path(_oracle.get_project_root()) / path
+        if _oracle is not None:
+            root = Path(_oracle.get_project_root()).resolve()
+            try:
+                fp.resolve().relative_to(root)
+            except ValueError:
+                emit("save_result", {"error": "path outside project root"}); return
+        fp.write_text(content, encoding="utf-8")
+        emit("save_result", {"path": str(fp).replace("\\", "/")})
+    except Exception as exc:
+        emit("save_result", {"error": str(exc)})
+
+
 @socketio.on("bag_add")
 def handle_bag_add(data):
     """Add a single item to the system bag from the editor."""
