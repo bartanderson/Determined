@@ -77,6 +77,44 @@ Item 4 (stub projector in UI) is the direct descendant of Step 3.
 
 ---
 
+### 2026-06-27 (session 24)
+
+**Items 20 and 21 closed. Bag wiring for graph_most_connected + risk_profile. Ambient risk badges.**
+
+Item 14 was validated last session (llama3.2:3b PASSES orient_to_codebase cold). Session 23
+fixed four bugs found during that validation (VALID_KINDS, truncation, idempotent extract
+message, kind mismatches). All 22 commits from tools/audit branch merged to main.
+
+This session:
+
+Bag wiring (was pending from session 23): `graph_most_connected` and `risk_profile` now
+return `(text, bag_items)` tuples. The dispatch function in `agent_tools.py` auto-calls
+`assessor.bags.auto_add_items(items)` on any tuple return. HOT/WARM symbols named in orient
+sessions now accumulate in the system bag automatically with name, file_path, risk level,
+and in_degree.
+
+Item 20 (Tools revamp - corpus-generic and actionable): Audited all tools for dj2-specific
+hardcoding - none found beyond the already-fixed instances (process_message placeholder, entry
+point seeding). Docstrings tab already replaced with Chat sidebar query. General principle
+satisfied: 6-tab layout + Chat sidebar is actionable by design.
+
+Item 21 (UI rewrite): All branches from session 18 plan were already landed:
+- Spotlight panel (full click-through with risk profile, callers, callees, actions)
+- Cytoscape subgraph (Graph tab)
+- File-module import graph (Imports tab)
+- Breadcrumb trail
+- Call tree tab
+
+Final piece (21e - ambient badges): `attachSymbolHandlers` now fires `symbol_quick` for all
+new symbols immediately on DOM insertion (no 280ms hover delay). `symbol_quick_result` applies
+`sym-risk-hot` / `sym-risk-warm` CSS to matching `.sym-link` spans. HOT symbols show red,
+WARM show orange, SAFE stays default blue. Hover tooltip unchanged - still fires at 280ms and
+shows full badge + docstring + stats.
+
+298/298 regression tests throughout.
+
+---
+
 ### 2026-06-25/26 (session 19)
 
 **Items 16/17/18 fixed. Corpus scoping complete. Item 14 unblocked.**

@@ -798,37 +798,6 @@ it should use it. A blank two-field form is the wrong shape entirely.
     string-only. Affected tools: `list_callers`, `list_callees`,
     `graph_most_connected`, `graph_subgraph`, `search_symbols`.
 
-20. **[HIGH] Tools revamp: make tools corpus-generic and actionable** - tools
-    were built with dj2 as the implicit corpus and produce noise instead of
-    signal. Two concrete problems driving this:
-    (a) Corpus-specific assumptions: hardcoded symbol names, file paths,
-        heuristics that assume dj2 structure. Known instances fixed
-        (process_message placeholder, graph inputs seeded from entry points).
-        Audit remaining tools for same.
-    (b) Docstrings tab is useless as currently implemented: returns 33+ lint
-        warnings about missing docstrings in the target corpus - not actionable
-        for understanding code. Should be combined with other "health" signals
-        into a single actionable summary (e.g. "files with no coverage AND no
-        docstrings = highest-priority to explore"), not a flat lint list.
-    General principle: every tab result should answer "what should I do next"
-    not "here is a raw dump." Redo tabs as actionable notes, combine where
-    redundant.
-
-21. **[HIGH] UI rewrite: interactive graph, context-aware actions, executable results**
-    - Full design documented in "UI VISION" and "CURRENT UI AUDIT" sections of this
-      file (session 18). Core principle: every symbol in every result is a clickable
-      node, not static text. Every action that takes a symbol should offer known
-      corpus symbols. Investigations accumulate spatially as a graph, not a text scroll.
-    - Concrete work: (a) results as interactive nodes with spotlight panel; (b)
-      Cytoscape.js graph replaces text for callers/callees/subgraph; (c) context-
-      sensitive action menus on nodes (expand, understand, risk, trace from here);
-      (d) follow-up chips derived from result content, not LLM guesses; (e)
-      HOT/WARM/SAFE badges ambient on every symbol mention, not on-demand.
-    - Branch order from session 18: spotlight first, then cytoscape-subgraph,
-      then file-module-graph, then trail, then call-tree/list-enhanced.
-    - Item 20 (corpus-generic tools, actionable tabs) is a prerequisite - fix the
-      data layer before rebuilding the display layer.
-
 11. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
