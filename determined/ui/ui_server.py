@@ -91,12 +91,65 @@ def index():
     return render_template("console.html", db_name=db_name, status=status)
 
 
+def _corpus_map_data() -> dict:
+    """Entry points + hot symbols for the corpus map card. No LLM."""
+    if not _oracle:
+        return {}
+    from determined.agent.graph_utils import find_entry_points
+    from determined.agent.risk_annotator import score_risk, risk_badge
+
+    eps = find_entry_points(_oracle)
+    top_eps = []
+    for ep in eps[:8]:
+        risk = score_risk(_oracle, ep["name"])
+        top_eps.append({
+            "name": ep["name"],
+            "file": Path(ep["file_path"]).name if ep["file_path"] else "",
+            "out_degree": ep["out_degree"],
+            "risk": risk["level"],
+            "badge": risk_badge(risk["level"]),
+        })
+
+    # Hot symbols: functions with highest caller count in graph_edges
+    rows = _oracle.conn.execute("""
+        SELECT f.name, f.file_path,
+               COUNT(ge.caller) AS caller_count
+        FROM functions f
+        JOIN graph_edges ge ON ge.callee = f.name OR ge.callee LIKE '%.' || f.name
+        WHERE f.is_stub = 0
+        GROUP BY f.name
+        ORDER BY caller_count DESC
+        LIMIT 10
+    """).fetchall()
+    hot_syms = []
+    for name, fp, cnt in rows:
+        risk = score_risk(_oracle, name)
+        hot_syms.append({
+            "name": name,
+            "file": Path(fp).name if fp else "",
+            "caller_count": cnt,
+            "risk": risk["level"],
+            "badge": risk_badge(risk["level"]),
+        })
+
+    stubs_list = [
+        r[0] for r in _oracle.conn.execute(
+            "SELECT name FROM functions WHERE is_stub=1 ORDER BY name LIMIT 8"
+        ).fetchall()
+    ]
+
+    return {
+        "entry_points": top_eps,
+        "hot_symbols": hot_syms,
+        "stubs": stubs_list,
+        "top_entry": eps[0]["name"] if eps else "",
+    }
+
+
 def _emit_corpus_ready():
     if _oracle:
         s = _corpus_status()
-        from determined.agent.graph_utils import find_entry_points
-        eps = find_entry_points(_oracle)
-        top_entry = eps[0]["name"] if eps else ""
+        m = _corpus_map_data()
         emit("corpus_ready", {
             "db_name": Path(_db_path).name,
             "db_path": _db_path,
@@ -104,7 +157,10 @@ def _emit_corpus_ready():
             "hot": s.get("hot", 0),
             "stubs": s.get("stubs", 0),
             "artifacts": s.get("artifacts", 0),
-            "top_entry": top_entry,
+            "top_entry": m.get("top_entry", ""),
+            "entry_points": m.get("entry_points", []),
+            "hot_symbols": m.get("hot_symbols", []),
+            "stubs_list": m.get("stubs", []),
         })
 
 
@@ -840,19 +896,7 @@ def handle_load_db(data):
         emit("error", {"message": f"Not a valid Determined corpus: {path}"}); return
     try:
         init(path)
-        s = _corpus_status()
-        from determined.agent.graph_utils import find_entry_points
-        eps = find_entry_points(_oracle)
-        top_entry = eps[0]["name"] if eps else ""
-        emit("corpus_ready", {
-            "db_name": Path(path).name,
-            "db_path": path,
-            "files": s.get("files", 0),
-            "hot": s.get("hot", 0),
-            "stubs": s.get("stubs", 0),
-            "artifacts": s.get("artifacts", 0),
-            "top_entry": top_entry,
-        })
+        _emit_corpus_ready()
         # Auto-orient on corpus load
         import threading
         sid = request.sid
