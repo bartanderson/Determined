@@ -217,8 +217,9 @@ body {
   border-radius: 50%;
   margin-right: 6px;
   vertical-align: middle;
-  background: var(--green);   /* ready by default (Chat tab) */
+  background: var(--text3);
 }
+.tab.tab-ready::before { background: var(--green); }
 /* loading: muted label + amber pulsing dot */
 .tab.tab-loading { color: var(--text3); }
 .tab.tab-loading::before {

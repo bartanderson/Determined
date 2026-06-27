@@ -376,6 +376,7 @@ socket.on("tab_answer", data => {
   if (tabBtn) {
     tabBtn.classList.remove("tab-loading");
     tabBtn.classList.toggle("tab-error", isErr);
+    tabBtn.classList.toggle("tab-ready", !isErr);
   }
   if (!isErr) attachSymbolHandlers(panel);
 });
