@@ -220,6 +220,7 @@ body {
   background: var(--text3);
 }
 .tab.tab-ready::before { background: var(--green); }
+.tab.tab-nodot::before { display: none; }
 /* loading: muted label + amber pulsing dot */
 .tab.tab-loading { color: var(--text3); }
 .tab.tab-loading::before {
