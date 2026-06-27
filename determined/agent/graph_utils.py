@@ -21,7 +21,8 @@ def find_entry_points(oracle: "DBOracle", exclude_tests: bool = True) -> list[di
     """
     Symbols that nothing calls (in-degree 0 in graph_edges).
     These are system roots - either public API, top-level scripts,
-    or dead code. Returns list of {name, file_path, symbol_type}.
+    or dead code. Returns list of {name, file_path, symbol_type, out_degree},
+    sorted by out_degree descending so real entry points (high fan-out) rank first.
     Excludes test files and __init__ by default.
     """
     # All symbols that appear as a callee somewhere
@@ -29,6 +30,13 @@ def find_entry_points(oracle: "DBOracle", exclude_tests: bool = True) -> list[di
         r[0] for r in
         oracle.conn.execute("SELECT DISTINCT callee FROM graph_edges").fetchall()
     }
+
+    # Out-degree: how many things each symbol calls
+    out_deg: dict[str, int] = {}
+    for r in oracle.conn.execute(
+        "SELECT caller, COUNT(*) FROM graph_edges GROUP BY caller"
+    ).fetchall():
+        out_deg[r[0]] = r[1]
 
     rows = oracle.conn.execute(
         "SELECT name, file_path, 'function' AS symbol_type FROM functions "
@@ -45,8 +53,14 @@ def find_entry_points(oracle: "DBOracle", exclude_tests: bool = True) -> list[di
             continue
         if exclude_tests and ("test" in fp.lower() or name.startswith("test_")):
             continue
-        results.append({"name": name, "file_path": fp, "symbol_type": stype})
+        results.append({
+            "name": name,
+            "file_path": fp,
+            "symbol_type": stype,
+            "out_degree": out_deg.get(name, 0),
+        })
 
+    results.sort(key=lambda r: r["out_degree"], reverse=True)
     return results
 
 

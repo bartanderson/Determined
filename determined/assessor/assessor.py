@@ -636,12 +636,13 @@ class Assessor:
         if self._knowledge_conn is None:
             return {"error": "No knowledge DB configured."}
 
-        # existing subjects to avoid duplicates
+        # existing subjects to avoid duplicates — keyed by subject prefix so this
+        # is migration-safe regardless of which kind value old rows were stored with
         existing = {
             r[0]
             for r in self._knowledge_conn.execute(
-                "SELECT subject FROM knowledge_artifacts WHERE kind IN "
-                "('design_note','known_issue')"
+                "SELECT subject FROM knowledge_artifacts WHERE subject LIKE 'entry::%' "
+                "OR subject LIKE 'hot::%' OR subject LIKE 'dead::%' OR subject LIKE 'stubs::%'"
             ).fetchall()
         }
 
@@ -691,7 +692,7 @@ class Assessor:
                 _add_artifact(
                     self._knowledge_conn,
                     subject_ep,
-                    "design_note",
+                    "entry",
                     f"Entry point in {file_label}: {name} has no callers in corpus "
                     f"but calls {o} other functions.",
                     "ai-generated",
@@ -706,7 +707,7 @@ class Assessor:
                 _add_artifact(
                     self._knowledge_conn,
                     subject_dc,
-                    "known_issue",
+                    "dead",
                     f"Potential dead code in {file_label}: {name} has no callers "
                     f"and no callees in corpus.",
                     "ai-generated",
@@ -721,7 +722,7 @@ class Assessor:
                 _add_artifact(
                     self._knowledge_conn,
                     subject_hot,
-                    "design_note",
+                    "hot",
                     f"Hot symbol in {file_label}: {name} has {i} callers "
                     f"(in_degree={i}, out_degree={o}).",
                     "ai-generated",
@@ -743,7 +744,7 @@ class Assessor:
                 _add_artifact(
                     self._knowledge_conn,
                     subject_sf,
-                    "design_note",
+                    "stub",
                     f"{file_label} contains {n} stub function(s) with no implementation.",
                     "ai-generated",
                     corpus=corpus,

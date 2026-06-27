@@ -375,8 +375,11 @@ def get_findings(assessor: "Assessor", args: dict) -> str:
 def list_findings_by_kind(assessor: "Assessor", args: dict) -> str:
     """
     list_findings_by_kind(kind) - all stored artifacts of a given kind.
-    Valid kinds: future_plan / known_issue / design_note / file_purpose /
-    strategy_decision / query_finding / session_decision
+    Structural kinds (written by extract_design_facts):
+      hot / dead / entry / stub
+    Knowledge kinds (written by store_finding or ask_truth_layer):
+      file_purpose / design_note / known_issue / strategy_decision /
+      query_finding / session_decision
     """
     kind = args.get("kind", "").strip()
     if not kind:
@@ -433,27 +436,31 @@ def graph_path(oracle: "DBOracle", args: dict) -> str:
 def graph_entry_points(oracle: "DBOracle", args: dict) -> str:
     """
     graph_entry_points() - symbols with no callers (system roots).
+    Ranked by out_degree descending: high fan-out = real execution root.
     """
     from determined.agent.graph_utils import find_entry_points
     eps = find_entry_points(oracle)
     if not eps:
         return "No entry points found"
-    lines = [f"Entry points ({len(eps)} total):"]
+    lines = [f"Entry points ({len(eps)} total, ranked by fan-out):"]
     for ep in eps[:20]:
         fp = ep["file_path"].replace("\\", "/").split("/")[-1]
-        lines.append(f"  {ep['name']} ({ep['symbol_type']}) in {fp}")
+        calls = ep.get("out_degree", 0)
+        calls_note = f" — calls {calls} functions" if calls else " — leaf (calls nothing)"
+        lines.append(f"  {ep['name']} ({ep['symbol_type']}) in {fp}{calls_note}")
     if len(eps) > 20:
-        lines.append(f"  ... and {len(eps) - 20} more")
+        lines.append(f"  ... and {len(eps) - 20} more (lower fan-out, likely isolated helpers)")
     return "\n".join(lines)
 
 
 def graph_most_connected(oracle: "DBOracle", args: dict) -> str:
     """
-    graph_most_connected(filter) - top symbols by call degree.
+    graph_most_connected(filter) - top symbols by call degree with risk badges.
     filter is an optional substring to limit results.
     """
     filter_str = args.get("filter", "").strip()
     from determined.agent.graph_utils import most_connected
+    from determined.agent.risk_annotator import score_risk, risk_badge
     results = most_connected(oracle, n=15, filter_substr=filter_str)
     if not results:
         return f"No connected symbols found" + (f" matching '{filter_str}'" if filter_str else "")
@@ -461,7 +468,9 @@ def graph_most_connected(oracle: "DBOracle", args: dict) -> str:
     lines = [f"Most connected symbols{label}:"]
     for r in results:
         fp = r["file_path"].replace("\\", "/").split("/")[-1] if r["file_path"] else "?"
-        lines.append(f"  {r['symbol']} in {fp}  (in={r['in_degree']} out={r['out_degree']})")
+        risk = score_risk(oracle, r["symbol"])
+        badge = risk_badge(risk["level"])
+        lines.append(f"  {badge} {r['symbol']} in {fp}  (in={r['in_degree']} out={r['out_degree']})")
     return "\n".join(lines)
 
 
@@ -536,9 +545,9 @@ def missing_docstrings(oracle: "DBOracle", args: dict) -> str:
 def find_todos(oracle: "DBOracle", args: dict) -> str:
     """
     find_todos(limit?) - scan project files for TODO/FIXME/HACK/XXX comments.
-    Returns file, line number, and the comment text.
+    Returns file, line number, and the comment text. Files containing hot
+    symbols (high in-degree) are shown first.
     """
-    import os
     limit = int(args.get("limit", 30))
     root = oracle.get_project_root() or ""
     tags = ("TODO", "FIXME", "HACK", "XXX")
@@ -548,8 +557,22 @@ def find_todos(oracle: "DBOracle", args: dict) -> str:
         r[0] for r in oracle.conn.execute("SELECT file_path FROM files").fetchall()
     ]
 
-    hits = []
+    # Build a "hot file" set: files containing any symbol with in_degree >= 3
+    hot_files: set[str] = set()
+    for row in oracle.conn.execute(
+        "SELECT callee FROM graph_edges GROUP BY callee HAVING COUNT(DISTINCT caller) >= 3"
+    ).fetchall():
+        sym = row[0].rsplit(".", 1)[-1]  # bare name
+        fp_row = oracle.conn.execute(
+            "SELECT file_path FROM functions WHERE name = ? LIMIT 1", (sym,)
+        ).fetchone()
+        if fp_row:
+            hot_files.add(fp_row[0].replace("\\", "/").split("/")[-1])
+
+    hits: list[tuple] = []  # (is_hot, rel_path, lineno, text)
     for fpath in file_paths:
+        fname = fpath.replace("\\", "/").split("/")[-1]
+        is_hot = fname in hot_files
         try:
             with open(fpath, encoding="utf-8", errors="ignore") as fh:
                 for lineno, line in enumerate(fh, 1):
@@ -558,19 +581,25 @@ def find_todos(oracle: "DBOracle", args: dict) -> str:
                         rel = fpath.replace("\\", "/").replace(
                             root.replace("\\", "/") + "/", ""
                         )
-                        hits.append((rel, lineno, stripped[:120]))
-                        if len(hits) >= limit:
-                            break
+                        hits.append((is_hot, rel, lineno, stripped[:120]))
         except OSError:
             continue
-        if len(hits) >= limit:
-            break
 
     if not hits:
         return "No TODO/FIXME/HACK/XXX found in project files."
-    lines = [f"TODO/FIXME/HACK/XXX in project files ({len(hits)} found):"]
-    for rel, lineno, text in hits:
-        lines.append(f"  {rel}:{lineno}  {text}")
+
+    # Hot-file TODOs first, then the rest; cap total
+    hits.sort(key=lambda h: (0 if h[0] else 1, h[1], h[2]))
+    hits = hits[:limit]
+
+    lines = [f"TODO/FIXME/HACK/XXX in project files ({len(hits)} shown):"]
+    prev_hot_section = None
+    for is_hot, rel, lineno, text in hits:
+        section = "hot files" if is_hot else "other files"
+        if section != prev_hot_section:
+            lines.append(f"  [{section}]")
+            prev_hot_section = section
+        lines.append(f"    {rel}:{lineno}  {text}")
     return "\n".join(lines)
 
 

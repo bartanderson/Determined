@@ -169,10 +169,13 @@ REGISTRY: dict[str, dict] = {
     },
     "list_findings_by_kind": {
         "purpose": "List all stored artifacts of a given kind across the corpus.",
-        "args": {"kind": "e.g. 'bug', 'design_note', 'entry', 'dead', 'hot', 'stub'"},
+        "args": {"kind": "structural: 'hot' | 'dead' | 'entry' | 'stub'; "
+                         "knowledge: 'design_note' | 'known_issue' | 'file_purpose' | "
+                         "'strategy_decision' | 'query_finding'"},
         "output": "subject + content snippet for each matching artifact",
         "feeds": ["get_findings", "symbol_brief"],
-        "use_when": "Broad sweep: all known bugs, all known stubs, all hot symbols.",
+        "use_when": "Broad sweep: all hot symbols (kind='hot'), all dead code (kind='dead'), "
+                    "all stubs (kind='stub'), all entry points (kind='entry').",
         "category": "knowledge",
     },
     "knowledge_status": {
@@ -427,14 +430,14 @@ TASK_PATTERNS: dict[str, dict] = {
     },
 
     "orient_to_codebase": {
-        "description": "First-time orientation: entry points, hot spots, open issues.",
+        "description": "First-time orientation: extract facts, find hot spots, map subsystems, surface open work.",
         "steps": [
-            {"tool": "knowledge_status",     "args_hint": {},                  "why": "what's already known"},
-            {"tool": "extract_design_facts", "args_hint": {},                  "why": "populate structural facts if not done"},
-            {"tool": "graph_entry_points",   "args_hint": {},                  "why": "find execution roots"},
-            {"tool": "graph_most_connected", "args_hint": {},                  "why": "find architectural hot spots"},
-            {"tool": "list_findings_by_kind","args_hint": {"kind": "hot"},     "why": "which symbols are mutation-heavy"},
-            {"tool": "find_todos",           "args_hint": {},                  "why": "deferred work in source"},
+            {"tool": "extract_design_facts", "args_hint": {},                  "why": "populate entry/hot/dead/stub facts (idempotent)"},
+            {"tool": "knowledge_status",     "args_hint": {},                  "why": "show coverage after fact extraction"},
+            {"tool": "graph_most_connected", "args_hint": {},                  "why": "architectural hot spots with risk badges"},
+            {"tool": "graph_entry_points",   "args_hint": {},                  "why": "execution roots ranked by fan-out"},
+            {"tool": "graph_clusters",       "args_hint": {},                  "why": "file coupling groups — subsystem map"},
+            {"tool": "find_todos",           "args_hint": {},                  "why": "deferred work, hot-file TODOs first"},
             {"tool": "workflow_status",      "args_hint": {},                  "why": "existing work queue"},
         ],
     },
@@ -442,9 +445,9 @@ TASK_PATTERNS: dict[str, dict] = {
     "find_dead_code": {
         "description": "Identify code that is defined but never called.",
         "steps": [
-            {"tool": "list_findings_by_kind", "args_hint": {"kind": "dead"},  "why": "check pre-extracted dead code"},
-            {"tool": "graph_entry_points",    "args_hint": {},                 "why": "roots to exclude from dead-code"},
-            {"tool": "graph_most_connected",  "args_hint": {},                 "why": "high-degree = definitely alive"},
+            {"tool": "extract_design_facts",  "args_hint": {},                 "why": "ensure dead-code facts are populated (idempotent)"},
+            {"tool": "list_findings_by_kind", "args_hint": {"kind": "dead"},   "why": "all extracted dead code candidates"},
+            {"tool": "graph_most_connected",  "args_hint": {},                 "why": "high-degree = definitely alive (cross-check)"},
         ],
     },
 
