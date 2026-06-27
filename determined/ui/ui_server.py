@@ -92,28 +92,47 @@ def index():
 
 
 def _corpus_map_data() -> dict:
-    """Entry points + hot symbols for the corpus map card. No LLM."""
+    """Entry points + hot symbols for the corpus map panel. No LLM, no per-symbol risk queries."""
     if not _oracle:
         return {}
     from determined.agent.graph_utils import find_entry_points
-    from determined.agent.risk_annotator import score_risk, risk_badge
+    from determined.agent.risk_annotator import risk_badge
+
+    # Pull any pre-computed risk records from knowledge.db in one query.
+    # Falls back to empty dict if knowledge layer not available yet.
+    precomputed_risk: dict[str, str] = {}
+    if _assessor and _assessor._knowledge_conn:
+        try:
+            rows = _assessor._knowledge_conn.execute(
+                "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'risk'"
+            ).fetchall()
+            for subj, content in rows:
+                name = subj.replace("risk::", "")
+                body = (content or "").lower()
+                level = "HOT" if "hot" in body else "WARM" if "warm" in body else "SAFE"
+                precomputed_risk[name] = level
+        except Exception:
+            pass
+
+    def _risk_for(name: str) -> tuple[str, str]:
+        level = precomputed_risk.get(name, "")
+        return level, risk_badge(level) if level else ""
 
     eps = find_entry_points(_oracle)
     top_eps = []
     for ep in eps[:8]:
-        risk = score_risk(_oracle, ep["name"])
+        level, badge = _risk_for(ep["name"])
         top_eps.append({
             "name": ep["name"],
             "file": Path(ep["file_path"]).name if ep["file_path"] else "",
             "out_degree": ep["out_degree"],
-            "risk": risk["level"],
-            "badge": risk_badge(risk["level"]),
+            "risk": level,
+            "badge": badge,
         })
 
-    # Hot symbols: functions with highest caller count in graph_edges
+    # Hot symbols: highest caller count, non-stubs, single query
     rows = _oracle.conn.execute("""
-        SELECT f.name, f.file_path,
-               COUNT(ge.caller) AS caller_count
+        SELECT f.name, f.file_path, COUNT(ge.caller) AS caller_count
         FROM functions f
         JOIN graph_edges ge ON ge.callee = f.name OR ge.callee LIKE '%.' || f.name
         WHERE f.is_stub = 0
@@ -123,25 +142,18 @@ def _corpus_map_data() -> dict:
     """).fetchall()
     hot_syms = []
     for name, fp, cnt in rows:
-        risk = score_risk(_oracle, name)
+        level, badge = _risk_for(name)
         hot_syms.append({
             "name": name,
             "file": Path(fp).name if fp else "",
             "caller_count": cnt,
-            "risk": risk["level"],
-            "badge": risk_badge(risk["level"]),
+            "risk": level,
+            "badge": badge,
         })
-
-    stubs_list = [
-        r[0] for r in _oracle.conn.execute(
-            "SELECT name FROM functions WHERE is_stub=1 ORDER BY name LIMIT 8"
-        ).fetchall()
-    ]
 
     return {
         "entry_points": top_eps,
         "hot_symbols": hot_syms,
-        "stubs": stubs_list,
         "top_entry": eps[0]["name"] if eps else "",
     }
 

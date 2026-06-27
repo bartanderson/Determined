@@ -87,6 +87,12 @@
     <!-- tab panels -->
     <div class="tab-content">
       <div class="tab-panel active" id="panel-chat">
+        <!-- corpus map: pinned above scroll, collapses when not needed -->
+        <div id="corpus-map" style="display:none;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--bg);overflow:hidden">
+          <div id="corpus-map-inner" style="display:flex;gap:1.2rem;padding:.5rem .7rem;flex-wrap:wrap;align-items:flex-start"></div>
+          <button id="corpus-map-toggle" title="Collapse map"
+            style="position:absolute;top:.3rem;right:.5rem;background:none;border:none;color:var(--text3);cursor:pointer;font-size:.8em;padding:2px 6px">▲ hide</button>
+        </div>
         <div id="results" class="results-area"></div>
       </div>
       <div class="tab-panel" id="panel-call_tree">
@@ -255,69 +261,8 @@ socket.on("corpus_ready", data => {
   ingestBtn.dataset.mode = "replace";
   resumeBtn.disabled = true;
 
-  // remove previous corpus map if reloading
-  const prev = document.getElementById("corpus-map-card");
-  if (prev) prev.remove();
-
-  // build structured corpus map card
-  const eps   = data.entry_points  || [];
-  const hots  = data.hot_symbols   || [];
-  const stubs = data.stubs_list    || [];
-
-  function riskCls(r)  { return r === "HOT" ? "sym-risk-hot" : r === "WARM" ? "sym-risk-warm" : ""; }
-  function badgeSpan(b,r) { return b ? `<span class="${riskCls(r)}" style="font-size:.78em;margin-right:.2em">${escHtml(b)}</span>` : ""; }
-  function symBtn(name, r) {
-    return `<span class="sym-link ${riskCls(r)}" data-sym="${escAttr(name)}" style="cursor:pointer">${escHtml(name)}</span>`;
-  }
-
-  const epsHtml = eps.length
-    ? eps.map(e =>
-        `<div style="display:flex;align-items:baseline;gap:.4rem;padding:2px 0;border-bottom:1px solid var(--bg3)">
-          ${badgeSpan(e.badge,e.risk)}${symBtn(e.name,e.risk)}
-          <span style="color:var(--text3);font-size:.78em">${escHtml(e.file)}</span>
-          <span style="color:var(--text3);font-size:.75em;margin-left:auto">&#x2197;${e.out_degree}</span>
-        </div>`).join("")
-    : `<div style="color:var(--text3);font-size:.85em">none detected</div>`;
-
-  const hotsHtml = hots.length
-    ? hots.map(h =>
-        `<div style="display:flex;align-items:baseline;gap:.4rem;padding:2px 0;border-bottom:1px solid var(--bg3)">
-          ${badgeSpan(h.badge,h.risk)}${symBtn(h.name,h.risk)}
-          <span style="color:var(--text3);font-size:.78em">${escHtml(h.file)}</span>
-          <span style="color:var(--text3);font-size:.75em;margin-left:auto">&#x2199;${h.caller_count}</span>
-        </div>`).join("")
-    : `<div style="color:var(--text3);font-size:.85em">none</div>`;
-
-  const stubsHtml = stubs.length
-    ? stubs.map(s => symBtn(s, "")).join(" &middot; ")
-    : `<span style="color:var(--text3);font-size:.85em">none</span>`;
-
-  const block = document.createElement("div");
-  block.id = "corpus-map-card";
-  block.className = "result-block";
-  block.style.cssText = "border-left:2px solid var(--blue)";
-  block.innerHTML = `
-    <div class="result-header">
-      <span class="kind-tag kind-survey">corpus</span>
-      <span class="result-subject">${escHtml(data.db_name)}</span>
-      <span style="color:var(--text3);font-size:.82em;margin-left:.5rem">${data.files} files &middot; ${data.hot} hot &middot; ${data.stubs} stubs &middot; ${data.artifacts} artifacts</span>
-    </div>
-    <div class="result-body" style="flex-direction:column;gap:.8rem;padding:.5rem 0">
-      <div>
-        <div style="font-size:.75em;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding-bottom:3px;border-bottom:1px solid var(--border);margin-bottom:4px">Entry points</div>
-        <div style="font-family:var(--font-mono);font-size:.82em;line-height:1.7">${epsHtml}</div>
-      </div>
-      <div>
-        <div style="font-size:.75em;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding-bottom:3px;border-bottom:1px solid var(--border);margin-bottom:4px">Most-called</div>
-        <div style="font-family:var(--font-mono);font-size:.82em;line-height:1.7">${hotsHtml}</div>
-      </div>
-      ${stubs.length ? `<div>
-        <div style="font-size:.75em;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding-bottom:3px;border-bottom:1px solid var(--border);margin-bottom:4px">Stubs (${data.stubs} total)</div>
-        <div style="font-size:.82em;font-family:var(--font-mono);line-height:1.8">${stubsHtml}</div>
-      </div>` : ""}
-    </div>`;
-  results.prepend(block);
-  attachSymbolHandlers(block);
+  // populate pinned corpus map panel
+  renderCorpusMap(data);
 
   // seed graph inputs with actual entry point from this corpus
   if (data.top_entry) {
@@ -333,6 +278,80 @@ socket.on("corpus_ready", data => {
     if (data.top_entry) ctTrace(data.top_entry);
   }
 });
+
+// ── corpus map panel ──────────────────────────────────────
+const corpusMapEl     = document.getElementById("corpus-map");
+const corpusMapInner  = document.getElementById("corpus-map-inner");
+const corpusMapToggle = document.getElementById("corpus-map-toggle");
+let _mapCollapsed = false;
+
+corpusMapToggle.addEventListener("click", () => {
+  _mapCollapsed = !_mapCollapsed;
+  corpusMapInner.style.display = _mapCollapsed ? "none" : "";
+  corpusMapToggle.textContent = _mapCollapsed ? "▼ map" : "▲ hide";
+});
+
+function _riskCls(r)  { return r === "HOT" ? "sym-risk-hot" : r === "WARM" ? "sym-risk-warm" : ""; }
+
+function _mapSection(label, rows) {
+  const sec = document.createElement("div");
+  sec.style.cssText = "min-width:180px;flex:1;max-width:260px";
+  const hdr = document.createElement("div");
+  hdr.style.cssText = "font-size:.7em;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);border-bottom:1px solid var(--border);padding-bottom:2px;margin-bottom:4px";
+  hdr.textContent = label;
+  sec.appendChild(hdr);
+  rows.forEach(({ name, file, count, countIcon, risk, badge }) => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:baseline;gap:.3rem;padding:1px 0;font-family:var(--font-mono);font-size:.8em;white-space:nowrap;overflow:hidden";
+    const cls = _riskCls(risk);
+    row.innerHTML = (badge ? `<span class="${cls}" style="font-size:.75em;flex-shrink:0">${escHtml(badge)}</span>` : "")
+      + `<span class="sym-link ${cls}" data-sym="${escAttr(name)}" style="cursor:pointer;overflow:hidden;text-overflow:ellipsis">${escHtml(name)}</span>`
+      + `<span style="color:var(--text3);font-size:.75em;flex-shrink:0;margin-left:auto">${countIcon}${count}</span>`;
+    sec.appendChild(row);
+  });
+  return sec;
+}
+
+function renderCorpusMap(data) {
+  const eps   = data.entry_points || [];
+  const hots  = data.hot_symbols  || [];
+  corpusMapInner.innerHTML = "";
+
+  // stats strip
+  const stats = document.createElement("div");
+  stats.style.cssText = "font-size:.75em;color:var(--text3);display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;padding-right:.8rem;border-right:1px solid var(--border);margin-right:.4rem;justify-content:center";
+  stats.innerHTML = `<span style="color:var(--text1);font-size:.9em">${escHtml(data.db_name)}</span>`
+    + `<span>${data.files} files</span>`
+    + `<span>${data.hot} hot</span>`
+    + `<span>${data.stubs} stubs</span>`
+    + (data.artifacts ? `<span>${data.artifacts} artifacts</span>` : "")
+    + (data.stubs > 0 ? `<span class="sym-link" data-sym="" style="cursor:pointer;color:var(--blue);margin-top:3px" id="map-stubs-link">view stubs</span>` : "");
+  corpusMapInner.appendChild(stats);
+
+  // roots column
+  if (eps.length) {
+    const rows = eps.map(e => ({ name: e.name, file: e.file, count: e.out_degree, countIcon: "↗", risk: e.risk, badge: e.badge }));
+    corpusMapInner.appendChild(_mapSection("Roots (uncalled)", rows));
+  }
+
+  // core column
+  if (hots.length) {
+    const rows = hots.map(h => ({ name: h.name, file: h.file, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }));
+    corpusMapInner.appendChild(_mapSection("Core (most-called)", rows));
+  }
+
+  corpusMapEl.style.display = (eps.length || hots.length) ? "" : "none";
+  if (!_mapCollapsed) corpusMapInner.style.display = "";
+
+  // wire stubs link to fire a query
+  const stubsLink = document.getElementById("map-stubs-link");
+  if (stubsLink) stubsLink.addEventListener("click", () => {
+    input.value = "find stubs";
+    sendQuery();
+  });
+
+  attachSymbolHandlers(corpusMapInner);
+}
 
 // ── send query ────────────────────────────────────────────
 function sendQuery() {
