@@ -1550,7 +1550,6 @@ edPopoutBtn.addEventListener("click", () => {
 
 // ── sidebar fold ─────────────────────────────────────────
 const sidebarFold = document.getElementById("sidebar-fold");
-const shell = document.querySelector(".shell");
 sidebarFold.addEventListener("click", () => {
   const collapsed = shell.classList.toggle("sidebar-collapsed");
   sidebarFold.textContent = collapsed ? "›" : "‹";
