@@ -534,6 +534,10 @@ body {
 }
 .sym-link:hover { color: #a5d8f7; border-color: #a5d8f7; }
 .sym-link.in-spotlight { color: var(--orange); border-color: var(--orange); }
+/* Ambient risk tinting on sym-links — separate from badge-pill .risk-* classes */
+.sym-link.sym-risk-hot  { color: #f87171; border-bottom-color: #f87171; }
+.sym-link.sym-risk-warm { color: #fb923c; border-bottom-color: #fb923c; }
+.sym-link.sym-risk-hot:hover, .sym-link.sym-risk-warm:hover { color: #a5d8f7; border-bottom-color: #a5d8f7; }
 
 .fp-link {
   font-family: var(--font-mono);

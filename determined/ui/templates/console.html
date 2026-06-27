@@ -795,12 +795,14 @@ function addResultBlock(question, answer) {
 // Replace colorize() spans with clickable sym-link / fp-link elements.
 // Called after innerHTML is set; walks rendered spans and upgrades them.
 function attachSymbolHandlers(container) {
+  const newSyms = new Set();
   container.querySelectorAll(".sym, .fn").forEach(el => {
     const raw  = el.textContent.replace(/\($/, "").trim();
     // data-nav carries the resolved last-segment when the display text is dotted
     const name = el.dataset.nav || raw.split(".").pop() || raw;
     el.className = "sym-link";
     el.dataset.sym = name;
+    newSyms.add(name);
   });
   container.querySelectorAll(".fp").forEach(el => {
     el.className = "fp-link";
@@ -810,6 +812,8 @@ function attachSymbolHandlers(container) {
     el.addEventListener("mouseleave", onSymLeave);
     el.addEventListener("click",      e => { e.stopPropagation(); openSpotlight(el.dataset.sym); });
   });
+  // Ambient badge: fire quick lookups for all new symbols so HOT/WARM get tinted immediately
+  newSyms.forEach(sym => socket.emit("symbol_quick", { symbol: sym }));
 }
 
 // ── hover tooltip ─────────────────────────────────────────
@@ -832,7 +836,17 @@ function onSymLeave() {
 }
 
 socket.on("symbol_quick_result", data => {
-  if (data.error || _pendingSym === null) { tooltip.style.display = "none"; return; }
+  // Ambient badge: tint every sym-link for HOT/WARM symbols regardless of hover state
+  if (!data.error && data.symbol && data.risk) {
+    const ambientCls = { HOT: "sym-risk-hot", WARM: "sym-risk-warm" }[data.risk];
+    if (ambientCls) {
+      document.querySelectorAll(`.sym-link[data-sym="${CSS.escape(data.symbol)}"]`).forEach(el => {
+        el.classList.add(ambientCls);
+      });
+    }
+  }
+  // Tooltip: only show when this result matches the currently-hovered symbol
+  if (data.error || _pendingSym !== data.symbol) return;
   const riskCls = { HOT: "risk-hot", WARM: "risk-warm", SAFE: "risk-safe" }[data.risk] || "";
   tooltip.innerHTML = `
     <div class="tt-name"><span class="${riskCls}">${data.badge || ""}</span> ${escHtml(data.symbol)}</div>

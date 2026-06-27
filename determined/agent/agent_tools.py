@@ -306,7 +306,7 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     return risk_line + "\n" + brief
 
 
-def risk_profile(oracle: "DBOracle", args: dict) -> str:
+def risk_profile(oracle: "DBOracle", args: dict):
     """
     risk_profile(symbol) - structural change-risk rating for a symbol.
     Returns HOT/WARM/SAFE with the reasons: in-degree, mutations, blast radius.
@@ -321,7 +321,11 @@ def risk_profile(oracle: "DBOracle", args: dict) -> str:
     for reason in r["reasons"]:
         lines.append(f"  - {reason}")
     lines.append(f"  in_degree={r['in_degree']}  out_degree={r['out_degree']}  mutations={r['mutation_count']}")
-    return "\n".join(lines)
+    row = oracle.conn.execute("SELECT file_path FROM symbols WHERE name = ?", (symbol,)).fetchone()
+    file_path = row[0] if row else ""
+    bag_item = {"__type__": "symbol", "__key__": f"symbol::{symbol}",
+                "name": symbol, "file_path": file_path, "risk": r["level"]}
+    return "\n".join(lines), [bag_item]
 
 
 # ------------------------------------------------------------------
@@ -453,7 +457,7 @@ def graph_entry_points(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
-def graph_most_connected(oracle: "DBOracle", args: dict) -> str:
+def graph_most_connected(oracle: "DBOracle", args: dict):
     """
     graph_most_connected(filter) - top symbols by call degree with risk badges.
     filter is an optional substring to limit results.
@@ -466,12 +470,16 @@ def graph_most_connected(oracle: "DBOracle", args: dict) -> str:
         return f"No connected symbols found" + (f" matching '{filter_str}'" if filter_str else "")
     label = f" matching '{filter_str}'" if filter_str else ""
     lines = [f"Most connected symbols{label}:"]
+    bag_items = []
     for r in results:
         fp = r["file_path"].replace("\\", "/").split("/")[-1] if r["file_path"] else "?"
         risk = score_risk(oracle, r["symbol"])
         badge = risk_badge(risk["level"])
         lines.append(f"  {badge} {r['symbol']} in {fp}  (in={r['in_degree']} out={r['out_degree']})")
-    return "\n".join(lines)
+        bag_items.append({"__type__": "symbol", "__key__": f"symbol::{r['symbol']}",
+                          "name": r["symbol"], "file_path": r["file_path"] or "",
+                          "risk": risk["level"], "in_degree": r["in_degree"]})
+    return "\n".join(lines), bag_items
 
 
 def graph_subgraph(oracle: "DBOracle", args: dict) -> str:
