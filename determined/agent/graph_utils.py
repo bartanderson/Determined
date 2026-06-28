@@ -25,18 +25,31 @@ def find_entry_points(oracle: "DBOracle", exclude_tests: bool = True) -> list[di
     sorted by out_degree descending so real entry points (high fan-out) rank first.
     Excludes test files and __init__ by default.
     """
-    # All symbols that appear as a callee somewhere
-    called = {
+    # All symbols that appear as a callee somewhere — also check dotted form
+    # (e.g. "from_dict" is called as "ClassName.from_dict" in graph_edges)
+    raw_callees = {
         r[0] for r in
         oracle.conn.execute("SELECT DISTINCT callee FROM graph_edges").fetchall()
     }
+    # Include bare names that appear as the suffix of a dotted callee
+    called = raw_callees | {c.rsplit(".", 1)[-1] for c in raw_callees if "." in c}
 
-    # Out-degree: how many things each symbol calls
-    out_deg: dict[str, int] = {}
+    # Out-degree per (name, file_path) using caller_file when available
+    out_deg_file: dict[tuple, int] = {}
+    try:
+        for r in oracle.conn.execute(
+            "SELECT caller, caller_file, COUNT(*) FROM graph_edges "
+            "WHERE caller_file IS NOT NULL GROUP BY caller, caller_file"
+        ).fetchall():
+            out_deg_file[(r[0], r[1])] = r[2]
+    except Exception:
+        pass  # older DBs without caller_file column
+    # Fallback: name-only out_degree for edges without caller_file
+    out_deg_name: dict[str, int] = {}
     for r in oracle.conn.execute(
         "SELECT caller, COUNT(*) FROM graph_edges GROUP BY caller"
     ).fetchall():
-        out_deg[r[0]] = r[1]
+        out_deg_name[r[0]] = r[1]
 
     rows = oracle.conn.execute(
         "SELECT name, file_path, 'function' AS symbol_type FROM functions "
@@ -45,6 +58,7 @@ def find_entry_points(oracle: "DBOracle", exclude_tests: bool = True) -> list[di
     ).fetchall()
 
     results = []
+    seen_names: set[str] = set()
     for r in rows:
         name, fp, stype = r[0], r[1], r[2]
         if name in called:
@@ -53,11 +67,17 @@ def find_entry_points(oracle: "DBOracle", exclude_tests: bool = True) -> list[di
             continue
         if exclude_tests and ("test" in fp.lower() or name.startswith("test_")):
             continue
+        # Deduplicate: when same bare name appears in multiple files, keep first
+        # (edges are name-keyed so all copies share the same out_degree anyway)
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        odeg = out_deg_file.get((name, fp), out_deg_name.get(name, 0))
         results.append({
             "name": name,
             "file_path": fp,
             "symbol_type": stype,
-            "out_degree": out_deg.get(name, 0),
+            "out_degree": odeg,
         })
 
     results.sort(key=lambda r: r["out_degree"], reverse=True)

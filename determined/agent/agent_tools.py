@@ -513,11 +513,21 @@ def graph_clusters(oracle: "DBOracle", args: dict) -> str:
     clusters = find_clusters(oracle, min_edges=2)
     if not clusters:
         return "No file clusters found (no file pairs share 2+ call edges)"
-    lines = [f"File clusters ({len(clusters)} pairs):"]
-    for c in clusters[:15]:
+    # Separate test pairs from prod pairs so real subsystems aren't buried
+    prod_clusters = [
+        c for c in clusters
+        if not any("test" in f.lower() for f in c["files"])
+    ]
+    test_clusters = [c for c in clusters if c not in prod_clusters]
+
+    lines = [f"File clusters ({len(clusters)} pairs, {len(prod_clusters)} prod / {len(test_clusters)} test):"]
+    lines.append("  [production subsystems]")
+    for c in prod_clusters[:12]:
         f1 = c['files'][0].replace("\\", "/").split("/")[-1]
         f2 = c['files'][1].replace("\\", "/").split("/")[-1]
-        lines.append(f"  {f1} <-> {f2}  ({c['edge_count']} edges)")
+        lines.append(f"    {f1} <-> {f2}  ({c['edge_count']} edges)")
+    if test_clusters:
+        lines.append(f"  [test↔prod pairs: {len(test_clusters)} — omitted]")
     return "\n".join(lines)
 
 
