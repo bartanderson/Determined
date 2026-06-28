@@ -1,10 +1,10 @@
 # tools/analysis/oracle/knowledge_oracle.py
 #
 # Shared knowledge overlay - wraps knowledge.db, which holds
-# knowledge_artifacts and semantic_summaries for all corpora.
+# knowledge_artifacts (design notes, SOTS tenets, confirmed findings).
 #
-# Separate from corpus DBs so findings survive corpus rebuilds and are
-# visible across all corpus Assessors. See DESIGN.md section 7.
+# semantic_summaries live in corpus DBs (not here) - they are per-corpus
+# derived data, not durable cross-session knowledge. See DESIGN.md section 7.
 
 from __future__ import annotations
 
@@ -29,11 +29,9 @@ class KnowledgeOracle:
 
     def _ensure_schema(self) -> None:
         from determined.intent.knowledge_artifact import ensure_knowledge_artifacts_table
-        from determined.intent.semantic_summary import ensure_semantic_summaries_table
         from determined.intent.workflow_store import ensure_workflow_items_table
         cursor = self.conn.cursor()
         ensure_knowledge_artifacts_table(cursor)
-        ensure_semantic_summaries_table(cursor)
         ensure_workflow_items_table(cursor)
         self.conn.commit()
 

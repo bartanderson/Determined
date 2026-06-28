@@ -535,9 +535,8 @@ class Assessor:
         """
         if kind == "file" and not source_text:
             source_text = self._read_source_file(subject)
-        conn = self._knowledge_conn or self.oracle.conn
         return _get_or_generate_summary(
-            conn, subject, kind, source_text,
+            self.oracle.conn, subject, kind, source_text,
             force_refresh=force_refresh,
         )
 
