@@ -368,28 +368,16 @@ def _distill_to_one_sentence(content: str, subject: str) -> str | None:
 
 def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
     """
-    Semantic lookup: embed the symbol context, cosine-search against all
-    design_note subject+content in knowledge.db, return top matches above
-    threshold. Falls back gracefully if no model or no notes available.
+    Semantic lookup: embed the symbol context, cosine-search against bundled
+    SOTS tenets. Falls back gracefully if embedding model unavailable.
+    No knowledge.db required.
     """
-    if not assessor._knowledge_conn:
-        return ""
+    from determined.data.sots_loader import search_tenets
 
-    rows = assessor._knowledge_conn.execute(
-        "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'design_note'"
-    ).fetchall()
-    if not rows:
-        return ""
-
-    # Build a file stem hint for the query
     stem = ""
     if file_path:
-        stem = file_path.replace("\\", "/").split("/")[-1]
-        if stem.endswith(".py"):
-            stem = stem[:-3]
+        stem = file_path.replace("\\", "/").split("/")[-1].replace(".py", "")
 
-    # Enrich query with docstring if available -- symbol name alone is too sparse
-    # to match abstract principle text in embedding space
     docstring = ""
     if assessor.oracle:
         row = assessor.oracle.conn.execute(
@@ -408,30 +396,12 @@ def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
     if docstring:
         parts.append(docstring)
     query = "  ".join(parts)
-    note_texts = [f"{r[0]} {r[1]}" for r in rows]
 
-    try:
-        model = _get_embed_model()
-        vecs = model.encode([query] + note_texts, normalize_embeddings=True)
-        q_vec = vecs[0]
-        scores = vecs[1:] @ q_vec  # cosine similarities (already normalized)
-    except Exception:
-        return ""
-
-    THRESHOLD = 0.32
-    TOP_K = 3
-    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-    hits = []
-    for idx, score in ranked[:TOP_K]:
-        if score < THRESHOLD:
-            break
-        subj, content = rows[idx]
-        label = subj if subj else "general"
-        hits.append(f"  [{label}] {content}")
-
+    hits = search_tenets(query, threshold=0.32, top_n=3)
     if not hits:
         return ""
-    return "\nDesign frame:\n" + "\n".join(hits)
+    lines = [f"  [{t['id']}] {t['title']}: {t['description']}" for t in hits]
+    return "\nDesign frame (SOTS):\n" + "\n".join(lines)
 
 
 def symbol_intent(oracle: "DBOracle", args: dict) -> str:
@@ -510,19 +480,12 @@ def _check_design_violations_core(
     assessor: "Assessor", symbol: str, file_path: str
 ) -> list[dict]:
     """
-    Pure analysis: embed symbol context, cosine-search design_notes,
-    filter for constraint language. Returns list[dict]: subject, content, score.
-    Returns empty list on embedding failure (XIII: degrade, don't crash).
-    SOTS XI: pure analysis, returns findings only, never mutates state.
+    Pure analysis: embed symbol context, cosine-search bundled SOTS tenets
+    filtered for constraint language. Returns list[dict]: subject, content, score.
+    Returns empty list on embedding failure (XIII). SOTS XI: pure, no mutations.
+    No knowledge.db required.
     """
-    if not assessor._knowledge_conn:
-        return []
-
-    note_rows = assessor._knowledge_conn.execute(
-        "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'design_note'"
-    ).fetchall()
-    if not note_rows:
-        return []
+    from determined.data.sots_loader import load_tenets, search_tenets
 
     # Build a rich query: symbol name + docstring + callee names
     docstring = ""
@@ -540,32 +503,12 @@ def _check_design_violations_core(
     stem = file_path.replace("\\", "/").split("/")[-1].replace(".py", "") if file_path else ""
     query = f"symbol: {symbol}  file: {stem}  {docstring}  calls: {callee_names}"
 
-    # Filter notes to those with constraint language before embedding (XVII: don't embed everything)
-    constraint_notes = [
-        (subj, content) for subj, content in note_rows
-        if any(p in content.lower() for p in _CONSTRAINT_PATTERNS)
+    # SOTS tenets already contain constraint language - search directly
+    hits = search_tenets(query, threshold=0.30, top_n=5)
+    return [
+        {"subject": f"SOTS {t['id']}", "content": f"{t['title']}: {t['description']}", "score": t["score"]}
+        for t in hits
     ]
-    if not constraint_notes:
-        return []
-
-    try:
-        model = _get_embed_model()
-        note_texts = [f"{s} {c}" for s, c in constraint_notes]
-        vecs = model.encode([query] + note_texts, normalize_embeddings=True)
-        scores = vecs[1:] @ vecs[0]
-    except Exception:
-        return []  # embedding failure: degrade silently (XIII)
-
-    THRESHOLD = 0.30
-    TOP_K = 5
-    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-    hits = []
-    for idx, score in ranked[:TOP_K]:
-        if score < THRESHOLD:
-            break
-        subj, content = constraint_notes[idx]
-        hits.append({"subject": subj, "content": content, "score": float(score)})
-    return hits
 
 
 def check_design_violations(assessor: "Assessor", args: dict) -> str:
@@ -587,22 +530,10 @@ def check_design_violations(assessor: "Assessor", args: dict) -> str:
     hits = _check_design_violations_core(assessor, symbol, file_path)
 
     if not hits:
-        # SOTS XVIII: empty result explains why, not silent
-        if not assessor._knowledge_conn:
-            return f"No design violations checked for '{symbol}': no knowledge DB configured."
-        note_count = assessor._knowledge_conn.execute(
-            "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'"
-        ).fetchone()[0]
-        if note_count == 0:
-            return (
-                f"No design violations found for '{symbol}': "
-                f"no design_note artifacts in knowledge DB. "
-                f"Run ingest_design_docs() first to populate design rules."
-            )
+        from determined.data.sots_loader import load_tenets
         return (
             f"No design violations detected for '{symbol}' "
-            f"(checked {note_count} constraint-bearing design notes, "
-            f"none matched above threshold)."
+            f"(checked {len(load_tenets())} SOTS tenets, none matched above threshold)."
         )
 
     lines = [f"Potential design violations for '{symbol}':"]
@@ -1518,37 +1449,18 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
                 out.append(f"        {reasons}")
         out.append("")
 
-    # --- Step 3: Relevant design notes ---
-    if assessor._knowledge_conn:
-        note_rows = assessor._knowledge_conn.execute(
-            "SELECT subject, content FROM knowledge_artifacts WHERE kind='design_note'"
-        ).fetchall()
-        if note_rows:
-            try:
-                model = _get_embed_model()
-                note_texts = [f"{r[0]} {r[1]}" for r in note_rows]
-                vecs = model.encode([goal] + note_texts, normalize_embeddings=True)
-                scores = vecs[1:] @ vecs[0]
-                ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-                design_hits = []
-                for idx, score in ranked[:4]:
-                    if score >= 0.30:
-                        subj = note_rows[idx][0] or "general"
-                        design_hits.append(f"  [{subj}] {note_rows[idx][1][:120]}")
-                if design_hits:
-                    out.append("Design rules that apply:")
-                    out.extend(design_hits)
-                    out.append("")
-            except Exception:
-                pass
+    # --- Step 3: Relevant SOTS tenets ---
+    from determined.data.sots_loader import search_tenets
+    tenet_hits = search_tenets(goal, threshold=0.30, top_n=4)
+    if tenet_hits:
+        out.append("Design rules that apply (SOTS):")
+        for t in tenet_hits:
+            out.append(f"  [{t['id']}] {t['title']}: {t['description'][:120]}")
+        out.append("")
 
     # --- Step 4: Stubs near relevant files ---
     relevant_files = {sym_file for _, sym_file, _ in relevant_symbols}
-    stub_rows = []
-    if assessor._knowledge_conn:
-        stub_rows = assessor._knowledge_conn.execute(
-            "SELECT subject, content FROM knowledge_artifacts WHERE kind='stub'"
-        ).fetchall()
+    stub_rows = []  # stubs now detected from corpus DB directly (see stub_syms below)
 
     # Also check oracle for stub-like symbols (no callers, no body inferred from docstring)
     stub_syms = oracle.conn.execute(
@@ -1728,25 +1640,17 @@ def _project_status_data(oracle: "DBOracle", assessor: "Assessor") -> dict:
         for c in prod_clusters
     ]
 
-    # --- Architecture flags from design notes ---
+    # --- Architecture flags: SOTS tenets with constraint language ---
+    from determined.data.sots_loader import load_tenets
+    _constraint_words = ("must not", "never", "forbidden", "prohibited", "must be", "only")
     arch_flags = []
-    if assessor._knowledge_conn:
-        flag_rows = assessor._knowledge_conn.execute(
-            "SELECT subject, content FROM knowledge_artifacts WHERE kind='design_note' "
-            "AND (content LIKE '%LEGACY%' OR content LIKE '%To Be Decomposed%' "
-            "     OR content LIKE '%must not%' OR content LIKE '%Must not%' "
-            "     OR content LIKE '%forbidden%' OR content LIKE '%never%') "
-            "AND subject != '' AND subject IS NOT NULL "
-            "ORDER BY subject LIMIT 15"
-        ).fetchall()
-        seen_subjects: set[str] = set()
-        for subj, content in flag_rows:
-            if subj in seen_subjects:
-                continue
-            seen_subjects.add(subj)
-            # Extract the key constraint (first sentence-ish)
-            snippet = content[:150].replace("\n", " ").strip()
-            arch_flags.append({"subject": subj, "constraint": snippet})
+    for t in load_tenets():
+        text = (t["description"] + " " + t["ask"]).lower()
+        if any(w in text for w in _constraint_words):
+            snippet = f"{t['title']}: {t['description'][:120]}"
+            arch_flags.append({"subject": f"SOTS {t['id']}", "constraint": snippet})
+        if len(arch_flags) >= 15:
+            break
 
     totals = {
         "files": len(all_files),

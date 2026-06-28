@@ -1,0 +1,152 @@
+[
+  {
+    "id": "I",
+    "title": "Locality of reasoning over global cleverness",
+    "description": "A reader should be able to verify a piece of code correct by looking only at that piece and its declared inputs.",
+    "ask": "To convince myself this code is correct, how far from this screen do I have to look?"
+  },
+  {
+    "id": "II",
+    "title": "Make the data flow explicit, and give every ambient dependency one override point",
+    "description": "Show where state comes from and where effects go; an ambient dependency with no declared override is a bug you can't see yet.",
+    "ask": "Could a test pin this behaviour through a single declared override, and if not, which ambient input has no seam?"
+  },
+  {
+    "id": "III",
+    "title": "Parse, don't validate: make the illegal state unrepresentable",
+    "description": "Turn unstructured input into a typed, constrained value once at the door, so the bad shape can't be built or passed on.",
+    "ask": "Past this line, is it structurally impossible to be holding the raw, unchecked form, or am I just adding one more check someone can skip?"
+  },
+  {
+    "id": "IV",
+    "title": "Everything across a trust boundary is hostile until proven otherwise",
+    "description": "A well-formed value can still be an attack; bound its size before you allocate, and authorise the actor separately from authenticating them.",
+    "ask": "What is the worst single value, or the worst package, the other side could send here, and have I bounded the size, re-verified the authority, and pinned what I trust before acting on it?"
+  },
+  {
+    "id": "V",
+    "title": "Keep the responsive path free of uncontrolled-latency work",
+    "description": "A path that owes someone a deadline must never wait inline on work whose completion depends on a party you don't control.",
+    "ask": "On this responsive path, am I waiting on anything whose worst-case latency I don't control, and if it never returns, does my system look dead?"
+  },
+  {
+    "id": "VI",
+    "title": "Every wait across an uncontrolled boundary has a deadline",
+    "description": "A cross-boundary call with no timeout is a bet that the other side is always fast and always answers; you will lose it.",
+    "ask": "Does this wait cross a boundary I don't control, and if so, what's the cutoff, is the work cancellable or idempotent if it fires, and where is the number written down?"
+  },
+  {
+    "id": "VII",
+    "title": "Bound what callers can create; release what you acquire",
+    "description": "Every resource has a ceiling, and everything you acquire has exactly one owner that releases it on every exit path, including error and panic.",
+    "ask": "What's the maximum this can grow to, who controls that (me or my caller), and on every exit path, what releases what I acquired?"
+  },
+  {
+    "id": "VIII",
+    "title": "Tear down what you set up; subscribe for latency, reconcile for correctness",
+    "description": "Every subscription, listener, or handle you register has a teardown that runs when either side goes away, and prefer the event over the timer, except where the event is silence.",
+    "ask": "Does every thing I registered have a teardown, and am I learning 'it's done' from an event, with a reconciler behind it for the edge I might miss?"
+  },
+  {
+    "id": "IX",
+    "title": "Check-then-act on shared state is a race unless it's atomic or serialised",
+    "description": "If two actors can interleave between your check and your act, the check is a guess.",
+    "ask": "Can two actors actually run this between my read and my act, and if so, have I made that window atomic, serialised, or harmless?"
+  },
+  {
+    "id": "X",
+    "title": "Make operations idempotent so \"do it again\" is always safe",
+    "description": "In a world of retries, redelivery, and at-least-once everything, the only safe operation is one that's harmless to repeat.",
+    "ask": "If this runs twice because something retried, is the result identical to running it once?"
+  },
+  {
+    "id": "XI",
+    "title": "Separate the irreversible decision from its effect",
+    "description": "Make 'should we / which ones' a pure, exhaustively-testable function that returns a plan; make the doing a thin wrapper that only executes the plan.",
+    "ask": "Can I test this irreversible decision without doing it, is the doing-part obviously correct, and is the plan still valid at the moment it executes?"
+  },
+  {
+    "id": "XII",
+    "title": "Finish your obligations before you exit",
+    "description": "Stop accepting new work, drain or hand off in-flight work within a bounded deadline, flush and ack only what is durably done, then exit.",
+    "ask": "If this were told to stop right now, what has it accepted that would silently vanish, and does my shutdown path complete those obligations within a deadline?"
+  },
+  {
+    "id": "XIII",
+    "title": "Failure modes must be visible and impossible to swallow",
+    "description": "Make every way this can fail legible to the next reader without running it, and handle failure where the context to decide lives; the sin is the silent swallow, not the keyword.",
+    "ask": "Can the next reader see this call can fail just by reading it, and is there any path where the failure silently disappears?"
+  },
+  {
+    "id": "XIV",
+    "title": "One source of truth; derive the rest",
+    "description": "Every fact has exactly one authoritative owner; everything else is a computed or subscribed view.",
+    "ask": "If these two copies disagreed at 3am, which one is right, why does the other exist, and where does it reconcile?"
+  },
+  {
+    "id": "XV",
+    "title": "Name the boundary, version the contract: strict in, tolerant of the unknown",
+    "description": "Every place control, data, or trust changes hands is an interface; declare it on purpose, and evolve it without breaking consumers you can't force to upgrade.",
+    "ask": "If I shipped this and an old consumer hit it unchanged, would it break, and does this contract reject what it must while ignoring what it merely doesn't recognise?"
+  },
+  {
+    "id": "XVI",
+    "title": "Least privilege, by construction",
+    "description": "Give every component the narrowest authority that lets it do its job, so a bug or breach is contained by what it was never granted.",
+    "ask": "If this component were fully compromised or simply buggy, what's the most it could touch, and does it actually need all of that?"
+  },
+  {
+    "id": "XVII",
+    "title": "Measure, then make the common case fast, but bound the unbounded without a profiler",
+    "description": "Performance is a falsifiable property of the running system, not a vibe; profile before you trade clarity for speed, except for complexity in caller- or attacker-controlled size, which is a correctness bug you fix on sight.",
+    "ask": "Is this cost in caller-controlled size (then bound it now, no profiler) or a known antipattern (then fix it), or am I rewriting cold, readable code into clever code I never measured?"
+  },
+  {
+    "id": "XVIII",
+    "title": "Make it observable, or you are guessing",
+    "description": "Correctness is a property of the running system; emit the signals that prove your invariants held, and instrument the failure modes, not just the happy path.",
+    "ask": "When this invariant breaks at 3am, what signal tells me, and is it already being emitted?"
+  },
+  {
+    "id": "XIX",
+    "title": "Degrade in tiers; contain the blast radius",
+    "description": "When a dependency dies, lose a feature, not the system, and make sure one tenant's bad day isn't everyone's.",
+    "ask": "When this dependency is down or this tenant goes rogue, what's the smallest thing I can lose, and have I ever actually run that path?"
+  },
+  {
+    "id": "XX",
+    "title": "Optimise for reversibility, deletion, and change",
+    "description": "Prefer decisions you can undo; build a seam only when you can name the second concrete thing that will go through it.",
+    "ask": "When this is wrong in a year, is the fix a scalpel or a demolition, can I name the second thing using this seam, and is anything here data I'm obligated to delete?"
+  },
+  {
+    "id": "XXI",
+    "title": "Simplicity is the budget that funds everything else",
+    "description": "The state you don't have can't be wrong; remove the case before you handle it, and delete more than you add.",
+    "ask": "Can I delete this state, flag, or branch entirely instead of writing the code that keeps it correct?"
+  },
+  {
+    "id": "XXII",
+    "title": "Name to reveal, not to label",
+    "description": "A name is the cheapest documentation and the most-read line of code; encode the one fact a reader gets wrong without it, because a misleading name is worse than none.",
+    "ask": "Could a reader predict what this does, its units, and its caveats from the name alone, and is this name a fact no type already carries?"
+  },
+  {
+    "id": "XXIII",
+    "title": "Time is an input that lies; measure with a monotonic clock, order with logic",
+    "description": "Wall-clock time is not trustworthy: it steps backwards, skews across machines, and cannot establish causality; treat it as the hostile input it is.",
+    "ask": "Am I measuring a duration (use a monotonic clock) or asserting an order across machines (use logical ordering), and would a backward clock jump or a lying peer break this?"
+  },
+  {
+    "id": "XXIV",
+    "title": "Make the run reproducible; encode the invariant as a test",
+    "description": "A run you can't reproduce you can't debug, audit, or roll back; and where a type can't carry an invariant, an executable test must.",
+    "ask": "Could someone else regenerate this exact result from pinned inputs, and is this invariant enforced by something that re-runs without me?"
+  },
+  {
+    "id": "XXV",
+    "title": "Process is structure when code structure runs out",
+    "description": "The 2am pager-holder needs structure too: a named owner and a runbook for every service, flag, cache, and risky migration, and a second pair of eyes by process for the irreversible act.",
+    "ask": "When this breaks and I'm not here, does someone know they own it and know what to do about it, and does the irreversible step force a second human because the process says so, not because somebody happened to be feeling careful?"
+  }
+]
