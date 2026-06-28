@@ -31,10 +31,21 @@ _Overwrite completely each session. Not authoritative - see Determined/docs/TRAC
 
 **Tests: 303 passed, 1 skipped (from 297 at session start).**
 
+**project_status (bonus, 523db2a):**
+- New tool: subsystem matrix (fns/stubs/entry_pts/hot), critical path gaps,
+  coupling pairs, arch constraint flags; Ollama synthesis when goal given
+- Bar chart fixed: filled bar = done (not stubs), shows "X% done" explicitly
+- Status labels: implemented / PARTIAL / SKELETON (not "active")
+- Ollama prompt now includes data format guide so 3B model reads stub counts correctly
+- Tested live against dj2: engine/ correctly IDd as 39% done [SKELETON],
+  validate_action and get_player_by_session flagged as critical path gaps
+
+**Tests: 41 agent-tool tests passing. Total: 303 pass, 1 skip.**
+
 ## FIRST THING NEXT SESSION
 
-Items 9/10/19 are done. Read TRACKER.md open items section to pick the next thing.
-Likely candidates from the open list:
+Items 9/10/19 are done. project_status built and working. Read TRACKER.md open
+items section to pick the next thing. Likely candidates:
 - Item 6 (live sync loop - incremental re-ingest)
 - Item 1 (files.role not populated)
 - Item 7 (contracts decision: wire or delete)
@@ -43,7 +54,7 @@ Per CLAUDE.md: read docs/sots.md before planning.
 
 ## Current state
 
-Branch: main (Determined), all committed and pushed
+Branch: main (Determined), all committed (last: 523db2a), NOT pushed
 Tests: 303/303 regression passing (1 skipped)
 Items done: 22, 23, 24, 25, 8, 14, 15, 9, 10, 19
 No active in-progress work
