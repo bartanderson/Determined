@@ -195,6 +195,11 @@ def most_connected(oracle: "DBOracle", n: int = 20, filter_substr: str = "") -> 
         # Skip builtins and external library symbols (no project file known)
         if not fp:
             continue
+        # Skip Python protocol methods (dunders): their call count is language-
+        # invoked, not a developer architectural choice, so it is not a signal
+        # of centrality. Same rationale as builtin filtering above.
+        if sym.startswith("__") and sym.endswith("__"):
+            continue
         if filter_substr and filter_substr.lower() not in sym.lower() and filter_substr.lower() not in fp.lower():
             continue
         total = in_deg[sym] + out_deg[sym]
