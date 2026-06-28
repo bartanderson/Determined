@@ -3,26 +3,22 @@ _Overwrite completely each session. Not authoritative - see Determined/docs/TRAC
 
 ## What happened this session (session 27)
 
-**Spring cleaning of docs + UI fixes + hot-symbols regression fixed.**
+**Spring cleaning of docs + UI fixes + hot-symbols regression fixed +
+orient_to_codebase output quality dramatically improved.**
 
 ### Bug fixes
 - Hot symbols query in `ui_server.py::_corpus_map_data()` was using a broken
   LIKE clause that inflated counts massively (6013x for "get"). Fixed to use
-  the existing `most_connected()` from `graph_utils.py` which correctly
-  filters builtins/externals by requiring a known project file_path.
-  This was a regression introduced in session 26 - new code bypassed the
-  authoritative implementation. Root cause saved to memory.
+  the existing `most_connected()` from `graph_utils.py`.
 
 - Two JS errors crashing page on load:
-  1. modal-overlay div placed after script block - null on getElementById.
-     Fixed: moved div before the script tag.
-  2. bagSelect TDZ error in bagFetch() firing before initialization.
-     Fixed: lazy getElementById lookup inside the function.
+  1. modal-overlay div placed after script block. Fixed: moved before script.
+  2. bagSelect TDZ error in bagFetch(). Fixed: lazy getElementById lookup.
 
 ### UI changes (ui/corpus-map branch)
 - Corpus map panel moved from main content area into sidebar
 - All popups converted to modal overlay
-- Resume replaced with single context-sensitive button (Analyze / Switch corpus)
+- Resume replaced with context-sensitive Analyze/Switch corpus button
 - Query bar hidden by default, Ask toggle in sidebar reveals it
 - Removed empty-state placeholder text from results area
 
@@ -35,9 +31,27 @@ Docs reduced from ~3400 lines to ~1500 lines active:
 - docs/archive/ - all closed items, done phases, superseded sections, closed trials
 - Determined CLAUDE.md updated with pre-code checklist
 
+### orient_to_codebase improvements (commit 52cab06)
+Fixed two bugs in `graph_utils.find_entry_points` that made entry points useless:
+
+1. **Dotted-callee miss**: `from_dict` was not in the "called" set because it's
+   called as `ClassName.from_dict` in graph_edges. Added suffix-strip to catch
+   dotted callees. Now `from_dict` is correctly excluded from entry points.
+
+2. **Deduplication**: same bare function name in multiple files shared the same
+   edge records. All 12 copies of `from_dict` showed identical out_degree=121.
+   Now deduplicates by name, keeping first occurrence only.
+
+Fixed `agent_tools.graph_clusters` to separate test-file pairs from production
+pairs so the actual subsystem map is visible (was buried under test<->engine pairs).
+
+**Before**: orient entry points = 12 copies of `from_dict` with out=121
+**After**: `guide_character_creation`, `dungeon_exit`, `dm_response`, `dungeon_enter`
+- actual doors into the game.
+
 ## Current state
 
-Branch: ui/corpus-map (Determined), not yet merged to main
+Branch: ui/corpus-map (Determined), 3 commits ahead of main
 Tests: 321/322 passing (1 pre-existing stale fixture failure, unrelated)
 dj2 corpus: loaded and working (150 files, 132 hot, 47 stubs, 615 artifacts)
 
@@ -45,8 +59,9 @@ dj2 corpus: loaded and working (150 files, 132 hot, 47 stubs, 615 artifacts)
 
 1. Restart the Determined server
 2. Load dj2 corpus via Switch corpus modal
-3. Verify corpus map sidebar shows meaningful Roots/Core (not builtins - fixed this session)
+3. Verify corpus map sidebar shows meaningful Roots/Core
 4. If verdict is good: merge ui/corpus-map to main (item 25)
+5. Then: Item 22 - Design doc extraction
 
 ## What is next (after corpus map verdict)
 
