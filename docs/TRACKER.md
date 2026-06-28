@@ -142,12 +142,12 @@ each step result. 293/293 tests passing.
    or delete all three (contract_types.py, tool_system_contract.json,
    orchestration/). Must decide before anything tries to use contracts.
 
-8. **[MEDIUM] Auto-populate semantic summaries at ingestion** - `describe_file`
-   writes to `semantic_summaries` on demand (requires Ollama). Currently 17/150
-   dj2 files are covered. Add an opt-in `--summarize` flag to `local_agent
-   --source` that calls `describe_file` for every file after ingestion and
-   stores the result. Gracefully skips if Ollama is unreachable. After this,
-   `knowledge_status` would show full coverage without requiring prior queries.
+8. **[DONE 2026-06-28] Auto-populate semantic summaries at ingestion**
+
+   `--summarize` flag added to `local_agent --source`. After ingestion and
+   structural fact extraction, iterates all corpus files and calls
+   semantic_summary() for each. Skips already-cached. Aborts gracefully on
+   Ollama connection failure with count of summaries written. 297/297 passing.
 
 9. **[MEDIUM] Distillation pass: compress verbose LLM text to compact facts** -
    `semantic_summaries` and `file_purpose` artifacts store 3-4 paragraph LLM
@@ -205,28 +205,13 @@ the right context for each step, let the model connect it.
 
 ---
 
-22. **[OPEN] Design doc extraction: auto-mine markdown into design_note artifacts**
+22. **[DONE 2026-06-28] Design doc extraction: auto-mine markdown into design_note artifacts**
 
-   `mine_design_docs.py` has the right shape (design_note artifacts keyed to
-   system names and filenames) but is a hardcoded Python list. The actual design
-   docs (dj2: 00A ARCHITECTURAL_CONSTITUTION.md, 00B SYSTEM_CONSTRAINTS.md,
-   00F ASPIRATIONAL_DESIGN_INTENT.md) are the authoritative source and should
-   drive the artifacts, not a manually maintained file.
-
-   **What to build:** A doc extractor that reads markdown design docs, uses the
-   3B model to pull named invariants, authority rules, layer boundaries, and
-   forbidden patterns, and stores them as knowledge_artifacts (kind=design_note,
-   provenance=llm-extracted, human_confirmed=False). Human review promotes to
-   human-confirmed. Re-running updates changed docs, does not duplicate.
-
-   **Extraction language is explicit:** design docs use "must", "must not",
-   "only X may", "is responsible for", "is prohibited" - extractable with
-   guided prompting. Output shape matches existing DESIGN_NOTES tuples.
-
-   **Prerequisite for item 23.**
-
-   Builds on: mine_design_docs.py (shape), knowledge_artifact.py (storage),
-   pattern_executor (can host the extraction pattern).
+   Shipped as `ingest_design_docs` tool and `discover_docs` tool in agent_tools.py.
+   discover_docs scans project for markdown with constraint density scoring.
+   ingest_design_docs uses the 3B model (Ollama) to extract named invariants, authority
+   rules, forbidden patterns from those docs and stores as design_note artifacts
+   (provenance=llm-extracted). Re-running is idempotent. Wired into TOOLS and REGISTRY.
 
 ---
 
