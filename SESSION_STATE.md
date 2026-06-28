@@ -42,20 +42,35 @@ _Overwrite completely each session. Not authoritative - see Determined/docs/TRAC
 
 **Tests: 41 agent-tool tests passing. Total: 303 pass, 1 skip.**
 
+**semantic_summaries architecture fix (fabb345, ec5103d):**
+- semantic_summaries and distillations now live in corpus DB (not knowledge.db)
+- knowledge.db is for durable cross-session human knowledge only (design notes,
+  SOTS tenets, confirmed findings) - not derived per-corpus data
+- distill_corpus: writes to semantic_summaries.distilled column (corpus_conn)
+- assessor.semantic_summary(): always writes to oracle.conn, never knowledge_conn
+- knowledge_oracle._ensure_schema(): no longer creates semantic_summaries table
+- project_status: SOTS XVIII warning when semantic_summaries absent or empty
+- DESIGN.md section 7: rewritten to document the correct split
+- Validated against harrow corpus: 8 summaries generated, 8 distilled, correct
+
+**Open design debt (circle back):** knowledge.db arch flags still surface dj2
+constraints (dungeon rules, audio vision) when querying unrelated corpora like
+harrow. The knowledge.db design_notes lack corpus scoping for cross-project use.
+
 ## FIRST THING NEXT SESSION
 
-Items 9/10/19 are done. project_status built and working. Read TRACKER.md open
-items section to pick the next thing. Likely candidates:
+Pick from TRACKER.md open items:
 - Item 6 (live sync loop - incremental re-ingest)
 - Item 1 (files.role not populated)
 - Item 7 (contracts decision: wire or delete)
+- Or: knowledge.db corpus scoping for design_notes (arch flags bleed across projects)
 
 Per CLAUDE.md: read docs/sots.md before planning.
 
 ## Current state
 
-Branch: main (Determined), all committed (last: 523db2a), NOT pushed
-Tests: 303/303 regression passing (1 skipped)
+Branch: main (Determined), 2 commits ahead of origin (NOT pushed)
+Tests: 41 agent-tool tests passing
 Items done: 22, 23, 24, 25, 8, 14, 15, 9, 10, 19
 No active in-progress work
 
