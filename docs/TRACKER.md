@@ -16,7 +16,14 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-25/26, session 19):** Multiple bug fixes + corpus scoping + dj2 design docs.
+**Last session (2026-06-28, session 30):** Mentor arc complete. Items 23/24/25 closed.
+Item 23 rebuilt on embeddings (all-MiniLM-L6-v2, docstring-enriched queries, threshold 0.32).
+SOTS (shapeofthesystem.com, 25 tenets) ingested into knowledge.db as design_notes -- surfaces
+automatically via frame comparison. Item 24: goal_intake tool -- natural language goal ->
+navigation plan (relevant symbols + risk badges + design rules + ordered approach). Item 25:
+corpus map branch merged and deleted. Determined .claude/ added (same as dj2). 320/322 passing.
+
+**Before that (2026-06-25/26, session 19):** Multiple bug fixes + corpus scoping + dj2 design docs.
 Items 16/17/18 all fixed and closed. run_engine.py repo_root hardcoded to "." - fixed. scan_project_files.py:
 3.10/3.11/3.12 venv dirs now excluded. knowledge.db corpus scoping complete (corpus column on knowledge_artifacts
 + semantic_summaries, scoped across all read/write paths: intent, oracle, assessor, agent layers). UI corpus
@@ -225,55 +232,32 @@ the right context for each step, let the model connect it.
 
 23. **[DONE 2026-06-28] Frame comparison: surface design intent automatically when code touches documented areas**
 
-   Wired in agent_tools.py. _get_design_frame() helper does subject-key lookup
-   (symbol name + filename PascalCase stem) against design_note artifacts in
-   knowledge.db. Both risk_profile and symbol_brief now append a "Design frame"
-   section when matching notes exist. risk_profile changed from oracle->assessor
-   in both function signature and dispatch table. 321/322 tests passing
-   (1 pre-existing fixture-path failure, unrelated).
+   Rebuilt session 30 on semantic embeddings (all-MiniLM-L6-v2). _get_design_frame()
+   embeds symbol+docstring context, cosine-searches all design_notes in knowledge.db
+   (threshold 0.32). Query enriched with docstring so abstract principle text (SOTS)
+   surfaces alongside project-specific constraints. Replaces fragile string matching.
+   320/322 passing (2 pre-existing failures, unrelated).
 
 ---
 
-24. **[OPEN] Goal intake: developer states intent, tool assembles goal-directed context**
+24. **[DONE 2026-06-28] Goal intake: developer states intent, tool assembles goal-directed context**
 
-   Current mode: developer asks a structural question, tool answers it.
-   Needed mode: developer states a goal ("I want to add persuasion mechanics"),
-   tool translates that to: what layer does this belong to (design rules), what
-   already exists near this concept (current frame), what is hot/risky in that
-   area, what stubs are scaffolding for it, what is the safe insertion point.
+   goal_intake(goal) in agent_tools.py. Takes natural language goal, returns navigation plan:
+   - Semantic search over symbol docstrings -> top 5 relevant symbols
+   - HOT/WARM/SAFE risk badge for each
+   - Design rules from knowledge.db (SOTS + project notes) semantically matched to goal
+   - Uncalled functions near relevant files as safe insertion candidates
+   - Ordered approach: READ (hot boundaries) -> REVIEW (warm) -> EXTEND (stubs) -> MODIFY (safe)
 
-   **Goal intake is a different query shape.** It requires:
-   - Identifying the relevant area from natural language goal description
-   - Pulling design notes for that area (item 23 wiring)
-   - Pulling entry points, hot symbols, stubs near that area
-   - Sequencing findings into a path: what to understand first, what to touch last
-   - Returning a navigation plan, not a fact answer
-
-   **The developer's workflow:** state goal -> tool orients to relevant area ->
-   surfaces design constraints that apply -> identifies safe path through current
-   structure -> flags what is load-bearing (do not touch) vs scaffolding (extend here).
-
-   This is path projection: given current frame + desired frame + goal, produce
-   an ordered approach the developer can follow. The 3B model does the connecting;
-   the tool assembles the context window from DB-held structured knowledge.
-
-   Builds on: orient_to_codebase (reuse as goal-scoped orientation), risk_annotator,
-   find_entry_points, stub detection, design_note lookup (item 23). New: goal
-   translation layer that maps developer intent to structural search parameters.
+   Trigger phrase: "I want to add/build/implement/create/extend X"
+   Wired into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern. 320/322 passing.
 
 ---
 
-25. **[OPEN] Corpus map: merge ui/corpus-map branch, evaluate in practice**
+25. **[DONE 2026-06-28] Corpus map: merged and shipped**
 
-   Branch ui/corpus-map (2 commits, 2026-06-27) adds a pinned panel above the
-   chat scroll showing corpus Roots (uncalled entry points by fan-out) and Core
-   (most-called symbols). Risk badges from pre-computed knowledge_artifacts.
-   Collapses with toggle. No LLM at connect time.
-
-   Needs: merge to main after Bart validates in the running UI. Then evaluate:
-   does the map actually orient, or is it just data? If the Roots/Core framing
-   communicates the architecture skeleton clearly, keep. If it is noise, revise.
-   This is the first visible piece of the mentor capability arc.
+   Branch ui/corpus-map merged to main and branch deleted. Corpus map panel
+   (Roots/Core with risk badges, collapsible) is live in the UI.
 
 ---
 
