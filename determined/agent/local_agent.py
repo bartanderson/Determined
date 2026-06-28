@@ -568,46 +568,57 @@ def _ingest_source(source_dir: str, summarize: bool = False) -> str:
 
     # Optional: generate AI summaries for every file (requires Ollama)
     if summarize:
-        _summarize_all_files(oracle, assessor)
+        _summarize_all_files(src, oracle, assessor)
 
     oracle.conn.close()
     return db_path
 
 
-def _summarize_all_files(oracle, assessor) -> None:
-    """
-    Generate semantic summaries for all files in the corpus DB.
-    Skips files already summarized. Aborts gracefully if Ollama is unreachable.
-    """
-    rows = oracle.conn.execute(
-        "SELECT file_path FROM files ORDER BY file_path"
-    ).fetchall()
-    total = len(rows)
-    if not total:
-        print("No files to summarize.")
-        return
+_DOC_EXTS = {".md", ".rst", ".txt", ".adoc"}
+_SKIP_DIRS = {
+    ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
+    "dist", "build", ".mypy_cache", ".pytest_cache",
+    "Lib", "Scripts", "Include", "lib", "bin", "include",
+    "ai_context", "archive", "archives",
+}
 
-    print(f"Generating AI summaries for {total} files (requires Ollama) ...")
+
+def _summarize_all_files(src, oracle, assessor) -> None:
+    """
+    Walk src to discover files and generate semantic summaries.
+    Source pass: .py files processed via semantic_summary().
+    Doc pass: text/doc files checked for relevance via doc_extractor,
+    then ingested into knowledge_artifacts if they describe the code.
+    Skips already-cached. Aborts gracefully if Ollama is unreachable.
+    """
+    from pathlib import Path
+    from determined.agent.doc_extractor import discover_docs, extract_rules
+
+    src = Path(src)
+
+    # --- Pass 1: Python source files ---
+    py_files = []
+    for p in src.rglob("*.py"):
+        if any(part in _SKIP_DIRS or part.startswith(".") for part in p.parts):
+            continue
+        py_files.append(p)
+    py_files.sort()
+
+    total_py = len(py_files)
+    print(f"Generating AI summaries for {total_py} source files (requires Ollama) ...")
     done = skipped = failed = 0
 
-    for (file_path,) in rows:
-        # Use project-relative path -- semantic_summary resolves it
-        root = oracle.get_project_root() or ""
-        rel = file_path.replace("\\", "/")
-        if root and rel.startswith(root.replace("\\", "/") + "/"):
-            rel = rel[len(root) + 1:]
-
-        # Skip if already summarized (cache_hit path)
+    for p in py_files:
+        rel = str(p.relative_to(src)).replace("\\", "/")
         existing = assessor.semantic_summary_if_fresh(rel)
         if existing:
             skipped += 1
             continue
-
         try:
             result = assessor.semantic_summary(rel)
             if result.get("content"):
                 done += 1
-                print(f"  [{done+skipped}/{total}] {rel}", flush=True)
+                print(f"  [{done+skipped}/{total_py}] {rel}", flush=True)
             else:
                 failed += 1
         except Exception as e:
@@ -617,7 +628,38 @@ def _summarize_all_files(oracle, assessor) -> None:
                 return
             failed += 1
 
-    print(f"Summaries complete: {done} generated, {skipped} already cached, {failed} failed.")
+    print(f"Source summaries: {done} generated, {skipped} already cached, {failed} failed.")
+
+    # --- Pass 2: Text/doc files -- discover and ingest design rules ---
+    if assessor._knowledge_conn is None:
+        return
+
+    docs = discover_docs(str(src))
+    # discover_docs already filters by extension, skip dirs, and constraint density
+    if not docs:
+        return
+
+    print(f"Found {len(docs)} doc files; ingesting design rules ...")
+    rules_written = 0
+    corpus = oracle.get_project_root() or str(src)
+
+    for doc in docs:
+        rules = extract_rules(doc.path, rel_path=doc.rel_path, source_confidence=doc.confidence)
+        for rule in rules:
+            try:
+                assessor._knowledge_conn.execute(
+                    """INSERT OR IGNORE INTO knowledge_artifacts
+                       (subject, kind, content, provenance, corpus, created_at)
+                       VALUES (?, 'design_note', ?, ?, ?, datetime('now'))""",
+                    (rule.subject, rule.rule,
+                     f"{rule.provenance}", corpus),
+                )
+                rules_written += 1
+            except Exception:
+                pass
+        assessor._knowledge_conn.commit()
+
+    print(f"Design rules ingested: {rules_written} rules from {len(docs)} docs.")
 
 
 if __name__ == "__main__":
