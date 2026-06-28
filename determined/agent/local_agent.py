@@ -528,7 +528,7 @@ def run(db_path: str, verbose: bool = False) -> None:
 # Entry point
 # ------------------------------------------------------------------
 
-def _ingest_source(source_dir: str) -> str:
+def _ingest_source(source_dir: str, summarize: bool = False) -> str:
     """Ingest a source directory into a corpus DB, return the DB path."""
     import re
     from pathlib import Path
@@ -551,11 +551,12 @@ def _ingest_source(source_dir: str) -> str:
     db.close()
     print(f"Ingestion complete: {db_path}")
 
-    # Auto-extract structural design facts (no LLM, < 1s)
     from determined.oracle.db_oracle import DBOracle
     from determined.assessor.assessor import Assessor
     oracle = DBOracle(db_path)
     assessor = Assessor(oracle)
+
+    # Auto-extract structural design facts (no LLM, < 1s)
     if assessor._knowledge_conn is not None:
         counts = assessor.extract_design_facts()
         total = sum(counts.values())
@@ -564,9 +565,59 @@ def _ingest_source(source_dir: str) -> str:
               f"{counts.get('dead_code',0)} dead code candidates, "
               f"{counts.get('hot_symbols',0)} hot symbols, "
               f"{counts.get('stub_files',0)} stub files)")
-    oracle.conn.close()
 
+    # Optional: generate AI summaries for every file (requires Ollama)
+    if summarize:
+        _summarize_all_files(oracle, assessor)
+
+    oracle.conn.close()
     return db_path
+
+
+def _summarize_all_files(oracle, assessor) -> None:
+    """
+    Generate semantic summaries for all files in the corpus DB.
+    Skips files already summarized. Aborts gracefully if Ollama is unreachable.
+    """
+    rows = oracle.conn.execute(
+        "SELECT file_path FROM files ORDER BY file_path"
+    ).fetchall()
+    total = len(rows)
+    if not total:
+        print("No files to summarize.")
+        return
+
+    print(f"Generating AI summaries for {total} files (requires Ollama) ...")
+    done = skipped = failed = 0
+
+    for (file_path,) in rows:
+        # Use project-relative path -- semantic_summary resolves it
+        root = oracle.get_project_root() or ""
+        rel = file_path.replace("\\", "/")
+        if root and rel.startswith(root.replace("\\", "/") + "/"):
+            rel = rel[len(root) + 1:]
+
+        # Skip if already summarized (cache_hit path)
+        existing = assessor.semantic_summary_if_fresh(rel)
+        if existing:
+            skipped += 1
+            continue
+
+        try:
+            result = assessor.semantic_summary(rel)
+            if result.get("content"):
+                done += 1
+                print(f"  [{done+skipped}/{total}] {rel}", flush=True)
+            else:
+                failed += 1
+        except Exception as e:
+            msg = str(e).lower()
+            if "connection" in msg or "refused" in msg or "timeout" in msg:
+                print(f"\nOllama unreachable ({e}). Stopping -- {done} summaries written.")
+                return
+            failed += 1
+
+    print(f"Summaries complete: {done} generated, {skipped} already cached, {failed} failed.")
 
 
 if __name__ == "__main__":
@@ -578,6 +629,8 @@ if __name__ == "__main__":
                              "Omit when using --source.")
     parser.add_argument("--source", metavar="DIR",
                         help="Source directory to ingest; DB is derived automatically.")
+    parser.add_argument("--summarize", action="store_true",
+                        help="After ingestion, generate AI file summaries via Ollama (slow; skips cached).")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show phase outputs and tool calls")
     parser.add_argument("--ui", action="store_true",
@@ -586,8 +639,11 @@ if __name__ == "__main__":
                         help="Port for the UI server (default: 5050)")
     args = parser.parse_args()
 
+    if getattr(args, "summarize", False) and not args.source:
+        parser.error("--summarize requires --source")
+
     if args.source:
-        db_path = _ingest_source(args.source)
+        db_path = _ingest_source(args.source, summarize=getattr(args, "summarize", False))
     elif args.db_path:
         db_path = args.db_path
     else:
