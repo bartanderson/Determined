@@ -540,9 +540,11 @@ def _ingest_source(source_dir: str, summarize: bool = False) -> str:
         print(f"ERROR: --source path is not a directory: {source_dir}")
         sys.exit(1)
 
-    # derive a safe DB name from the directory name
-    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", src.name)
-    db_path = f"{safe}_corpus.db"
+    # derive DB name from full path to match convention: C_Users_bartl_dev_harrow.db
+    # Drop colons (drive separator), replace other non-alphanumeric with underscore
+    path_str = str(src).replace(":", "")
+    safe = re.sub(r"[^a-zA-Z0-9_]", "_", path_str).strip("_")
+    db_path = f"{safe}.db"
 
     print(f"Ingesting {src} -> {db_path} ...")
     db = create_database(db_path)
