@@ -11,10 +11,6 @@ from determined.core.pathing import normalize_file_path
 from determined.identity.edge_identity import edge_identity
 
 def ensure_schema(connection):
-    # Corpus DB schema only - structural tables.
-    # Intent tables (knowledge_artifacts, semantic_summaries) live in
-    # knowledge.db, not in corpus DBs. See DESIGN.md section 7 and
-    # oracle/knowledge_oracle.py.
     initialize_database(connection)
 
 def set_project_root(connection: sqlite3.Connection, project_root) -> None:
@@ -240,6 +236,9 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    from determined.intent.semantic_summary import ensure_semantic_summaries_table
+    ensure_semantic_summaries_table(cursor)
 
     connection.commit()
 
@@ -587,7 +586,7 @@ def create_database(database_path: str | Path) -> sqlite3.Connection:
 
     if database_path.exists():
         database_path.unlink()
-        logger and logger.write(f"[RESET DB] {database_path}")
+        pass  # existing DB removed; logger not available in this scope
 
     connection = sqlite3.connect(str(database_path))
     initialize_database(connection)

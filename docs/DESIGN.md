@@ -575,56 +575,50 @@ wired into two production call sites.
 
 ---
 
-## 7. knowledge.db - shared knowledge overlay (decided 2026-06-20)
+## 7. knowledge.db - shared knowledge overlay (decided 2026-06-20, revised 2026-06-28)
 
-### The problem
+### The split: what lives where
 
-`knowledge_artifacts` and `semantic_summaries` were originally stored inside
-each corpus DB (`world_corpus.db`, `engine_corpus.db`, etc.). This created
-two problems:
+Two distinct stores, two distinct purposes:
 
-1. A finding about `world/world_controller.py` could only be stored in
-   `world_corpus.db` - not visible when querying any other corpus.
-2. Corpus DBs are expendable rebuild artifacts. Rebuilding `world_corpus.db`
-   would silently delete all human-confirmed findings stored in it.
+**Corpus DB** (e.g. `C_Users_bartl_dev_harrow.db`) answers "what is the structure":
+- `functions`, `classes`, `graph_edges`, `files`, `imports` - structural facts
+- `semantic_summaries` - per-file LLM summaries generated during `--summarize`
+  ingest. Includes a `distilled` column for one-sentence compressions written
+  by `distill_corpus`. These are per-corpus derived data; they live here.
 
-### The design
+**knowledge.db** answers "what do we know across sessions and corpora":
+- `knowledge_artifacts` - human-confirmed findings, design notes, SOTS tenets,
+  and other cross-session durable knowledge. NOT automatically regenerated on
+  re-ingest. This is Bart's persistent knowledge layer.
 
-A single `knowledge.db` at the repo root holds only the two intent tables:
-`knowledge_artifacts` and `semantic_summaries`. All corpus Assessors read and
-write to this shared DB via an optional second connection (`KnowledgeOracle`).
+### Why semantic_summaries moved back to the corpus DB (2026-06-28)
 
-- Corpus DB answers "what is the structure" (graph_edges, functions, classes).
-- `knowledge.db` answers "what do we know about the code" (findings, summaries).
+The 2026-06-20 design put both tables in `knowledge.db`. That was wrong for
+`semantic_summaries` because:
 
-Assessor's `knowledge` parameter defaults to opening `knowledge.db` in the
-same directory as the corpus DB. Tests that don't need it pass `None`.
+1. Summaries are auto-generated, auto-invalidated, and corpus-specific. They
+   are rebuild artifacts, not durable knowledge. Putting them in `knowledge.db`
+   alongside hard-won human findings conflated "derived" with "decided."
+2. A new user ingesting any project has no `knowledge.db`. The tool must work
+   without one. Summaries and distillations must be self-contained in the corpus.
+
+`knowledge_artifacts` (design notes, SOTS tenets, confirmed findings) stays in
+`knowledge.db` because those ARE cross-session, cross-corpus durable knowledge.
 
 ### Staleness
 
-`semantic_summaries` already has `source_hash` - no change needed.
+`semantic_summaries` has `source_hash` - stale detection unchanged.
+`distilled` column is cleared on re-summarize (new content overwrites old).
 
-`knowledge_artifacts` gains two new columns:
-- `file_hash TEXT` - hash of the subject file at artifact creation time.
-- `needs_review INTEGER DEFAULT 0` - set to 1 by the ingestion pipeline when
-  a re-ingest detects the subject file changed (new hash). Never auto-deleted;
-  human confirms whether the finding still applies.
+`knowledge_artifacts` gains:
+- `file_hash TEXT` - hash of subject file at artifact creation time.
+- `needs_review INTEGER DEFAULT 0` - set to 1 when re-ingest detects change.
 
-The ingestion pipeline (`EngineRunner.run()`) checks `knowledge.db` after each
-file is processed: if any artifact's `subject` references that file path and
-the stored `file_hash` differs from the newly computed hash, it sets
-`needs_review = 1` on that artifact.
+### Surviving corpus DB rebuilds
 
-`generate_task_md()` surfaces `needs_review` artifacts with a "[STALE - needs
-review]" prefix so the agent knows to verify before trusting the finding.
-
-### Why this survives the planned corpus DB merge
-
-The three game corpus DBs (`world_corpus.db`, `engine_corpus.db`,
-`dungeon_neo_corpus.db`) are planned to merge into a single `game_corpus.db`
-once `_persist_graph_edges` supports per-file edge management (TRACKER item 3).
-Because `knowledge.db` is separate, that merge is a pure structural operation -
-findings survive untouched, no migration required.
+Corpus DBs are expendable. Rebuilding one loses summaries and distillations
+(fine - they regenerate in minutes). `knowledge.db` findings survive untouched.
 
 ---
 

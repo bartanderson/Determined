@@ -485,13 +485,14 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     file_path = row[0] if row else ""
     design_frame = _get_design_frame(assessor, symbol, file_path)
 
-    # Prepend distilled preamble if available (stored by distill_corpus)
+    # Prepend distilled preamble if available (stored in corpus DB by distill_corpus)
     distilled_line = ""
-    if assessor._knowledge_conn and file_path:
-        dist_key = f"distilled::{file_path.replace(chr(92), '/').split('/')[-1].replace('.py', '')}"
-        dist_row = assessor._knowledge_conn.execute(
-            "SELECT content FROM knowledge_artifacts WHERE subject = ? AND kind = 'distilled' LIMIT 1",
-            (dist_key,),
+    if file_path:
+        stem = file_path.replace(chr(92), "/").split("/")[-1].replace(".py", "")
+        dist_row = assessor.oracle.conn.execute(
+            "SELECT distilled FROM semantic_summaries "
+            "WHERE subject LIKE ? AND distilled IS NOT NULL LIMIT 1",
+            (f"%{stem}.py",),
         ).fetchone()
         if dist_row:
             distilled_line = f"Summary: {dist_row[0]}\n"
@@ -1468,15 +1469,18 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
     all_syms = _search_symbols_raw(oracle, "", limit=600)
     sym_rows = [r for r in all_syms if r.get("docstring")]
 
-    # Load distilled file summaries to enrich symbol text (item 9)
+    # Load distilled file summaries from corpus DB to enrich symbol text
     distilled_by_stem: dict[str, str] = {}
-    if assessor._knowledge_conn:
-        dist_rows = assessor._knowledge_conn.execute(
-            "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'distilled'"
+    try:
+        dist_rows = oracle.conn.execute(
+            "SELECT subject, distilled FROM semantic_summaries "
+            "WHERE distilled IS NOT NULL AND distilled != ''"
         ).fetchall()
-        for dist_subj, dist_content in dist_rows:
-            stem = dist_subj.replace("distilled::", "")
-            distilled_by_stem[stem] = dist_content
+        for subj, distilled in dist_rows:
+            stem = subj.replace("\\", "/").split("/")[-1].replace(".py", "")
+            distilled_by_stem[stem] = distilled
+    except Exception:
+        pass  # semantic_summaries may not exist yet; degrade gracefully
 
     relevant_symbols: list[tuple] = []  # (name, file_path, score)
     if sym_rows:
@@ -1865,76 +1869,97 @@ def project_status(assessor: "Assessor", args: dict) -> str:
     data = _project_status_data(oracle, assessor)
     structural = _format_project_status(data)
 
+    # Warn if semantic enrichment is missing (SOTS XVIII: explain why result is limited)
+    enrichment_note = ""
+    try:
+        tables = {r[0] for r in oracle.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        if "semantic_summaries" not in tables:
+            enrichment_note = (
+                "\nNote: no semantic summaries found for this corpus. "
+                "Re-ingest with --summarize to get LLM-enriched analysis "
+                "(domain understanding, distillations, design cross-references)."
+            )
+        else:
+            sem_count = oracle.conn.execute(
+                "SELECT COUNT(*) FROM semantic_summaries"
+            ).fetchone()[0]
+            if sem_count == 0:
+                enrichment_note = (
+                    "\nNote: semantic_summaries table exists but is empty. "
+                    "Re-ingest with --summarize to get LLM-enriched analysis."
+                )
+    except Exception:
+        pass
+
     goal = args.get("goal", "").strip()
     if not goal:
-        return structural
+        return structural + enrichment_note
 
     # Attempt Ollama synthesis; degrade to structural if unavailable (SOTS XIII)
     synthesis = _synthesize_with_ollama(structural, goal)
     if synthesis:
-        return structural + "\n\n--- Synthesis ---\n" + synthesis
-    return structural + "\n\n(Ollama unavailable for synthesis - structural data above)"
+        return structural + enrichment_note + "\n\n--- Synthesis ---\n" + synthesis
+    return structural + enrichment_note + "\n\n(Ollama unavailable for synthesis - structural data above)"
 
 
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
-    distill_corpus() - compress each semantic_summary and file_purpose artifact
-    into a one-sentence distillation stored as kind='distilled' in knowledge.db.
-    Idempotent: skips subjects already distilled. Aborts if Ollama is down.
+    distill_corpus() - compress each semantic_summary into a one-sentence
+    distillation stored in semantic_summaries.distilled (corpus DB).
+    Idempotent: skips rows already distilled. Aborts if Ollama is down.
     """
-    if assessor._knowledge_conn is None:
-        return "No knowledge DB configured."
+    corpus_conn = assessor.oracle.conn
 
-    # Abort early if Ollama is unreachable (SOTS XIII: visible failure, not silent)
+    # Abort early if Ollama is unreachable (SOTS XIII)
     probe = _distill_to_one_sentence("test", "__probe__")
     if probe is None:
         return "ERROR: Ollama is not reachable. distill_corpus requires Ollama running."
 
-    conn = assessor._knowledge_conn
+    corpus_tables = {r[0] for r in corpus_conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    if "semantic_summaries" not in corpus_tables:
+        return (
+            "No semantic_summaries found in corpus DB. "
+            "Re-ingest with --summarize to generate them, then run distill_corpus."
+        )
 
-    # Collect candidates: semantic_summaries + file_purpose artifacts
-    candidates: list[tuple[str, str]] = []  # (subject, content)
-    sem_rows = conn.execute(
-        "SELECT subject, content FROM semantic_summaries"
+    # Rows needing distillation: have content but no distilled value yet (SOTS X)
+    pending = corpus_conn.execute(
+        "SELECT id, subject, content FROM semantic_summaries "
+        "WHERE content IS NOT NULL AND (distilled IS NULL OR distilled = '')"
     ).fetchall()
-    for subject, content in sem_rows:
-        stem = subject.replace("\\", "/").split("/")[-1].replace(".py", "")
-        candidates.append((f"distilled::{stem}", content))
 
-    fp_rows = conn.execute(
-        "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'file_purpose'"
-    ).fetchall()
-    for subject, content in fp_rows:
-        stem = subject.replace("\\", "/").split("/")[-1].replace(".py", "")
-        key = f"distilled::{stem}"
-        if not any(c[0] == key for c in candidates):
-            candidates.append((key, content))
+    already_done = corpus_conn.execute(
+        "SELECT COUNT(*) FROM semantic_summaries "
+        "WHERE distilled IS NOT NULL AND distilled != ''"
+    ).fetchone()[0]
 
-    if not candidates:
-        return "No semantic_summaries or file_purpose artifacts to distill."
-
-    # Check which are already cached (idempotent per SOTS X)
-    existing = {
-        r[0] for r in conn.execute(
-            "SELECT subject FROM knowledge_artifacts WHERE kind = 'distilled'"
-        ).fetchall()
-    }
+    if not pending:
+        if already_done:
+            return f"distill_corpus: all {already_done} summaries already distilled."
+        return (
+            "semantic_summaries table is empty. "
+            "Re-ingest with --summarize to populate it, then run distill_corpus."
+        )
 
     stored = 0
-    skipped = 0
-    for dist_key, content in candidates:
-        if dist_key in existing:
-            skipped += 1
-            continue
-        sentence = _distill_to_one_sentence(content, dist_key)
+    for row_id, subject, content in pending:
+        sentence = _distill_to_one_sentence(content, subject)
         if sentence is None:
             return f"ERROR: Ollama stopped responding mid-run after {stored} stored."
-        assessor.add_artifact(dist_key, "distilled", sentence, "ai-generated")
+        corpus_conn.execute(
+            "UPDATE semantic_summaries SET distilled = ? WHERE id = ?",
+            (sentence, row_id),
+        )
+        corpus_conn.commit()
         stored += 1
 
     return (
-        f"distill_corpus: {stored} distilled, {skipped} already cached "
-        f"({stored + skipped} total candidates)"
+        f"distill_corpus: {stored} distilled, {already_done} already cached "
+        f"({stored + already_done} total)"
     )
 
 
