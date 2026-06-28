@@ -1035,12 +1035,17 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
     design_note artifacts. Only processes docs with constraint_score >= min_score (default 0.05).
     Idempotent: skips rules already stored for a subject.
     """
-    from determined.agent.doc_extractor import discover_docs, extract_rules
+    from determined.agent.doc_extractor import (
+        discover_docs, extract_rules, extract_rules_llm,
+        detect_conflicts, deduplicate, _split_by_headings,
+        _extract_constraint_sentences, _CONSTRAINT_RE,
+    )
     oracle = assessor.oracle
     root = oracle.get_project_root()
     if not root:
         return "ERROR: project root not found in corpus DB"
     min_score = float(args.get("min_score", 0.05))
+    use_llm = args.get("use_llm", True)
     docs = discover_docs(root)
     design_docs = [d for d in docs if d.constraint_score >= min_score]
     if not design_docs:
@@ -1049,36 +1054,67 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
     stored = 0
     skipped = 0
     errors = 0
+    conflicted = 0
     processed_files: list[str] = []
+    all_rules = []
 
     for doc in design_docs:
         try:
-            rules = extract_rules(doc.path, doc.rel_path)
-        except Exception as e:
+            rules = extract_rules(doc.path, doc.rel_path, source_confidence=doc.confidence)
+        except Exception:
             errors += 1
             continue
         if not rules:
             continue
         processed_files.append(doc.rel_path)
-        for rule in rules:
-            existing = assessor.get_artifacts(rule.subject)
-            already = any(
-                a["kind"] == "design_note" and a["content"] == rule.rule
-                for a in existing
-            )
-            if already:
-                skipped += 1
-                continue
-            assessor.add_artifact(
-                rule.subject, "design_note", rule.rule,
-                provenance="ai-generated"
-            )
-            stored += 1
+        all_rules.extend(rules)
+
+        # LLM fallback for sections with design prose but sparse explicit signal
+        if use_llm:
+            try:
+                text = open(doc.path, encoding="utf-8", errors="ignore").read()
+                for heading, body in _split_by_headings(text):
+                    det_count = len(_extract_constraint_sentences(body))
+                    body_has_prose = len(body) > 100
+                    lines_with_signal = sum(1 for ln in body.splitlines() if _CONSTRAINT_RE.search(ln))
+                    sparse = det_count < 2 and lines_with_signal > 0
+                    if body_has_prose and sparse:
+                        llm_rules = extract_rules_llm(
+                            doc.path, heading, body,
+                            source_confidence=doc.confidence,
+                            rel_path=doc.rel_path,
+                        )
+                        all_rules.extend(llm_rules)
+            except Exception:
+                pass
+
+    # Conflict detection and dedup across all sources
+    all_rules = detect_conflicts(all_rules)
+    conflicted = sum(1 for r in all_rules if r.confidence == "conflicted")
+    all_rules = deduplicate(all_rules)
+
+    for rule in all_rules:
+        existing = assessor.get_artifacts(rule.subject)
+        already = any(
+            a["kind"] == "design_note" and rule.rule[:60] in (a.get("content") or "")
+            for a in existing
+        )
+        if already:
+            skipped += 1
+            continue
+        content = f"[{rule.kind.upper()}] {rule.rule}"
+        assessor.add_artifact(
+            rule.subject, "design_note", content,
+            provenance=rule.provenance or f"{rule.confidence}:{rule.source_file}:{rule.extraction}",
+        )
+        stored += 1
 
     lines = [
         f"Design doc ingestion: {stored} rules stored, {skipped} already present, {errors} errors",
-        f"Processed {len(processed_files)} docs:",
     ]
+    if conflicted:
+        lines.append(f"  Conflicts detected: {conflicted} rules flagged for human review")
+    lines.append(f"Processed {len(processed_files)} docs:")
     for f in processed_files:
         lines.append(f"  {f}")
     return "\n".join(lines)

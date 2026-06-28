@@ -19,6 +19,19 @@ before answering.
 
 ---
 
+## Environment
+
+- **OS**: Windows 11 - use **PowerShell** tool for all server starts, Python runs, and any command with a `C:\` path. Bash tool uses Git Bash and fails on Windows paths.
+- **`&&` chaining**: Not valid in PowerShell 5.1. Use `; if ($?) { cmd2 }` or just `;`.
+- **Python**: No `python3` on Windows. Use `python` or the full venv path (`.venv\Scripts\python.exe`). Full path is safest.
+- **`python -c`**: Only works cleanly for single-line one-liners. For anything multi-line, write a `.py` script to the scratchpad and run that instead.
+- **`/dev/null`**: Use `$null` in PowerShell (`2>$null` to suppress stderr).
+- **Env vars**: `$env:VAR` not `$VAR` in PowerShell.
+- **Paths with `~`**: Use `$env:USERPROFILE` or full path when passing to scripts.
+- **Git and PowerShell** work normally; `ls`/`cat`/`rm` are aliased in PS but take different flags than Linux.
+
+---
+
 ## PRE-CODE CHECKLIST -- run before writing any new code
 
 Before writing any code that queries, transforms, or computes data in Determined:
