@@ -16,7 +16,17 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-28, session 30):** Mentor arc complete. Items 23/24/25 closed.
+**Last session (2026-06-28, session 32):** Items 9, 10, 19 done.
+Item 9: distillation pass - distill_corpus() tool, distilled kind in knowledge_artifacts,
+wired into symbol_brief (preamble) and goal_intake step 1 (enriched embedding). 301 tests.
+Item 10: _raw helpers layer - 5 private raw helpers (_search_symbols_raw, _list_callers_raw,
+_list_callees_raw, _graph_most_connected_raw, _graph_subgraph_raw), string tools now derive
+from raw (XIV: one source of truth), goal_intake step 1 uses _search_symbols_raw. 303 tests.
+Item 19: check_design_violations tool - semantic cosine-search against design_notes, constraint
+language filter, wired into risk_profile, pure analysis only (SOTS XI). Self-audit ran against
+Determined's own corpus (168 design_notes, 5 WARM symbols) - produced real findings, validated.
+
+**Before that (2026-06-28, session 30):** Mentor arc complete. Items 23/24/25 closed.
 Item 23 rebuilt on embeddings (all-MiniLM-L6-v2, docstring-enriched queries, threshold 0.32).
 SOTS (shapeofthesystem.com, 25 tenets) ingested into knowledge.db as design_notes -- surfaces
 automatically via frame comparison. Item 24: goal_intake tool -- natural language goal ->
@@ -70,7 +80,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-19. **[DEFERRED] Design intent layer: ingest and cross-reference authoritative docs alongside code**
+19. **[DONE 2026-06-28] Design intent layer: check_design_violations + self-audit**
 
    The tool analyzes code structure but has no awareness of what the code is *supposed*
    to do. Design docs (architectural constitutions, subsystem specs, authority boundaries)
@@ -149,7 +159,7 @@ each step result. 293/293 tests passing.
    semantic_summary() for each. Skips already-cached. Aborts gracefully on
    Ollama connection failure with count of summaries written. 297/297 passing.
 
-9. **[MEDIUM] Distillation pass: compress verbose LLM text to compact facts** -
+9. **[DONE 2026-06-28] Distillation pass** -
    `semantic_summaries` and `file_purpose` artifacts store 3-4 paragraph LLM
    responses verbatim. Add a distillation step: pass each verbose blob back to
    Ollama with a compression prompt ("one sentence: what does this file/symbol
@@ -158,7 +168,7 @@ each step result. 293/293 tests passing.
    agent resolver use as a quick-scan; the verbose form stays for full context.
    Subject naming convention: `distilled::<subject>`.
 
-10. **[MEDIUM] Tool chaining: structured output mode** - every tool returns a
+10. **[DONE 2026-06-28] Tool chaining: structured output mode** - every tool returns a
     string (right for LLM consumption). When one tool's output drives another
     programmatically (e.g. `list_callers` -> `risk_profile` for each caller,
     or `graph_subgraph` nodes -> `symbol_intent` for each node), the agent has
