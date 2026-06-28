@@ -499,11 +499,126 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     return distilled_line + risk_line + "\n" + brief + design_frame
 
 
+_CONSTRAINT_PATTERNS = (
+    "must not", "never", "only", "forbidden", "must be", "shall not",
+    "do not", "cannot", "prohibited", "required", "always",
+)
+
+
+def _check_design_violations_core(
+    assessor: "Assessor", symbol: str, file_path: str
+) -> list[dict]:
+    """
+    Pure analysis: embed symbol context, cosine-search design_notes,
+    filter for constraint language. Returns list[dict]: subject, content, score.
+    Returns empty list on embedding failure (XIII: degrade, don't crash).
+    SOTS XI: pure analysis, returns findings only, never mutates state.
+    """
+    if not assessor._knowledge_conn:
+        return []
+
+    note_rows = assessor._knowledge_conn.execute(
+        "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'design_note'"
+    ).fetchall()
+    if not note_rows:
+        return []
+
+    # Build a rich query: symbol name + docstring + callee names
+    docstring = ""
+    row = assessor.oracle.conn.execute(
+        "SELECT docstring FROM functions WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    if not row:
+        row = assessor.oracle.conn.execute(
+            "SELECT docstring FROM classes WHERE name = ? LIMIT 1", (symbol,)
+        ).fetchone()
+    if row and row[0]:
+        docstring = row[0][:300]
+
+    callee_names = " ".join(r["callee"].rsplit(".", 1)[-1] for r in _list_callees_raw(assessor.oracle, symbol)[:10])
+    stem = file_path.replace("\\", "/").split("/")[-1].replace(".py", "") if file_path else ""
+    query = f"symbol: {symbol}  file: {stem}  {docstring}  calls: {callee_names}"
+
+    # Filter notes to those with constraint language before embedding (XVII: don't embed everything)
+    constraint_notes = [
+        (subj, content) for subj, content in note_rows
+        if any(p in content.lower() for p in _CONSTRAINT_PATTERNS)
+    ]
+    if not constraint_notes:
+        return []
+
+    try:
+        model = _get_embed_model()
+        note_texts = [f"{s} {c}" for s, c in constraint_notes]
+        vecs = model.encode([query] + note_texts, normalize_embeddings=True)
+        scores = vecs[1:] @ vecs[0]
+    except Exception:
+        return []  # embedding failure: degrade silently (XIII)
+
+    THRESHOLD = 0.30
+    TOP_K = 5
+    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+    hits = []
+    for idx, score in ranked[:TOP_K]:
+        if score < THRESHOLD:
+            break
+        subj, content = constraint_notes[idx]
+        hits.append({"subject": subj, "content": content, "score": float(score)})
+    return hits
+
+
+def check_design_violations(assessor: "Assessor", args: dict) -> str:
+    """
+    check_design_violations(symbol) - cross-reference symbol against design constraints.
+    Embeds symbol + docstring + callee names, cosine-searches all design_notes,
+    filters for constraint language. Returns potential violations for human review.
+    Pure analysis only (SOTS XI): never mutates state, never acts on findings.
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    row = assessor.oracle.conn.execute(
+        "SELECT file_path FROM symbols WHERE name = ?", (symbol,)
+    ).fetchone()
+    file_path = row[0] if row else ""
+
+    hits = _check_design_violations_core(assessor, symbol, file_path)
+
+    if not hits:
+        # SOTS XVIII: empty result explains why, not silent
+        if not assessor._knowledge_conn:
+            return f"No design violations checked for '{symbol}': no knowledge DB configured."
+        note_count = assessor._knowledge_conn.execute(
+            "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'"
+        ).fetchone()[0]
+        if note_count == 0:
+            return (
+                f"No design violations found for '{symbol}': "
+                f"no design_note artifacts in knowledge DB. "
+                f"Run ingest_design_docs() first to populate design rules."
+            )
+        return (
+            f"No design violations detected for '{symbol}' "
+            f"(checked {note_count} constraint-bearing design notes, "
+            f"none matched above threshold)."
+        )
+
+    lines = [f"Potential design violations for '{symbol}':"]
+    for h in hits:
+        label = h["subject"] or "general"
+        lines.append(f"  [{label}] (score={h['score']:.2f})")
+        lines.append(f"    {h['content'][:200]}")
+    lines.append("")
+    lines.append("Review these constraints manually - this is a similarity match, not a confirmed violation.")
+    return "\n".join(lines)
+
+
 def risk_profile(assessor: "Assessor", args: dict):
     """
     risk_profile(symbol) - structural change-risk rating for a symbol.
     Returns HOT/WARM/SAFE with the reasons: in-degree, mutations, blast radius.
-    Appends design_note artifacts matching the symbol's file as a design frame.
+    Appends design_note artifacts and design violation matches.
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
@@ -521,6 +636,13 @@ def risk_profile(assessor: "Assessor", args: dict):
     design_frame = _get_design_frame(assessor, symbol, file_path)
     if design_frame:
         lines.append(design_frame)
+    # Append design violations (item 19)
+    violations = _check_design_violations_core(assessor, symbol, file_path)
+    if violations:
+        lines.append("\nDesign constraint matches:")
+        for v in violations:
+            label = v["subject"] or "general"
+            lines.append(f"  [{label}] {v['content'][:150]}")
     bag_item = {"__type__": "symbol", "__key__": f"symbol::{symbol}",
                 "name": symbol, "file_path": file_path, "risk": r["level"]}
     return "\n".join(lines), [bag_item]
@@ -1605,6 +1727,8 @@ TOOLS = {
     "goal_intake":          (goal_intake,           "assessor"),
     # Distillation
     "distill_corpus":       (distill_corpus,        "assessor"),
+    # Design violation cross-reference
+    "check_design_violations": (check_design_violations, "assessor"),
 }
 
 

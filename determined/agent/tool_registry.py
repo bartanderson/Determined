@@ -239,6 +239,16 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── DESIGN VIOLATION CHECK ─────────────────────────────────────
+    "check_design_violations": {
+        "purpose": "Cross-reference a symbol against design constraints in knowledge.db. Returns constraint-bearing design_notes that semantically match the symbol.",
+        "args": {"symbol": "function or class name to check"},
+        "output": "list of matching design constraints with similarity scores, or explanation if none found",
+        "feeds": ["risk_profile", "store_finding"],
+        "use_when": "Before modifying a HOT symbol, or when adding new functionality near architectural boundaries.",
+        "category": "understanding",
+    },
+
     # ── DISTILLATION ───────────────────────────────────────────────
     "distill_corpus": {
         "purpose": "Compress each semantic_summary and file_purpose artifact into a one-sentence distillation stored in knowledge.db.",

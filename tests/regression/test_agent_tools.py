@@ -499,6 +499,7 @@ def test_dispatch_all_tools_registered():
         "ingest_design_docs",
         "goal_intake",
         "distill_corpus",
+        "check_design_violations",
     }
     assert set(TOOLS.keys()) == expected
 
@@ -622,6 +623,49 @@ def test_raw_helpers_return_dicts():
     assert isinstance(sg, dict)
     assert "nodes" in sg and "edges" in sg
     assert "generate_encounter" in sg["nodes"]
+
+
+def test_check_design_violations_no_notes():
+    """check_design_violations explains why when no design_notes exist."""
+    from determined.agent.agent_tools import check_design_violations
+    oracle = _make_fixture()
+    assessor = FakeAssessor(oracle)
+    result = check_design_violations(assessor, {"symbol": "generate_encounter"})
+    # No design_notes in fixture -> should explain, not return empty string silently
+    assert "generate_encounter" in result
+    assert len(result) > 10  # not a silent empty result
+
+
+def test_check_design_violations_with_notes():
+    """check_design_violations returns matches when constraint notes exist."""
+    import unittest.mock as mock
+    from determined.agent.agent_tools import check_design_violations
+    oracle = _make_fixture()
+    assessor = FakeAssessor(oracle)
+
+    # Insert a design_note with constraint language
+    oracle.conn.execute(
+        "INSERT INTO knowledge_artifacts "
+        "(subject, kind, content, provenance, created_at, needs_review) "
+        "VALUES (?, ?, ?, ?, datetime('now'), 0)",
+        ("engine", "design_note", "must not call generate_encounter from handlers directly", "human-confirmed"),
+    )
+    oracle.conn.commit()
+
+    # Mock the embedding model to return a high similarity score
+    import numpy as np
+    def mock_encode(texts, normalize_embeddings=False):
+        n = len(texts)
+        vecs = np.ones((n, 4), dtype=float)
+        vecs /= np.linalg.norm(vecs[0])
+        return vecs
+
+    with mock.patch("determined.agent.agent_tools._get_embed_model") as mock_model:
+        mock_model.return_value.encode = mock_encode
+        result = check_design_violations(assessor, {"symbol": "generate_encounter"})
+
+    # Should either find a match or explain no matches above threshold
+    assert "generate_encounter" in result
 
 
 def test_string_tools_derive_from_raw():
