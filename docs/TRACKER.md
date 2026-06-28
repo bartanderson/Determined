@@ -223,26 +223,14 @@ the right context for each step, let the model connect it.
 
 ---
 
-23. **[OPEN] Frame comparison: surface design intent automatically when code touches documented areas**
+23. **[DONE 2026-06-28] Frame comparison: surface design intent automatically when code touches documented areas**
 
-   Design notes sit in knowledge.db unused unless explicitly queried. The tool
-   should surface them automatically when code analysis touches a relevant area -
-   without the developer asking.
-
-   **Mechanism:** When the tool analyzes a symbol in file Y (spotlight, risk_profile,
-   orient step), look up design_note artifacts whose subject matches Y's filename
-   or the class names defined in Y. Include matching notes in the LLM context for
-   that analysis. The model compares the code finding against the design rule and
-   surfaces any tension: "design says ContextBuilder is strictly a consumer - this
-   call pattern may cross that boundary."
-
-   **This is the "desired frame" side of navigation.** Current frame = code graph.
-   Desired frame = design notes. The tool holds both simultaneously and reasons
-   about the delta rather than answering structural questions in isolation.
-
-   Builds on: knowledge_artifact retrieval, spotlight/risk_profile handlers in
-   ui_server.py, symbol_spotlight dispatch. Subject-key lookup, not semantic search.
-   Requires item 22 to have meaningful design note coverage.
+   Wired in agent_tools.py. _get_design_frame() helper does subject-key lookup
+   (symbol name + filename PascalCase stem) against design_note artifacts in
+   knowledge.db. Both risk_profile and symbol_brief now append a "Design frame"
+   section when matching notes exist. risk_profile changed from oracle->assessor
+   in both function signature and dispatch table. 321/322 tests passing
+   (1 pre-existing fixture-path failure, unrelated).
 
 ---
 
