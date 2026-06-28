@@ -239,6 +239,16 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── PROJECT STATUS ─────────────────────────────────────────────
+    "project_status": {
+        "purpose": "Structural picture of the whole project: subsystems, implementation status, critical path gaps, coupling, and architecture constraints. Synthesizes with Ollama when a goal is given.",
+        "args": {"goal": "optional question to focus synthesis (e.g. 'what should I work on first?')"},
+        "output": "subsystem matrix (fns/stubs/entry_pts/hot), critical stubs ranked by callers, cluster pairs, architecture flags; optionally followed by Ollama narrative synthesis",
+        "feeds": ["risk_profile", "list_stubs", "goal_intake"],
+        "use_when": "Start of a session to get the big-picture view of the project before diving into specifics.",
+        "category": "understanding",
+    },
+
     # ── DESIGN VIOLATION CHECK ─────────────────────────────────────
     "check_design_violations": {
         "purpose": "Cross-reference a symbol against design constraints in knowledge.db. Returns constraint-bearing design_notes that semantically match the symbol.",

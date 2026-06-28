@@ -1613,6 +1613,269 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
     return "\n".join(out)
 
 
+def _project_status_data(oracle: "DBOracle", assessor: "Assessor") -> dict:
+    """
+    Gather structural facts needed for project_status synthesis.
+    Pure data assembly - no Ollama, no side effects (SOTS XI).
+    Returns a dict with: subsystems, critical_stubs, clusters, arch_flags, totals.
+    """
+    root = (oracle.get_project_root() or "").replace("\\", "/").rstrip("/")
+
+    def _rel(fp: str) -> str:
+        fp = (fp or "").replace("\\", "/")
+        return fp[len(root) + 1:] if root and fp.startswith(root + "/") else fp
+
+    def _subsystem(rel_path: str) -> str:
+        parts = rel_path.split("/")
+        if len(parts) == 1:
+            return "(root)"
+        # Collapse nested dirs to top-level (world/visuals/ -> world/)
+        return parts[0] + "/"
+
+    # --- Subsystem matrix ---
+    # Per-subsystem: total functions, stubs, entry points (no callers in), hot symbols
+    file_rows = oracle.conn.execute(
+        "SELECT file_path FROM files"
+    ).fetchall()
+    all_files = [_rel(r[0]) for r in file_rows]
+
+    fn_rows = oracle.conn.execute(
+        "SELECT name, file_path, is_stub FROM functions"
+    ).fetchall()
+
+    callee_set = {
+        r[0] for r in oracle.conn.execute(
+            "SELECT DISTINCT callee FROM graph_edges"
+        ).fetchall()
+    }
+    caller_set = {
+        r[0] for r in oracle.conn.execute(
+            "SELECT DISTINCT caller FROM graph_edges"
+        ).fetchall()
+    }
+
+    hot_names = set()
+    if assessor._knowledge_conn:
+        hot_rows = assessor._knowledge_conn.execute(
+            "SELECT subject FROM knowledge_artifacts WHERE kind='hot'"
+        ).fetchall()
+        for (s,) in hot_rows:
+            hot_names.add(s.replace("hot::", "").strip())
+
+    subs: dict[str, dict] = {}
+    for name, fp, is_stub in fn_rows:
+        key = _subsystem(_rel(fp))
+        if key not in subs:
+            subs[key] = {"fns": 0, "stubs": 0, "entry_pts": 0, "hot": 0}
+        subs[key]["fns"] += 1
+        if is_stub:
+            subs[key]["stubs"] += 1
+        # entry point: called by nobody in the graph
+        if name not in callee_set and name in caller_set:
+            subs[key]["entry_pts"] += 1
+        if name in hot_names:
+            subs[key]["hot"] += 1
+
+    # Filter out test subsystems for cleaner output
+    prod_subs = {k: v for k, v in subs.items()
+                 if "test" not in k.lower() and k not in ("tests/",)}
+
+    # --- Critical path stubs (stubs with callers waiting on them) ---
+    stub_names = {
+        r[0] for r in oracle.conn.execute(
+            "SELECT name FROM functions WHERE is_stub = 1"
+        ).fetchall()
+    }
+    caller_counts: dict[str, int] = {}
+    for row in oracle.conn.execute(
+        "SELECT callee, COUNT(DISTINCT caller) FROM graph_edges GROUP BY callee"
+    ).fetchall():
+        callee, cnt = row
+        bare = callee.rsplit(".", 1)[-1]
+        if bare in stub_names:
+            caller_counts[bare] = caller_counts.get(bare, 0) + cnt
+
+    critical_stubs = sorted(
+        [{"name": n, "callers": c} for n, c in caller_counts.items() if c > 0],
+        key=lambda x: x["callers"], reverse=True
+    )[:15]
+
+    # Enrich with file path
+    for item in critical_stubs:
+        row = oracle.conn.execute(
+            "SELECT file_path FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1",
+            (item["name"],),
+        ).fetchone()
+        item["file"] = _rel(row[0]).split("/")[-1] if row else "?"
+
+    # --- Clusters ---
+    from determined.agent.graph_utils import find_clusters
+    clusters = find_clusters(oracle, min_edges=2)
+    prod_clusters = [
+        c for c in clusters
+        if not any("test" in f.lower() for f in c["files"])
+    ][:8]
+    cluster_data = [
+        {
+            "f1": c["files"][0].replace("\\", "/").split("/")[-1],
+            "f2": c["files"][1].replace("\\", "/").split("/")[-1],
+            "edges": c["edge_count"],
+        }
+        for c in prod_clusters
+    ]
+
+    # --- Architecture flags from design notes ---
+    arch_flags = []
+    if assessor._knowledge_conn:
+        flag_rows = assessor._knowledge_conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts WHERE kind='design_note' "
+            "AND (content LIKE '%LEGACY%' OR content LIKE '%To Be Decomposed%' "
+            "     OR content LIKE '%must not%' OR content LIKE '%Must not%' "
+            "     OR content LIKE '%forbidden%' OR content LIKE '%never%') "
+            "AND subject != '' AND subject IS NOT NULL "
+            "ORDER BY subject LIMIT 15"
+        ).fetchall()
+        seen_subjects: set[str] = set()
+        for subj, content in flag_rows:
+            if subj in seen_subjects:
+                continue
+            seen_subjects.add(subj)
+            # Extract the key constraint (first sentence-ish)
+            snippet = content[:150].replace("\n", " ").strip()
+            arch_flags.append({"subject": subj, "constraint": snippet})
+
+    totals = {
+        "files": len(all_files),
+        "functions": sum(v["fns"] for v in subs.values()),
+        "stubs": sum(v["stubs"] for v in subs.values()),
+        "entry_points": sum(v["entry_pts"] for v in prod_subs.values()),
+    }
+
+    return {
+        "subsystems": prod_subs,
+        "critical_stubs": critical_stubs,
+        "clusters": cluster_data,
+        "arch_flags": arch_flags,
+        "totals": totals,
+        "root": root,
+    }
+
+
+def _format_project_status(data: dict) -> str:
+    """Format _project_status_data as readable text (no Ollama)."""
+    t = data["totals"]
+    lines = [
+        f"Project: {data['root'].split('/')[-1]}  "
+        f"({t['files']} files, {t['functions']} functions, "
+        f"{t['stubs']} stubs, {t['entry_points']} entry points)",
+        "",
+        "Subsystems (implementation status):",
+    ]
+    # Sort by stub density (stubs/fns) descending — most skeleton first
+    ordered = sorted(
+        data["subsystems"].items(),
+        key=lambda kv: (kv[1]["stubs"] / max(kv[1]["fns"], 1)),
+        reverse=True,
+    )
+    for key, v in ordered:
+        if v["fns"] == 0:
+            continue
+        stub_pct = int(100 * v["stubs"] / v["fns"])
+        done_pct = 100 - stub_pct
+        bar = "█" * (done_pct // 10) + "░" * (10 - done_pct // 10)
+        status = (
+            "SKELETON" if stub_pct >= 40
+            else "PARTIAL" if stub_pct >= 10
+            else "implemented"
+        )
+        lines.append(
+            f"  {key:18s} fns={v['fns']:4d}  stubs={v['stubs']:3d} [{bar}] {done_pct:3d}% done  [{status}]"
+            f"  entry={v['entry_pts']}  hot={v['hot']}"
+        )
+
+    if data["critical_stubs"]:
+        lines.append("")
+        lines.append("Critical path gaps (stubs that callers are waiting on):")
+        for s in data["critical_stubs"]:
+            flag = " *** BLOCKING" if s["callers"] >= 10 else ""
+            lines.append(f"  {s['name']} ({s['file']}) — {s['callers']} callers{flag}")
+
+    if data["clusters"]:
+        lines.append("")
+        lines.append("Tightly coupled subsystems:")
+        for c in data["clusters"]:
+            lines.append(f"  {c['f1']} <-> {c['f2']}  ({c['edges']} edges)")
+
+    if data["arch_flags"]:
+        lines.append("")
+        lines.append("Architecture constraints / flags:")
+        for f in data["arch_flags"][:8]:
+            lines.append(f"  [{f['subject']}] {f['constraint'][:120]}")
+
+    return "\n".join(lines)
+
+
+def _synthesize_with_ollama(status_text: str, goal: str) -> str | None:
+    """
+    Pass the structured status to Ollama for narrative synthesis.
+    Returns None on failure (SOTS XIII: visible failure, not swallowed).
+    """
+    import logging
+    import requests as _req
+    from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
+    prompt = (
+        f"You are a software architect reviewing a game project's structural analysis.\n\n"
+        f"DATA FORMAT GUIDE:\n"
+        f"- 'stubs=N' means N functions have empty/placeholder bodies (not yet implemented)\n"
+        f"- 'done=X%' means X percent of functions in that subsystem are fully implemented\n"
+        f"- [SKELETON] = mostly stubs, largely unimplemented\n"
+        f"- [PARTIAL] = some implementation exists but significant gaps remain\n"
+        f"- [implemented] = mostly or fully working code\n"
+        f"- 'entry=N' = N public entry points (callable surfaces)\n"
+        f"- 'hot=N' = N functions called frequently (high in-degree)\n"
+        f"- Critical path gaps = stubs that other code is already calling (blocking work)\n\n"
+        f"Based ONLY on the data below, answer: {goal}\n\n"
+        f"Be specific - name the systems, files, and functions you see. "
+        f"Do not invent information not in the data. Under 350 words.\n\n"
+        f"STRUCTURAL DATA:\n{status_text}"
+    )
+    try:
+        resp = _req.post(
+            OLLAMA_URL,
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            timeout=OLLAMA_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json().get("response", "").strip() or None
+    except Exception as exc:
+        logging.getLogger(__name__).warning("project_status: Ollama unavailable: %s", exc)
+        return None
+
+
+def project_status(assessor: "Assessor", args: dict) -> str:
+    """
+    project_status(goal?) - structural picture of the whole project: which subsystems
+    exist, which are skeleton vs active, what's blocking the critical path, how things
+    couple, and what design constraints apply. Optionally synthesizes with Ollama.
+
+    goal: optional question to focus the synthesis (e.g. 'what should I work on first
+          to make the game playable?'). If omitted, returns structural breakdown only.
+    """
+    oracle = assessor.oracle
+    data = _project_status_data(oracle, assessor)
+    structural = _format_project_status(data)
+
+    goal = args.get("goal", "").strip()
+    if not goal:
+        return structural
+
+    # Attempt Ollama synthesis; degrade to structural if unavailable (SOTS XIII)
+    synthesis = _synthesize_with_ollama(structural, goal)
+    if synthesis:
+        return structural + "\n\n--- Synthesis ---\n" + synthesis
+    return structural + "\n\n(Ollama unavailable for synthesis - structural data above)"
+
+
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
     distill_corpus() - compress each semantic_summary and file_purpose artifact
@@ -1729,6 +1992,8 @@ TOOLS = {
     "distill_corpus":       (distill_corpus,        "assessor"),
     # Design violation cross-reference
     "check_design_violations": (check_design_violations, "assessor"),
+    # Project-wide synthesis
+    "project_status":          (project_status,          "assessor"),
 }
 
 

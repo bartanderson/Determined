@@ -500,6 +500,7 @@ def test_dispatch_all_tools_registered():
         "goal_intake",
         "distill_corpus",
         "check_design_violations",
+        "project_status",
     }
     assert set(TOOLS.keys()) == expected
 
@@ -623,6 +624,40 @@ def test_raw_helpers_return_dicts():
     assert isinstance(sg, dict)
     assert "nodes" in sg and "edges" in sg
     assert "generate_encounter" in sg["nodes"]
+
+
+def test_project_status_structural():
+    """project_status returns subsystem matrix and totals without Ollama."""
+    from determined.agent.agent_tools import project_status
+    oracle = _make_fixture()
+    assessor = FakeAssessor(oracle)
+
+    result = project_status(assessor, {})
+    # Must have the header with file/function counts
+    assert "files" in result
+    assert "functions" in result
+    # Must have the subsystem section
+    assert "Subsystems" in result
+    # With no stubs, no critical gaps section
+    assert "Project" in result
+
+
+def test_project_status_with_stubs():
+    """project_status identifies stubs with callers as critical path gaps."""
+    from determined.agent.agent_tools import project_status
+    oracle = _make_fixture()
+    assessor = FakeAssessor(oracle)
+
+    # Mark generate_encounter as a stub
+    oracle.conn.execute(
+        "UPDATE functions SET is_stub = 1 WHERE name = 'generate_encounter'"
+    )
+    oracle.conn.commit()
+
+    result = project_status(assessor, {})
+    # generate_encounter is called by handle_movement in the fixture graph
+    assert "generate_encounter" in result
+    assert "Critical path" in result or "callers" in result
 
 
 def test_check_design_violations_no_notes():
