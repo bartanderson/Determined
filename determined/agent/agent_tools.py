@@ -291,7 +291,26 @@ def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
         if stem.endswith(".py"):
             stem = stem[:-3]
 
-    query = f"symbol: {symbol}" + (f"  file: {stem}" if stem else "")
+    # Enrich query with docstring if available -- symbol name alone is too sparse
+    # to match abstract principle text in embedding space
+    docstring = ""
+    if assessor.oracle:
+        row = assessor.oracle.conn.execute(
+            "SELECT docstring FROM functions WHERE name = ? LIMIT 1", (symbol,)
+        ).fetchone()
+        if not row:
+            row = assessor.oracle.conn.execute(
+                "SELECT docstring FROM classes WHERE name = ? LIMIT 1", (symbol,)
+            ).fetchone()
+        if row and row[0]:
+            docstring = row[0][:300]
+
+    parts = [f"symbol: {symbol}"]
+    if stem:
+        parts.append(f"file: {stem}")
+    if docstring:
+        parts.append(docstring)
+    query = "  ".join(parts)
     note_texts = [f"{r[0]} {r[1]}" for r in rows]
 
     try:
@@ -302,7 +321,7 @@ def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
     except Exception:
         return ""
 
-    THRESHOLD = 0.35
+    THRESHOLD = 0.32
     TOP_K = 3
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
     hits = []

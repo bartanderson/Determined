@@ -98,6 +98,25 @@ Common mistakes:
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
   in full with current status and next steps. This is mandatory.
 
+## Design reference: The Shape of the System
+
+`docs/sots.md` (source: https://shapeofthesystem.com/) is the authoritative
+engineering philosophy for this project and any corpus it analyzes. The 25 tenets
+are also ingested into `knowledge.db` as design_notes (provenance `sots`) so
+`_get_design_frame` surfaces them automatically during code analysis.
+
+Consult it for architectural decisions: new boundaries, resource management, retry
+logic, irreversible operations, module interfaces. Not for routine changes.
+
+How to use it:
+- Identify the 2-3 tenets most live for this decision
+- Name the tension if two tenets pull against each other
+- Apply the resolution: cognitive load vs. blast radius, weighted by who controls the input
+- State which tenets informed the decision and why -- as reasoning, not a checklist
+
+Do not score designs numerically. The tension sections exist because the
+interesting decisions are not binary.
+
 ## Coding guidelines
 
 1. **Read before you write.** Search for existing implementations first.
