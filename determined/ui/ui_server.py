@@ -130,23 +130,17 @@ def _corpus_map_data() -> dict:
             "badge": badge,
         })
 
-    # Hot symbols: highest caller count, non-stubs, single query
-    rows = _oracle.conn.execute("""
-        SELECT f.name, f.file_path, COUNT(ge.caller) AS caller_count
-        FROM functions f
-        JOIN graph_edges ge ON ge.callee = f.name OR ge.callee LIKE '%.' || f.name
-        WHERE f.is_stub = 0
-        GROUP BY f.name
-        ORDER BY caller_count DESC
-        LIMIT 10
-    """).fetchall()
+    # Hot symbols: use most_connected which correctly excludes builtins/externals
+    # by requiring a known project file_path.
+    from determined.agent.graph_utils import most_connected
+    mc = most_connected(_oracle, n=10)
     hot_syms = []
-    for name, fp, cnt in rows:
-        level, badge = _risk_for(name)
+    for r in mc:
+        level, badge = _risk_for(r["symbol"])
         hot_syms.append({
-            "name": name,
-            "file": Path(fp).name if fp else "",
-            "caller_count": cnt,
+            "name": r["symbol"],
+            "file": Path(r["file_path"]).name if r["file_path"] else "",
+            "caller_count": r["in_degree"],
             "risk": level,
             "badge": badge,
         })

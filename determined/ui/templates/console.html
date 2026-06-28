@@ -31,7 +31,7 @@
       <div class="sidebar-ingest">
         <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
         <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
-        <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;margin-top:4px;background:var(--surface2)">Resume…</button>
+        <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;display:none;background:var(--surface2)">Switch corpus</button>
       </div>
     </div>
 
@@ -56,6 +56,14 @@
         <span class="icon">✓</span>todos
       </div>
     </div>
+
+    <div class="sidebar-section" id="corpus-map" style="display:none">
+      <div id="corpus-map-inner"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <button id="ask-toggle-btn" class="send-btn" style="width:100%;justify-content:center;background:var(--surface2)">Ask ▾</button>
+    </div>
   </div>
 
   <!-- ── main ── -->
@@ -68,9 +76,9 @@
       <button class="trail-clear" id="trail-clear" title="Clear trail">✕</button>
     </div>
 
-    <div class="query-bar">
+    <div class="query-bar" id="query-bar" style="display:none">
       <input id="q-input" class="query-input" type="text"
-             placeholder="Ask about the codebase…" autocomplete="off" autofocus>
+             placeholder="Ask about the codebase…" autocomplete="off">
       <button id="send-btn" class="send-btn">Ask ↵</button>
     </div>
 
@@ -87,12 +95,6 @@
     <!-- tab panels -->
     <div class="tab-content">
       <div class="tab-panel active" id="panel-chat">
-        <!-- corpus map: pinned above scroll, collapses when not needed -->
-        <div id="corpus-map" style="display:none;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--bg);overflow:hidden">
-          <div id="corpus-map-inner" style="display:flex;gap:1.2rem;padding:.5rem .7rem;flex-wrap:wrap;align-items:flex-start"></div>
-          <button id="corpus-map-toggle" title="Collapse map"
-            style="position:absolute;top:.3rem;right:.5rem;background:none;border:none;color:var(--text3);cursor:pointer;font-size:.8em;padding:2px 6px">▲ hide</button>
-        </div>
         <div id="results" class="results-area"></div>
       </div>
       <div class="tab-panel" id="panel-call_tree">
@@ -225,11 +227,27 @@
 
 </div><!-- .shell -->
 
+<!-- modal overlay - must be before script block -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;align-items:center;justify-content:center">
+  <div id="modal-box" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1.5rem;min-width:340px;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div id="modal-content"></div>
+  </div>
+</div>
+
 <script>
 const socket    = io();
 const input     = document.getElementById("q-input");
 const sendBtn   = document.getElementById("send-btn");
 const results   = document.getElementById("results");
+const queryBar  = document.getElementById("query-bar");
+const askToggle = document.getElementById("ask-toggle-btn");
+
+askToggle.addEventListener("click", () => {
+  const visible = queryBar.style.display !== "none";
+  queryBar.style.display = visible ? "none" : "";
+  askToggle.textContent = visible ? "Ask ▾" : "Ask ▴";
+  if (!visible) input.focus();
+});
 const connDot   = document.getElementById("conn-dot");
 const connLbl   = document.getElementById("conn-label");
 const elapsed   = document.getElementById("elapsed");
@@ -256,10 +274,7 @@ let _startupFiredFor = null;
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
   sendBtn.disabled = false;
-  ingestBtn.textContent = "New analysis ↵";
-  ingestBtn.disabled = false;
-  ingestBtn.dataset.mode = "replace";
-  resumeBtn.disabled = true;
+  setCorpusLoaded(true);
 
   // populate pinned corpus map panel
   renderCorpusMap(data);
@@ -279,76 +294,51 @@ socket.on("corpus_ready", data => {
   }
 });
 
-// ── corpus map panel ──────────────────────────────────────
-const corpusMapEl     = document.getElementById("corpus-map");
-const corpusMapInner  = document.getElementById("corpus-map-inner");
-const corpusMapToggle = document.getElementById("corpus-map-toggle");
-let _mapCollapsed = false;
+// ── corpus map (sidebar) ──────────────────────────────────
+const corpusMapEl    = document.getElementById("corpus-map");
+const corpusMapInner = document.getElementById("corpus-map-inner");
 
-corpusMapToggle.addEventListener("click", () => {
-  _mapCollapsed = !_mapCollapsed;
-  corpusMapInner.style.display = _mapCollapsed ? "none" : "";
-  corpusMapToggle.textContent = _mapCollapsed ? "▼ map" : "▲ hide";
-});
-
-function _riskCls(r)  { return r === "HOT" ? "sym-risk-hot" : r === "WARM" ? "sym-risk-warm" : ""; }
+function _riskCls(r) { return r === "HOT" ? "sym-risk-hot" : r === "WARM" ? "sym-risk-warm" : ""; }
 
 function _mapSection(label, rows) {
-  const sec = document.createElement("div");
-  sec.style.cssText = "min-width:180px;flex:1;max-width:260px";
   const hdr = document.createElement("div");
-  hdr.style.cssText = "font-size:.7em;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);border-bottom:1px solid var(--border);padding-bottom:2px;margin-bottom:4px";
+  hdr.className = "sidebar-label";
   hdr.textContent = label;
-  sec.appendChild(hdr);
-  rows.forEach(({ name, file, count, countIcon, risk, badge }) => {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:baseline;gap:.3rem;padding:1px 0;font-family:var(--font-mono);font-size:.8em;white-space:nowrap;overflow:hidden";
+  const items = rows.map(({ name, count, countIcon, risk, badge }) => {
     const cls = _riskCls(risk);
-    row.innerHTML = (badge ? `<span class="${cls}" style="font-size:.75em;flex-shrink:0">${escHtml(badge)}</span>` : "")
+    const d = document.createElement("div");
+    d.style.cssText = "display:flex;align-items:baseline;gap:.25rem;padding:1px 2px;font-family:var(--font-mono);font-size:.78em;white-space:nowrap;overflow:hidden";
+    d.innerHTML = (badge ? `<span class="${cls}" style="font-size:.72em;flex-shrink:0">${escHtml(badge)}</span>` : "")
       + `<span class="sym-link ${cls}" data-sym="${escAttr(name)}" style="cursor:pointer;overflow:hidden;text-overflow:ellipsis">${escHtml(name)}</span>`
-      + `<span style="color:var(--text3);font-size:.75em;flex-shrink:0;margin-left:auto">${countIcon}${count}</span>`;
-    sec.appendChild(row);
+      + `<span style="color:var(--text3);font-size:.72em;flex-shrink:0;margin-left:auto">${countIcon}${count}</span>`;
+    return d;
   });
+  const sec = document.createElement("div");
+  sec.style.cssText = "margin-bottom:.5rem";
+  sec.appendChild(hdr);
+  items.forEach(i => sec.appendChild(i));
   return sec;
 }
 
 function renderCorpusMap(data) {
-  const eps   = data.entry_points || [];
-  const hots  = data.hot_symbols  || [];
+  const eps  = data.entry_points || [];
+  const hots = data.hot_symbols  || [];
   corpusMapInner.innerHTML = "";
 
-  // stats strip
+  // compact stats line
   const stats = document.createElement("div");
-  stats.style.cssText = "font-size:.75em;color:var(--text3);display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;padding-right:.8rem;border-right:1px solid var(--border);margin-right:.4rem;justify-content:center";
-  stats.innerHTML = `<span style="color:var(--text1);font-size:.9em">${escHtml(data.db_name)}</span>`
-    + `<span>${data.files} files</span>`
-    + `<span>${data.hot} hot</span>`
-    + `<span>${data.stubs} stubs</span>`
-    + (data.artifacts ? `<span>${data.artifacts} artifacts</span>` : "")
-    + (data.stubs > 0 ? `<span class="sym-link" data-sym="" style="cursor:pointer;color:var(--blue);margin-top:3px" id="map-stubs-link">view stubs</span>` : "");
+  stats.style.cssText = "font-size:.75em;color:var(--text3);padding:2px 2px 6px";
+  stats.innerHTML = `${data.files} files · ${data.hot} hot · ${data.stubs} stubs`
+    + (data.stubs > 0 ? ` · <span id="map-stubs-link" style="cursor:pointer;color:var(--blue)">view stubs</span>` : "");
   corpusMapInner.appendChild(stats);
 
-  // roots column
-  if (eps.length) {
-    const rows = eps.map(e => ({ name: e.name, file: e.file, count: e.out_degree, countIcon: "↗", risk: e.risk, badge: e.badge }));
-    corpusMapInner.appendChild(_mapSection("Roots (uncalled)", rows));
-  }
+  if (eps.length)  corpusMapInner.appendChild(_mapSection("Roots", eps.map(e => ({ name: e.name, count: e.out_degree, countIcon: "↗", risk: e.risk, badge: e.badge }))));
+  if (hots.length) corpusMapInner.appendChild(_mapSection("Core",  hots.map(h => ({ name: h.name, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }))));
 
-  // core column
-  if (hots.length) {
-    const rows = hots.map(h => ({ name: h.name, file: h.file, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }));
-    corpusMapInner.appendChild(_mapSection("Core (most-called)", rows));
-  }
+  corpusMapEl.style.display = (eps.length || hots.length || data.files) ? "" : "none";
 
-  corpusMapEl.style.display = (eps.length || hots.length) ? "" : "none";
-  if (!_mapCollapsed) corpusMapInner.style.display = "";
-
-  // wire stubs link to fire a query
   const stubsLink = document.getElementById("map-stubs-link");
-  if (stubsLink) stubsLink.addEventListener("click", () => {
-    input.value = "find stubs";
-    sendQuery();
-  });
+  if (stubsLink) stubsLink.addEventListener("click", () => { input.value = "find stubs"; sendQuery(); });
 
   attachSymbolHandlers(corpusMapInner);
 }
@@ -594,46 +584,55 @@ if (clearHistBtn) clearHistBtn.addEventListener("click", () => {
   results.innerHTML = "";
 });
 
+// ── modal helpers ─────────────────────────────────────────
+const modalOverlay = document.getElementById("modal-overlay");
+const modalContent = document.getElementById("modal-content");
+
+function showModal(html) {
+  modalContent.innerHTML = html;
+  modalOverlay.style.display = "flex";
+}
+function hideModal() {
+  modalOverlay.style.display = "none";
+  modalContent.innerHTML = "";
+}
+modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) hideModal(); });
+
 // ── analyze ───────────────────────────────────────────────
+function setCorpusLoaded(loaded) {
+  ingestBtn.style.display  = loaded ? "none" : "";
+  ingestPath.style.display = loaded ? "none" : "";
+  resumeBtn.style.display  = loaded ? "" : "none";
+}
+
 resumeBtn.addEventListener("click", () => {
-  const existing = document.getElementById("db-picker");
-  if (existing) { existing.remove(); return; }
-  resumeBtn.disabled = true;
   socket.emit("list_dbs");
 });
 
 socket.on("db_list", data => {
-  resumeBtn.disabled = false;
-  const existing = document.getElementById("db-picker");
-  if (existing) existing.remove();
-  const block = document.createElement("div");
-  block.id = "db-picker";
-  block.className = "result-block";
   const rows = data.dbs.length
     ? data.dbs.map(db => {
         const cls   = db.valid ? "db-pick-item" : "db-pick-item db-pick-invalid";
         const label = db.valid ? "" : ' <span style="color:var(--text3);font-size:.8em">(incompatible)</span>';
-        return `<div class="${cls}" data-path="${escHtml(db.path)}" style="padding:6px 8px;cursor:${db.valid?'pointer':'default'};border-radius:4px;display:flex;justify-content:space-between;align-items:center">
+        return `<div class="${cls}" data-path="${escHtml(db.path)}"
+          style="padding:8px 10px;cursor:${db.valid?'pointer':'default'};border-radius:4px;display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
           <span>${escHtml(db.name)}${label}</span>
-          <span style="color:var(--text3);font-size:.8em">${db.size_mb} MB</span>
+          <span style="color:var(--text3);font-size:.85em">${db.size_mb} MB</span>
         </div>`;
       }).join("")
-    : `<div style="color:var(--text3);padding:6px 0">No .db files found in current directory.</div>`;
-  block.innerHTML = `
-    <div class="result-header">
-      <span class="kind-tag kind-survey">resume</span>
-      <span class="result-subject">Select a corpus to load</span>
-      <button class="send-btn" style="background:var(--surface2);margin-left:auto" id="db-picker-close">Cancel</button>
-    </div>
-    <div class="result-body" style="flex-direction:column;gap:2px">${rows}</div>`;
-  results.appendChild(block);
-  results.scrollTop = results.scrollHeight;
-  document.getElementById("db-picker-close").addEventListener("click", () => block.remove());
-  block.querySelectorAll(".db-pick-item:not(.db-pick-invalid)").forEach(el => {
+    : `<div style="color:var(--text3);padding:8px 0">No .db files found.</div>`;
+  showModal(`
+    <div style="font-weight:600;margin-bottom:1rem;font-size:1em">Select a corpus</div>
+    <div style="display:flex;flex-direction:column;gap:0;max-height:300px;overflow-y:auto">${rows}</div>
+    <div style="margin-top:1rem;text-align:right">
+      <button class="send-btn" style="background:var(--surface2)" id="db-picker-cancel">Cancel</button>
+    </div>`);
+  document.getElementById("db-picker-cancel").addEventListener("click", hideModal);
+  modalContent.querySelectorAll(".db-pick-item:not(.db-pick-invalid)").forEach(el => {
     el.addEventListener("mouseenter", () => el.style.background = "var(--surface2)");
     el.addEventListener("mouseleave", () => el.style.background = "");
     el.addEventListener("click", () => {
-      block.remove();
+      hideModal();
       addStatusMsg("Loading corpus…");
       socket.emit("load_db", { path: el.dataset.path });
     });
@@ -641,7 +640,6 @@ socket.on("db_list", data => {
 });
 
 function startScan(path) {
-  ingestBtn.disabled = true;
   addStatusMsg(`Scanning ${path}…`);
   socket.emit("scan", { path });
 }
@@ -653,37 +651,8 @@ function startIngest(path) {
 }
 
 ingestBtn.addEventListener("click", () => {
-  // "New Analysis" mode: warn before replacing the loaded corpus
-  if (ingestBtn.dataset.mode === "replace") {
-    const existing = document.getElementById("new-analysis-warn");
-    if (existing) return; // already showing
-    const warn = document.createElement("div");
-    warn.id = "new-analysis-warn";
-    warn.className = "result-block";
-    warn.innerHTML = `
-      <div class="result-header"><span class="kind-tag" style="background:var(--risk-hot)">warning</span>
-        <span class="result-subject">Replace current corpus?</span></div>
-      <div class="result-body" style="display:flex;align-items:center;gap:1rem">
-        <span style="color:var(--text2)">This will discard the loaded corpus and conversation history.</span>
-        <button class="send-btn" id="new-analysis-confirm">Yes, replace</button>
-        <button class="send-btn" style="background:var(--surface2)" id="new-analysis-cancel">Cancel</button>
-      </div>`;
-    results.appendChild(warn);
-    results.scrollTop = results.scrollHeight;
-    document.getElementById("new-analysis-confirm").addEventListener("click", () => {
-      warn.remove();
-      ingestBtn.textContent = "Analyze ↵";
-      ingestBtn.dataset.mode = "";
-      resumeBtn.disabled = false;
-      ingestPath.value = "";
-      ingestPath.focus();
-    });
-    document.getElementById("new-analysis-cancel").addEventListener("click", () => warn.remove());
-    return;
-  }
   const p = ingestPath.value.trim();
   if (p) { startScan(p); return; }
-  ingestBtn.disabled = true;
   socket.emit("browse", {});
 });
 
@@ -692,40 +661,29 @@ ingestPath.addEventListener("keydown", e => {
 });
 
 socket.on("browse_result", data => {
-  ingestBtn.disabled = false;
   if (data.path) { ingestPath.value = data.path; startScan(data.path); }
 });
 
 socket.on("scan_result", data => {
-  ingestBtn.disabled = false;
   clearStatusMsgs();
   if (data.error) { addErrorBlock(data.error); return; }
   const secs = Math.max(5, data.file_count * 2 + data.size_mb * 3);
-  const timeEst = secs < 60
-    ? `~${Math.round(secs)}s`
-    : `~${Math.max(1, Math.round(secs / 60))} min`;
-  const block = document.createElement("div");
-  block.className = "result-block _scan-confirm";
-  block.innerHTML = `
-    <div class="result-header">
-      <span class="kind-tag kind-survey">scan</span>
-      <span class="result-subject">${escHtml(data.path)}</span>
-    </div>
-    <div class="result-body" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-      <span>${data.file_count.toLocaleString()} source files &middot; ${data.size_mb} MB &middot; ${timeEst}</span>
-      <button class="send-btn" id="confirm-ingest">Analyze ↵</button>
+  const timeEst = secs < 60 ? `~${Math.round(secs)}s` : `~${Math.max(1, Math.round(secs / 60))} min`;
+  showModal(`
+    <div style="font-weight:600;margin-bottom:.5rem">Analyze this project?</div>
+    <div style="color:var(--text2);font-size:.9em;margin-bottom:1rem;word-break:break-all">${escHtml(data.path)}</div>
+    <div style="color:var(--text2);margin-bottom:1.2rem">${data.file_count.toLocaleString()} source files &middot; ${data.size_mb} MB &middot; ${timeEst}</div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end">
       <button class="send-btn" style="background:var(--surface2)" id="cancel-ingest">Cancel</button>
-    </div>`;
-  results.appendChild(block);
-  results.scrollTop = results.scrollHeight;
+      <button class="send-btn" id="confirm-ingest">Analyze ↵</button>
+    </div>`);
   document.getElementById("confirm-ingest").addEventListener("click", () => {
-    block.remove();
+    hideModal();
     startIngest(data.path);
   });
   document.getElementById("cancel-ingest").addEventListener("click", () => {
-    block.remove();
+    hideModal();
     ingestPath.value = "";
-    ingestBtn.disabled = false;
   });
 });
 
@@ -1346,7 +1304,7 @@ const EDGE_COLOR = { call: "var(--blue)", import: "var(--green)", inherit: "var(
 const TYPE_ICON  = { edge: "⟶", symbol: "ƒ", file: "⬜", finding: "◈" };
 
 function bagFetch() {
-  const bag = bagSelect.value || "system";
+  const bag = (document.getElementById("bag-select") || {value:"system"}).value || "system";
   socket.emit("bag_query", { bag });
 }
 
@@ -1699,5 +1657,6 @@ function edAttachBagFileLinks(container) {
   });
 }
 </script>
+
 </body>
 </html>

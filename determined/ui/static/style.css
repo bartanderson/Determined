@@ -296,13 +296,6 @@ body {
   flex-direction: column;
   gap: 10px;
 }
-.results-area:empty::after {
-  content: "Ask a question about the codebase";
-  color: var(--text3);
-  font-size: 13px;
-  margin-top: 40px;
-  text-align: center;
-}
 
 /* result block */
 .result-block {
