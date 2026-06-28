@@ -105,8 +105,11 @@ engineering philosophy for this project and any corpus it analyzes. The 25 tenet
 are also ingested into `knowledge.db` as design_notes (provenance `sots`) so
 `_get_design_frame` surfaces them automatically during code analysis.
 
-Consult it for architectural decisions: new boundaries, resource management, retry
-logic, irreversible operations, module interfaces. Not for routine changes.
+**Read `docs/sots.md` before presenting any design or plan for non-trivial work.**
+This is not optional. The tenets surface automatically for code Determined analyzes;
+they must also surface for the people building Determined. Do not present a plan,
+propose an approach, or start a multi-step implementation without first grounding
+in the tenets most live for that decision.
 
 How to use it:
 - Identify the 2-3 tenets most live for this decision
@@ -116,6 +119,40 @@ How to use it:
 
 Do not score designs numerically. The tension sections exist because the
 interesting decisions are not binary.
+
+## Active work arc: items 9, 10, 19 + self-audit
+
+Current session priority, in order:
+
+**Item 9 -- Distillation pass**
+Compress verbose LLM summaries to one-sentence facts. Store as `kind='distilled'`,
+`subject='distilled::<original>'` in knowledge_artifacts. New tool: `distill_corpus()`.
+Wire into `symbol_brief` (quick preamble) and `goal_intake` (fast symbol scan).
+SOTS grounding before coding: XIV (distilled is a declared derivation, not a second
+truth), X (idempotent re-run), XIII (Ollama failure visible, not swallowed).
+
+**Item 10 -- Structured output (_raw)**
+Add `_raw` helper variants for: list_callers, list_callees, search_symbols,
+graph_most_connected, graph_subgraph. Each returns list[dict]. Refactor the string
+versions to derive from the raw versions (XIV: one source). Wire goal_intake to
+use _raw helpers instead of direct SQL. SOTS: I (locality -- each raw helper
+readable in isolation), XIV (string derives from raw, not parallel), XXI (only
+the five named tools, no expansion).
+
+**Item 19 -- Design intent cross-reference**
+New tool `check_design_violations(symbol)`. Embeds symbol + docstring + callees,
+cosine-searches design_notes (SOTS + project notes), filters for constraint language
+("must not", "never", "only", "forbidden"). Wire into risk_profile. SOTS: XI
+(pure analysis -- returns a plan, never acts), XVIII (empty result explains why,
+not silent), XIII (embedding failure degrades gracefully).
+
+**Self-audit step (after item 19 lands)**
+Run `check_design_violations` against Determined's own codebase using `knowledge.db`
+(which already holds all 25 SOTS tenets as design_notes). This validates item 19
+works correctly AND produces a real findings list for tightening Determined's own
+code. The tool audits itself. Any findings feed directly back as improvements.
+This is the validation step for item 19 -- do not mark item 19 done until the
+self-audit runs and findings are reviewed.
 
 ## Coding guidelines
 
