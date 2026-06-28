@@ -15,6 +15,17 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
+_embed_model = None
+
+def _get_embed_model():
+    global _embed_model
+    if _embed_model is None:
+        from sentence_transformers import SentenceTransformer
+        _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embed_model
+
 from determined.agent.edge_tools import (
     edges_of,
     edge_detail,
@@ -260,33 +271,47 @@ def _resolve_file_path(oracle: "DBOracle", file_path: str) -> str | None:
 
 def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
     """
-    Look up design_note artifacts whose subject matches the symbol name or the
-    PascalCase stem of the file that defines it. Returns formatted block or "".
+    Semantic lookup: embed the symbol context, cosine-search against all
+    design_note subject+content in knowledge.db, return top matches above
+    threshold. Falls back gracefully if no model or no notes available.
     """
     if not assessor._knowledge_conn:
         return ""
 
-    # Derive candidate subject keys
-    subjects = {symbol}
+    rows = assessor._knowledge_conn.execute(
+        "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'design_note'"
+    ).fetchall()
+    if not rows:
+        return ""
+
+    # Build a file stem hint for the query
+    stem = ""
     if file_path:
         stem = file_path.replace("\\", "/").split("/")[-1]
         if stem.endswith(".py"):
             stem = stem[:-3]
-        # raw stem (e.g. "escalation_engine") and PascalCase ("EscalationEngine")
-        subjects.add(stem)
-        subjects.add("".join(w.capitalize() for w in stem.split("_")))
 
+    query = f"symbol: {symbol}" + (f"  file: {stem}" if stem else "")
+    note_texts = [f"{r[0]} {r[1]}" for r in rows]
+
+    try:
+        model = _get_embed_model()
+        vecs = model.encode([query] + note_texts, normalize_embeddings=True)
+        q_vec = vecs[0]
+        scores = vecs[1:] @ q_vec  # cosine similarities (already normalized)
+    except Exception:
+        return ""
+
+    THRESHOLD = 0.35
+    TOP_K = 3
+    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
     hits = []
-    for subj in subjects:
-        rows = assessor._knowledge_conn.execute(
-            "SELECT subject, content FROM knowledge_artifacts "
-            "WHERE subject = ? AND kind = 'design_note' ORDER BY created_at DESC",
-            (subj,),
-        ).fetchall()
-        for row in rows:
-            entry = f"  [{row[0]}] {row[1]}"
-            if entry not in hits:
-                hits.append(entry)
+    for idx, score in ranked[:TOP_K]:
+        if score < THRESHOLD:
+            break
+        subj, content = rows[idx]
+        label = subj if subj else "general"
+        hits.append(f"  [{label}] {content}")
 
     if not hits:
         return ""
