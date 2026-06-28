@@ -588,6 +588,59 @@ def test_distill_corpus_idempotent():
     assert "skipped" in result or "already cached" in result or "distill_corpus" in result
 
 
+def test_raw_helpers_return_dicts():
+    """_list_callers_raw, _list_callees_raw, _search_symbols_raw return list[dict]."""
+    from determined.agent.agent_tools import (
+        _list_callers_raw, _list_callees_raw, _search_symbols_raw,
+        _graph_most_connected_raw, _graph_subgraph_raw,
+    )
+    oracle = _make_fixture()
+
+    callers = _list_callers_raw(oracle, "generate_encounter")
+    assert isinstance(callers, list)
+    assert all(isinstance(r, dict) for r in callers)
+    assert all("caller" in r and "line_number" in r for r in callers)
+    assert any(r["caller"] == "handle_movement" for r in callers)
+
+    callees = _list_callees_raw(oracle, "generate_encounter")
+    assert isinstance(callees, list)
+    # "helper" is in the graph; builtins are filtered
+    if callees:
+        assert all("callee" in r and "count" in r for r in callees)
+
+    results = _search_symbols_raw(oracle, "generate")
+    assert isinstance(results, list)
+    assert any(r["name"] == "generate_encounter" for r in results)
+    assert all("docstring" in r for r in results)  # docstring key always present
+
+    connected = _graph_most_connected_raw(oracle)
+    assert isinstance(connected, list)
+    if connected:
+        assert all("symbol" in r and "in_degree" in r for r in connected)
+
+    sg = _graph_subgraph_raw(oracle, "generate_encounter", radius=1)
+    assert isinstance(sg, dict)
+    assert "nodes" in sg and "edges" in sg
+    assert "generate_encounter" in sg["nodes"]
+
+
+def test_string_tools_derive_from_raw():
+    """list_callers and list_callees string output matches raw helper data."""
+    from determined.agent.agent_tools import _list_callers_raw, _list_callees_raw
+    oracle = _make_fixture()
+
+    callers = _list_callers_raw(oracle, "generate_encounter")
+    result = _dispatch("list_callers", {"symbol": "generate_encounter"}, oracle)
+    for r in callers:
+        assert r["caller"] in result
+
+    # list_callees with generate_encounter (calls "helper")
+    callees = _list_callees_raw(oracle, "generate_encounter")
+    result = _dispatch("list_callees", {"symbol": "generate_encounter"}, oracle)
+    for r in callees:
+        assert r["callee"] in result
+
+
 # ------------------------------------------------------------------
 # RUN DIRECTLY
 # ------------------------------------------------------------------

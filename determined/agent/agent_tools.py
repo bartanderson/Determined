@@ -58,7 +58,7 @@ def search_symbols(oracle: "DBOracle", args: dict) -> str:
     query = args.get("query", "").strip()
     if not query:
         return "ERROR: query argument required"
-    results = oracle.find_symbols(query, limit=20)
+    results = _search_symbols_raw(oracle, query, limit=20)
     if not results:
         return f"No symbols found matching '{query}'"
     lines = [f"Symbols matching '{query}':"]
@@ -98,23 +98,13 @@ def list_callers(oracle: "DBOracle", args: dict) -> str:
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
-    rows = oracle.conn.execute(
-        """
-        SELECT ge.caller, sr.file_path, ge.line_number
-        FROM graph_edges ge
-        LEFT JOIN symbol_references sr
-            ON ge.caller = sr.caller AND ge.callee = sr.callee
-        WHERE ge.callee = ? OR ge.callee LIKE ?
-        ORDER BY sr.file_path, ge.line_number
-        """,
-        (symbol, f"%.{symbol}"),
-    ).fetchall()
+    rows = _list_callers_raw(oracle, symbol)
     if not rows:
         return f"No direct callers found for '{symbol}'"
     lines = [f"Direct callers of '{symbol}':"]
     for r in rows:
-        file_short = (r[1] or "?").replace("\\", "/").split("/")[-1]
-        lines.append(f"  {r[0]} in {file_short} line {r[2]}")
+        file_short = (r["file_path"] or "?").replace("\\", "/").split("/")[-1]
+        lines.append(f"  {r['caller']} in {file_short} line {r['line_number']}")
     return "\n".join(lines)
 
 
@@ -125,37 +115,14 @@ def list_callees(oracle: "DBOracle", args: dict) -> str:
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
-    # No SQL LIMIT: a function calling print() 30x would otherwise crowd out
-    # every real callee. Pull all, drop builtins, dedupe by callee, then cap.
-    rows = oracle.conn.execute(
-        """
-        SELECT ge.callee, sr.file_path, ge.line_number
-        FROM graph_edges ge
-        LEFT JOIN symbol_references sr
-            ON ge.caller = sr.caller AND ge.callee = sr.callee
-        WHERE ge.caller = ?
-        ORDER BY ge.line_number
-        """,
-        (symbol,),
-    ).fetchall()
-    import builtins as _bi
-    seen: dict[str, tuple] = {}
-    counts: dict[str, int] = {}
-    for callee, fp, ln in rows:
-        bare = (callee or "").rsplit(".", 1)[-1]
-        if not bare or bare in dir(_bi):
-            continue  # skip builtins (print, len, ...) - not navigable symbols
-        counts[callee] = counts.get(callee, 0) + 1
-        if callee not in seen:
-            seen[callee] = (fp, ln)
-    if not seen:
+    rows = _list_callees_raw(oracle, symbol)
+    if not rows:
         return f"No project callees for '{symbol}' (only builtins, or makes no calls)"
     lines = [f"'{symbol}' calls:"]
-    for callee, (fp, ln) in list(seen.items())[:30]:
-        file_short = (fp or "?").replace("\\", "/").split("/")[-1]
-        n = counts[callee]
-        suffix = f" (x{n})" if n > 1 else ""
-        lines.append(f"  {callee} in {file_short} line {ln}{suffix}")
+    for r in rows:
+        file_short = (r["file_path"] or "?").replace("\\", "/").split("/")[-1]
+        suffix = f" (x{r['count']})" if r["count"] > 1 else ""
+        lines.append(f"  {r['callee']} in {file_short} line {r['line_number']}{suffix}")
     return "\n".join(lines)
 
 
@@ -267,6 +234,106 @@ def _resolve_file_path(oracle: "DBOracle", file_path: str) -> str | None:
     if root and fp.startswith(root + "/"):
         fp = fp[len(root) + 1:]
     return fp
+
+
+# ------------------------------------------------------------------
+# RAW HELPERS - return structured data; string tools derive from these (XIV)
+# ------------------------------------------------------------------
+
+def _search_symbols_raw(oracle: "DBOracle", query: str, limit: int = 20) -> list[dict]:
+    """
+    Symbol lookup by name substring (query='') returns all symbols.
+    Enriches oracle.find_symbols results with docstrings from functions/classes.
+    Returns list[dict]: name, file_path, symbol_type, line_number, docstring.
+    """
+    results = oracle.find_symbols(query, limit=limit)
+    if not results:
+        return []
+    names = [r["name"] for r in results]
+    placeholders = ",".join("?" * len(names))
+    doc_map: dict[str, str | None] = {}
+    for table in ("functions", "classes"):
+        rows = oracle.conn.execute(
+            f"SELECT name, docstring FROM {table} WHERE name IN ({placeholders})",
+            names,
+        ).fetchall()
+        for name, doc in rows:
+            if name not in doc_map:
+                doc_map[name] = doc
+    for r in results:
+        r["docstring"] = doc_map.get(r["name"])
+    return results
+
+
+def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
+    """
+    Direct callers of symbol from graph_edges.
+    Returns list[dict]: caller, file_path, line_number.
+    """
+    rows = oracle.conn.execute(
+        """
+        SELECT ge.caller, sr.file_path, ge.line_number
+        FROM graph_edges ge
+        LEFT JOIN symbol_references sr
+            ON ge.caller = sr.caller AND ge.callee = sr.callee
+        WHERE ge.callee = ? OR ge.callee LIKE ?
+        ORDER BY sr.file_path, ge.line_number
+        """,
+        (symbol, f"%.{symbol}"),
+    ).fetchall()
+    return [{"caller": r[0], "file_path": r[1], "line_number": r[2]} for r in rows]
+
+
+def _list_callees_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
+    """
+    Project callees of symbol from graph_edges (builtins filtered out).
+    Returns list[dict]: callee, file_path, line_number, count.
+    """
+    import builtins as _bi
+    rows = oracle.conn.execute(
+        """
+        SELECT ge.callee, sr.file_path, ge.line_number
+        FROM graph_edges ge
+        LEFT JOIN symbol_references sr
+            ON ge.caller = sr.caller AND ge.callee = sr.callee
+        WHERE ge.caller = ?
+        ORDER BY ge.line_number
+        """,
+        (symbol,),
+    ).fetchall()
+    seen: dict[str, tuple] = {}
+    counts: dict[str, int] = {}
+    for callee, fp, ln in rows:
+        bare = (callee or "").rsplit(".", 1)[-1]
+        if not bare or bare in dir(_bi):
+            continue
+        counts[callee] = counts.get(callee, 0) + 1
+        if callee not in seen:
+            seen[callee] = (fp, ln)
+    return [
+        {"callee": callee, "file_path": fp, "line_number": ln, "count": counts[callee]}
+        for callee, (fp, ln) in list(seen.items())[:30]
+    ]
+
+
+def _graph_most_connected_raw(
+    oracle: "DBOracle", filter_str: str = "", n: int = 15
+) -> list[dict]:
+    """
+    Top n symbols by call degree, optionally filtered by name substring.
+    Returns list[dict]: symbol, file_path, in_degree, out_degree.
+    """
+    from determined.agent.graph_utils import most_connected
+    return most_connected(oracle, n=n, filter_substr=filter_str)
+
+
+def _graph_subgraph_raw(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
+    """
+    Nodes and edges within radius hops of symbol.
+    Returns dict: nodes (set[str]), edges (list[tuple[str, str]]).
+    """
+    from determined.agent.graph_utils import subgraph_around
+    return subgraph_around(oracle, symbol, radius=radius)
 
 
 def _distill_to_one_sentence(content: str, subject: str) -> str | None:
@@ -594,9 +661,8 @@ def graph_most_connected(oracle: "DBOracle", args: dict):
     filter is an optional substring to limit results.
     """
     filter_str = args.get("filter", "").strip()
-    from determined.agent.graph_utils import most_connected
     from determined.agent.risk_annotator import score_risk, risk_badge
-    results = most_connected(oracle, n=15, filter_substr=filter_str)
+    results = _graph_most_connected_raw(oracle, filter_str=filter_str, n=15)
     if not results:
         return f"No connected symbols found" + (f" matching '{filter_str}'" if filter_str else "")
     label = f" matching '{filter_str}'" if filter_str else ""
@@ -622,8 +688,7 @@ def graph_subgraph(oracle: "DBOracle", args: dict) -> str:
     radius = int(args.get("radius", 2))
     if not symbol:
         return "ERROR: symbol argument required"
-    from determined.agent.graph_utils import subgraph_around
-    sg = subgraph_around(oracle, symbol, radius=radius)
+    sg = _graph_subgraph_raw(oracle, symbol, radius=radius)
     lines = [f"Subgraph around '{symbol}' (radius={radius}):"]
     lines.append(f"  Nodes ({len(sg['nodes'])}): {', '.join(sorted(sg['nodes'])[:20])}")
     if len(sg['nodes']) > 20:
@@ -1277,14 +1342,9 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
     out = [f"Goal: {goal}", ""]
 
     # --- Step 1: Find relevant symbols via semantic search ---
-    sym_rows = oracle.conn.execute(
-        "SELECT name, file_path, docstring FROM functions "
-        "WHERE docstring IS NOT NULL AND docstring != '' "
-        "UNION ALL "
-        "SELECT name, file_path, docstring FROM classes "
-        "WHERE docstring IS NOT NULL AND docstring != '' "
-        "LIMIT 600"
-    ).fetchall()
+    # Use _search_symbols_raw (XIV: one source of truth for symbol lookup + docstring join)
+    all_syms = _search_symbols_raw(oracle, "", limit=600)
+    sym_rows = [r for r in all_syms if r.get("docstring")]
 
     # Load distilled file summaries to enrich symbol text (item 9)
     distilled_by_stem: dict[str, str] = {}
@@ -1302,15 +1362,15 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
             model = _get_embed_model()
             sym_texts = []
             for r in sym_rows:
-                stem = r[1].replace("\\", "/").split("/")[-1].replace(".py", "")
+                stem = r["file_path"].replace("\\", "/").split("/")[-1].replace(".py", "")
                 dist = distilled_by_stem.get(stem, "")
-                sym_texts.append(f"{r[0]} {r[2][:200]} {dist}")
+                sym_texts.append(f"{r['name']} {(r['docstring'] or '')[:200]} {dist}")
             vecs = model.encode([goal] + sym_texts, normalize_embeddings=True)
             scores = vecs[1:] @ vecs[0]
             ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
             for idx, score in ranked[:5]:
                 if score >= 0.28:
-                    relevant_symbols.append((sym_rows[idx][0], sym_rows[idx][1], score))
+                    relevant_symbols.append((sym_rows[idx]["name"], sym_rows[idx]["file_path"], score))
         except Exception:
             pass
 
