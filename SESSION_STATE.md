@@ -1,61 +1,63 @@
-# SESSION STATE - session 30 handoff
+# SESSION STATE - session 31 handoff
 _Overwrite completely each session. Not authoritative - see Determined/docs/TRACKER.md for truth._
 
-## What happened this session (session 30)
+## What happened this session (session 31)
 
-**Branch cleanup:** Deleted merged branch ui/corpus-map.
+**SOTS grounding gap identified and closed:**
+SOTS tenets surface automatically for code Determined analyzes (via _get_design_frame),
+but were not required reading when planning changes to Determined itself. Fixed by
+strengthening CLAUDE.md: sots.md is now a mandatory read before presenting any plan
+or design, same weight as the session start checklist. Committed 0ca6ba1.
 
-**Item 23 rebuilt on embeddings:**
-_get_design_frame() now uses all-MiniLM-L6-v2 semantic search. Query enriched with
-docstring context. Threshold 0.32. Committed 3af3ef8.
-
-**SOTS integrated:**
-docs/sots.md committed. 25 tenets in knowledge.db as design_notes (provenance=sots).
-Both CLAUDE.md files updated. Committed 67af893 (Determined), 90aa966 (dj2).
-
-**Determined .claude/ added:** Committed 7bc313b.
-
-**Item 24 done: goal_intake tool:**
-goal_intake(goal) -> navigation plan: relevant symbols + risk badges + design rules
-+ ordered approach (READ/REVIEW/EXTEND/MODIFY). Trigger: "I want to add/build X".
-Wired into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern. Committed e969776.
-
-**TRACKER cleanup:** Items 22/23/24/25 all closed. Item 22 was already done via
-ingest_design_docs -- just not marked. Committed a127ab8.
-
-**Item 8 done: --summarize flag:**
-`local_agent --source <dir> --summarize` generates AI summaries for all files after
-ingestion. Skips cached, aborts gracefully if Ollama unreachable. Committed 5f1c8d6.
+**Active arc documented in CLAUDE.md:**
+Items 9, 10, 19 (in order) with per-item SOTS grounding notes baked in. Self-audit
+step added as the validation gate for item 19 -- Determined checks itself using
+the SOTS tenets already in knowledge.db before item 19 is marked done.
 
 ## FIRST THING NEXT SESSION
 
-**Open items by priority:**
+**Read docs/sots.md before planning anything.** (Now mandatory per CLAUDE.md.)
 
-**[MEDIUM] Item 6: Live sync** -- re-ingest a single changed file without full corpus re-run.
-Most practically useful as real daily use scales up. Requires incremental re-ingestion
-by file_path + edge delta propagation.
+Then build in order:
 
-**[MEDIUM] Item 9: Distillation pass** -- compress verbose LLM summaries to one-sentence
-compact facts. Stored as distilled:: kind. Used by goal_intake and symbol_brief for
-quick-scan before deciding to fetch full context.
+**Item 9 -- Distillation pass**
+- distill_to_one_sentence(content, subject) helper, calls Ollama compression prompt
+- Store as kind='distilled', subject='distilled::<original>' in knowledge_artifacts
+- New tool distill_corpus() -- iterates semantic_summaries + file_purpose artifacts,
+  distills each, skips cached, aborts gracefully if Ollama down (XIII)
+- Wire into symbol_brief (distilled preamble before verbose brief)
+- Wire into goal_intake step 1 (use distilled for quick symbol scan)
+- SOTS watch: XIV (distilled is a declared derivation, not second truth),
+  X (idempotent re-run), XIII (Ollama failure visible not swallowed)
 
-**[MEDIUM] Item 10: Structured output mode** -- _raw variants of key tools returning
-dicts instead of strings, for programmatic tool chaining in agent_resolver.
+**Item 10 -- Structured output (_raw)**
+- Add _raw helpers: _list_callers_raw, _list_callees_raw, _search_symbols_raw,
+  _graph_most_connected_raw, _graph_subgraph_raw -- each returns list[dict]
+- Refactor string versions to derive from raw (XIV: one source of truth)
+- Wire goal_intake to use _raw helpers instead of direct SQL
+- SOTS watch: I (each raw helper locally correct), XIV (string derives from raw),
+  XXI (only the five named tools, no expansion)
 
-**[DEFERRED] Item 7: Contracts decision** -- delete or wire the dormant contracts/
-orchestration code (has a silent KeyError bug, nothing calls it).
+**Item 19 -- Design intent cross-reference**
+- New tool check_design_violations(symbol)
+- Embed symbol + docstring + callee names, cosine-search all design_notes,
+  filter for constraint language ("must not", "never", "only", "forbidden")
+- Wire into risk_profile (violations append after risk badge)
+- SOTS watch: XI (pure analysis, returns plan never acts), XVIII (empty result
+  explains why), XIII (embedding failure degrades gracefully)
 
-**[LOW] Items 1/2/3** -- files.role, search_symbols docstring search, missing_docstrings limit.
-
-**Suggested next:** Item 9 (distillation) pairs well with goal_intake -- would make
-the quick-scan of 500 symbols much faster and more accurate. Or item 6 if daily
-use friction is the bottleneck.
+**Self-audit (validation gate for item 19)**
+- Run check_design_violations against Determined's own corpus
+- knowledge.db already holds all 25 SOTS tenets as design_notes
+- Produces real findings AND validates item 19 works correctly
+- Do NOT mark item 19 done until self-audit runs and findings reviewed
 
 ## Current state
 
-Branch: main (Determined), all committed
-Tests: 297/297 regression passing (integration fixture path failure pre-existing)
-Items done this session: 23 (rebuilt), 24 (goal intake), 8 (--summarize), 22/25 (closed as done)
+Branch: main (Determined), all committed and pushed
+Tests: 297/297 regression passing
+Items done: 22, 23, 24, 25, 8, 14, 15 (all closed in TRACKER)
+Active: items 9, 10, 19 planned and grounded, not yet started
 
 ## Two-terminal reminder
 Determined: C:\Users\bartl\dev\Determined, venv at .venv\Scripts\python.exe

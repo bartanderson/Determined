@@ -172,6 +172,13 @@ each step result. 293/293 tests passing.
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
 
+14. **[FUTURE] Semantic speculative decoding** - once item 10 (structured output)
+    is in place, explore using the 3B model as a reasoning-step predictor: 3B
+    predicts which tools/symbols/docs are needed, Oracle fetches them, 8B reasons
+    only over the pre-assembled result. Analogous to token-level speculative
+    decoding but at the semantic level. Revisit after item 10 is shipped and
+    real usage patterns show where the 8B is spending time unnecessarily.
+
 13. **[FUTURE] Self-Harness pattern** - knowledge.db is the natural store for
     harvested failure patterns. After ADVERSARIAL traces accumulate, mine them
     into `known_issue` artifacts keyed by failure category, then use those
