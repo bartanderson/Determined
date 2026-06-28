@@ -495,6 +495,8 @@ def test_dispatch_all_tools_registered():
         "bag_report",
         "list_stubs",
         "project_stub",
+        "discover_docs",
+        "ingest_design_docs",
     }
     assert set(TOOLS.keys()) == expected
 

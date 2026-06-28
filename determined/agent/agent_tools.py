@@ -1006,6 +1006,84 @@ def _describe_tool_wrapper(oracle, args: dict) -> str:
     return describe_tool_fn(oracle, args)
 
 
+def discover_docs_tool(oracle: "DBOracle", args: dict) -> str:
+    """
+    discover_docs() - find all documentation files in the project.
+    Returns inventory ranked by design-relevance (constraint score).
+    """
+    from determined.agent.doc_extractor import discover_docs
+    root = oracle.get_project_root()
+    if not root:
+        return "ERROR: project root not found in corpus DB"
+    docs = discover_docs(root)
+    if not docs:
+        return "No documentation files found in project"
+    lines = [f"Documentation inventory ({len(docs)} files, project root: {root}):"]
+    for d in docs:
+        score_bar = "▓" * int(d.constraint_score * 10) + "░" * (10 - int(d.constraint_score * 10))
+        lines.append(
+            f"  [{d.doc_type:9s}] {d.rel_path}  "
+            f"({d.size_bytes//1024}KB, {d.heading_count} headings, "
+            f"constraint density: {score_bar} {d.constraint_score:.2f})"
+        )
+    return "\n".join(lines)
+
+
+def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
+    """
+    ingest_design_docs(min_score?) - extract design rules from all docs and store as
+    design_note artifacts. Only processes docs with constraint_score >= min_score (default 0.05).
+    Idempotent: skips rules already stored for a subject.
+    """
+    from determined.agent.doc_extractor import discover_docs, extract_rules
+    oracle = assessor.oracle
+    root = oracle.get_project_root()
+    if not root:
+        return "ERROR: project root not found in corpus DB"
+    min_score = float(args.get("min_score", 0.05))
+    docs = discover_docs(root)
+    design_docs = [d for d in docs if d.constraint_score >= min_score]
+    if not design_docs:
+        return f"No docs with constraint score >= {min_score} found (run discover_docs to see inventory)"
+
+    stored = 0
+    skipped = 0
+    errors = 0
+    processed_files: list[str] = []
+
+    for doc in design_docs:
+        try:
+            rules = extract_rules(doc.path, doc.rel_path)
+        except Exception as e:
+            errors += 1
+            continue
+        if not rules:
+            continue
+        processed_files.append(doc.rel_path)
+        for rule in rules:
+            existing = assessor.get_artifacts(rule.subject)
+            already = any(
+                a["kind"] == "design_note" and a["content"] == rule.rule
+                for a in existing
+            )
+            if already:
+                skipped += 1
+                continue
+            assessor.add_artifact(
+                rule.subject, "design_note", rule.rule,
+                provenance="ai-generated"
+            )
+            stored += 1
+
+    lines = [
+        f"Design doc ingestion: {stored} rules stored, {skipped} already present, {errors} errors",
+        f"Processed {len(processed_files)} docs:",
+    ]
+    for f in processed_files:
+        lines.append(f"  {f}")
+    return "\n".join(lines)
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -1051,6 +1129,9 @@ TOOLS = {
     # Stub tools
     "list_stubs":           (list_stubs,            "oracle"),
     "project_stub":         (project_stub,          "oracle"),
+    # Doc tools
+    "discover_docs":        (discover_docs_tool,    "oracle"),
+    "ingest_design_docs":   (ingest_design_docs,    "assessor"),
 }
 
 

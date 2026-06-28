@@ -221,6 +221,24 @@ REGISTRY: dict[str, dict] = {
         "category": "understanding",
     },
 
+    # ── DESIGN DOCS ────────────────────────────────────────────────
+    "discover_docs": {
+        "purpose": "Find all documentation files in the project, ranked by design-relevance.",
+        "args": {},
+        "output": "inventory of doc files with type, size, heading count, and constraint density score",
+        "feeds": ["ingest_design_docs"],
+        "use_when": "First step when orienting to an unfamiliar project — find what docs exist before reading code.",
+        "category": "discovery",
+    },
+    "ingest_design_docs": {
+        "purpose": "Extract design rules from project docs and store as design_note artifacts.",
+        "args": {"min_score": "minimum constraint density score to process (default 0.05)"},
+        "output": "count of rules stored and list of docs processed",
+        "feeds": ["knowledge_status"],
+        "use_when": "After discover_docs, to load design intent into the knowledge base for frame comparison.",
+        "category": "knowledge",
+    },
+
     # ── CODE HYGIENE ───────────────────────────────────────────────
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",
