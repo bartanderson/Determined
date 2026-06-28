@@ -30,6 +30,8 @@ VALID_KINDS = {
     "dead",
     "hot",
     "stub",
+    # compressed one-sentence distillations (derived from semantic_summaries / file_purpose)
+    "distilled",
 }
 
 VALID_PROVENANCES = {

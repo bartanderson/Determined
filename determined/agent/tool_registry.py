@@ -239,6 +239,16 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── DISTILLATION ───────────────────────────────────────────────
+    "distill_corpus": {
+        "purpose": "Compress each semantic_summary and file_purpose artifact into a one-sentence distillation stored in knowledge.db.",
+        "args": {},
+        "output": "count of distilled entries stored vs skipped",
+        "feeds": ["symbol_brief", "goal_intake"],
+        "use_when": "After describe_file/semantic summaries are populated; run once to seed distilled layer for faster symbol scanning.",
+        "category": "knowledge",
+    },
+
     # ── GOAL INTAKE ────────────────────────────────────────────────
     "goal_intake": {
         "purpose": "Translate a developer goal into a navigation plan: relevant design rules, hot/safe zones, stubs, safe insertion points.",

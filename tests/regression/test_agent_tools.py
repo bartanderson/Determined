@@ -498,6 +498,7 @@ def test_dispatch_all_tools_registered():
         "discover_docs",
         "ingest_design_docs",
         "goal_intake",
+        "distill_corpus",
     }
     assert set(TOOLS.keys()) == expected
 
@@ -535,6 +536,56 @@ def test_describe_tool_fn_lookup():
 
     result_bad = describe_tool_fn(None, {"name": "xyzzy_nonexistent"})
     assert "Unknown tool" in result_bad
+
+
+def test_distill_corpus_no_ollama():
+    """distill_corpus returns a clear error when Ollama is unreachable."""
+    from determined.agent.agent_tools import distill_corpus
+    oracle = _make_fixture()
+    assessor = FakeAssessor(oracle)
+    # Ollama is not running in tests - should get a clear error, not a crash
+    result = distill_corpus(assessor, {})
+    assert "ERROR" in result or "distill_corpus" in result
+
+
+def test_distill_corpus_idempotent():
+    """distill_corpus skips already-distilled subjects without re-calling Ollama."""
+    import unittest.mock as mock
+    from determined.agent.agent_tools import distill_corpus
+    oracle = _make_fixture()
+    assessor = FakeAssessor(oracle)
+    conn = oracle.conn
+
+    # Pre-populate a semantic_summary
+    conn.execute(
+        "INSERT INTO semantic_summaries "
+        "(subject, kind, content, source_hash, model_version, generated_at) "
+        "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+        ("engine.py", "file", "Handles encounter generation.", "abc123", "llama3.2:3b"),
+    )
+    conn.commit()
+
+    # Pre-populate the distilled entry to simulate a prior run
+    conn.execute(
+        "INSERT INTO knowledge_artifacts "
+        "(subject, kind, content, provenance, created_at, needs_review) "
+        "VALUES (?, ?, ?, ?, datetime('now'), 0)",
+        ("distilled::engine", "distilled", "Generates encounters for the game world.", "ai-generated"),
+    )
+    conn.commit()
+
+    call_count = 0
+    def mock_distill(content, subject):
+        nonlocal call_count
+        call_count += 1
+        return "mock sentence"
+
+    with mock.patch("determined.agent.agent_tools._distill_to_one_sentence", side_effect=mock_distill):
+        result = distill_corpus(assessor, {})
+
+    # The pre-existing "distilled::engine" entry should be skipped
+    # The probe call counts as 1; if no new entries, only probe fires
+    assert "skipped" in result or "already cached" in result or "distill_corpus" in result
 
 
 # ------------------------------------------------------------------

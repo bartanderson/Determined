@@ -269,6 +269,36 @@ def _resolve_file_path(oracle: "DBOracle", file_path: str) -> str | None:
     return fp
 
 
+def _distill_to_one_sentence(content: str, subject: str) -> str | None:
+    """
+    Compress `content` into one sentence via Ollama.
+    Returns None if Ollama is unreachable - callers must handle this explicitly
+    so the failure is visible rather than silently swallowed (SOTS XIII).
+    """
+    import logging
+    import requests as _req
+    from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
+    prompt = (
+        f"Summarise the following in exactly one sentence (max 25 words). "
+        f"Be concrete and name the main thing it does.\n\n"
+        f"Subject: {subject}\n\n{content[:1500]}"
+    )
+    try:
+        resp = _req.post(
+            OLLAMA_URL,
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            timeout=OLLAMA_TIMEOUT,
+        )
+        resp.raise_for_status()
+        sentence = resp.json().get("response", "").strip()
+        return sentence if sentence else None
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "distill: Ollama unavailable for %r: %s", subject, exc
+        )
+        return None
+
+
 def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
     """
     Semantic lookup: embed the symbol context, cosine-search against all
@@ -372,7 +402,7 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     """
     symbol_brief(symbol) - full two-tier brief: direct callers + impact zone.
     Calls generate_task_md. Richest single-symbol output available.
-    Prepends a risk annotation line (HOT/WARM/SAFE).
+    Prepends a risk annotation line (HOT/WARM/SAFE) and distilled one-liner.
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
@@ -387,7 +417,19 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     ).fetchone()
     file_path = row[0] if row else ""
     design_frame = _get_design_frame(assessor, symbol, file_path)
-    return risk_line + "\n" + brief + design_frame
+
+    # Prepend distilled preamble if available (stored by distill_corpus)
+    distilled_line = ""
+    if assessor._knowledge_conn and file_path:
+        dist_key = f"distilled::{file_path.replace(chr(92), '/').split('/')[-1].replace('.py', '')}"
+        dist_row = assessor._knowledge_conn.execute(
+            "SELECT content FROM knowledge_artifacts WHERE subject = ? AND kind = 'distilled' LIMIT 1",
+            (dist_key,),
+        ).fetchone()
+        if dist_row:
+            distilled_line = f"Summary: {dist_row[0]}\n"
+
+    return distilled_line + risk_line + "\n" + brief + design_frame
 
 
 def risk_profile(assessor: "Assessor", args: dict):
@@ -1244,11 +1286,25 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
         "LIMIT 600"
     ).fetchall()
 
+    # Load distilled file summaries to enrich symbol text (item 9)
+    distilled_by_stem: dict[str, str] = {}
+    if assessor._knowledge_conn:
+        dist_rows = assessor._knowledge_conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'distilled'"
+        ).fetchall()
+        for dist_subj, dist_content in dist_rows:
+            stem = dist_subj.replace("distilled::", "")
+            distilled_by_stem[stem] = dist_content
+
     relevant_symbols: list[tuple] = []  # (name, file_path, score)
     if sym_rows:
         try:
             model = _get_embed_model()
-            sym_texts = [f"{r[0]} {r[2][:200]}" for r in sym_rows]
+            sym_texts = []
+            for r in sym_rows:
+                stem = r[1].replace("\\", "/").split("/")[-1].replace(".py", "")
+                dist = distilled_by_stem.get(stem, "")
+                sym_texts.append(f"{r[0]} {r[2][:200]} {dist}")
             vecs = model.encode([goal] + sym_texts, normalize_embeddings=True)
             scores = vecs[1:] @ vecs[0]
             ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
@@ -1375,6 +1431,68 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
     return "\n".join(out)
 
 
+def distill_corpus(assessor: "Assessor", args: dict) -> str:
+    """
+    distill_corpus() - compress each semantic_summary and file_purpose artifact
+    into a one-sentence distillation stored as kind='distilled' in knowledge.db.
+    Idempotent: skips subjects already distilled. Aborts if Ollama is down.
+    """
+    if assessor._knowledge_conn is None:
+        return "No knowledge DB configured."
+
+    # Abort early if Ollama is unreachable (SOTS XIII: visible failure, not silent)
+    probe = _distill_to_one_sentence("test", "__probe__")
+    if probe is None:
+        return "ERROR: Ollama is not reachable. distill_corpus requires Ollama running."
+
+    conn = assessor._knowledge_conn
+
+    # Collect candidates: semantic_summaries + file_purpose artifacts
+    candidates: list[tuple[str, str]] = []  # (subject, content)
+    sem_rows = conn.execute(
+        "SELECT subject, content FROM semantic_summaries"
+    ).fetchall()
+    for subject, content in sem_rows:
+        stem = subject.replace("\\", "/").split("/")[-1].replace(".py", "")
+        candidates.append((f"distilled::{stem}", content))
+
+    fp_rows = conn.execute(
+        "SELECT subject, content FROM knowledge_artifacts WHERE kind = 'file_purpose'"
+    ).fetchall()
+    for subject, content in fp_rows:
+        stem = subject.replace("\\", "/").split("/")[-1].replace(".py", "")
+        key = f"distilled::{stem}"
+        if not any(c[0] == key for c in candidates):
+            candidates.append((key, content))
+
+    if not candidates:
+        return "No semantic_summaries or file_purpose artifacts to distill."
+
+    # Check which are already cached (idempotent per SOTS X)
+    existing = {
+        r[0] for r in conn.execute(
+            "SELECT subject FROM knowledge_artifacts WHERE kind = 'distilled'"
+        ).fetchall()
+    }
+
+    stored = 0
+    skipped = 0
+    for dist_key, content in candidates:
+        if dist_key in existing:
+            skipped += 1
+            continue
+        sentence = _distill_to_one_sentence(content, dist_key)
+        if sentence is None:
+            return f"ERROR: Ollama stopped responding mid-run after {stored} stored."
+        assessor.add_artifact(dist_key, "distilled", sentence, "ai-generated")
+        stored += 1
+
+    return (
+        f"distill_corpus: {stored} distilled, {skipped} already cached "
+        f"({stored + skipped} total candidates)"
+    )
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -1425,6 +1543,8 @@ TOOLS = {
     "ingest_design_docs":   (ingest_design_docs,    "assessor"),
     # Goal intake
     "goal_intake":          (goal_intake,           "assessor"),
+    # Distillation
+    "distill_corpus":       (distill_corpus,        "assessor"),
 }
 
 
