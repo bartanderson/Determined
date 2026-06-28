@@ -258,6 +258,41 @@ def _resolve_file_path(oracle: "DBOracle", file_path: str) -> str | None:
     return fp
 
 
+def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
+    """
+    Look up design_note artifacts whose subject matches the symbol name or the
+    PascalCase stem of the file that defines it. Returns formatted block or "".
+    """
+    if not assessor._knowledge_conn:
+        return ""
+
+    # Derive candidate subject keys
+    subjects = {symbol}
+    if file_path:
+        stem = file_path.replace("\\", "/").split("/")[-1]
+        if stem.endswith(".py"):
+            stem = stem[:-3]
+        # raw stem (e.g. "escalation_engine") and PascalCase ("EscalationEngine")
+        subjects.add(stem)
+        subjects.add("".join(w.capitalize() for w in stem.split("_")))
+
+    hits = []
+    for subj in subjects:
+        rows = assessor._knowledge_conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts "
+            "WHERE subject = ? AND kind = 'design_note' ORDER BY created_at DESC",
+            (subj,),
+        ).fetchall()
+        for row in rows:
+            entry = f"  [{row[0]}] {row[1]}"
+            if entry not in hits:
+                hits.append(entry)
+
+    if not hits:
+        return ""
+    return "\nDesign frame:\n" + "\n".join(hits)
+
+
 def symbol_intent(oracle: "DBOracle", args: dict) -> str:
     """
     symbol_intent(symbol[, file_path]) - docstring for a function or class (Layer 2).
@@ -303,17 +338,24 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     badge = risk_badge(r["level"])
     brief = assessor.generate_task_md(symbol)
     risk_line = f"Risk: {badge}  ({'; '.join(r['reasons'])})"
-    return risk_line + "\n" + brief
+    row = assessor.oracle.conn.execute(
+        "SELECT file_path FROM symbols WHERE name = ?", (symbol,)
+    ).fetchone()
+    file_path = row[0] if row else ""
+    design_frame = _get_design_frame(assessor, symbol, file_path)
+    return risk_line + "\n" + brief + design_frame
 
 
-def risk_profile(oracle: "DBOracle", args: dict):
+def risk_profile(assessor: "Assessor", args: dict):
     """
     risk_profile(symbol) - structural change-risk rating for a symbol.
     Returns HOT/WARM/SAFE with the reasons: in-degree, mutations, blast radius.
+    Appends design_note artifacts matching the symbol's file as a design frame.
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
+    oracle = assessor.oracle
     from determined.agent.risk_annotator import score_risk, risk_badge
     r = score_risk(oracle, symbol)
     badge = risk_badge(r["level"])
@@ -323,6 +365,9 @@ def risk_profile(oracle: "DBOracle", args: dict):
     lines.append(f"  in_degree={r['in_degree']}  out_degree={r['out_degree']}  mutations={r['mutation_count']}")
     row = oracle.conn.execute("SELECT file_path FROM symbols WHERE name = ?", (symbol,)).fetchone()
     file_path = row[0] if row else ""
+    design_frame = _get_design_frame(assessor, symbol, file_path)
+    if design_frame:
+        lines.append(design_frame)
     bag_item = {"__type__": "symbol", "__key__": f"symbol::{symbol}",
                 "name": symbol, "file_path": file_path, "risk": r["level"]}
     return "\n".join(lines), [bag_item]
@@ -1150,7 +1195,7 @@ TOOLS = {
     "prioritize_work":      (prioritize_work,      "assessor"),
     "store_workflow_item":  (store_workflow_item,  "assessor"),
     "rerank_workflow":      (rerank_workflow,      "assessor"),
-    "risk_profile":         (risk_profile,         "oracle"),
+    "risk_profile":         (risk_profile,         "assessor"),
     "describe_tool":        (_describe_tool_wrapper, "oracle"),
     # Level-4 edge tools
     "edges_of":             (edges_of,             "oracle"),
