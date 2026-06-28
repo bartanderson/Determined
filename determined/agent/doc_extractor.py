@@ -99,6 +99,7 @@ _SKIP_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", ".t
               "ai_context",                                    # session/runtime data
               "archive", "archives",                           # old/superseded docs
               "prompts",                                       # LLM prompt templates, not design docs
+              "external_corpora", "external", "vendor", "third_party",  # external code/docs
               }
 _SKIP_FILES = {"license", "licence", "contributing", "code_of_conduct",
                "security", "authors", "credits"}

@@ -1102,11 +1102,13 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
         if already:
             skipped += 1
             continue
-        content = f"[{rule.kind.upper()}] {rule.rule}"
-        assessor.add_artifact(
-            rule.subject, "design_note", content,
-            provenance=rule.provenance or f"{rule.confidence}:{rule.source_file}:{rule.extraction}",
-        )
+        # Provenance maps confidence to the controlled vocabulary:
+        # authoritative/human-authored docs -> human-confirmed
+        # everything else -> ai-generated
+        prov = "human-confirmed" if rule.confidence == "authoritative" else "ai-generated"
+        # Encode confidence + source in content so it is queryable later
+        content = f"[{rule.kind.upper()}|{rule.confidence}|{rule.source_file}] {rule.rule}"
+        assessor.add_artifact(rule.subject, "design_note", content, provenance=prov)
         stored += 1
 
     lines = [
