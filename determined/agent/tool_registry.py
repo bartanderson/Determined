@@ -239,6 +239,16 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── GOAL INTAKE ────────────────────────────────────────────────
+    "goal_intake": {
+        "purpose": "Translate a developer goal into a navigation plan: relevant design rules, hot/safe zones, stubs, safe insertion points.",
+        "args": {"goal": "natural language description of what you want to build or change"},
+        "output": "navigation plan: relevant area, design rules, scaffolding, ordered approach (READ/REVIEW/EXTEND/MODIFY)",
+        "feeds": ["risk_profile", "symbol_intent", "list_callers"],
+        "use_when": "Developer states intent ('I want to add X') and needs to know where to start and what to avoid.",
+        "category": "understanding",
+    },
+
     # ── CODE HYGIENE ───────────────────────────────────────────────
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",
@@ -503,6 +513,13 @@ TASK_PATTERNS: dict[str, dict] = {
             {"tool": "knowledge_status",  "args_hint": {},                 "why": "gauge coverage"},
             {"tool": "workflow_status",   "args_hint": {},                 "why": "what's next"},
             {"tool": "prioritize_work",   "args_hint": {},                 "why": "order the queue by risk"},
+        ],
+    },
+
+    "goal_intake": {
+        "description": "Translate a developer goal into a navigation plan: design rules, hot/safe zones, stubs, safe insertion points.",
+        "steps": [
+            {"tool": "goal_intake", "args_hint": {"goal": "<goal>"}, "why": "assemble goal-directed context and return navigation plan"},
         ],
     },
 }

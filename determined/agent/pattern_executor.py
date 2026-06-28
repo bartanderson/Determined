@@ -65,6 +65,10 @@ _DETECT_RULES: list[tuple] = [
     # session_startup - no subject
     (re.compile(r"session start(?:up)?|what(?:'s| is) next.*where.*left off|morning check", re.I),
      "session_startup", None),
+
+    # goal_intake - subject is the full goal text
+    (re.compile(r"(?:i want to|i(?:'m| am) trying to|help me|how do i|i need to)\s+(?:add|build|implement|create|write|extend|make)\s+(.+)", re.I),
+     "goal_intake", 1),
 ]
 
 

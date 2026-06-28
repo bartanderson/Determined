@@ -1,89 +1,71 @@
-# SESSION STATE - session 28/29 handoff
+# SESSION STATE - session 30 handoff
 _Overwrite completely each session. Not authoritative - see Determined/docs/TRACKER.md for truth._
 
-## What happened this session (session 28)
+## What happened this session (session 30)
 
-**Merged ui/corpus-map to main. Fixed orient entry points. Built generic doc
-discovery and rule extraction (items 22a+22b).**
+**Branch cleanup:** Deleted merged branch ui/corpus-map.
 
-### orient_to_codebase improvements (commit 52cab06)
-- Fixed `find_entry_points`: bare names like `from_dict` were missed in the
-  "called" set because graph_edges stores callees as `ClassName.from_dict`.
-  Now strips dot-prefix from callees. Eliminated 12-copy `from_dict` flood.
-- Deduplication: same bare name in multiple files all shared edge records,
-  causing identical out_degree. Now keeps first occurrence only.
-- `graph_clusters`: separated test-file pairs from production pairs so real
-  subsystem connections aren't buried.
+**Item 23 rebuilt on embeddings:**
+_get_design_frame() now uses all-MiniLM-L6-v2 semantic search instead of exact string
+matching. Query enriched with symbol docstring context. Threshold lowered to 0.32.
+Committed 3af3ef8.
 
-### Item 25: corpus map merged to main
-ui/corpus-map branch merged. Item 25 closed.
+**SOTS integrated as design reference:**
+- docs/sots.md committed (shapeofthesystem.com, 25 tenets)
+- 25 tenets ingested into knowledge.db as design_notes (provenance=sots)
+- Both CLAUDE.md files updated with usage guidance and pointer
+- Tenet X (idempotent) correctly surfaces for retry-related symbols
+Committed 67af893 (Determined), 90aa966 (dj2).
 
-### Item 22a+22b: doc discovery + rule extraction (commit 4929939)
-New module: `determined/agent/doc_extractor.py`
-- `discover_docs(project_root)`: walks any project, finds .md/.rst/.txt,
-  classifies (design/readme/changelog/notes), scores by constraint language
-  density. No hardcoded paths or project assumptions.
-- `extract_rules(doc_path)`: splits by heading, finds constraint sentences
-  (must/must not/only/never/forbidden). Deterministic — no model required.
+**Determined .claude/ added:**
+.claude/settings.json and session_start_hook.py -- same as dj2. Committed 7bc313b.
 
-Two new agent tools registered in tool_registry:
-- `discover_docs` — inventory of all project docs ranked by design-relevance
-- `ingest_design_docs(min_score)` — extract rules from high-signal docs,
-  store as design_note artifacts. Idempotent.
+**Item 24 done: goal_intake tool:**
+New tool in agent_tools.py: takes natural language goal, returns navigation plan.
+Steps:
+1. Embed goal, cosine-search symbol docstrings -> top relevant symbols
+2. Risk badge (HOT/WARM/SAFE) for each
+3. Semantic search design_notes for applicable rules (SOTS + project notes)
+4. Find stub/uncalled symbols near relevant files
+5. Return ordered approach: READ (hot) -> REVIEW (warm) -> EXTEND (stubs) -> MODIFY (safe)
 
-Tested on dj2: finds 225 docs (after venv/site-packages exclusion), stores
-58 rules from 18 docs at min_score=0.07. EscalationEngine and authority
-boundary rules extracted correctly from 00B/00F sections.
-
-### Architecture clarification this session
-Bart confirmed the right generic framing:
-- No docs exist → code IS the design → infer design from structure (item 22c, future)
-- Docs exist → extract rules → compare to code (items 22a+22b done, item 23 next)
-- No hardcoded assumptions about project layout anywhere in the tool
-
-## Current state
-
-Branch: main
-Tests: 321/322 passing (1 pre-existing stale fixture, unrelated)
-Items closed this session: 25 (corpus map), 22a+22b (doc discovery + extraction)
+Detection phrase: "I want to add/build/implement X" -> goal_intake pattern.
+Registered in TOOLS, TASK_PATTERNS, REGISTRY, and pattern_executor detect rules.
+Tested against dj2 corpus -- correct area, design rules, and ordered plan.
 
 ## FIRST THING NEXT SESSION
 
-Start item 23: frame comparison.
+**A) TRACKER.md cleanup**
+- Mark item 23 done (the existing note says "string match, needs rework" -- now rebuilt)
+- Mark item 24 done
+- Mark item 25 (corpus map) done -- branch merged and deleted this session
 
-When the agent spotlights a symbol or produces a risk profile, automatically
-look up design_notes whose subject matches the symbol's filename or system
-name and include them in the LLM context.
+**B) Consider: goal_intake stub detection**
+Currently stub detection relies on knowledge_artifacts kind='stub', which only populates
+after extract_design_facts runs. If the user hasn't oriented yet, stubs section is empty.
+Options: document this (orient first, then goal_intake), or auto-run extract_design_facts
+if stub count is zero. Low priority -- relevant symbols + design rules are the main value.
 
-Key files to read before starting:
-- `determined/agent/agent_tools.py::symbol_brief` (assessor tool, ~line 800)
-- `determined/agent/agent_tools.py::risk_profile` (oracle tool)
-- `determined/assessor/assessor.py::get_artifacts` (how to query design_notes)
+**C) Validate goal_intake in the running UI**
+Run: python -m determined.agent.local_agent --ui (http://127.0.0.1:5050) with dj2 corpus.
+Try: "I want to add persuasion mechanics" and check the navigation plan.
+If design rules section is too noisy (CLAUDE.md rules dominating over SOTS), consider
+filtering by provenance or boosting sots notes in the goal_intake ranking.
 
-The subject matching needs two lookups:
-  1. Exact filename: `event_log.py` → find design_notes with subject="event_log.py"
-  2. System name: derive from filename (strip .py, CamelCase → EventLog) →
-     find design_notes with subject="EventLog"
+**D) Next arc**
+Items 22, 23, 24 are all done. Three-capability mentor arc complete.
+Consider: what is item 26? Likely refinement based on real usage of 22-24 together.
 
-Then include matching notes in the prompt context passed to Ollama for
-interpretation. Existing design_notes from mine_design_docs.py + newly
-extracted ones from ingest_design_docs both feed this.
+## Current state
 
-## What comes after item 23
-
-Item 22c - Code-as-design inference (no docs case)
-  When discover_docs finds nothing useful, infer design intent from code
-  structure: naming patterns, call graph shape, comment density, TODO clusters.
-  Ollama-appropriate (synthesis, not extraction). Produces design_note
-  artifacts in the same shape as 22b output.
-
-Item 24 - Goal intake
-  Developer states intent → tool assembles: matching design rules + hot/safe
-  zones + relevant stubs + safe insertion point → navigation plan.
-  Requires items 22 + 23 first.
+Branch: main (Determined), all committed
+Tests: expected 320/322 (same pre-existing failures -- confirming post-session)
+Items done: 22 (doc extraction), 23 (frame comparison - embeddings), 24 (goal intake)
+SOTS: ingested into knowledge.db, surfacing correctly via _get_design_frame
 
 ## Two-terminal reminder
 Determined: C:\Users\bartl\dev\Determined, venv at .venv\Scripts\python.exe
 dj2: C:\Users\bartl\dev\dj2, separate venv
 UI: python -m determined.agent.local_agent --ui then http://127.0.0.1:5050
-Active branch: main
+Use PowerShell tool (not Bash) for all server/Python commands.
+Active branch: main (Determined)

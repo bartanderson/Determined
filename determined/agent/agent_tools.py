@@ -1211,6 +1211,170 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------
+# GOAL INTAKE
+# ------------------------------------------------------------------
+
+def goal_intake(assessor: "Assessor", args: dict) -> str:
+    """
+    goal_intake(goal) - translate a developer's natural language goal into a
+    navigation plan: relevant design rules, hot/safe zones, stubs to extend,
+    safe insertion points. Returns an ordered approach the developer can follow.
+    """
+    goal = args.get("goal", "").strip()
+    if not goal:
+        return "ERROR: goal argument required (describe what you want to build or change)"
+
+    oracle = assessor.oracle
+    _root = (oracle.get_project_root() or "").replace("\\", "/").rstrip("/")
+
+    def _rel(fp: str) -> str:
+        fp = (fp or "").replace("\\", "/")
+        return fp[len(_root) + 1:] if _root and fp.startswith(_root + "/") else fp
+
+    out = [f"Goal: {goal}", ""]
+
+    # --- Step 1: Find relevant symbols via semantic search ---
+    sym_rows = oracle.conn.execute(
+        "SELECT name, file_path, docstring FROM functions "
+        "WHERE docstring IS NOT NULL AND docstring != '' "
+        "UNION ALL "
+        "SELECT name, file_path, docstring FROM classes "
+        "WHERE docstring IS NOT NULL AND docstring != '' "
+        "LIMIT 600"
+    ).fetchall()
+
+    relevant_symbols: list[tuple] = []  # (name, file_path, score)
+    if sym_rows:
+        try:
+            model = _get_embed_model()
+            sym_texts = [f"{r[0]} {r[2][:200]}" for r in sym_rows]
+            vecs = model.encode([goal] + sym_texts, normalize_embeddings=True)
+            scores = vecs[1:] @ vecs[0]
+            ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+            for idx, score in ranked[:5]:
+                if score >= 0.28:
+                    relevant_symbols.append((sym_rows[idx][0], sym_rows[idx][1], score))
+        except Exception:
+            pass
+
+    # --- Step 2: Risk badges for relevant symbols ---
+    from determined.agent.risk_annotator import score_risk
+    risk_cache: dict[str, dict] = {}
+
+    if relevant_symbols:
+        out.append("Relevant area (semantic match):")
+        for sym_name, sym_file, score in relevant_symbols:
+            if sym_name not in risk_cache:
+                risk_cache[sym_name] = score_risk(oracle, sym_name)
+            r = risk_cache[sym_name]
+            badge = r.get("level", "UNKNOWN")
+            fp = _rel(sym_file)
+            reasons = "; ".join(r.get("reasons", []))
+            out.append(f"  {badge:4}  {sym_name}  ({fp})")
+            if reasons:
+                out.append(f"        {reasons}")
+        out.append("")
+
+    # --- Step 3: Relevant design notes ---
+    if assessor._knowledge_conn:
+        note_rows = assessor._knowledge_conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts WHERE kind='design_note'"
+        ).fetchall()
+        if note_rows:
+            try:
+                model = _get_embed_model()
+                note_texts = [f"{r[0]} {r[1]}" for r in note_rows]
+                vecs = model.encode([goal] + note_texts, normalize_embeddings=True)
+                scores = vecs[1:] @ vecs[0]
+                ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+                design_hits = []
+                for idx, score in ranked[:4]:
+                    if score >= 0.30:
+                        subj = note_rows[idx][0] or "general"
+                        design_hits.append(f"  [{subj}] {note_rows[idx][1][:120]}")
+                if design_hits:
+                    out.append("Design rules that apply:")
+                    out.extend(design_hits)
+                    out.append("")
+            except Exception:
+                pass
+
+    # --- Step 4: Stubs near relevant files ---
+    relevant_files = {sym_file for _, sym_file, _ in relevant_symbols}
+    stub_rows = []
+    if assessor._knowledge_conn:
+        stub_rows = assessor._knowledge_conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts WHERE kind='stub'"
+        ).fetchall()
+
+    # Also check oracle for stub-like symbols (no callers, no body inferred from docstring)
+    stub_syms = oracle.conn.execute(
+        "SELECT f.name, f.file_path FROM functions f "
+        "WHERE f.file_path IN ({}) "
+        "AND NOT EXISTS (SELECT 1 FROM graph_edges e WHERE e.callee = f.name) "
+        "AND f.name NOT LIKE '__%__' "
+        "LIMIT 10".format(",".join("?" * len(relevant_files)) if relevant_files else "'__none__'"),
+        list(relevant_files)
+    ).fetchall() if relevant_files else []
+
+    if stub_rows or stub_syms:
+        out.append("Scaffolding / safe insertion points:")
+        seen = set()
+        for row in stub_rows:
+            subj = row[0]
+            if any(f in subj for f in relevant_files) and subj not in seen:
+                out.append(f"  [stub file]  {subj}")
+                seen.add(subj)
+        for sym_name, sym_file in stub_syms:
+            if sym_name not in seen:
+                fp = _rel(sym_file)
+                out.append(f"  [no callers] {sym_name}  ({fp})  -- safe to implement/extend")
+                seen.add(sym_name)
+        if not seen:
+            out.append("  (none found near relevant area)")
+        out.append("")
+
+    # --- Step 5: Navigation plan ---
+    out.append("Suggested approach:")
+    step = 1
+
+    # Read the most relevant HOT symbol first to understand the boundary
+    hot = [(n, f) for n, f, _ in relevant_symbols
+           if risk_cache.get(n, {}).get("level") == "HOT"]
+    warm = [(n, f) for n, f, _ in relevant_symbols
+            if risk_cache.get(n, {}).get("level") == "WARM"]
+    safe = [(n, f) for n, f, _ in relevant_symbols
+            if risk_cache.get(n, {}).get("level") in ("SAFE", "UNKNOWN")]
+
+    if hot:
+        for sym_name, sym_file in hot[:2]:
+            fp = _rel(sym_file)
+            out.append(f"  {step}. READ (do not modify): {sym_name} in {fp} -- HOT, understand the boundary first")
+            step += 1
+    if warm:
+        for sym_name, sym_file in warm[:2]:
+            fp = _rel(sym_file)
+            out.append(f"  {step}. REVIEW: {sym_name} in {fp} -- WARM, check callers before changing")
+            step += 1
+
+    # Stubs and safe symbols are the insertion points
+    for sym_name, sym_file in stub_syms[:3]:
+        fp = _rel(sym_file)
+        out.append(f"  {step}. EXTEND: {sym_name} in {fp} -- no callers, safe insertion point")
+        step += 1
+    if safe:
+        for sym_name, sym_file in safe[:1]:
+            fp = _rel(sym_file)
+            out.append(f"  {step}. MODIFY: {sym_name} in {fp} -- SAFE zone")
+            step += 1
+
+    if step == 1:
+        out.append("  No clear insertion point found. Run orient_to_codebase first to populate knowledge.")
+
+    return "\n".join(out)
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -1259,6 +1423,8 @@ TOOLS = {
     # Doc tools
     "discover_docs":        (discover_docs_tool,    "oracle"),
     "ingest_design_docs":   (ingest_design_docs,    "assessor"),
+    # Goal intake
+    "goal_intake":          (goal_intake,           "assessor"),
 }
 
 
