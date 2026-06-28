@@ -1,88 +1,89 @@
-# SESSION STATE - session 27/28 handoff
+# SESSION STATE - session 28/29 handoff
 _Overwrite completely each session. Not authoritative - see Determined/docs/TRACKER.md for truth._
 
-## What happened this session (session 27)
+## What happened this session (session 28)
 
-**Spring cleaning of docs + UI fixes + hot-symbols regression fixed +
-orient_to_codebase output quality dramatically improved.**
-
-### Bug fixes
-- Hot symbols query in `ui_server.py::_corpus_map_data()` was using a broken
-  LIKE clause that inflated counts massively (6013x for "get"). Fixed to use
-  the existing `most_connected()` from `graph_utils.py`.
-
-- Two JS errors crashing page on load:
-  1. modal-overlay div placed after script block. Fixed: moved before script.
-  2. bagSelect TDZ error in bagFetch(). Fixed: lazy getElementById lookup.
-
-### UI changes (ui/corpus-map branch)
-- Corpus map panel moved from main content area into sidebar
-- All popups converted to modal overlay
-- Resume replaced with context-sensitive Analyze/Switch corpus button
-- Query bar hidden by default, Ask toggle in sidebar reveals it
-- Removed empty-state placeholder text from results area
-
-### Spring cleaning
-Docs reduced from ~3400 lines to ~1500 lines active:
-- docs/PRACTICES.md - NEW: Be a Good Engineer + Pre-Code Checklist + DO/DON'T rules
-- docs/TRACKER.md - slimmed to Dashboard + items 19-25 only (228 lines, was 855)
-- docs/DESIGN.md - slimmed to active sections 1-3, 6-8 (715 lines, was 1290)
-- docs/EXPERIMENTS.md - redirect to archive (1 line)
-- docs/archive/ - all closed items, done phases, superseded sections, closed trials
-- Determined CLAUDE.md updated with pre-code checklist
+**Merged ui/corpus-map to main. Fixed orient entry points. Built generic doc
+discovery and rule extraction (items 22a+22b).**
 
 ### orient_to_codebase improvements (commit 52cab06)
-Fixed two bugs in `graph_utils.find_entry_points` that made entry points useless:
+- Fixed `find_entry_points`: bare names like `from_dict` were missed in the
+  "called" set because graph_edges stores callees as `ClassName.from_dict`.
+  Now strips dot-prefix from callees. Eliminated 12-copy `from_dict` flood.
+- Deduplication: same bare name in multiple files all shared edge records,
+  causing identical out_degree. Now keeps first occurrence only.
+- `graph_clusters`: separated test-file pairs from production pairs so real
+  subsystem connections aren't buried.
 
-1. **Dotted-callee miss**: `from_dict` was not in the "called" set because it's
-   called as `ClassName.from_dict` in graph_edges. Added suffix-strip to catch
-   dotted callees. Now `from_dict` is correctly excluded from entry points.
+### Item 25: corpus map merged to main
+ui/corpus-map branch merged. Item 25 closed.
 
-2. **Deduplication**: same bare function name in multiple files shared the same
-   edge records. All 12 copies of `from_dict` showed identical out_degree=121.
-   Now deduplicates by name, keeping first occurrence only.
+### Item 22a+22b: doc discovery + rule extraction (commit 4929939)
+New module: `determined/agent/doc_extractor.py`
+- `discover_docs(project_root)`: walks any project, finds .md/.rst/.txt,
+  classifies (design/readme/changelog/notes), scores by constraint language
+  density. No hardcoded paths or project assumptions.
+- `extract_rules(doc_path)`: splits by heading, finds constraint sentences
+  (must/must not/only/never/forbidden). Deterministic — no model required.
 
-Fixed `agent_tools.graph_clusters` to separate test-file pairs from production
-pairs so the actual subsystem map is visible (was buried under test<->engine pairs).
+Two new agent tools registered in tool_registry:
+- `discover_docs` — inventory of all project docs ranked by design-relevance
+- `ingest_design_docs(min_score)` — extract rules from high-signal docs,
+  store as design_note artifacts. Idempotent.
 
-**Before**: orient entry points = 12 copies of `from_dict` with out=121
-**After**: `guide_character_creation`, `dungeon_exit`, `dm_response`, `dungeon_enter`
-- actual doors into the game.
+Tested on dj2: finds 225 docs (after venv/site-packages exclusion), stores
+58 rules from 18 docs at min_score=0.07. EscalationEngine and authority
+boundary rules extracted correctly from 00B/00F sections.
+
+### Architecture clarification this session
+Bart confirmed the right generic framing:
+- No docs exist → code IS the design → infer design from structure (item 22c, future)
+- Docs exist → extract rules → compare to code (items 22a+22b done, item 23 next)
+- No hardcoded assumptions about project layout anywhere in the tool
 
 ## Current state
 
-Branch: ui/corpus-map (Determined), 3 commits ahead of main
-Tests: 321/322 passing (1 pre-existing stale fixture failure, unrelated)
-dj2 corpus: loaded and working (150 files, 132 hot, 47 stubs, 615 artifacts)
+Branch: main
+Tests: 321/322 passing (1 pre-existing stale fixture, unrelated)
+Items closed this session: 25 (corpus map), 22a+22b (doc discovery + extraction)
 
 ## FIRST THING NEXT SESSION
 
-1. Restart the Determined server
-2. Load dj2 corpus via Switch corpus modal
-3. Verify corpus map sidebar shows meaningful Roots/Core
-4. If verdict is good: merge ui/corpus-map to main (item 25)
-5. Then: Item 22 - Design doc extraction
+Start item 23: frame comparison.
 
-## What is next (after corpus map verdict)
+When the agent spotlights a symbol or produces a risk profile, automatically
+look up design_notes whose subject matches the symbol's filename or system
+name and include them in the LLM context.
 
-Item 22 - Design doc extraction
-  Read dj2/docs/design/ (00A ARCHITECTURAL_CONSTITUTION.md first).
-  Build extractor using 3B model to pull invariants/rules/boundaries into
-  design_note artifacts. Output shape matches DESIGN_NOTES in mine_design_docs.py.
-  PRE-CODE: grep graph_utils.py and agent_tools.py before writing anything.
+Key files to read before starting:
+- `determined/agent/agent_tools.py::symbol_brief` (assessor tool, ~line 800)
+- `determined/agent/agent_tools.py::risk_profile` (oracle tool)
+- `determined/assessor/assessor.py::get_artifacts` (how to query design_notes)
 
-Item 23 - Frame comparison
-  In spotlight + risk_profile handlers, look up design_note artifacts matching
-  the symbol's file/classname and include them in LLM context.
-  Requires item 22 first.
+The subject matching needs two lookups:
+  1. Exact filename: `event_log.py` → find design_notes with subject="event_log.py"
+  2. System name: derive from filename (strip .py, CamelCase → EventLog) →
+     find design_notes with subject="EventLog"
+
+Then include matching notes in the prompt context passed to Ollama for
+interpretation. Existing design_notes from mine_design_docs.py + newly
+extracted ones from ingest_design_docs both feed this.
+
+## What comes after item 23
+
+Item 22c - Code-as-design inference (no docs case)
+  When discover_docs finds nothing useful, infer design intent from code
+  structure: naming patterns, call graph shape, comment density, TODO clusters.
+  Ollama-appropriate (synthesis, not extraction). Produces design_note
+  artifacts in the same shape as 22b output.
 
 Item 24 - Goal intake
-  Developer states intent, tool assembles: design rules + hot/safe zones +
-  relevant stubs + safe insertion point. Returns navigation plan.
+  Developer states intent → tool assembles: matching design rules + hot/safe
+  zones + relevant stubs + safe insertion point → navigation plan.
   Requires items 22 + 23 first.
 
 ## Two-terminal reminder
 Determined: C:\Users\bartl\dev\Determined, venv at .venv\Scripts\python.exe
 dj2: C:\Users\bartl\dev\dj2, separate venv
 UI: python -m determined.agent.local_agent --ui then http://127.0.0.1:5050
-Active branch: ui/corpus-map (Determined)
+Active branch: main
