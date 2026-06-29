@@ -16,7 +16,11 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-28, session 33):** knowledge.db eliminated.
+**Last session (2026-06-29, session 34):** Contracts fully reconciled and wired (item 7).
+PyAnalyzer (ICSE 2024) reviewed; annotation-based call graph accuracy improvement
+planned as item 20. SESSION_STATE updated.
+
+**Before that (2026-06-28, session 33):** knowledge.db eliminated.
 All tables (knowledge_artifacts, workflow_items, bags, bag_items) now live in corpus
 DB. KnowledgeOracle deleted. Assessor._knowledge_conn returns oracle.conn. SOTS baked
 as JSON (sots_tenets.json + sots_loader.py). semantic_summaries moved to corpus DB.
@@ -151,12 +155,12 @@ each step result. 293/293 tests passing.
    is full re-ingest (fast at 150 files, but won't scale to large corpora).
    Requires: incremental re-ingestion by file_path, edge delta propagation.
 
-7. **[DEFERRED] contracts/orchestration feature decision** -
-   `contracts/load_contract.py` has a dormant KeyError bug (loads wrong JSON,
-   calls `contract["domains"]` which doesn't exist). Nothing calls it yet so
-   it's silent. Decision: wire the typed loader + build orchestration layer,
-   or delete all three (contract_types.py, tool_system_contract.json,
-   orchestration/). Must decide before anything tries to use contracts.
+7. **[DONE 2026-06-29] Contracts reconciliation and wiring** -
+   Fixed "domains" vs "modules" key mismatch in scan_contract.py/parse_contract.py.
+   Wired ContractRuntimeValidator (JSON stage invariants) into ingest post-pass.
+   Completed drift pipeline: DriftClassifier -> HealthAggregator -> LifecycleController.
+   violations -> contract_violations table; signals -> contract_drift_history on every
+   ingest. stability_view now returns lifecycle states (ACTIVE/STABLE/DEGRADING/etc).
 
 8. **[DONE 2026-06-28] Auto-populate semantic summaries at ingestion**
 
@@ -183,6 +187,48 @@ each step result. 293/293 tests passing.
     expansion phase (phase 2b) instead of text-parsing. External API stays
     string-only. Affected tools: `list_callers`, `list_callees`,
     `graph_most_connected`, `graph_subgraph`, `search_symbols`.
+
+20. **[MEDIUM] Call graph accuracy: type annotation exploitation + __init__ attribute tracking**
+
+   Motivated by PyAnalyzer (ICSE 2024, Jin et al.) which achieves +24.7% F1 over
+   comparable static analysis tools by modeling functions/classes/modules as heap
+   objects. A full heap model is ~6-10 weeks and unnecessary given Determined's LLM
+   reasoning layer. Two targeted improvements give 60-70% of the gain at ~5% cost.
+
+   **Phase 1 -- Capture annotation data at parse time (schema + ingestion):**
+   - `parse_ast.py` `_extract_functions`: capture `arg.annotation` for each parameter
+     alongside `arg.arg`. Store as `param_types_json TEXT` column on `functions` table
+     (JSON dict `{"param": "TypeStr"}`). Already captures `return_type`; this adds
+     param types.
+   - New `_extract_class_attributes` pass: for each `ClassDef`, find `__init__`,
+     walk its body for `ast.Assign`/`ast.AnnAssign` where target is `self.x`.
+     Extract inferred type from `Foo()` constructor calls or explicit annotations.
+     Store in new `class_attributes` table:
+     `(id, file_path, class_name, attribute, inferred_type)`
+   - `persistence_engine.initialize_database`: add `class_attributes` table,
+     ALTER TABLE guard for `functions.param_types_json`.
+
+   **Phase 2 -- Use annotations in call edge resolution:**
+   - In `parse_ast.py` `_extract_symbol_references` `Visitor.visit_Call`:
+     when receiver is `obj.method()`, look up `obj` in current function's
+     param annotation map. If `obj: Foo` is annotated, emit callee as `Foo.method`
+     instead of bare `obj.method`.
+   - If receiver is `self.attr`, look up `attr` in `class_attributes` for the
+     current class. Emit `InferredType.method`.
+   - Add `resolved INTEGER DEFAULT 0` to `graph_edges` (1 = annotation-derived,
+     0 = heuristic name match).
+
+   **Phase 3 -- Surface confidence in agent tools:**
+   - `list_callers`/`list_callees`: tag edges with `(resolved)` vs `(inferred)`.
+   - `describe_file`: report % of outbound edges that are annotation-resolved.
+   - New DBOracle helper: `get_class_attribute_type(class_name, attr)`.
+
+   **Why MEDIUM not HIGH:** LLM layer compensates for some graph inaccuracy.
+   Highest value on dynamic-dispatch-heavy codebases; dj2/harrow are well-structured.
+   Do after item 6 (live sync) since re-ingest is needed to populate new columns.
+
+   **Estimated effort:** ~2 days. Order: schema (1c) -> param annotations (1a) ->
+   __init__ attributes (1b) -> call resolution (2) -> agent tools (3).
 
 11. **[FUTURE] Trace-weighted ranking** - replace heuristic scoring with
     trace-weighted ranking from expansion provenance. After real usage patterns
