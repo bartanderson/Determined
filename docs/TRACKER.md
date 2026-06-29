@@ -16,7 +16,13 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-28, session 32):** Items 9, 10, 19 done.
+**Last session (2026-06-28, session 33):** knowledge.db eliminated.
+All tables (knowledge_artifacts, workflow_items, bags, bag_items) now live in corpus
+DB. KnowledgeOracle deleted. Assessor._knowledge_conn returns oracle.conn. SOTS baked
+as JSON (sots_tenets.json + sots_loader.py). semantic_summaries moved to corpus DB.
+DB naming fixed (C_Users_bartl_dev_harrow.db). 304 regression tests pass.
+
+**Before that (2026-06-28, session 32):** Items 9, 10, 19 done.
 Item 9: distillation pass - distill_corpus() tool, distilled kind in knowledge_artifacts,
 wired into symbol_brief (preamble) and goal_intake step 1 (enriched embedding). 301 tests.
 Item 10: _raw helpers layer - 5 private raw helpers (_search_symbols_raw, _list_callers_raw,
@@ -189,9 +195,9 @@ each step result. 293/293 tests passing.
     decoding but at the semantic level. Revisit after item 10 is shipped and
     real usage patterns show where the 8B is spending time unnecessarily.
 
-13. **[FUTURE] Self-Harness pattern** - knowledge.db is the natural store for
-    harvested failure patterns. After ADVERSARIAL traces accumulate, mine them
-    into `known_issue` artifacts keyed by failure category, then use those
+13. **[FUTURE] Self-Harness pattern** - the corpus DB (knowledge_artifacts) is the
+    natural store for harvested failure patterns. After ADVERSARIAL traces accumulate,
+    mine them into `known_issue` artifacts keyed by failure category, then use those
     artifacts to tune agent_resolver heuristics. Loop: ADVERSARIAL run ->
     extract failure patterns -> store as known_issue -> harness reads on next
     run -> better routing. Closes the improvement loop without touching Ollama.
