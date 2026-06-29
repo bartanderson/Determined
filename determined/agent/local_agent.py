@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-import requests
 
 from determined.oracle.db_oracle import DBOracle
 from determined.assessor.assessor import Assessor
@@ -29,9 +28,7 @@ from determined.agent.agent_resolver import (
 from determined.agent.knowledge_status import coverage_summary, suggest_followups
 from determined.agent.pattern_executor import PatternExecutor, detect_pattern
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-OLLAMA_MODEL = "llama3.2:3b"
-OLLAMA_TIMEOUT = 60
+from determined.agent.llm_client import chat as _llm_chat, LLM_TIMEOUT as OLLAMA_TIMEOUT
 
 
 # ------------------------------------------------------------------
@@ -321,29 +318,14 @@ def _postprocess_answer(answer: str, facts: list[dict]) -> str:
 
 
 # ------------------------------------------------------------------
-# Ollama call
+# LLM call
 # ------------------------------------------------------------------
 
 def _call_ollama(messages: list[dict], verbose: bool = False, label: str = "") -> str:
-    payload = {
-        "model": OLLAMA_MODEL,
-        "messages": messages,
-        "stream": False,
-        "options": {"temperature": 0.1},
-    }
-    try:
-        resp = requests.post(OLLAMA_URL, json=payload, timeout=OLLAMA_TIMEOUT)
-        resp.raise_for_status()
-        text = resp.json()["message"]["content"].strip()
-        if verbose and label:
-            print(f"\n[{label}]\n{text}\n[/{label}]", flush=True)
-        return text
-    except requests.exceptions.ConnectionError:
-        return "ERROR: Ollama is not running. Start it with: ollama serve"
-    except requests.exceptions.Timeout:
-        return "ERROR: Ollama timed out. The model may be loading - try again."
-    except Exception as e:
-        return f"ERROR: {type(e).__name__}: {e}"
+    text = _llm_chat(messages, timeout=OLLAMA_TIMEOUT) or "ERROR: llama-server is not running. Start with: llama-server.exe -m C:\\Users\\bartl\\models\\gguf\\llama3.2-3b.gguf --port 8080"
+    if verbose and label:
+        print(f"\n[{label}]\n{text}\n[/{label}]", flush=True)
+    return text
 
 
 # ------------------------------------------------------------------
@@ -368,7 +350,7 @@ def _answer(
     if pattern_name:
         if verbose:
             print(f"\n[pattern detected] {pattern_name} / subject={subject}", flush=True)
-        executor = PatternExecutor(OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT)
+        executor = PatternExecutor()
         answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
         history.append({"role": "user",      "content": user_input})
         history.append({"role": "assistant", "content": answer})
@@ -449,7 +431,7 @@ def run(db_path: str, verbose: bool = False) -> None:
 
     root = oracle.get_project_root() or db_path
     print(f"Project root:   {root}")
-    print(f"Model:          {OLLAMA_MODEL}")
+    print(f"Model:          llama3.2-3b (llama-server)")
     print(f"\n{coverage_summary(oracle, assessor)}")
     print(f"\nType your question. 'clear' to reset. 'quit' to exit.")
     print(f"Special: 'what do you know?' | 'what haven't you explored?' | 'discover'")

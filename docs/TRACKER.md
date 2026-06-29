@@ -16,7 +16,12 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-29, session 36):** Items 1, 2, 3 closed. Items 21-24 designed and filed (assistant arc).
+**Last session (2026-06-29, session 36):** Items 25/26 filed (llama-server migration).
+llama-server b9842 downloaded to C:\Users\bartl\models\llama-server\llama-server.exe.
+llama3.2-3b.gguf copied to C:\Users\bartl\models\gguf\. Health check passing.
+Items 21-24 designed and filed (assistant arc). Items 1/2/3 closed.
+
+**Before that (2026-06-29, session 36 earlier):** Items 1, 2, 3 closed. Items 21-24 designed and filed (assistant arc).
 Items 2 and 3 superseded by 22 and 23 respectively. No code written for 21-24 yet.
 
 **Before that (2026-06-29, session 36 earlier):** Items 1, 2, 3 closed.
@@ -270,6 +275,126 @@ each step result. 293/293 tests passing.
     artifacts to tune agent_resolver heuristics. Loop: ADVERSARIAL run ->
     extract failure patterns -> store as known_issue -> harness reads on next
     run -> better routing. Closes the improvement loop without touching Ollama.
+
+---
+
+### LLAMA-SERVER MIGRATION (session 36, 2026-06-29)
+
+Ollama is ethically compromised (early exploiter of llama.cpp open source project).
+Replacing it with llama-server — the OpenAI-compatible server built directly into
+llama.cpp itself. No wrapper, no company, pure llama.cpp output.
+
+**Infrastructure already in place:**
+- `llama-server.exe` (b9842, CPU): `C:\Users\bartl\models\llama-server\llama-server.exe`
+- Model: `C:\Users\bartl\models\gguf\llama3.2-3b.gguf` (2.02 GB, extracted from Ollama blob,
+  same GGUF format — no conversion needed)
+- Start: `llama-server.exe -m C:\Users\bartl\models\gguf\llama3.2-3b.gguf --port 8080 --ctx-size 2048`
+- Health: `http://localhost:8080/health` → `{"status":"ok"}` (verified)
+- API: `/v1/chat/completions` and `/v1/completions` (OpenAI-compatible)
+
+**After item 25 is done and tested:** uninstall Ollama, delete `~/.ollama/models/blobs/` (~50GB).
+
+---
+
+25. **[OPEN] LLM backend: replace Ollama call sites with llama-server shim**
+
+    All Ollama HTTP calls in Determined use one of two request shapes against
+    `http://localhost:11434`. Replace with a thin `llm_client.py` module that
+    targets `http://localhost:8080` (llama-server) and normalizes the response
+    shape. Six call-site files updated to import from the shim instead.
+
+    **Two Ollama API shapes in use (with their llama-server equivalents):**
+
+    Shape 1 — `/api/generate` → `/v1/completions`:
+    ```python
+    # OLD
+    requests.post(OLLAMA_URL, json={"model": MODEL, "prompt": prompt, "stream": False})
+    resp.json()["response"]
+    # NEW
+    requests.post(url, json={"model": MODEL, "prompt": prompt, "stream": False})
+    resp.json()["choices"][0]["text"]
+    ```
+
+    Shape 2 — `/api/chat` → `/v1/chat/completions`:
+    ```python
+    # OLD
+    requests.post(OLLAMA_URL, json={"model": MODEL, "messages": [...], "stream": False})
+    resp.json()["message"]["content"]
+    # NEW
+    requests.post(url, json={"model": MODEL, "messages": [...], "stream": False})
+    resp.json()["choices"][0]["message"]["content"]
+    ```
+
+    **New file: `determined/agent/llm_client.py`**
+    Two public functions, everything else stays the same:
+    ```python
+    LLM_URL   = "http://localhost:8080"
+    LLM_MODEL = "llama3.2-3b"      # filename stem, no .gguf
+    LLM_TIMEOUT = 60
+
+    def generate(prompt: str, timeout: int = LLM_TIMEOUT) -> str | None:
+        """Shape 1 — single prompt, returns text or None on failure."""
+
+    def chat(messages: list[dict], timeout: int = LLM_TIMEOUT) -> str | None:
+        """Shape 2 — message list, returns content string or None on failure."""
+    ```
+
+    **Six files to update (search-replace OLLAMA_URL/OLLAMA_MODEL/OLLAMA_TIMEOUT
+    imports and response parsing):**
+    - `determined/intent/semantic_summary.py` — Shape 1, `_generate()`
+    - `determined/agent/agent_tools.py` — Shape 1, `_distill_one()` (line 372) and
+      `_synthesize_with_ollama()` (line 1787)
+    - `determined/agent/stub_projector.py` — Shape 1, `_call_ollama()` (line 179)
+    - `determined/agent/doc_extractor.py` — Shape 2, line 370
+    - `determined/agent/local_agent.py` — Shape 2, `_call_ollama()` (line 327);
+      also update `PatternExecutor` init at line 371 and health/warmup refs
+    - `determined/ui/ui_server.py` — Shape 2 (line 232), `_check_ollama()`,
+      `_warmup_ollama()` — rename to `_check_llm()`, `_warmup_llm()`
+
+    **Also update:** `determined/assessor/query_compiler.py` — Shape 1,
+    `_compile_via_ollama()` (line 251) → `_compile_via_llm()`.
+    `determined/agent/pattern_executor.py` — remove `ollama_url/model/timeout`
+    constructor args; import from `llm_client` instead.
+
+    **Health check update in `ui_server.py`:** replace Ollama model-list check
+    (`/api/tags`) with llama-server health check (`GET /health` → `{"status":"ok"}`).
+
+    **Test:** run full regression suite after swap. All 323 tests should still pass
+    (most don't hit the LLM; the ones that mock it stay mocked). Manual smoke test:
+    start llama-server, run `local_agent.py --ui`, ask a question.
+
+---
+
+26. **[OPEN] Model file management: document and maintain GGUF library**
+
+    Ollama managed model downloads and storage. With llama-server we own the files
+    directly. This item covers the transition and ongoing model management.
+
+    **Immediate:** after item 25 verified working end-to-end — uninstall Ollama,
+    delete `C:\Users\bartl\.ollama\` (reclaims ~50GB of blob storage).
+
+    **Current GGUF library:** `C:\Users\bartl\models\gguf\`
+    - `llama3.2-3b.gguf` — primary inference model (item 25)
+
+    **Other models from Ollama library** (blobs exist, not yet extracted):
+    Extract same way — read manifest, copy blob, rename `.gguf`.
+    Manifests at `~/.ollama/models/manifests/registry.ollama.ai/library/`:
+    - `llama3.2/latest` — same as 3b
+    - `llama3.1/latest` — 8B model (~4.7GB blob)
+    - `codellama/7b`, `codellama/13b`
+    - `mistral/7b`
+    - `qwen2.5/7b`, `qwen2.5-coder/1.5b`, `qwen2.5-coder/latest`
+    - `qwen3.5/35b` — large model
+    - `gemma3/4b`
+
+    **Model management going forward:** download GGUF files directly from
+    HuggingFace (TheBloke / bartowski quantizations are standard sources).
+    No model manager needed — files are just files.
+
+    **llm_client.py config:** `LLM_MODEL` should match the GGUF filename stem
+    OR be ignored entirely (llama-server serves whichever model it was started
+    with — the model param in the request is advisory, not a selector).
+    Simplest: remove model name from request payload since llama-server ignores it.
 
 ---
 

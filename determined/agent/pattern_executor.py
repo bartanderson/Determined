@@ -142,28 +142,15 @@ class PatternExecutor:
     Drives a named task pattern step-by-step. Model interprets; executor navigates.
     """
 
-    def __init__(self, ollama_url: str, ollama_model: str, ollama_timeout: int = 60):
-        self.url = ollama_url
-        self.model = ollama_model
-        self.timeout = ollama_timeout
+    def __init__(self):
+        pass
 
     def _call_ollama(self, messages: list[dict], label: str = "", verbose: bool = False) -> str:
-        import requests
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "options": {"temperature": 0.1},
-        }
-        try:
-            resp = requests.post(self.url, json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            text = resp.json()["message"]["content"].strip()
-            if verbose and label:
-                print(f"\n  [{label}] {text}", flush=True)
-            return text
-        except Exception as e:
-            return f"(interpretation unavailable: {e})"
+        from determined.agent.llm_client import chat as _llm_chat
+        text = _llm_chat(messages) or "(interpretation unavailable: no response)"
+        if verbose and label:
+            print(f"\n  [{label}] {text}", flush=True)
+        return text
 
     def run(
         self,

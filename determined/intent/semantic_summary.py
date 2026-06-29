@@ -7,8 +7,8 @@
 # with a source_hash for staleness detection. Generation is lazy:
 # only computed on first query for a given subject, never at ingestion.
 #
-# LLM backend: local Ollama (same model as query_compiler.py).
-# Falls back to a heuristic stub if Ollama is unreachable.
+# LLM backend: llama-server (llama.cpp built-in server, port 8080).
+# Falls back to a heuristic stub if llama-server is unreachable.
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import requests
-
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "llama3.2:3b"
+# Legacy aliases kept for any callers that import these names directly.
+# All actual LLM calls now go through determined.agent.llm_client.
+OLLAMA_URL     = "http://localhost:8080/v1/completions"
+OLLAMA_MODEL   = "llama3.2-3b"
 OLLAMA_TIMEOUT = 60
 
 VALID_KINDS = {"file", "module", "subsystem"}
@@ -237,13 +237,10 @@ def _extract_structure(source_text: str, max_chars: int = 6000) -> str:
 
 
 def _generate(subject: str, kind: str, source_text: str) -> str:
-    """Call Ollama; fall back to a minimal heuristic stub on failure."""
+    """Call llama-server; fall back to a minimal heuristic stub on failure."""
     if not source_text.strip():
         return f"[no source text provided for {kind} {subject!r}]"
 
-    # Use a structured extract instead of raw truncation: top of file + key
-    # def/class lines + docstrings, to stay under ~6000 chars while covering
-    # the whole file's public API surface.
     source_excerpt = _extract_structure(source_text, max_chars=10000)
     prompt = (
         f"Analyse this Python {kind} and write 3-4 sentences describing:\n"
@@ -255,21 +252,12 @@ def _generate(subject: str, kind: str, source_text: str) -> str:
         f"Source structure:\n{source_excerpt}"
     )
 
-    try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=OLLAMA_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        content = data.get("response", "").strip()
-        if content:
-            return content
-        logger.warning("semantic_summary: Ollama returned empty response for %r", subject)
-    except Exception as exc:
-        logger.warning("semantic_summary: Ollama unavailable (%s), using heuristic stub", exc)
+    from determined.agent.llm_client import generate as _llm_generate
+    content = _llm_generate(prompt, timeout=OLLAMA_TIMEOUT)
+    if content:
+        return content
 
+    logger.warning("semantic_summary: llm_client unavailable, using heuristic stub for %r", subject)
     return _heuristic_stub(subject, kind, source_text)
 
 
@@ -282,5 +270,5 @@ def _heuristic_stub(subject: str, kind: str, source_text: str) -> str:
     return (
         f"[heuristic] {kind.capitalize()} {subject!r}: "
         f"{line_count} non-blank lines, {defs} definitions. "
-        f"(Ollama unavailable - re-query to generate a real summary.)"
+        f"(llama-server unavailable - re-query to generate a real summary.)"
     )

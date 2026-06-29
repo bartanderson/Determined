@@ -26,11 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import requests
-
-OLLAMA_URL = "http://localhost:11434/api/chat"
-OLLAMA_MODEL = "llama3.2:3b"
-OLLAMA_TIMEOUT = 120
+_LLM_TIMEOUT = 120
 
 # Confidence ordering (higher = more trustworthy)
 CONFIDENCE_RANK: dict[str, int] = {
@@ -344,8 +340,9 @@ def extract_rules_llm(
     Use the local 3B model to extract implied design rules from a prose section.
     Called only when deterministic extraction yields < 2 rules for a section
     that still has design intent language.
-    Returns [] silently if Ollama is unavailable.
+    Returns [] silently if llama-server is unavailable.
     """
+    from determined.agent.llm_client import chat as _llm_chat
     llm_confidence = _downgrade_confidence(source_confidence)
     src = rel_path or doc_path
 
@@ -361,15 +358,9 @@ def extract_rules_llm(
     )
 
     try:
-        payload = {
-            "model": OLLAMA_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "options": {"temperature": 0.0},
-        }
-        resp = requests.post(OLLAMA_URL, json=payload, timeout=OLLAMA_TIMEOUT)
-        resp.raise_for_status()
-        text = resp.json()["message"]["content"].strip()
+        text = _llm_chat([{"role": "user", "content": prompt}], timeout=_LLM_TIMEOUT)
+        if not text:
+            return []
 
         json_match = re.search(r"\[.*\]", text, re.DOTALL)
         if not json_match:
@@ -396,9 +387,9 @@ def extract_rules_llm(
                 ))
         return rules
 
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-        return []
     except (json.JSONDecodeError, KeyError, ValueError):
+        return []
+    except Exception:
         return []
 
 

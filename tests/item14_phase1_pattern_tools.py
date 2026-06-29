@@ -52,10 +52,7 @@ def main():
     print(f"Loading {DB_PATH} ...")
     oracle = DBOracle(DB_PATH)
     assessor = Assessor(oracle)
-    executor = PatternExecutor(
-        ollama_url="http://localhost:11434/api/chat",
-        ollama_model="llama3.2:3b",
-    )
+    executor = PatternExecutor()
 
     root = oracle.get_project_root() or DB_PATH
     print(f"Project root: {root}")

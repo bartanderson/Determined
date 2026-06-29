@@ -216,7 +216,6 @@ def handle_query(data):
         if status == "No active workflow items.":
             emit("answer", {"question": question, "answer": status})
             return
-        import requests as _req
         msgs = [
             {"role": "system", "content":
                 "You are a project planning assistant. Given a list of workflow items, "
@@ -228,14 +227,8 @@ def handle_query(data):
                 "considering dependencies and logical sequencing."},
         ]
         try:
-            resp = _req.post(
-                "http://localhost:11434/api/chat",
-                json={"model": "llama3.2:3b", "messages": msgs, "stream": False,
-                      "options": {"temperature": 0.1}},
-                timeout=60,
-            )
-            resp.raise_for_status()
-            answer = resp.json()["message"]["content"].strip()
+            from determined.agent.llm_client import chat as _llm_chat
+            answer = _llm_chat(msgs) or "(reprioritize unavailable: no response)"
         except Exception as exc:
             answer = f"(reprioritize unavailable: {exc})"
         emit("answer", {"question": question, "answer": answer})
@@ -594,20 +587,10 @@ def handle_project_stub(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def _check_ollama() -> str:
+def _check_llm() -> str:
     """Return 'ok' or an error message."""
-    try:
-        import requests as _req
-        from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL
-        base = OLLAMA_URL.rsplit("/api/", 1)[0]
-        r = _req.get(f"{base}/api/tags", timeout=3)
-        r.raise_for_status()
-        models = [m["name"] for m in r.json().get("models", [])]
-        if not any(m.startswith(OLLAMA_MODEL.split(":")[0]) for m in models):
-            return f"Ollama running but model '{OLLAMA_MODEL}' not found. Run: ollama pull {OLLAMA_MODEL}"
-        return "ok"
-    except Exception as exc:
-        return f"Ollama unreachable: {exc}"
+    from determined.agent.llm_client import is_available
+    return "ok" if is_available() else "llama-server unreachable at localhost:8080"
 
 
 _REQUIRED_TABLES = {"files", "functions", "graph_edges"}
@@ -1104,28 +1087,15 @@ def handle_direct_intent(data):
         emit("intent_result", {"error": str(exc)})
 
 
-def _warmup_ollama() -> None:
-    """Send a trivial prompt to load the model into memory, then keepalive every 4 min."""
-    import requests as _req
-    from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL
+def _warmup_llm() -> None:
+    """Send a trivial prompt to load the model into memory."""
+    from determined.agent.llm_client import generate as _llm_generate
     try:
-        print("Ollama:       warming up model...")
-        _req.post(OLLAMA_URL, json={"model": OLLAMA_MODEL, "prompt": "hi", "stream": False}, timeout=120)
-        print("Ollama:       model ready")
+        print("llama-server: warming up model...")
+        _llm_generate("hi", timeout=120)
+        print("llama-server: model ready")
     except Exception as exc:
-        print(f"Ollama:       warmup failed: {exc}")
-
-    # keepalive: ping every 4 minutes so the model stays loaded
-    def _keepalive():
-        while True:
-            import time
-            time.sleep(240)
-            try:
-                _req.post(OLLAMA_URL, json={"model": OLLAMA_MODEL, "prompt": ".", "stream": False}, timeout=30)
-            except Exception:
-                pass
-
-    threading.Thread(target=_keepalive, daemon=True).start()
+        print(f"llama-server: warmup failed: {exc}")
 
 
 def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 5050) -> None:
@@ -1138,16 +1108,16 @@ def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 
             print(f"Resuming last session: {saved}")
             init(saved)
 
-    ollama_status = _check_ollama()
+    llm_status = _check_llm()
     print(f"\nDev console: http://{host}:{port}")
     if _db_path:
         s = _corpus_status()
         print(f"Corpus:       {_db_path}  ({s.get('files',0)} files, {s.get('hot',0)} hot, {s.get('artifacts',0)} artifacts)")
     else:
         print(f"Corpus:       none — use Ingest panel to load one")
-    if ollama_status == "ok":
-        threading.Thread(target=_warmup_ollama, daemon=True).start()
+    if llm_status == "ok":
+        threading.Thread(target=_warmup_llm, daemon=True).start()
     else:
-        print(f"Ollama:       WARNING — {ollama_status}")
+        print(f"llama-server: WARNING — {llm_status}")
     print(f"Press Ctrl+C to stop.\n")
     socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)

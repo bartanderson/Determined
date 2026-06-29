@@ -29,8 +29,6 @@ import json
 import logging
 import re
 
-import requests
-
 from determined.truth.query_ast import Select, Combine, Filter
 from determined.truth.query_plan import QueryPlan, QueryPlanner, QuerySemanticsRegistry
 
@@ -38,10 +36,6 @@ logger = logging.getLogger(__name__)
 
 _registry = QuerySemanticsRegistry()
 _planner = QueryPlanner(_registry)
-
-OLLAMA_URL   = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "llama3.2:3b"
-OLLAMA_TIMEOUT = 10  # seconds - fail fast, don't block the pipeline
 
 # =========================================================
 # CLOSED-WORLD SPEC (fed verbatim to the model)
@@ -248,31 +242,24 @@ def _parse_ast_node(node: dict):
 # OLLAMA COMPILER CORE
 # =========================================================
 
-def _compile_via_ollama(text: str, intent: str):
+def _compile_via_llm(text: str, intent: str):
     """
-    Call llama3.2:3b via local Ollama to produce a Query AST.
+    Call llama-server to produce a Query AST.
     Returns a validated QueryPlan, or None on any failure.
     """
+    from determined.agent.llm_client import generate as _llm_generate
     prompt = (
+        f"{_ALGEBRA_SPEC}\n\n"
         f"Natural language query: {text!r}\n"
         f"Detected intent: {intent!r}\n\n"
         "Output the query AST as JSON only."
     )
 
     try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "system": _ALGEBRA_SPEC,
-                "stream": False,
-                "options": {"temperature": 0.0, "num_predict": 128},
-            },
-            timeout=OLLAMA_TIMEOUT,
-        )
-        resp.raise_for_status()
-        raw = resp.json().get("response", "").strip()
+        raw = _llm_generate(prompt, timeout=10)
+        if not raw:
+            logger.debug("llama-server not reachable - using rule-based compiler")
+            return None
 
         # strip markdown fences if the model added them despite instructions
         if raw.startswith("```"):
@@ -286,14 +273,11 @@ def _compile_via_ollama(text: str, intent: str):
         plan      = _planner.plan(ast_node)   # validates against registry
         return plan
 
-    except requests.exceptions.ConnectionError:
-        logger.debug("Ollama not reachable - using rule-based compiler")
-        return None
-    except requests.exceptions.Timeout:
-        logger.debug("Ollama timeout - using rule-based compiler")
-        return None
     except (json.JSONDecodeError, KeyError, ValueError) as e:
-        logger.warning("Ollama compiler output invalid: %s", e)
+        logger.warning("llm compiler output invalid: %s", e)
+        return None
+    except Exception as e:
+        logger.debug("llm compiler failed: %s - using rule-based compiler", e)
         return None
     except Exception as e:
         logger.warning("Ollama compiler unexpected failure: %s", e)
@@ -311,7 +295,7 @@ def compile_query(intent: str, text: str = ""):
     Returns: QueryPlan (always valid, never raises)
     """
     if text:
-        plan = _compile_via_ollama(text, intent)
+        plan = _compile_via_llm(text, intent)
         if plan is not None:
             return _maybe_scope_to_named_file(plan, text)
 
@@ -328,7 +312,7 @@ def compile_and_explain(intent: str, text: str = "") -> dict:
     ai_used = False
 
     if text:
-        plan = _compile_via_ollama(text, intent)
+        plan = _compile_via_llm(text, intent)
         if plan is not None:
             ai_used = True
 

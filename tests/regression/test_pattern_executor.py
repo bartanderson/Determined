@@ -171,7 +171,7 @@ class _FakeAssessor:
 def test_run_no_llm_understand_symbol():
     oracle = _FakeOracle()
     assessor = _FakeAssessor(oracle)
-    executor = PatternExecutor("http://localhost:11434/api/chat", "llama3.2:3b")
+    executor = PatternExecutor()
     result = executor.run_no_llm("understand_symbol", "process_message", oracle, assessor)
     assert "understand_symbol" in result
     assert "process_message" in result
@@ -180,7 +180,7 @@ def test_run_no_llm_understand_symbol():
 def test_run_no_llm_orient_to_codebase():
     oracle = _FakeOracle()
     assessor = _FakeAssessor(oracle)
-    executor = PatternExecutor("http://localhost:11434/api/chat", "llama3.2:3b")
+    executor = PatternExecutor()
     result = executor.run_no_llm("orient_to_codebase", None, oracle, assessor)
     assert "orient_to_codebase" in result
 

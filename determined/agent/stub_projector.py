@@ -173,22 +173,13 @@ def _build_prompt(ctx: dict) -> str:
 
 
 # ------------------------------------------------------------------
-# Ollama call
+# LLM call
 # ------------------------------------------------------------------
 
 def _call_ollama(prompt: str) -> str:
-    import requests
-    from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
-    try:
-        resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=OLLAMA_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json().get("response", "").strip()
-    except Exception as exc:
-        return f"# [Ollama error: {exc}]"
+    from determined.agent.llm_client import generate as _llm_generate
+    result = _llm_generate(prompt)
+    return result if result else "# [llm_client error: no response]"
 
 
 # ------------------------------------------------------------------

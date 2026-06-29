@@ -363,32 +363,17 @@ def _graph_subgraph_raw(oracle: "DBOracle", symbol: str, radius: int = 2) -> dic
 
 def _distill_to_one_sentence(content: str, subject: str) -> str | None:
     """
-    Compress `content` into one sentence via Ollama.
-    Returns None if Ollama is unreachable - callers must handle this explicitly
+    Compress `content` into one sentence via llama-server.
+    Returns None if llama-server is unreachable - callers must handle this explicitly
     so the failure is visible rather than silently swallowed (SOTS XIII).
     """
-    import logging
-    import requests as _req
-    from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
+    from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
     prompt = (
         f"Summarise the following in exactly one sentence (max 25 words). "
         f"Be concrete and name the main thing it does.\n\n"
         f"Subject: {subject}\n\n{content[:1500]}"
     )
-    try:
-        resp = _req.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=OLLAMA_TIMEOUT,
-        )
-        resp.raise_for_status()
-        sentence = resp.json().get("response", "").strip()
-        return sentence if sentence else None
-    except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "distill: Ollama unavailable for %r: %s", subject, exc
-        )
-        return None
+    return _llm_generate(prompt, timeout=LLM_TIMEOUT)
 
 
 def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
@@ -1779,12 +1764,10 @@ def _format_project_status(data: dict) -> str:
 
 def _synthesize_with_ollama(status_text: str, goal: str) -> str | None:
     """
-    Pass the structured status to Ollama for narrative synthesis.
+    Pass the structured status to llama-server for narrative synthesis.
     Returns None on failure (SOTS XIII: visible failure, not swallowed).
     """
-    import logging
-    import requests as _req
-    from determined.intent.semantic_summary import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
+    from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
     prompt = (
         f"You are a software architect reviewing a game project's structural analysis.\n\n"
         f"DATA FORMAT GUIDE:\n"
@@ -1801,17 +1784,7 @@ def _synthesize_with_ollama(status_text: str, goal: str) -> str | None:
         f"Do not invent information not in the data. Under 350 words.\n\n"
         f"STRUCTURAL DATA:\n{status_text}"
     )
-    try:
-        resp = _req.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=OLLAMA_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json().get("response", "").strip() or None
-    except Exception as exc:
-        logging.getLogger(__name__).warning("project_status: Ollama unavailable: %s", exc)
-        return None
+    return _llm_generate(prompt, timeout=LLM_TIMEOUT)
 
 
 def project_status(assessor: "Assessor", args: dict) -> str:
@@ -1859,21 +1832,21 @@ def project_status(assessor: "Assessor", args: dict) -> str:
     synthesis = _synthesize_with_ollama(structural, goal)
     if synthesis:
         return structural + enrichment_note + "\n\n--- Synthesis ---\n" + synthesis
-    return structural + enrichment_note + "\n\n(Ollama unavailable for synthesis - structural data above)"
+    return structural + enrichment_note + "\n\n(llama-server unavailable for synthesis - structural data above)"
 
 
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
     distill_corpus() - compress each semantic_summary into a one-sentence
     distillation stored in semantic_summaries.distilled (corpus DB).
-    Idempotent: skips rows already distilled. Aborts if Ollama is down.
+    Idempotent: skips rows already distilled. Aborts if llama-server is down.
     """
     corpus_conn = assessor.oracle.conn
 
-    # Abort early if Ollama is unreachable (SOTS XIII)
+    # Abort early if llama-server is unreachable (SOTS XIII)
     probe = _distill_to_one_sentence("test", "__probe__")
     if probe is None:
-        return "ERROR: Ollama is not reachable. distill_corpus requires Ollama running."
+        return "ERROR: llama-server is not reachable. distill_corpus requires llama-server running."
 
     corpus_tables = {r[0] for r in corpus_conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
@@ -1907,7 +1880,7 @@ def distill_corpus(assessor: "Assessor", args: dict) -> str:
     for row_id, subject, content in pending:
         sentence = _distill_to_one_sentence(content, subject)
         if sentence is None:
-            return f"ERROR: Ollama stopped responding mid-run after {stored} stored."
+            return f"ERROR: llama-server stopped responding mid-run after {stored} stored."
         corpus_conn.execute(
             "UPDATE semantic_summaries SET distilled = ? WHERE id = ?",
             (sentence, row_id),
