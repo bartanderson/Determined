@@ -16,7 +16,14 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-29, session 35):** Item 6 done: incremental per-file re-ingest.
+**Last session (2026-06-29, session 35):** Items 6 and 20 done.
+Item 6: reingest_file() incremental re-ingest, FileDelta scratchpad, INSERT OR IGNORE fix.
+Item 20: param annotation capture (param_types_json), class attribute tracking
+(class_attributes table), annotation-resolved call edges (SymbolReference.resolved,
+GraphEdge.resolved, graph_edges.resolved), list_callers/callees tag, describe_file %
+stat, DBOracle.get_class_attribute_type(). 19 new tests total. 296 pass.
+
+**Before that (2026-06-29, session 35 earlier):** Item 6 done: incremental per-file re-ingest.
 reingest_file() in determined/ingestion/reingest_file.py. FileDelta in-memory scratchpad
 (old/new symbol state, added/updated/removed sets). apply_file_delta: insert new symbols
 first, then persist_file_analysis, then delete stale old symbols, then rebuild outbound
@@ -196,7 +203,7 @@ each step result. 293/293 tests passing.
     string-only. Affected tools: `list_callers`, `list_callees`,
     `graph_most_connected`, `graph_subgraph`, `search_symbols`.
 
-20. **[MEDIUM] Call graph accuracy: type annotation exploitation + __init__ attribute tracking**
+20. **[DONE 2026-06-29] Call graph accuracy: type annotation exploitation + __init__ attribute tracking**
 
    Motivated by PyAnalyzer (ICSE 2024, Jin et al.) which achieves +24.7% F1 over
    comparable static analysis tools by modeling functions/classes/modules as heap
