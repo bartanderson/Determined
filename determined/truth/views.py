@@ -51,9 +51,10 @@ class StabilityView:
     stable_contracts: list[str]
     unstable_contracts: list[str]
     drift_signals: list[dict]
+    lifecycle: list[dict] = None  # per-contract health/lifecycle state, populated after first ingest
 
 
-def build_stability_view(contract_reports, drift_signals) -> StabilityView:
+def build_stability_view(contract_reports, drift_signals, lifecycle=None) -> StabilityView:
     stable = []
     unstable = []
 
@@ -62,6 +63,17 @@ def build_stability_view(contract_reports, drift_signals) -> StabilityView:
             unstable.append(r.file_path)
         else:
             stable.append(r.file_path)
+
+    lifecycle_dicts = [
+        {
+            "contract": lc.contract_name,
+            "state": lc.state,
+            "score": lc.stability_score,
+            "trend": lc.trend,
+            "recommendation": lc.recommendation,
+        }
+        for lc in (lifecycle or [])
+    ]
 
     return StabilityView(
         stable_contracts=stable,
@@ -75,6 +87,7 @@ def build_stability_view(contract_reports, drift_signals) -> StabilityView:
             }
             for s in drift_signals
         ],
+        lifecycle=lifecycle_dicts or None,
     )
 
 @dataclass

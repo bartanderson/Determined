@@ -2,6 +2,14 @@
 
 import sqlite3
 
+
+def _get(v, name, default=""):
+    """Read a field from a violation regardless of whether it's a dict or object."""
+    if isinstance(v, dict):
+        return v.get(name, default)
+    return getattr(v, name, default)
+
+
 def persist_contract_violations(connection: sqlite3.Connection, report):
     cursor = connection.cursor()
 
@@ -19,12 +27,12 @@ def persist_contract_violations(connection: sqlite3.Connection, report):
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             report.file_path,
-            v.contract_name,
-            v.layer,
-            getattr(v, "severity", "unknown"),
-            v.message,
-            str(getattr(v, "observed", "")),
-            str(getattr(v, "expected", "")),
+            _get(v, "contract_name"),
+            _get(v, "layer"),
+            _get(v, "severity", "unknown"),
+            _get(v, "message"),
+            str(_get(v, "observed_value") or _get(v, "observed")),
+            str(_get(v, "expected_value") or _get(v, "expected")),
         ))
 
     connection.commit()

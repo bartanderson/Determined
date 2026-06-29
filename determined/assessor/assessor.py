@@ -330,17 +330,19 @@ class Assessor:
         return reports
 
     def stability_view(self):
-        # drift_signals was hardcoded [] here until 2026-06-17 (Truth.md
-        # Phase 3 Row 3 / Truth Kernel Board Tier 1) - same "computed but
-        # unwired" shape as the SUMMARY/SUBSYSTEM/ROLE gaps fixed earlier.
-        # ContractDriftClassifier (contracts/contract_drift_classifier.py)
-        # already existed with the exact output shape build_stability_view()
-        # expects (contract_name/classification/count/layer) but had zero
-        # callers anywhere in the codebase. Wiring it here is the fix -
-        # no new heuristics, just connecting an existing real component.
+        from determined.contracts.contract_health_aggregator import ContractHealthAggregator
+        from determined.contracts.contract_lifecycle import ContractLifecycleController
         reports = self.file_contract_reports()
         drift_signals = ContractDriftClassifier().classify(reports)
-        return build_stability_view(reports, drift_signals=drift_signals)
+        # Read accumulated drift history to compute health + lifecycle across runs.
+        # Empty on first ingest; grows richer over time as contract_drift_history fills.
+        history_rows = self.oracle.conn.execute(
+            "SELECT contract_name, classification, layer, count FROM contract_drift_history"
+        ).fetchall()
+        history = [dict(r) for r in history_rows]
+        health = ContractHealthAggregator().aggregate(history) if history else []
+        lifecycle = ContractLifecycleController().evaluate(health) if health else []
+        return build_stability_view(reports, drift_signals=drift_signals, lifecycle=lifecycle)
 
     def validation_summary(self):
         # CLAUDE-EDIT 2026-06-18 (TRACKER.md section 3 item 17): was a

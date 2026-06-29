@@ -568,6 +568,25 @@ def _ingest_source(source_dir: str, summarize: bool = False) -> str:
               f"{counts.get('hot_symbols',0)} hot symbols, "
               f"{counts.get('stub_files',0)} stub files)")
 
+    # Contract checks: persist violations + record drift history for health tracking
+    from determined.contracts.persist_contract_violations import persist_contract_violations
+    from determined.contracts.contract_drift_classifier import ContractDriftClassifier
+    reports = assessor.file_contract_reports()
+    violation_count = sum(len(r.violations) for r in reports)
+    if violation_count:
+        for report in reports:
+            if report.violations:
+                persist_contract_violations(oracle.conn, report)
+        print(f"Contract violations: {violation_count} persisted")
+    signals = ContractDriftClassifier().classify(reports)
+    for s in signals:
+        oracle.conn.execute(
+            "INSERT INTO contract_drift_history (contract_name, classification, layer, count)"
+            " VALUES (?, ?, ?, ?)",
+            (s.contract_name, s.classification, s.layer, s.count),
+        )
+    oracle.conn.commit()
+
     # Optional: generate AI summaries for every file (requires Ollama)
     if summarize:
         _summarize_all_files(src, oracle, assessor)
