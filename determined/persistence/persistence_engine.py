@@ -39,7 +39,7 @@ def _insert_symbol(cursor, file_path, symbol_type, name, line_number, signature=
     canonical_id = f"{file_path}:{symbol_type}:{name}:{line_number}"
 
     cursor.execute("""
-    INSERT INTO symbols (
+    INSERT OR IGNORE INTO symbols (
         file_path,
         symbol_type,
         name,

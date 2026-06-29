@@ -80,12 +80,12 @@ Common mistakes:
 
 ## DB management (standing rule)
 
-- `knowledge.db` at repo root: NEVER delete. This is the shared knowledge overlay
-  (findings, semantic summaries) across all corpus DBs. It is not a rebuild artifact.
-- Corpus DBs (e.g. `game_corpus.db`, `harrow_corpus.db`): expendable, rebuilt by
-  re-ingesting. Can be deleted and rebuilt at any time.
-- Do NOT store knowledge_artifacts or semantic_summaries inside corpus DBs.
-  They live in knowledge.db only.
+- `knowledge.db` was eliminated in session 33. All tables (knowledge_artifacts,
+  workflow_items, bags, bag_items, semantic_summaries) now live in the corpus DB.
+- Corpus DBs (e.g. `C_Users_bartl_dev_dj2.db`, `C_Users_bartl_dev_harrow.db`):
+  expendable, rebuilt by re-ingesting. Can be deleted and rebuilt at any time.
+- There is no separate shared knowledge overlay DB. Everything is scoped to the
+  active corpus DB.
 
 ## Working agreement
 
@@ -120,39 +120,26 @@ How to use it:
 Do not score designs numerically. The tension sections exist because the
 interesting decisions are not binary.
 
-## Active work arc: items 9, 10, 19 + self-audit
+## Active work arc: items 6, 20, 1
 
-Current session priority, in order:
+Items 9, 10, 19, 7, 22, 23, 24, 25 are all done (see TRACKER.md for details).
+Current open items in recommended order:
 
-**Item 9 -- Distillation pass**
-Compress verbose LLM summaries to one-sentence facts. Store as `kind='distilled'`,
-`subject='distilled::<original>'` in knowledge_artifacts. New tool: `distill_corpus()`.
-Wire into `symbol_brief` (quick preamble) and `goal_intake` (fast symbol scan).
-SOTS grounding before coding: XIV (distilled is a declared derivation, not a second
-truth), X (idempotent re-run), XIII (Ollama failure visible, not swallowed).
+**Item 6 -- Live sync loop (MEDIUM)**
+Re-ingest a single changed file without full corpus re-run. Currently the only
+option is full re-ingest (fast at 150 files, but won't scale). Requires:
+incremental re-ingestion by file_path, edge delta propagation.
+SOTS: XIV (one source of truth for each file's facts), X (idempotent per-file
+re-ingest), XXI (don't add a watcher daemon if a simple on-demand call suffices).
 
-**Item 10 -- Structured output (_raw)**
-Add `_raw` helper variants for: list_callers, list_callees, search_symbols,
-graph_most_connected, graph_subgraph. Each returns list[dict]. Refactor the string
-versions to derive from the raw versions (XIV: one source). Wire goal_intake to
-use _raw helpers instead of direct SQL. SOTS: I (locality -- each raw helper
-readable in isolation), XIV (string derives from raw, not parallel), XXI (only
-the five named tools, no expansion).
+**Item 20 -- Call graph accuracy (MEDIUM)**
+Type annotation exploitation + __init__ attribute tracking. ~2 days.
+Do after item 6 since re-ingest is needed to populate new columns.
+See TRACKER.md for full 3-phase plan.
 
-**Item 19 -- Design intent cross-reference**
-New tool `check_design_violations(symbol)`. Embeds symbol + docstring + callees,
-cosine-searches design_notes (SOTS + project notes), filters for constraint language
-("must not", "never", "only", "forbidden"). Wire into risk_profile. SOTS: XI
-(pure analysis -- returns a plan, never acts), XVIII (empty result explains why,
-not silent), XIII (embedding failure degrades gracefully).
-
-**Self-audit step (after item 19 lands)**
-Run `check_design_violations` against Determined's own codebase using `knowledge.db`
-(which already holds all 25 SOTS tenets as design_notes). This validates item 19
-works correctly AND produces a real findings list for tightening Determined's own
-code. The tool audits itself. Any findings feed directly back as improvements.
-This is the validation step for item 19 -- do not mark item 19 done until the
-self-audit runs and findings are reviewed.
+**Item 1 -- files.role (LOW)**
+`parse_ast.py` sets role=None. Either implement role classification at ingestion
+or remove the column and tool parameter.
 
 ## Coding guidelines
 

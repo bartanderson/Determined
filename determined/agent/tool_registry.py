@@ -279,6 +279,16 @@ REGISTRY: dict[str, dict] = {
         "category": "understanding",
     },
 
+    # ── INCREMENTAL RE-INGEST ─────────────────────────────────────
+    "reingest_file": {
+        "purpose": "Re-ingest a single changed file into the corpus DB without re-scanning the whole project.",
+        "args": {"file_path": "absolute or project-relative path to the changed .py file"},
+        "output": "summary of symbol changes: added/updated/removed, and note about any dangling inbound edges",
+        "feeds": ["describe_file", "risk_profile"],
+        "use_when": "A source file changed and you want the corpus to reflect the new state without a full re-ingest.",
+        "category": "ingestion",
+    },
+
     # ── CODE HYGIENE ───────────────────────────────────────────────
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",

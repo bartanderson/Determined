@@ -746,6 +746,9 @@ if __name__ == "__main__":
                         help="Source directory to ingest; DB is derived automatically.")
     parser.add_argument("--summarize", action="store_true",
                         help="After ingestion, generate AI file summaries via Ollama (slow; skips cached).")
+    parser.add_argument("--reingest-file", metavar="FILE",
+                        help="Re-ingest a single changed file into an existing corpus DB. "
+                             "Requires db_path.")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show phase outputs and tool calls")
     parser.add_argument("--ui", action="store_true",
@@ -756,6 +759,15 @@ if __name__ == "__main__":
 
     if getattr(args, "summarize", False) and not args.source:
         parser.error("--summarize requires --source")
+
+    reingest_file_arg = getattr(args, "reingest_file", None)
+    if reingest_file_arg:
+        if not args.db_path:
+            parser.error("--reingest-file requires db_path")
+        from determined.ingestion.reingest_file import reingest_file
+        result = reingest_file(args.db_path, reingest_file_arg)
+        print(result)
+        raise SystemExit(0)
 
     if args.source:
         db_path = _ingest_source(args.source, summarize=getattr(args, "summarize", False))

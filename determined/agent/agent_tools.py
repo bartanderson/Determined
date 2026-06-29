@@ -1371,6 +1371,37 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
 
 
 # ------------------------------------------------------------------
+# INCREMENTAL RE-INGEST
+# ------------------------------------------------------------------
+
+def reingest_file(assessor: "Assessor", args: dict) -> str:
+    """
+    reingest_file(file_path) - re-ingest a single changed file into the
+    active corpus DB without touching other files. Updates symbols,
+    functions, classes, imports, behavioral contracts, mutations,
+    symbol references, and outbound graph edges for the named file.
+    Inbound edges from other files that referenced removed symbols remain
+    as dangling references until those callers are also re-ingested.
+    """
+    file_path = args.get("file_path", "").strip()
+    if not file_path:
+        return "ERROR: file_path is required"
+
+    oracle = assessor.oracle
+    db_path = getattr(oracle, "db_path", None) or getattr(oracle, "_db_path", None)
+    if not db_path:
+        return "ERROR: could not determine corpus DB path from oracle"
+
+    from determined.ingestion.reingest_file import reingest_file as _reingest
+    try:
+        return _reingest(db_path=db_path, file_path=file_path)
+    except FileNotFoundError as e:
+        return f"ERROR: {e}"
+    except Exception as e:
+        return f"ERROR during re-ingest: {e}"
+
+
+# ------------------------------------------------------------------
 # GOAL INTAKE
 # ------------------------------------------------------------------
 
@@ -1921,6 +1952,8 @@ TOOLS = {
     "check_design_violations": (check_design_violations, "assessor"),
     # Project-wide synthesis
     "project_status":          (project_status,          "assessor"),
+    # Incremental re-ingest
+    "reingest_file":           (reingest_file,           "assessor"),
 }
 
 
