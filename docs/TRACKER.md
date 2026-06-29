@@ -16,7 +16,13 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-29, session 35):** Items 6 and 20 done.
+**Last session (2026-06-29, session 36):** Items 1, 2, 3 closed.
+Item 1: _classify_role() in parse_ast.py (test/entry_point/init/config/module heuristics).
+Migration guards removed from persistence_engine; param_types_json moved into CREATE TABLE.
+Items 2 and 3: explicitly deferred - no active need. No open numbered items remain.
+323 pass, 1 pre-existing Windows file-handle flake.
+
+**Before that (2026-06-29, session 35):** Items 6 and 20 done.
 Item 6: reingest_file() incremental re-ingest, FileDelta scratchpad, INSERT OR IGNORE fix.
 Item 20: param annotation capture (param_types_json), class attribute tracking
 (class_attributes table), annotation-resolved call edges (SymbolReference.resolved,
@@ -150,20 +156,17 @@ each step result. 293/293 tests passing.
    grows. It finds structural facts but misses the most important class of bugs:
    architectural violations.
 
-1. **[LOW] `files.role` is never populated** - `parse_ast.py` sets `role=None`
-   and has a comment "DO NOT recompute elsewhere." The `describe_file` and
-   `find_files(role=...)` tools return no role info. Either implement role
-   classification at ingestion time or remove the column and tool parameter.
+1. **[DONE 2026-06-29] `files.role` classification** - `_classify_role()` added to
+   `parse_ast.py`. Assigns "test", "entry_point", "init", "config", or "module"
+   based on path/content heuristics. `find_files(role=...)` now works.
+   Migration guards removed from persistence_engine (no persistent DBs - schema
+   is the only authority; `param_types_json` moved into CREATE TABLE).
 
-2. **[LOW] `search_symbols` only finds 2 results for 'game_state'** but there
-   are likely more (GameState class, game_state parameter names, etc.).
-   Current query hits `symbols.name` substring match only - doesn't search
-   behavioral_contracts.description or docstrings. Expand when it proves
-   insufficient in real use.
+2. **[CLOSED - defer] `search_symbols` docstring expansion** - name substring
+   match is sufficient for current usage. Expand if real use shows the gap.
 
-3. **[LOW] `missing_docstrings` limit is hardcoded 20** with no way to get
-   the full list or filter by file/module. Fine for now; revisit when the
-   user actually needs coverage reporting.
+3. **[CLOSED - defer] `missing_docstrings` limit** - hardcoded 20 (UI passes 50).
+   No coverage reporting need yet. Revisit if needed.
 
 6. **[DONE 2026-06-29] Live sync loop: incremental per-file re-ingest** -
    reingest_file() in determined/ingestion/reingest_file.py. FileDelta scratchpad

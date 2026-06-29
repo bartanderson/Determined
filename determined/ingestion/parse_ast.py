@@ -505,6 +505,20 @@ def _extract_symbol_references(
     ]
 
 
+def _classify_role(path: Path, source: str) -> str:
+    name = path.name
+    parts = [p.lower() for p in path.parts]
+    if name == "__init__.py":
+        return "init"
+    if any(p in ("test", "tests") for p in parts) or name.startswith("test_") or name.endswith("_test.py"):
+        return "test"
+    if "__main__" in source:
+        return "entry_point"
+    if name in ("config.py", "settings.py", "constants.py") or name.endswith("_config.py"):
+        return "config"
+    return "module"
+
+
 def _extract_mutations(tree: ast.AST) -> List[MutationEvent]:
     # Build a map of (start_line, end_line) -> first docstring line for each
     # function, so each mutation can be annotated with the intent of the
@@ -764,7 +778,7 @@ def parse_ast(
         metadata=FileMetadata(
             line_count=len(source.splitlines()),
             is_hot=bool(mutations),
-            role=None,
+            role=_classify_role(path, source),
         ),
 
         functions=functions,

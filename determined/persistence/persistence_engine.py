@@ -87,7 +87,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         return_type TEXT,
         arguments_json TEXT,
         docstring TEXT,
-        is_stub INTEGER DEFAULT 0
+        is_stub INTEGER DEFAULT 0,
+        param_types_json TEXT
     )
     """)
 
@@ -320,23 +321,6 @@ def create_indexes(connection: sqlite3.Connection, include_composite: bool = Tru
         ])
     for sql in indexes:
         cursor.execute(sql)
-
-    # migrate existing DBs that predate the caller_file column
-    existing = {row[1] for row in cursor.execute("PRAGMA table_info(graph_edges)")}
-    if "caller_file" not in existing:
-        cursor.execute("ALTER TABLE graph_edges ADD COLUMN caller_file TEXT")
-
-    # migrate existing DBs that predate the is_stub column
-    fn_cols = {row[1] for row in cursor.execute("PRAGMA table_info(functions)")}
-    if "is_stub" not in fn_cols:
-        cursor.execute("ALTER TABLE functions ADD COLUMN is_stub INTEGER DEFAULT 0")
-    if "param_types_json" not in fn_cols:
-        cursor.execute("ALTER TABLE functions ADD COLUMN param_types_json TEXT")
-
-    # migrate existing DBs that predate the resolved column on graph_edges
-    ge_cols = {row[1] for row in cursor.execute("PRAGMA table_info(graph_edges)")}
-    if "resolved" not in ge_cols:
-        cursor.execute("ALTER TABLE graph_edges ADD COLUMN resolved INTEGER DEFAULT 0")
 
     connection.commit()
 
