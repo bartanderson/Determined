@@ -238,9 +238,33 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     """)
 
     from determined.intent.semantic_summary import ensure_semantic_summaries_table
+    from determined.intent.knowledge_artifact import ensure_knowledge_artifacts_table
+    from determined.intent.workflow_store import ensure_workflow_items_table
     ensure_semantic_summaries_table(cursor)
+    ensure_knowledge_artifacts_table(cursor)
+    ensure_workflow_items_table(cursor)
+    _ensure_bags_tables(cursor)
 
     connection.commit()
+
+
+def _ensure_bags_tables(cursor) -> None:
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bag_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bag_id INTEGER NOT NULL REFERENCES bags(id),
+        symbol TEXT NOT NULL,
+        note TEXT,
+        added_at TEXT NOT NULL
+    )
+    """)
 
 
 def create_indexes(connection: sqlite3.Connection, include_composite: bool = True) -> None:

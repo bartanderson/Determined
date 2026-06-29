@@ -986,10 +986,8 @@ def knowledge_status(assessor: "Assessor", args: dict) -> str:
     total file/symbol counts. Useful before starting a session to know
     what's already been analyzed.
     """
-    if assessor._knowledge_conn is None:
-        return "No knowledge DB configured."
-
-    corpus = assessor.knowledge.corpus_key if assessor.knowledge else None
+    import os
+    corpus = os.path.basename(getattr(assessor.oracle, "db_path", "") or "")
     corpus_filter = "(corpus = ? OR corpus IS NULL)" if corpus else "1=1"
     corpus_params = [corpus] if corpus else []
 
@@ -1246,7 +1244,7 @@ def extract_design_facts(assessor: "Assessor", args: dict) -> str:
                 )
         return "No new structural facts to extract (already populated or corpus has no graph data)."
     return (
-        f"Extracted {total} structural facts into knowledge.db: "
+        f"Extracted {total} structural facts into corpus DB: "
         + ", ".join(f"{k}={v}" for k, v in counts.items() if v)
     )
 

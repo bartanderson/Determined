@@ -1,5 +1,6 @@
 # tools\analysis\assessor\assessor.py
 
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from determined.oracle.db_oracle import DBOracle
@@ -57,30 +58,20 @@ class ValidationSummary:
 class Assessor:
     def __init__(self, oracle, knowledge=None):
         self.oracle = oracle
-        # knowledge: KnowledgeOracle instance, or None (no persistent store).
-        # When None and oracle has a db_path, defaults to knowledge.db
-        # alongside the corpus DB (see oracle/knowledge_oracle.py).
-        if knowledge is None and hasattr(oracle, 'db_path') and oracle.db_path:
-            try:
-                from determined.oracle.knowledge_oracle import KnowledgeOracle
-                knowledge = KnowledgeOracle.alongside(oracle.db_path)
-            except Exception:
-                knowledge = None
-        self.knowledge = knowledge
         self._bags: "BagStore | None" = None
 
     @property
     def _knowledge_conn(self):
-        return self.knowledge.conn if self.knowledge else None
+        return self.oracle.conn
 
     @property
     def bags(self) -> "BagStore | None":
-        """Lazy-init BagStore using the knowledge.db connection."""
-        if self._bags is None and self.knowledge is not None:
+        """Lazy-init BagStore using the corpus DB connection."""
+        if self._bags is None:
             try:
                 from determined.agent.bag_store import BagStore
                 corpus_path = getattr(self.oracle, "db_path", "")
-                self._bags = BagStore(self.knowledge.conn, corpus_path)
+                self._bags = BagStore(self.oracle.conn, corpus_path)
             except Exception:
                 pass
         return self._bags
@@ -592,7 +583,7 @@ class Assessor:
         """
         if self._knowledge_conn is None:
             raise RuntimeError("No knowledge DB configured on this Assessor.")
-        corpus = self.knowledge.corpus_key if self.knowledge else None
+        corpus = os.path.basename(getattr(self.oracle, "db_path", "") or "")
         return _add_artifact(self._knowledge_conn, subject, kind, content, provenance, file_hash, corpus=corpus)
 
     def get_artifacts(self, subject: str, kind: str = None) -> list:
@@ -602,14 +593,14 @@ class Assessor:
         """
         if self._knowledge_conn is None:
             return []
-        corpus = self.knowledge.corpus_key if self.knowledge else None
+        corpus = os.path.basename(getattr(self.oracle, "db_path", "") or "")
         return _get_artifacts(self._knowledge_conn, subject, kind=kind, corpus=corpus)
 
     def list_artifacts(self, kind: str = None, provenance: str = None) -> list:
         """List stored artifacts scoped to active corpus, optionally filtered by kind/provenance."""
         if self._knowledge_conn is None:
             return []
-        corpus = self.knowledge.corpus_key if self.knowledge else None
+        corpus = os.path.basename(getattr(self.oracle, "db_path", "") or "")
         return _list_artifacts(self._knowledge_conn, kind=kind, provenance=provenance, corpus=corpus)
 
     def delete_artifact(self, artifact_id: int) -> bool:
@@ -675,7 +666,7 @@ class Assessor:
             for r in self.oracle.conn.execute("SELECT name, file_path FROM functions").fetchall()
         }
 
-        corpus = self.knowledge.corpus_key if self.knowledge else None
+        corpus = os.path.basename(getattr(self.oracle, "db_path", "") or "")
 
         for name in project_fns:
             if name.startswith("_"):

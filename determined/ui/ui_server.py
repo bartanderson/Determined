@@ -98,8 +98,7 @@ def _corpus_map_data() -> dict:
     from determined.agent.graph_utils import find_entry_points
     from determined.agent.risk_annotator import risk_badge
 
-    # Pull any pre-computed risk records from knowledge.db in one query.
-    # Falls back to empty dict if knowledge layer not available yet.
+    # Pull any pre-computed risk records from corpus DB in one query.
     precomputed_risk: dict[str, str] = {}
     if _assessor and _assessor._knowledge_conn:
         try:
