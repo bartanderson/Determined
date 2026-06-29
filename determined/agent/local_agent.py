@@ -587,18 +587,25 @@ def _ingest_source(source_dir: str, summarize: bool = False) -> str:
         fn_count = oracle.conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
         edge_count = oracle.conn.execute("SELECT COUNT(*) FROM graph_edges").fetchone()[0]
         ref_count = oracle.conn.execute("SELECT COUNT(*) FROM symbol_references").fetchone()[0]
+        # Context keys must match what _check_rule reads, not the invariant names:
+        # - edge_conservation invariant reads context["edges"]
+        # - classification_must_not_be_in_persistence reads context["classification_called_in_persistence"]
+        # - snapshot_must_match_graph reads context["snapshot_mismatch"]
+        # Generic boolean invariants read context[invariant_name] directly.
+        ref_edge_mismatch = abs(edge_count - ref_count) > max(edge_count, ref_count) * 0.5 if edge_count else False
         stage_contexts = {
             "ingestion": {
                 "must_emit_analysis_objects": file_count > 0,
                 "must_preserve_raw_ast_structure": fn_count > 0,
             },
             "graph_build": {
-                "edge_conservation": edge_count,  # checked: must not be negative
-                "must_only_consume_classified_edges": True,  # structural: always true post-ingest
+                "edges": edge_count,
+                "classification_called_in_persistence": False,
+                "must_only_consume_classified_edges": edge_count > 0,
             },
             "snapshot": {
-                "edge_conservation": edge_count,
-                "snapshot_must_match_graph": ref_count >= 0,
+                "edges": edge_count,
+                "snapshot_mismatch": ref_edge_mismatch,
             },
             "persistence": {
                 "no_classification_logic": True,
