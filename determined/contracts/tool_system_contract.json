@@ -1,0 +1,277 @@
+{
+  "schema_version": 3,
+
+  "meta": {
+    "run_id": "",
+    "timestamp": "",
+    "state": "SEMANTIC_RECONSTRUCTION_SHADOW_LAYER_ACTIVE"
+  },
+
+  "progress": {
+    "stage": "ACTIVE",
+
+    "active": {
+      "module": "pipeline",
+      "task": "stabilize classification → graph → snapshot flow",
+      "phase": "Phase 1 (semantic observability + shadow reconstruction)"
+    },
+
+    "file_index": 0,
+    "total_files": 0
+  },
+
+  "modules": {
+
+    "ingestion": {
+      "file": "tools.analysis.scanning.scan_project_files",
+      "status": "STABLE",
+
+      "contract": "Produces FileAnalysis objects (FLATTENED SYMBOL SPACE)",
+
+      "outputs": {
+        "file_analysis": "FileAnalysis"
+      },
+
+      "invariants": {
+        "must_emit_analysis_objects": true,
+        "must_preserve_raw_ast_structure": true
+      }
+    },
+
+    "identity_resolution_layer": {
+      "file": "tools.analysis.graph.semantic_candidate_builder",
+      "status": "ACTIVE",
+
+      "role": "Resolves symbol identity from ingestion signals into unified identity objects",
+
+      "inputs": {
+        "file_analysis": "FileAnalysis",
+        "alias_map": "dict",
+        "runtime_bindings": "dict",
+        "project_symbols": "set"
+      },
+
+      "outputs": {
+        "identity_map": "Dict[str, Identity]"
+      },
+
+      "invariants": {
+        "must_not_classify": true,
+        "must_not_route": true,
+        "must_only_resolve_identity": true
+      }
+    },
+
+    "classification": {
+      "file": "tools.analysis.classification.classify_references",
+      "status": "STABLE",
+      "role": "deterministic routing stage (string-based classification only)",
+
+      "outputs": {
+        "enriched_file_analysis": "FileAnalysis (string-classified edges only)"
+      },
+
+      "invariants": {
+        "must_not_be_in_persistence": true,
+        "must_classify_symbol_references_only": true,
+        "must_not_introduce_semantic_identity_objects": true
+      }
+    },
+
+    "graph_build": {
+      "file": "tools.analysis.graph.graph_builder",
+      "status": "STABLE",
+
+      "role": "constructs structural graph from classified symbol references",
+
+      "invariants": {
+        "must_only_consume_classified_edges": true,
+        "must_not_perform_identity_resolution": true,
+        "must_not_modify_routing_results": true
+      }
+    },
+
+    "snapshot": {
+      "file": "tools.analysis.graph.evaluation_snapshot",
+      "status": "STABLE",
+
+      "inputs": {
+        "analysis": "FileAnalysis",
+        "graph": "Graph"
+      },
+
+      "outputs": {
+        "snapshot": "dict",
+        "edge_count": "int",
+        "bucket_summary": "dict"
+      },
+
+      "invariants": {
+        "edge_conservation": true,
+        "snapshot_must_match_graph": true
+      }
+    },
+
+    "metrics": {
+      "file": "tools.analysis.metrics.extract_metrics",
+      "status": "STABLE",
+
+      "outputs": {
+        "total_edges": "int",
+        "bucket_totals": "dict",
+        "failure_breakdown": "dict"
+      },
+
+      "invariants": {
+        "must_match_snapshot": true
+      }
+    },
+
+    "reducer": {
+      "file": "tools.analysis.reducer.reduce",
+      "status": "STABLE",
+      "role": "system validation layer",
+
+      "invariants": {
+        "edge_conservation_required": true,
+        "no_snapshot_mutation": true
+      }
+    },
+
+    "symbol_router": {
+      "file": "tools.analysis.graph.symbol_router",
+      "status": "STABLE",
+      "role": "deterministic routing over flattened symbols",
+
+      "cp_contract": {
+        "cp0": "raw input capture (string only)",
+        "cp1": "canonicalization (pure rename only)",
+        "cp2": "builtin/runtime/stdlib pre-classification gate",
+        "cp2_5": "semantic observation layer (NON-BINDING, TRACE ONLY)",
+        "cp3": "authoritative project routing decision (ONLY valid decision boundary)",
+        "cp3_1": "route echo layer (non-authoritative trace mirror)",
+        "cp3_5": "external fallback classification boundary",
+        "cp4": "unknown fallback terminal state"
+      },
+
+      "outputs": {
+        "route": "project | runtime | builtin | stdlib | external | unknown"
+      },
+
+      "invariants": {
+        "must_be_pure": true,
+        "no_side_effects": true,
+        "string_identity_only": true
+      }
+    },
+
+    "trace_layer": {
+      "file": "tools.analysis.graph.route_trace",
+      "status": "ACTIVE",
+
+      "role": "shadow observability layer (trace + reconstruction comparison only)",
+
+      "components": {
+        "TraceCollector": "records CP0–CP4 + semantic probes",
+        "RouteTrace": "immutable trace snapshot"
+      },
+
+      "outputs": {
+        "trace": "RouteTrace",
+        "semantic_signals": "unresolved reconstruction hints"
+      },
+
+      "invariants": {
+        "no_effect_on_routing": true,
+        "no_effect_on_graph": true,
+        "shadow_execution_only": true
+      }
+    },
+
+    "pipeline": {
+      "stages": [
+      "ingestion",
+      "identity_resolution_layer",
+      "classification",
+      "graph_build",
+      "snapshot",
+      "metrics",
+      "reducer",
+      "persistence"
+    ],
+
+      "invariants": {
+        "classification_must_precede_graph": true,
+        "persistence_must_not_classify": true,
+        "snapshot_must_be_readonly": true,
+
+        "semantic_identity_must_precede_classification": true,
+        "runtime_contract_validation_required": true,
+        "trace_layer_is_non_blocking": true
+      }
+    },
+
+    "persistence": {
+      "file": "tools.analysis.persistence.persist_file_analysis",
+      "status": "SIMPLIFIED",
+
+      "role": "database writer only",
+
+      "invariants": {
+        "no_classification_logic": true,
+        "no_graph_construction": true,
+        "no_snapshot_generation": true,
+        "must_accept_flattened_symbols_only": true,
+        "must_not_receive_SymbolIdentity_or_shadow_objects": true
+      }
+    },
+
+    "contract_validator": {
+      "file": "tools.analysis.validation.contract_validator",
+      "status": "ACTIVE",
+
+      "role": "runtime invariant enforcement",
+
+      "invariants": {
+        "must_not_mutate_contract": true,
+        "must_validate_stage_boundaries": true,
+        "trace_layer_ignored_for_decisions": true
+      }
+    },
+
+    "contract_loader": {
+      "file": "tools.analysis.contracts.contract_loader",
+      "status": "ACTIVE",
+
+      "role": "loads immutable system contract",
+
+      "invariants": {
+        "must_load_json_contract": true,
+        "must_not_mutate_contract": true
+      }
+    },
+
+    "global": {
+      "file": "tools.analysis.pipeline.global_validation",
+      "status": "STABLE",
+
+      "role": "final pipeline integrity check",
+
+      "invariants": {
+        "edge_conservation": true,
+        "classification_boundary_respected": true,
+        "no_cross_layer_logic": true,
+        "semantic_reconstruction_is_non_authoritative": true,
+        "semantic_identity_is_non_authoritative_for_routing": true
+      }
+    }
+  },
+
+  "system_truth": {
+    "edge_conservation": true,
+    "classification_boundary_respected": true,
+    "no_cross_layer_logic": true,
+    "contract_is_immutable": true,
+    "semantic_layer_is_observational_only": true
+  }
+}
