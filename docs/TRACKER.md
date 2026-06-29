@@ -16,7 +16,15 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-29, session 34):** Contracts fully reconciled and wired (item 7).
+**Last session (2026-06-29, session 35):** Item 6 done: incremental per-file re-ingest.
+reingest_file() in determined/ingestion/reingest_file.py. FileDelta in-memory scratchpad
+(old/new symbol state, added/updated/removed sets). apply_file_delta: insert new symbols
+first, then persist_file_analysis, then delete stale old symbols, then rebuild outbound
+edges. Inbound edges to removed symbols become honest dangling references. Fixed
+_insert_symbol to INSERT OR IGNORE (was plain INSERT - latent re-ingest bug). Wired as
+agent tool, CLI --reingest-file, REGISTRY. 6 new tests; 283 pass.
+
+**Before that (2026-06-29, session 34):** Contracts fully reconciled and wired (item 7).
 PyAnalyzer (ICSE 2024) reviewed; annotation-based call graph accuracy improvement
 planned as item 20. SESSION_STATE updated.
 
@@ -150,10 +158,10 @@ each step result. 293/293 tests passing.
    the full list or filter by file/module. Fine for now; revisit when the
    user actually needs coverage reporting.
 
-6. **[MEDIUM] Live sync loop: edit -> re-ingest -> update** - re-ingest a
-   single changed file without full corpus re-run. Currently the only option
-   is full re-ingest (fast at 150 files, but won't scale to large corpora).
-   Requires: incremental re-ingestion by file_path, edge delta propagation.
+6. **[DONE 2026-06-29] Live sync loop: incremental per-file re-ingest** -
+   reingest_file() in determined/ingestion/reingest_file.py. FileDelta scratchpad
+   (in-memory), INSERT OR IGNORE fix in _insert_symbol, agent tool + CLI wired.
+   6 regression tests.
 
 7. **[DONE 2026-06-29] Contracts reconciliation and wiring** -
    Fixed "domains" vs "modules" key mismatch in scan_contract.py/parse_contract.py.
