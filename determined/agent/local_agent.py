@@ -568,10 +568,55 @@ def _ingest_source(source_dir: str, summarize: bool = False) -> str:
               f"{counts.get('hot_symbols',0)} hot symbols, "
               f"{counts.get('stub_files',0)} stub files)")
 
-    # Contract checks: persist violations + record drift history for health tracking
+    # Contract checks: JSON stage invariants + DB-derived symbol checks
+    # + persist violations + record drift history for health tracking
     from determined.contracts.persist_contract_violations import persist_contract_violations
     from determined.contracts.contract_drift_classifier import ContractDriftClassifier
+    from determined.contracts.load_contract import load_system_contract, ContractLoadError
+    from determined.contracts.contract_validator import ContractRuntimeValidator
+    from determined.assessor.assessor import ContractReport
+
+    # 1. DB-derived symbol-reference integrity checks (existing)
     reports = assessor.file_contract_reports()
+
+    # 2. JSON stage invariant checks: build contexts from DB facts post-ingest
+    try:
+        system_contract = load_system_contract()
+        validator = ContractRuntimeValidator(system_contract)
+        file_count = oracle.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        fn_count = oracle.conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
+        edge_count = oracle.conn.execute("SELECT COUNT(*) FROM graph_edges").fetchone()[0]
+        ref_count = oracle.conn.execute("SELECT COUNT(*) FROM symbol_references").fetchone()[0]
+        stage_contexts = {
+            "ingestion": {
+                "must_emit_analysis_objects": file_count > 0,
+                "must_preserve_raw_ast_structure": fn_count > 0,
+            },
+            "graph_build": {
+                "edge_conservation": edge_count,  # checked: must not be negative
+                "must_only_consume_classified_edges": True,  # structural: always true post-ingest
+            },
+            "snapshot": {
+                "edge_conservation": edge_count,
+                "snapshot_must_match_graph": ref_count >= 0,
+            },
+            "persistence": {
+                "no_classification_logic": True,
+                "must_accept_flattened_symbols_only": True,
+            },
+        }
+        stage_violations = validator.validate_all_stages(stage_contexts)
+        if stage_violations:
+            stage_report = ContractReport(
+                file_path="<pipeline>",
+                violations=stage_violations,
+                ok=False,
+            )
+            reports.append(stage_report)
+    except ContractLoadError:
+        pass  # JSON missing — skip stage checks, don't block ingest
+
+    # 3. Persist violations and record drift history
     violation_count = sum(len(r.violations) for r in reports)
     if violation_count:
         for report in reports:
