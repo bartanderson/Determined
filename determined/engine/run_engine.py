@@ -97,6 +97,7 @@ class EngineRunner:
                     line_number=ref.line_number,
                     bucket=getattr(ref, "bucket", "unknown"),
                     caller_file=analysis.file_path,
+                    resolved=getattr(ref, "resolved", False),
                 )
 
         graph = builder.build()

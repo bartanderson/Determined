@@ -104,7 +104,8 @@ def list_callers(oracle: "DBOracle", args: dict) -> str:
     lines = [f"Direct callers of '{symbol}':"]
     for r in rows:
         file_short = (r["file_path"] or "?").replace("\\", "/").split("/")[-1]
-        lines.append(f"  {r['caller']} in {file_short} line {r['line_number']}")
+        tag = " (annotation-resolved)" if r.get("resolved") else ""
+        lines.append(f"  {r['caller']} in {file_short} line {r['line_number']}{tag}")
     return "\n".join(lines)
 
 
@@ -122,7 +123,8 @@ def list_callees(oracle: "DBOracle", args: dict) -> str:
     for r in rows:
         file_short = (r["file_path"] or "?").replace("\\", "/").split("/")[-1]
         suffix = f" (x{r['count']})" if r["count"] > 1 else ""
-        lines.append(f"  {r['callee']} in {file_short} line {r['line_number']}{suffix}")
+        tag = " (annotation-resolved)" if r.get("resolved") else ""
+        lines.append(f"  {r['callee']} in {file_short} line {r['line_number']}{suffix}{tag}")
     return "\n".join(lines)
 
 
@@ -205,7 +207,28 @@ def describe_file(assessor: "Assessor", args: dict) -> str:
     result = assessor.semantic_summary(file_path, kind="file")
     content = result.get("content", "")
     cache_note = " [cached]" if result.get("cache_hit") else ""
-    return f"Summary of '{file_path}'{cache_note}:\n{content}"
+
+    # Annotation-resolved edge stat
+    oracle = assessor.oracle
+    try:
+        fp_pattern = "%" + file_path.replace("/", "%").replace("\\", "%")
+        total = oracle.conn.execute(
+            "SELECT COUNT(*) FROM graph_edges WHERE caller_file LIKE ?",
+            (fp_pattern,),
+        ).fetchone()[0]
+        resolved = oracle.conn.execute(
+            "SELECT COUNT(*) FROM graph_edges WHERE caller_file LIKE ? AND resolved = 1",
+            (fp_pattern,),
+        ).fetchone()[0]
+        if total > 0:
+            pct = int(100 * resolved / total)
+            edge_stat = f"\nCall edges: {total} total, {resolved} annotation-resolved ({pct}%)"
+        else:
+            edge_stat = ""
+    except Exception:
+        edge_stat = ""
+
+    return f"Summary of '{file_path}'{cache_note}:{edge_stat}\n{content}"
 
 
 def _resolve_file_path(oracle: "DBOracle", file_path: str) -> str | None:
@@ -268,11 +291,11 @@ def _search_symbols_raw(oracle: "DBOracle", query: str, limit: int = 20) -> list
 def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
     """
     Direct callers of symbol from graph_edges.
-    Returns list[dict]: caller, file_path, line_number.
+    Returns list[dict]: caller, file_path, line_number, resolved.
     """
     rows = oracle.conn.execute(
         """
-        SELECT ge.caller, sr.file_path, ge.line_number
+        SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
         FROM graph_edges ge
         LEFT JOIN symbol_references sr
             ON ge.caller = sr.caller AND ge.callee = sr.callee
@@ -281,18 +304,18 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
         """,
         (symbol, f"%.{symbol}"),
     ).fetchall()
-    return [{"caller": r[0], "file_path": r[1], "line_number": r[2]} for r in rows]
+    return [{"caller": r[0], "file_path": r[1], "line_number": r[2], "resolved": bool(r[3])} for r in rows]
 
 
 def _list_callees_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
     """
     Project callees of symbol from graph_edges (builtins filtered out).
-    Returns list[dict]: callee, file_path, line_number, count.
+    Returns list[dict]: callee, file_path, line_number, count, resolved.
     """
     import builtins as _bi
     rows = oracle.conn.execute(
         """
-        SELECT ge.callee, sr.file_path, ge.line_number
+        SELECT ge.callee, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
         FROM graph_edges ge
         LEFT JOIN symbol_references sr
             ON ge.caller = sr.caller AND ge.callee = sr.callee
@@ -303,15 +326,17 @@ def _list_callees_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
     ).fetchall()
     seen: dict[str, tuple] = {}
     counts: dict[str, int] = {}
-    for callee, fp, ln in rows:
+    resolved_map: dict[str, bool] = {}
+    for callee, fp, ln, res in rows:
         bare = (callee or "").rsplit(".", 1)[-1]
         if not bare or bare in dir(_bi):
             continue
         counts[callee] = counts.get(callee, 0) + 1
         if callee not in seen:
             seen[callee] = (fp, ln)
+            resolved_map[callee] = bool(res)
     return [
-        {"callee": callee, "file_path": fp, "line_number": ln, "count": counts[callee]}
+        {"callee": callee, "file_path": fp, "line_number": ln, "count": counts[callee], "resolved": resolved_map[callee]}
         for callee, (fp, ln) in list(seen.items())[:30]
     ]
 

@@ -19,6 +19,7 @@ from determined.shared.types import (
     FileMetadata,
     FunctionRepresentation,
     ClassRepresentation,
+    ClassAttribute,
     ImportRepresentation,
     SymbolReference,
     BehavioralContract,
@@ -126,17 +127,100 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                 for arg in node.args.args
                 if arg.arg != "self"
             ]
+            param_types = {
+                arg.arg: ast.unparse(arg.annotation)
+                for arg in node.args.args
+                if arg.arg != "self" and arg.annotation is not None
+            }
 
             results.append(
                 FunctionRepresentation(
                     name=node.name,
                     line_number=node.lineno,
                     arguments=args,
+                    param_types=param_types,
                     return_type=ast.unparse(node.returns) if getattr(node, "returns", None) else None,
                     docstring=ast.get_docstring(node),
                     is_stub=_is_stub(node),
                 )
             )
+
+    return results
+
+
+def _extract_class_attributes(tree: ast.AST) -> List[ClassAttribute]:
+    """
+    Extract type-inferred instance attributes from each class __init__.
+    Handles:
+      self.x: Foo        (AnnAssign with annotation)
+      self.x = Foo(...)  (Assign where value is a constructor call)
+    Returns ClassAttribute(class_name, attribute, inferred_type) per attribute.
+    """
+    results: List[ClassAttribute] = []
+
+    for cls_node in ast.walk(tree):
+        if not isinstance(cls_node, ast.ClassDef):
+            continue
+
+        init = next(
+            (
+                n for n in cls_node.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and n.name == "__init__"
+            ),
+            None,
+        )
+        if init is None:
+            continue
+
+        for stmt in ast.walk(init):
+            # self.x: Foo  or  self.x: Foo = ...
+            if isinstance(stmt, ast.AnnAssign):
+                if (
+                    isinstance(stmt.target, ast.Attribute)
+                    and isinstance(stmt.target.value, ast.Name)
+                    and stmt.target.value.id == "self"
+                    and stmt.annotation is not None
+                ):
+                    try:
+                        type_str = ast.unparse(stmt.annotation)
+                        # strip Optional[...], use inner type for simple cases
+                        if type_str.startswith("Optional[") and type_str.endswith("]"):
+                            type_str = type_str[9:-1]
+                        results.append(ClassAttribute(
+                            class_name=cls_node.name,
+                            attribute=stmt.target.attr,
+                            inferred_type=type_str,
+                        ))
+                    except Exception:
+                        pass
+
+            # self.x = Foo(...)
+            elif isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"
+                        and isinstance(stmt.value, ast.Call)
+                    ):
+                        func = stmt.value.func
+                        if isinstance(func, ast.Name):
+                            results.append(ClassAttribute(
+                                class_name=cls_node.name,
+                                attribute=target.attr,
+                                inferred_type=func.id,
+                            ))
+                        elif isinstance(func, ast.Attribute):
+                            # e.g. self.x = module.Foo()
+                            try:
+                                results.append(ClassAttribute(
+                                    class_name=cls_node.name,
+                                    attribute=target.attr,
+                                    inferred_type=func.attr,
+                                ))
+                            except Exception:
+                                pass
 
     return results
 
@@ -170,6 +254,8 @@ def _extract_symbol_references(
     alias_map: dict[str, str],
     module_name: str,
     project_symbols: set[str] | None = None,
+    param_type_map: dict[str, dict[str, str]] | None = None,
+    class_attr_map: dict[str, dict[str, str]] | None = None,
 ) -> list[SymbolReference]:
 
     results = []
@@ -210,10 +296,20 @@ def _extract_symbol_references(
             return receiver_root(expr.func)
         return None
 
+    _param_type_map = param_type_map or {}
+    _class_attr_map = class_attr_map or {}
+
     class Visitor(ast.NodeVisitor):
 
         def __init__(self):
             self.current_function = "<module>"
+            self.current_class = None
+
+        def visit_ClassDef(self, node):
+            prev_class = self.current_class
+            self.current_class = node.name
+            self.generic_visit(node)
+            self.current_class = prev_class
 
         def visit_FunctionDef(self, node):
             prev = self.current_function
@@ -223,10 +319,13 @@ def _extract_symbol_references(
 
             self.current_function = prev
 
+        visit_AsyncFunctionDef = visit_FunctionDef
+
         def visit_Call(self, node):
 
             raw = None
             resolved = None
+            annotation_resolved = False
 
             # ----------------------
             # CASE 1: direct call
@@ -264,15 +363,26 @@ def _extract_symbol_references(
                     if base_name is not None:
                         raw = f"{base_name}.{node.func.attr}"
                         resolved = raw
-                    else:
-                        # obj.method() where obj is a local/param/self - we can't
-                        # resolve obj's type without inference, but record the call
-                        # keyed on receiver.method so in_degree counts it
-                        # (matched downstream by callee LIKE '%.method'). Without
-                        # this, every method only ever called as instance.method()
-                        # looks like dead code.
-                        raw = f"{base.id}.{node.func.attr}"
+                    elif base.id == "self" and self.current_class:
+                        # self.method() -- look up the method on the current class;
+                        # record as ClassName.method for accurate in_degree
+                        raw = f"{self.current_class}.{node.func.attr}"
                         resolved = raw
+                        annotation_resolved = True
+                    else:
+                        # obj.method(): check if obj has a type annotation in
+                        # the current function's param map
+                        fn_params = _param_type_map.get(self.current_function, {})
+                        annotated_type = fn_params.get(base.id)
+                        if annotated_type:
+                            raw = f"{annotated_type}.{node.func.attr}"
+                            resolved = raw
+                            annotation_resolved = True
+                        else:
+                            # Also check self attributes for chained self.attr.method()
+                            # (handled in the chained case below; fall through)
+                            raw = f"{base.id}.{node.func.attr}"
+                            resolved = raw
 
                 # chained.attr.call()
                 elif isinstance(base, ast.Attribute):
@@ -287,15 +397,27 @@ def _extract_symbol_references(
 
                     if isinstance(current, ast.Name):
 
-                        parts.append(
-                            alias_map.get(current.id, current.id)
-                        )
+                        # self.attr.method(): look up attr type in class_attr_map
+                        if current.id == "self" and self.current_class and len(parts) == 1:
+                            cls_attrs = _class_attr_map.get(self.current_class, {})
+                            attr_type = cls_attrs.get(parts[0])
+                            if attr_type:
+                                raw = f"{attr_type}.{node.func.attr}"
+                                resolved = raw
+                                annotation_resolved = True
+                            else:
+                                raw = f"self.{parts[0]}.{node.func.attr}"
+                                resolved = raw
+                        else:
+                            parts.append(
+                                alias_map.get(current.id, current.id)
+                            )
 
-                        raw = ".".join(
-                            list(reversed(parts)) + [node.func.attr]
-                        )
+                            raw = ".".join(
+                                list(reversed(parts)) + [node.func.attr]
+                            )
 
-                        resolved = raw
+                            resolved = raw
 
                     else:
                         # chain bottoms out at a non-Name (e.g. grid[i].x.method());
@@ -364,6 +486,7 @@ def _extract_symbol_references(
                 self.current_function,
                 identity,
                 node.lineno,
+                annotation_resolved,
             ))
 
             self.generic_visit(node)
@@ -376,8 +499,9 @@ def _extract_symbol_references(
             callee=identity.fqdn or identity.surface,
             line_number=lineno,
             identity=identity,
+            resolved=ann_resolved,
         )
-        for (caller, identity, lineno) in results
+        for (caller, identity, lineno, ann_resolved) in results
     ]
 
 
@@ -588,8 +712,23 @@ def parse_ast(
     functions = _extract_functions(tree)
     classes = _extract_classes(tree)
     imports, alias_map = _extract_imports(tree)
+    class_attrs = _extract_class_attributes(tree)
     known_symbols = global_known_symbols or set()
     project_symbols = global_known_symbols or set()
+
+    # Build param_type_map: function_name -> {param: type_str}
+    # Used by _extract_symbol_references to resolve obj.method() via annotations.
+    param_type_map: dict[str, dict[str, str]] = {
+        fn.name: fn.param_types
+        for fn in functions
+        if fn.param_types
+    }
+
+    # Build class_attr_map: class_name -> {attr: inferred_type}
+    # Used to resolve self.attr.method() via __init__ type assignments.
+    class_attr_map: dict[str, dict[str, str]] = {}
+    for ca in class_attrs:
+        class_attr_map.setdefault(ca.class_name, {})[ca.attribute] = ca.inferred_type
 
     # TRACKER.md item 23: runtime_bindings was only ever the caller's
     # parameter (always {} from scan_project_files.py's placeholder),
@@ -614,8 +753,10 @@ def parse_ast(
         alias_map,
         module_name,
         project_symbols,
+        param_type_map=param_type_map,
+        class_attr_map=class_attr_map,
     )
-    
+
     mutations = _extract_mutations(tree)
 
     return FileAnalysis(
@@ -631,6 +772,7 @@ def parse_ast(
         imports=imports,
         mutations=mutations,
         symbol_references=symbol_references,
+        class_attributes=class_attrs,
 
         runtime_bindings=runtime_bindings,
 

@@ -4,7 +4,7 @@ import logging
 import os
 import sqlite3
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict, deque
 from determined.graph.graph_builder import GraphEdge, GraphBundle
 from determined.oracle.edge_semantics import interpret_edge
@@ -851,6 +851,17 @@ class DBOracle:
             result = result[:limit]
 
         return result
+
+    def get_class_attribute_type(self, class_name: str, attribute: str) -> Optional[str]:
+        """
+        Return the inferred type of a class attribute from __init__ analysis,
+        or None if not recorded. E.g. get_class_attribute_type('Foo', 'bar') -> 'Bar'.
+        """
+        row = self.conn.execute(
+            "SELECT inferred_type FROM class_attributes WHERE class_name = ? AND attribute = ? LIMIT 1",
+            (class_name, attribute),
+        ).fetchone()
+        return row[0] if row else None
 
     def symbol_module_map(self) -> Dict[str, str]:
         """

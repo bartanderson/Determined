@@ -12,6 +12,7 @@ class GraphEdge:
     callee: str
     line_number: int
     caller_file: str = ""
+    resolved: bool = False
 
 
 @dataclass
@@ -33,13 +34,14 @@ class GraphBuilder:
         self.edges = []
         self.bucket_counts = defaultdict(int)
 
-    def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = ""):
+    def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = "", resolved: bool = False):
         self.edges.append(
             GraphEdge(
                 caller=caller,
                 callee=callee,
                 line_number=line_number,
                 caller_file=caller_file,
+                resolved=resolved,
             )
         )
 

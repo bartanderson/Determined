@@ -42,6 +42,7 @@ class FunctionRepresentation:
     name: str
     line_number: int
     arguments: List[str] = field(default_factory=list)
+    param_types: Dict[str, str] = field(default_factory=dict)  # param_name -> type_str
     return_type: Optional[str] = None
     docstring: Optional[str] = None
     is_stub: bool = False
@@ -84,6 +85,15 @@ class SymbolReference:
     identity: Optional[SymbolIdentity] = None
 
     bucket: Optional[str] = None
+    resolved: bool = False  # True = callee derived from type annotation, not heuristic
+
+@dataclass
+class ClassAttribute:
+    """Type-annotated or constructor-inferred attribute from a class __init__."""
+    class_name: str
+    attribute: str
+    inferred_type: str  # e.g. 'Foo' from self.x = Foo() or self.x: Foo
+
 
 @dataclass
 class SymbolClassification:
@@ -138,6 +148,7 @@ class FileAnalysis:
     classes: List[ClassRepresentation] = field(default_factory=list)
     imports: List[ImportRepresentation] = field(default_factory=list)
     symbol_references: List[SymbolReference] = field(default_factory=list)
+    class_attributes: List["ClassAttribute"] = field(default_factory=list)
 
     runtime_bindings: dict[str, str] = field(default_factory=dict)
     

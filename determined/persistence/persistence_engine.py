@@ -160,7 +160,18 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         callee TEXT,
 
         line_number INTEGER,
-        caller_file TEXT
+        caller_file TEXT,
+        resolved INTEGER DEFAULT 0
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS class_attributes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        class_name TEXT NOT NULL,
+        attribute TEXT NOT NULL,
+        inferred_type TEXT NOT NULL
     )
     """)
 
@@ -319,6 +330,13 @@ def create_indexes(connection: sqlite3.Connection, include_composite: bool = Tru
     fn_cols = {row[1] for row in cursor.execute("PRAGMA table_info(functions)")}
     if "is_stub" not in fn_cols:
         cursor.execute("ALTER TABLE functions ADD COLUMN is_stub INTEGER DEFAULT 0")
+    if "param_types_json" not in fn_cols:
+        cursor.execute("ALTER TABLE functions ADD COLUMN param_types_json TEXT")
+
+    # migrate existing DBs that predate the resolved column on graph_edges
+    ge_cols = {row[1] for row in cursor.execute("PRAGMA table_info(graph_edges)")}
+    if "resolved" not in ge_cols:
+        cursor.execute("ALTER TABLE graph_edges ADD COLUMN resolved INTEGER DEFAULT 0")
 
     connection.commit()
 
@@ -382,16 +400,18 @@ def persist_file_analysis(
             line_number,
             return_type,
             arguments_json,
+            param_types_json,
             docstring,
             is_stub
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             analysis.file_path,
             _canonical_symbol(function.name),
             function.line_number,
             function.return_type,
             json.dumps(function.arguments),
+            json.dumps(getattr(function, "param_types", {})) or None,
             function.docstring,
             1 if getattr(function, "is_stub", False) else 0,
         ))
@@ -557,6 +577,19 @@ def persist_file_analysis(
             mutation.raw_expression,
             mutation.intent,
         ))
+
+    # -------------------------
+    # CLASS ATTRIBUTES
+    # -------------------------
+    cursor.execute(
+        "DELETE FROM class_attributes WHERE file_path = ?",
+        (analysis.file_path,),
+    )
+    for ca in getattr(analysis, "class_attributes", []):
+        cursor.execute("""
+        INSERT INTO class_attributes (file_path, class_name, attribute, inferred_type)
+        VALUES (?, ?, ?, ?)
+        """, (analysis.file_path, ca.class_name, ca.attribute, ca.inferred_type))
 
     # -------------------------
     # SYMBOL REFERENCES
@@ -742,8 +775,9 @@ def _persist_graph_edges(connection, graph):
             caller,
             callee,
             line_number,
-            caller_file
-        ) VALUES (?, ?, ?, ?, ?, ?)
+            caller_file,
+            resolved
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             source_id,
             target_id,
@@ -751,6 +785,7 @@ def _persist_graph_edges(connection, graph):
             edge.callee,
             getattr(edge, "line_number", None),
             getattr(edge, "caller_file", None),
+            1 if getattr(edge, "resolved", False) else 0,
         ))
 
     connection.commit()

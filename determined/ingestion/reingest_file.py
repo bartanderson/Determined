@@ -255,6 +255,7 @@ def apply_file_delta(
             line_number=ref.line_number,
             bucket=getattr(ref, "bucket", "unknown"),
             caller_file=delta.file_path,
+            resolved=getattr(ref, "resolved", False),
         )
     graph = builder.build()
     _persist_graph_edges(conn, graph)
