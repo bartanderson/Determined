@@ -63,3 +63,28 @@ def is_available(timeout: int = 5) -> bool:
         return resp.status_code == 200
     except Exception:
         return False
+
+
+def warmup(wait_seconds: int = 60, probe_timeout: int = 10) -> bool:
+    """
+    Block until the model is loaded and responding, or give up after
+    wait_seconds. Sends a trivial chat request as the probe — /health
+    returns ok before the model is ready, so a real inference call is
+    the only reliable readiness signal.
+
+    Returns True if the model responded, False if it never did.
+    Call this once at the start of any script that will use chat().
+    """
+    import time
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        result = chat(
+            [{"role": "user", "content": "ping"}],
+            timeout=probe_timeout,
+        )
+        if result is not None:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(3, remaining))
+    return False
