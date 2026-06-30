@@ -256,7 +256,7 @@ def _compile_via_llm(text: str, intent: str):
     )
 
     try:
-        raw = _llm_generate(prompt, timeout=10)
+        raw = _llm_generate(prompt)
         if not raw:
             logger.debug("llama-server not reachable - using rule-based compiler")
             return None

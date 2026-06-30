@@ -11,13 +11,15 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-LLM_BASE_URL = "http://localhost:8080"
-LLM_TIMEOUT  = 60
+LLM_BASE_URL     = "http://localhost:8080"
+LLM_TIMEOUT      = 30   # GPU inference: complex prompts ~2-5s, 30s is generous safety margin
+LLM_COLD_TIMEOUT = 10   # probe timeout for warmup (GPU loads model in <5s)
 
 
 def generate(prompt: str, timeout: int = LLM_TIMEOUT) -> str | None:
@@ -65,26 +67,24 @@ def is_available(timeout: int = 5) -> bool:
         return False
 
 
-def warmup(wait_seconds: int = 60, probe_timeout: int = 10) -> bool:
+def warmup(wait_seconds: int = 30, probe_timeout: int = LLM_COLD_TIMEOUT) -> bool:
     """
-    Block until the model is loaded and responding, or give up after
-    wait_seconds. Sends a trivial chat request as the probe — /health
-    returns ok before the model is ready, so a real inference call is
-    the only reliable readiness signal.
-
-    Returns True if the model responded, False if it never did.
-    Call this once at the start of any script that will use chat().
+    Block until the model is responding, or give up after wait_seconds.
+    GPU cold-load is typically <5s. Returns True if ready, False if timed out.
     """
-    import time
     deadline = time.monotonic() + wait_seconds
+    attempt = 0
     while time.monotonic() < deadline:
-        result = chat(
-            [{"role": "user", "content": "ping"}],
-            timeout=probe_timeout,
-        )
-        if result is not None:
-            return True
+        attempt += 1
         remaining = deadline - time.monotonic()
-        if remaining > 0:
-            time.sleep(min(3, remaining))
+        this_timeout = min(probe_timeout, remaining)
+        if this_timeout <= 0:
+            break
+        result = generate("ping", timeout=int(this_timeout))
+        if result is not None:
+            logger.info("llm_client.warmup: ready after %d probe(s)", attempt)
+            return True
+        if time.monotonic() < deadline:
+            time.sleep(min(2, deadline - time.monotonic()))
+    logger.warning("llm_client.warmup: not ready within %ds", wait_seconds)
     return False

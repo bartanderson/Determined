@@ -178,7 +178,7 @@ def test_ask_runs_end_to_end_without_stubs():
         os.remove(tmp_path)
 
 
-def test_ask_is_deterministic():
+def test_ask_is_deterministic(warmup_llm):
     """
     Same question, same DB state, twice -> identical intent and identical
     algebra result. This is the actual proof the 2026-06-16 readiness
