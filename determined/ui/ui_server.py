@@ -1052,6 +1052,123 @@ def handle_save_file(data):
         emit("save_result", {"error": str(exc)})
 
 
+@socketio.on("get_docstring_proposals")
+def handle_get_docstring_proposals(_data=None):
+    """Return active llm-proposed docstring items from the workflow store."""
+    if _assessor is None:
+        emit("docstring_proposals", {"error": "no corpus loaded"}); return
+    import json as _json
+    from determined.intent.workflow_store import list_items
+    try:
+        k_conn = _assessor._knowledge_conn
+        rows = list_items(k_conn, kind="next_up", status="active", limit=200)
+        proposals = []
+        for r in rows:
+            if not r["subject"].startswith("docstring::"):
+                continue
+            if r["provenance"] != "llm-proposed":
+                continue
+            try:
+                data = _json.loads(r["content"])
+            except Exception:
+                continue
+            proposals.append({
+                "id": r["id"],
+                "subject": r["subject"],
+                "proposed_docstring": data.get("proposed_docstring", ""),
+                "file_path": data.get("file_path", ""),
+                "line_number": data.get("line_number"),
+                "staleness_score": data.get("staleness_score"),
+            })
+        emit("docstring_proposals", {"proposals": proposals})
+    except Exception as exc:
+        emit("docstring_proposals", {"error": str(exc)})
+
+
+def _insert_docstring(file_path: str, line_number: int, docstring: str) -> str:
+    """
+    Insert a docstring into a Python source file immediately after the def/class
+    at line_number (1-based). Returns the modified source text.
+    Raises ValueError if line_number doesn't point at a def/class line.
+    """
+    fp = Path(file_path)
+    lines = fp.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    idx = line_number - 1
+    if idx < 0 or idx >= len(lines):
+        raise ValueError(f"line_number {line_number} out of range for {file_path}")
+    def_line = lines[idx]
+    stripped = def_line.lstrip()
+    if not stripped.startswith(("def ", "class ", "async def ")):
+        raise ValueError(f"line {line_number} is not a def/class: {def_line!r}")
+
+    # Detect indentation of the def line, add 4 spaces for body
+    indent = len(def_line) - len(def_line.lstrip())
+    body_indent = " " * (indent + 4)
+
+    # Format as a single-line or multi-line docstring
+    text = docstring.strip().replace('"""', "'''")
+    if "\n" in text:
+        doc_lines = [f'{body_indent}"""\n']
+        for part in text.splitlines():
+            doc_lines.append(f"{body_indent}{part}\n")
+        doc_lines.append(f'{body_indent}"""\n')
+        doc_block = "".join(doc_lines)
+    else:
+        doc_block = f'{body_indent}"""{text}"""\n'
+
+    # Insert after the def line (handle multi-line def signatures by finding the colon)
+    insert_at = idx + 1
+    # If the def line ends with a colon, we're on the last line of the signature.
+    # Otherwise walk forward to find it.
+    search = idx
+    while search < len(lines) and ":" not in lines[search]:
+        search += 1
+    insert_at = search + 1
+
+    lines.insert(insert_at, doc_block)
+    return "".join(lines)
+
+
+@socketio.on("accept_docstring_proposal")
+def handle_accept_docstring_proposal(data):
+    """Write the proposed docstring into the source file and mark the item done."""
+    item_id = data.get("id")
+    if _assessor is None or item_id is None:
+        emit("proposal_result", {"error": "no corpus or missing id"}); return
+    import json as _json
+    from determined.intent.workflow_store import get_item, update_item
+    try:
+        k_conn = _assessor._knowledge_conn
+        item = get_item(k_conn, item_id)
+        if not item:
+            emit("proposal_result", {"error": f"item {item_id} not found"}); return
+        payload = _json.loads(item["content"])
+        file_path = payload["file_path"]
+        line_number = payload["line_number"]
+        proposed = payload["proposed_docstring"]
+
+        new_content = _insert_docstring(file_path, line_number, proposed)
+        Path(file_path).write_text(new_content, encoding="utf-8")
+        update_item(k_conn, item_id, status="done")
+        emit("proposal_result", {"ok": True, "id": item_id, "file_path": file_path})
+    except Exception as exc:
+        emit("proposal_result", {"error": str(exc), "id": item_id})
+
+
+@socketio.on("dismiss_docstring_proposal")
+def handle_dismiss_docstring_proposal(data):
+    """Mark a docstring proposal as deferred without writing anything."""
+    item_id = data.get("id")
+    if _assessor is None or item_id is None:
+        emit("proposal_result", {"error": "no corpus or missing id"}); return
+    from determined.intent.workflow_store import update_item
+    try:
+        update_item(_assessor._knowledge_conn, item_id, status="deferred")
+        emit("proposal_result", {"ok": True, "id": item_id, "dismissed": True})
+    except Exception as exc:
+        emit("proposal_result", {"error": str(exc), "id": item_id})
+
+
 @socketio.on("bag_add")
 def handle_bag_add(data):
     """Add a single item to the system bag from the editor."""

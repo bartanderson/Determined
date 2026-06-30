@@ -90,6 +90,7 @@
       <button class="tab tab-nodot" data-tab="imports">Imports</button>
       <button class="tab tab-nodot" data-tab="bag">Bag</button>
       <button class="tab tab-nodot" data-tab="editor">Editor</button>
+      <button class="tab tab-nodot" data-tab="dochealth">Doc health</button>
     </div>
 
     <!-- tab panels -->
@@ -187,6 +188,16 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- ── doc health tab ── -->
+      <div class="tab-panel" id="panel-dochealth" style="flex-direction:column;min-height:0;overflow-y:auto;padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-shrink:0">
+          <strong style="font-size:.95em">Docstring proposals</strong>
+          <button id="dh-refresh-btn" class="send-btn" style="font-size:.78em;padding:3px 10px">Refresh</button>
+          <span id="dh-status" style="font-size:.78em;color:var(--text3)"></span>
+        </div>
+        <div id="dh-list" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
     </div>
@@ -1656,6 +1667,86 @@ function edAttachBagFileLinks(container) {
     el.addEventListener("click", () => edOpenFile(el.dataset.path));
   });
 }
+
+// ── doc health tab ────────────────────────────────────────
+const dhList       = document.getElementById("dh-list");
+const dhStatus     = document.getElementById("dh-status");
+const dhRefreshBtn = document.getElementById("dh-refresh-btn");
+
+function dhLoad() {
+  dhStatus.textContent = "Loading…";
+  dhList.innerHTML = "";
+  socket.emit("get_docstring_proposals", {});
+}
+
+socket.on("docstring_proposals", data => {
+  if (data.error) {
+    dhStatus.textContent = "Error: " + data.error;
+    return;
+  }
+  const proposals = data.proposals || [];
+  dhStatus.textContent = proposals.length ? `${proposals.length} proposal(s)` : "No proposals — run docstring_health first.";
+  dhList.innerHTML = "";
+  proposals.forEach(p => {
+    const card = document.createElement("div");
+    card.id = "dh-card-" + p.id;
+    card.style.cssText = "background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:10px 12px;font-size:.82em";
+    const subject = p.subject.replace("docstring::", "");
+    const score = p.staleness_score != null ? ` · score ${p.staleness_score}` : "";
+    const fp = p.file_path || "";
+    const ln = p.line_number || "";
+    card.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:.5rem;margin-bottom:6px">
+        <span style="font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${escAttr(fp)}">${escHtml(subject)}</span>
+        <span style="color:var(--text3);flex-shrink:0">line ${escHtml(String(ln))}${escHtml(score)}</span>
+      </div>
+      <pre style="margin:0 0 8px;white-space:pre-wrap;word-break:break-word;color:var(--text1);background:var(--bg2);border-radius:3px;padding:6px 8px;line-height:1.4">${escHtml(p.proposed_docstring)}</pre>
+      <div style="display:flex;gap:6px">
+        <button class="dh-accept send-btn" data-id="${p.id}" style="font-size:.78em;padding:3px 10px;background:var(--green,#2a7a2a)">Accept</button>
+        <button class="dh-dismiss" data-id="${p.id}" style="font-size:.78em;padding:3px 10px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);cursor:pointer">Dismiss</button>
+      </div>`;
+    dhList.appendChild(card);
+  });
+
+  dhList.querySelectorAll(".dh-accept").forEach(btn => {
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      btn.textContent = "Writing…";
+      socket.emit("accept_docstring_proposal", { id: parseInt(btn.dataset.id) });
+    });
+  });
+  dhList.querySelectorAll(".dh-dismiss").forEach(btn => {
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      socket.emit("dismiss_docstring_proposal", { id: parseInt(btn.dataset.id) });
+    });
+  });
+});
+
+socket.on("proposal_result", data => {
+  const card = document.getElementById("dh-card-" + data.id);
+  if (!card) return;
+  if (data.error) {
+    const msg = card.querySelector(".dh-accept");
+    if (msg) { msg.textContent = "Error"; msg.title = data.error; }
+  } else {
+    card.style.opacity = "0.4";
+    card.style.pointerEvents = "none";
+    const btns = card.querySelectorAll("button");
+    btns.forEach(b => b.disabled = true);
+    if (data.dismissed) {
+      card.querySelector(".dh-dismiss").textContent = "Dismissed";
+    } else {
+      card.querySelector(".dh-accept").textContent = "Written ✓";
+    }
+  }
+});
+
+dhRefreshBtn.addEventListener("click", dhLoad);
+
+document.querySelectorAll(".tab[data-tab='dochealth']").forEach(t => {
+  t.addEventListener("click", dhLoad);
+});
 </script>
 
 </body>
