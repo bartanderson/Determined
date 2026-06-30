@@ -206,7 +206,11 @@ def _maybe_scope_to_named_file(plan: QueryPlan, text: str) -> QueryPlan:
 
     if not isinstance(root, Select):
         return plan
-    if root.view != "ROLE" or root.metric is not None or root.filter is not None:
+    # Trigger when filter is absent and metric is either unset or already "files".
+    # If the LLM picked metric="files" but forgot the filter, we still need to scope.
+    if root.view != "ROLE" or root.filter is not None:
+        return plan
+    if root.metric is not None and root.metric != "files":
         return plan
 
     file_filter = _extract_single_file_filter(text)

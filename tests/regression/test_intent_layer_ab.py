@@ -307,6 +307,7 @@ def test_assessor_semantic_summary_reads_file_automatically():
         cur = oracle.conn.cursor()
         ensure_semantic_summaries_table(cur)
         oracle.conn.commit()
+        cur.close()
         a = Assessor(oracle)
         # Pass the absolute path directly - no source_text supplied
         result = a.semantic_summary(src_path, kind="file")
