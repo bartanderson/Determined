@@ -4,6 +4,13 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from determined.oracle.db_oracle import DBOracle
+from determined.assessor.epistemic_policy import (
+    EpistemicPolicy,
+    LLM_SEVERITY_THRESHOLD,
+    HARD_BLOCK_INTEGRITY,
+    HARD_BLOCK_STRUCTURE,
+)
+from determined.agent import llm_client
 
 from determined.truth.views import (
     build_structure_view,
@@ -279,11 +286,77 @@ class Assessor:
     def ask(self, text: str) -> dict:
         """
         The real, wired front door: natural language in, Truth-Layer-backed
-        algebra result out. Thin wrapper over session().run_algebra() with
-        all_views() supplied automatically, so callers never have to
-        remember to assemble the views dict themselves.
+        algebra result out.
+
+        Decision gate: EpistemicPolicy measures risk from the Truth Layer
+        views. If severity exceeds LLM_SEVERITY_THRESHOLD and no hard block
+        applies, the algebra result is augmented with an LLM narrative layer
+        via llm_client.chat(). Otherwise the deterministic result is returned
+        as-is. All thresholds live in epistemic_policy.py.
         """
-        return self.session().run_algebra(text, views=self.all_views())
+        views = self.all_views()
+        result = self.session().run_algebra(text, views=views)
+
+        # Risk measurement (pure, no side effects)
+        policy = EpistemicPolicy()
+        directive = policy.analyze(
+            structure_view=views["STRUCTURE"],
+            integrity_view=views["INTEGRITY"],
+            stability_view=views["STABILITY"],
+            summary_view=views["SUMMARY"],
+            role_view=views["ROLE"],
+        )
+
+        result["epistemic"] = {
+            "severity": directive.severity,
+            "risk_vector": directive.risk_vector,
+            "required_surfaces": directive.required_surfaces,
+        }
+
+        # Single decision authority (only place LLM call is gated)
+        hard_block = (
+            directive.risk_vector["integrity"] >= HARD_BLOCK_INTEGRITY and
+            directive.risk_vector["structure"] >= HARD_BLOCK_STRUCTURE
+        )
+        allow_llm = (
+            directive.severity > LLM_SEVERITY_THRESHOLD
+            and not hard_block
+            and llm_client.is_available()
+        )
+
+        if allow_llm:
+            narrative = llm_client.chat([
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a senior software analyst. "
+                        "You receive structured facts about a codebase and a question. "
+                        "Synthesize a concise, grounded explanation using only the facts provided. "
+                        "Do not invent information."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question: {text}\n\n"
+                        f"Epistemic risk: severity={directive.severity:.2f}, "
+                        f"risk_vector={directive.risk_vector}\n\n"
+                        f"Intent: {result['intent']}\n"
+                        f"Expanded symbols: {result['oracle'].expanded[:20]}\n"
+                        f"Required surfaces: {directive.required_surfaces}"
+                    ),
+                },
+            ])
+            result["narrative"] = narrative
+        else:
+            result["narrative"] = None
+            result["narrative_skipped_reason"] = (
+                "hard_block" if hard_block
+                else "severity_below_threshold" if directive.severity <= LLM_SEVERITY_THRESHOLD
+                else "llm_unavailable"
+            )
+
+        return result
 
     # =====================================================
     # STRUCTURE VIEW (run_engine Phase 3)
