@@ -29,6 +29,51 @@ Before writing any code that queries, transforms, or computes data in Determined
 7. **Publish schema in one place.** The compiler reads it, the executor validates against it, the UI renders from it. One source, multiple consumers.
 8. **Invalidate derived state when source changes.** Hash the source, check the hash. Time-based expiry assumes the source didn't change.
 
+## IMPROVEMENT METHODOLOGY -- How to grow the tool's capability
+
+The goal is a tool with the analytical power of a large LLM but the bones of a
+deterministic, auditable analyzer. The way you get there:
+
+**Step 1 -- Run it on real code and watch what it misses.**
+Don't invent hypothetical gaps. Ingest a real corpus, ask real questions, and
+observe where the answers are wrong, shallow, or absent. Every gap found this
+way is a real gap. Every gap invented is a distraction.
+
+**Step 2 -- Classify the gap by layer.**
+Before deciding how to fill a gap, identify which layer owns it:
+
+- **Deterministic** -- the answer is structurally derivable from AST, call
+  graph, schema, or DB state. If the gap is here, write the query or
+  traversal. This is always the first choice: zero hallucination risk,
+  fully testable, cheap to run.
+- **Semantic** -- the answer requires understanding meaning across symbols,
+  names, or patterns (e.g. "what role does this module play?", "are these
+  two functions doing the same thing?"). Use embeddings and similarity here.
+  Still local, still verifiable, but probabilistic -- always back it with
+  a deterministic check where possible.
+- **Narrative** -- the answer requires synthesizing a human-readable
+  explanation, surfacing judgment, or bridging gaps the first two layers
+  can't close. This is where llama-server comes in: a thin layer on top of
+  solid structure. It reports, it does not decide. It narrates what the
+  deterministic and semantic layers already know.
+
+**Step 3 -- Fix in the right layer.**
+Never fill a deterministic gap with narrative. Never use the LLM to answer
+a question the DB can answer. The narrative layer's job is to make
+structural facts readable -- not to substitute for them when they're missing.
+
+**Step 4 -- Report gaps to Bart before building.**
+When a gap is found, surface it: what the tool produced, what the right
+answer is, which layer owns the fix, and a proposed approach. Bart decides
+priority. This keeps scope from expanding silently and ensures every addition
+solves a real observed problem.
+
+**The invariant:**
+A small, deterministic, well-tested analyzer augmented by a thin semantic
+and narrative layer will outperform a large LLM on this domain -- because
+the structure is always true, the LLM is sometimes wrong, and the combination
+lets you know which is which.
+
 ## DON'T DO THIS (anti-patterns earned the hard way)
 
 1. **Don't let guesses become infrastructure.** An assumption that works once and never gets validated will eventually be load-bearing and wrong.
