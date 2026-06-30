@@ -252,10 +252,12 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     from determined.intent.semantic_summary import ensure_semantic_summaries_table
     from determined.intent.knowledge_artifact import ensure_knowledge_artifacts_table
     from determined.intent.workflow_store import ensure_workflow_items_table
+    from determined.agent.semantic_cache import ensure_semantic_cache_table
     ensure_semantic_summaries_table(cursor)
     ensure_knowledge_artifacts_table(cursor)
     ensure_workflow_items_table(cursor)
     _ensure_bags_tables(cursor)
+    ensure_semantic_cache_table(cursor)
 
     connection.commit()
 

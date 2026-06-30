@@ -578,7 +578,7 @@ def test_distill_corpus_idempotent():
     conn.commit()
 
     call_count = 0
-    def mock_distill(content, subject):
+    def mock_distill(content, subject, conn=None):
         nonlocal call_count
         call_count += 1
         return "mock sentence"

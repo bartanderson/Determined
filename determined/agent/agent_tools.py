@@ -361,11 +361,12 @@ def _graph_subgraph_raw(oracle: "DBOracle", symbol: str, radius: int = 2) -> dic
     return subgraph_around(oracle, symbol, radius=radius)
 
 
-def _distill_to_one_sentence(content: str, subject: str) -> str | None:
+def _distill_to_one_sentence(content: str, subject: str, conn=None) -> str | None:
     """
     Compress `content` into one sentence via llama-server.
     Returns None if llama-server is unreachable - callers must handle this explicitly
     so the failure is visible rather than silently swallowed (SOTS XIII).
+    Checks semantic cache first if conn is provided.
     """
     from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
     prompt = (
@@ -373,7 +374,16 @@ def _distill_to_one_sentence(content: str, subject: str) -> str | None:
         f"Be concrete and name the main thing it does.\n\n"
         f"Subject: {subject}\n\n{content[:1500]}"
     )
-    return _llm_generate(prompt, timeout=LLM_TIMEOUT)
+    if conn is not None:
+        from determined.agent.semantic_cache import lookup, store
+        cached = lookup(prompt, conn)
+        if cached is not None:
+            return cached
+    result = _llm_generate(prompt, timeout=LLM_TIMEOUT)
+    if result is not None and conn is not None:
+        from determined.agent.semantic_cache import store
+        store(prompt, result, conn)
+    return result
 
 
 def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
@@ -1762,10 +1772,11 @@ def _format_project_status(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _synthesize_with_ollama(status_text: str, goal: str) -> str | None:
+def _synthesize_with_ollama(status_text: str, goal: str, conn=None) -> str | None:
     """
     Pass the structured status to llama-server for narrative synthesis.
     Returns None on failure (SOTS XIII: visible failure, not swallowed).
+    Checks semantic cache first if conn is provided.
     """
     from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
     prompt = (
@@ -1784,7 +1795,16 @@ def _synthesize_with_ollama(status_text: str, goal: str) -> str | None:
         f"Do not invent information not in the data. Under 350 words.\n\n"
         f"STRUCTURAL DATA:\n{status_text}"
     )
-    return _llm_generate(prompt, timeout=LLM_TIMEOUT)
+    if conn is not None:
+        from determined.agent.semantic_cache import lookup, store
+        cached = lookup(prompt, conn)
+        if cached is not None:
+            return cached
+    result = _llm_generate(prompt, timeout=LLM_TIMEOUT)
+    if result is not None and conn is not None:
+        from determined.agent.semantic_cache import store
+        store(prompt, result, conn)
+    return result
 
 
 def project_status(assessor: "Assessor", args: dict) -> str:
@@ -1829,7 +1849,7 @@ def project_status(assessor: "Assessor", args: dict) -> str:
         return structural + enrichment_note
 
     # Attempt Ollama synthesis; degrade to structural if unavailable (SOTS XIII)
-    synthesis = _synthesize_with_ollama(structural, goal)
+    synthesis = _synthesize_with_ollama(structural, goal, conn=assessor.oracle.conn)
     if synthesis:
         return structural + enrichment_note + "\n\n--- Synthesis ---\n" + synthesis
     return structural + enrichment_note + "\n\n(llama-server unavailable for synthesis - structural data above)"
@@ -1878,7 +1898,7 @@ def distill_corpus(assessor: "Assessor", args: dict) -> str:
 
     stored = 0
     for row_id, subject, content in pending:
-        sentence = _distill_to_one_sentence(content, subject)
+        sentence = _distill_to_one_sentence(content, subject, conn=corpus_conn)
         if sentence is None:
             return f"ERROR: llama-server stopped responding mid-run after {stored} stored."
         corpus_conn.execute(
