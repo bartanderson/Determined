@@ -308,6 +308,30 @@ REGISTRY: dict[str, dict] = {
     },
 
     # ── CODE HYGIENE ───────────────────────────────────────────────
+    "docstring_health": {
+        "purpose": "Surface missing and stale docstrings; store fill proposals in the workflow queue.",
+        "args": {
+            "file": "(optional) scope to one file path",
+            "module": "(optional) scope to a path prefix",
+            "propose": "(optional, default true) store proposals in workflow queue",
+        },
+        "output": "missing count, stale list with cosine scores, proposal count",
+        "feeds": ["workflow_status", "reingest_file"],
+        "use_when": "Docstring hygiene pass; finding undocumented or drifted surface area.",
+        "category": "discovery",
+    },
+    "gap_analysis": {
+        "purpose": "On-demand LLM analysis of what is missing or could bridge gaps in a scoped area. Generative/idea-mode — not prescriptive.",
+        "args": {
+            "file": "(optional) scope to one file",
+            "module": "(optional) scope to a path prefix",
+            "symbol": "(optional) scope to a symbol",
+        },
+        "output": "GAP ANALYSIS header + typed proposals (extend/bridge/mirror/consolidate); stored as backlog item",
+        "feeds": ["workflow_status", "goal_intake"],
+        "use_when": "User wants brainstorming on what is missing or under-covered in an area. NOT automatic — user-initiated.",
+        "category": "knowledge",
+    },
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",
         "args": {},
@@ -581,6 +605,21 @@ TASK_PATTERNS: dict[str, dict] = {
         "description": "Translate a developer goal into a navigation plan: design rules, hot/safe zones, stubs, safe insertion points.",
         "steps": [
             {"tool": "goal_intake", "args_hint": {"goal": "<goal>"}, "why": "assemble goal-directed context and return navigation plan"},
+        ],
+    },
+
+    "docstring_health": {
+        "description": "Docstring hygiene pass: find missing and stale docstrings, propose fills.",
+        "steps": [
+            {"tool": "docstring_health", "args_hint": {}, "why": "missing + staleness detection across whole corpus, proposals stored in queue"},
+        ],
+    },
+
+    "gap_analysis": {
+        "description": "On-demand brainstorm of what is missing or under-covered in an area.",
+        "steps": [
+            {"tool": "knowledge_status", "args_hint": {}, "why": "read gap summary before running analysis"},
+            {"tool": "gap_analysis",     "args_hint": {}, "why": "LLM proposes typed fills for the highest-gap area"},
         ],
     },
 }

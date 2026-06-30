@@ -1064,6 +1064,8 @@ def knowledge_status(assessor: "Assessor", args: dict) -> str:
             f"  TIP: run extract_design_facts() then describe_file() on uncovered files "
             f"to improve coverage."
         )
+    lines.append("")
+    lines.append(_gap_summary_block(assessor))
     return "\n".join(lines)
 
 
@@ -2119,6 +2121,280 @@ def concept_search(assessor: "Assessor", args: dict) -> str:
     return "\n".join(out)
 
 
+def docstring_health(assessor: "Assessor", args: dict) -> str:
+    """
+    docstring_health([file][, module][, propose]) - surfaces missing and stale docstrings.
+    Missing: no docstring at all. Stale: docstring cosine-distance from distilled summary < 0.55.
+    propose=True (default): store proposals in the workflow queue for editor write-back.
+    """
+    import json
+    file_scope = args.get("file", "").strip()
+    module_scope = args.get("module", "").strip()
+    propose = str(args.get("propose", "true")).lower() not in ("false", "0", "no")
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    scope_clause = ""
+    scope_params: list = []
+    if file_scope:
+        scope_clause = " AND file_path = ?"
+        scope_params = [file_scope]
+    elif module_scope:
+        scope_clause = " AND file_path LIKE ?"
+        scope_params = [f"%{module_scope}%"]
+
+    # --- Missing docstrings ---
+    missing: list[dict] = []
+    for table in ("functions", "classes"):
+        rows = conn.execute(
+            f"SELECT name, file_path, line_number FROM {table} "
+            f"WHERE (docstring IS NULL OR docstring = ''){scope_clause} "
+            f"ORDER BY file_path, line_number",
+            scope_params,
+        ).fetchall()
+        for name, fp, ln in rows:
+            missing.append({"name": name, "file_path": fp, "line_number": ln, "table": table})
+
+    # --- Stale docstrings ---
+    stale: list[dict] = []
+    try:
+        from determined.oracle.embedding_model import embed_text, cosine_similarity
+        for table in ("functions", "classes"):
+            rows = conn.execute(
+                f"SELECT name, file_path, line_number, docstring FROM {table} "
+                f"WHERE docstring IS NOT NULL AND docstring != ''{scope_clause}",
+                scope_params,
+            ).fetchall()
+            for name, fp, ln, doc in rows:
+                dist_row = conn.execute(
+                    "SELECT distilled FROM semantic_summaries WHERE subject = ? AND distilled IS NOT NULL",
+                    (fp,),
+                ).fetchone()
+                if dist_row and dist_row[0]:
+                    score = cosine_similarity(embed_text(doc), embed_text(dist_row[0]))
+                    if score < 0.55:
+                        stale.append({
+                            "name": name,
+                            "file_path": fp,
+                            "line_number": ln,
+                            "score": round(score, 3),
+                            "distilled": dist_row[0],
+                        })
+    except Exception as e:
+        stale_err = str(e)
+    else:
+        stale_err = None
+
+    # --- Proposals ---
+    stored_proposals = 0
+    if propose:
+        from determined.intent.workflow_store import add_item
+        k_conn = assessor._knowledge_conn
+        for sym in missing:
+            dist_row = conn.execute(
+                "SELECT distilled FROM semantic_summaries WHERE subject = ? AND distilled IS NOT NULL",
+                (sym["file_path"],),
+            ).fetchone()
+            if dist_row and dist_row[0]:
+                content = json.dumps({
+                    "proposed_docstring": dist_row[0],
+                    "file_path": sym["file_path"],
+                    "line_number": sym["line_number"],
+                })
+                add_item(k_conn, kind="next_up",
+                         subject=f"docstring::{sym['file_path']}::{sym['name']}",
+                         content=content, provenance="llm-proposed")
+                stored_proposals += 1
+        for sym in stale:
+            content = json.dumps({
+                "proposed_docstring": sym["distilled"],
+                "file_path": sym["file_path"],
+                "line_number": sym["line_number"],
+                "staleness_score": sym["score"],
+            })
+            add_item(k_conn, kind="next_up",
+                     subject=f"docstring::{sym['file_path']}::{sym['name']}",
+                     content=content, provenance="llm-proposed")
+            stored_proposals += 1
+
+    # --- Format output ---
+    scope_label = file_scope or module_scope or "whole corpus"
+    lines = [f"=== docstring_health: {scope_label} ===\n"]
+
+    lines.append(f"[MISSING]  {len(missing)} symbol(s) with no docstring")
+    for s in missing[:30]:
+        lines.append(f"  {s['file_path']}:{s['line_number']}  {s['name']}  ({s['table']})")
+    if len(missing) > 30:
+        lines.append(f"  ... {len(missing) - 30} more")
+
+    lines.append(f"\n[STALE]  {len(stale)} symbol(s) with low docstring/code similarity")
+    if stale_err:
+        lines.append(f"  (staleness check skipped: {stale_err})")
+    else:
+        for s in stale[:30]:
+            score = s["score"]
+            flag = "STALE" if score < 0.55 else "REVIEW"
+            lines.append(f"  [{flag} {score:.2f}]  {s['file_path']}:{s['line_number']}  {s['name']}")
+        if len(stale) > 30:
+            lines.append(f"  ... {len(stale) - 30} more")
+
+    if propose:
+        lines.append(f"\n[PROPOSALS]  {stored_proposals} proposal(s) stored in workflow queue")
+        lines.append("  Use workflow_status() to see them; accept/dismiss via the UI.")
+
+    return "\n".join(lines)
+
+
+def gap_analysis(assessor: "Assessor", args: dict) -> str:
+    """
+    gap_analysis([file][, module][, symbol]) - on-demand LLM gap analysis.
+    No args: uses gap summary to pick highest-signal area automatically.
+    Output is generative/idea-mode — proposals, not prescriptions.
+    """
+    file_scope = args.get("file", "").strip()
+    module_scope = args.get("module", "").strip()
+    symbol_scope = args.get("symbol", "").strip()
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    scope_label = file_scope or module_scope or symbol_scope
+
+    # 1. Collect gap summary to pick focus area if no scope given
+    gap_block = _gap_summary_block(assessor)
+    if not scope_label:
+        # Auto-pick: first module with 0 design notes (highest signal)
+        rows = conn.execute(
+            "SELECT SUBSTR(file_path, 1, INSTR(file_path || '/', '/') - 1) AS mod, "
+            "COUNT(*) as cnt FROM functions GROUP BY mod ORDER BY cnt DESC"
+        ).fetchall()
+        # fallback: just use the whole corpus
+        scope_label = "whole corpus"
+
+    # 2. Collect what exists in the scoped area
+    scope_clause = ""
+    scope_params: list = []
+    if file_scope:
+        scope_clause = " AND file_path = ?"
+        scope_params = [file_scope]
+    elif module_scope:
+        scope_clause = " AND file_path LIKE ?"
+        scope_params = [f"%{module_scope}%"]
+    elif symbol_scope:
+        scope_clause = " AND name = ?"
+        scope_params = [symbol_scope]
+
+    fn_rows = conn.execute(
+        f"SELECT name, file_path, docstring FROM functions WHERE 1=1{scope_clause} LIMIT 60",
+        scope_params,
+    ).fetchall()
+
+    sym_block = "\n".join(
+        f"  {name} ({fp}): {(doc or '(no docstring)')[:80]}"
+        for name, fp, doc in fn_rows
+    ) or "  (none found)"
+
+    # 3. Design notes for the area
+    if scope_params:
+        dn_rows = conn.execute(
+            "SELECT content FROM knowledge_artifacts WHERE kind='design_note' AND subject LIKE ? LIMIT 10",
+            (f"%{scope_params[0].strip('%')}%",),
+        ).fetchall()
+    else:
+        dn_rows = conn.execute(
+            "SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 10"
+        ).fetchall()
+    design_block = "\n".join(f"  - {r[0][:120]}" for r in dn_rows) or "  (none)"
+
+    # 4. Prompt the 3B model
+    from determined.agent.llm_client import chat
+    prompt_msgs = [
+        {"role": "system", "content":
+            "You are a code gap analyst. Given a set of existing symbols and design notes, "
+            "identify what is missing, incomplete, or could bridge gaps. Propose typed fills: "
+            "extend (add to existing), bridge (connect two areas), mirror (add analogous coverage), "
+            "consolidate (merge fragmented pieces). Be concrete and brief. 5-10 proposals max."},
+        {"role": "user", "content":
+            f"Area: {scope_label}\n\n"
+            f"Existing symbols:\n{sym_block}\n\n"
+            f"Design notes:\n{design_block}\n\n"
+            f"Gap summary:\n{gap_block}\n\n"
+            "What is missing, incomplete, or could bridge these areas? "
+            "Propose typed fills (extend/bridge/mirror/consolidate)."},
+    ]
+    llm_response = chat(prompt_msgs, timeout=60)
+
+    if llm_response is None:
+        return "ERROR: llama-server did not respond. gap_analysis requires a running LLM."
+
+    # 5. Store proposals
+    from determined.intent.workflow_store import add_item
+    k_conn = assessor._knowledge_conn
+    add_item(k_conn, kind="backlog",
+             subject=f"gap::{scope_label}",
+             content=llm_response, provenance="llm-proposed")
+
+    lines = [
+        "GAP ANALYSIS (generative — proposals may be off target):",
+        f"Area: {scope_label}",
+        "",
+        llm_response,
+        "",
+        "Stored as backlog item. Use workflow_status(kind=backlog) to review.",
+    ]
+    return "\n".join(lines)
+
+
+def _gap_summary_block(assessor: "Assessor") -> str:
+    """Fast DB-only gap summary — no LLM. Used by knowledge_status and gap_analysis."""
+    conn = assessor.oracle.conn
+    k_conn = assessor._knowledge_conn
+
+    total_fns = conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
+    missing_docs = conn.execute(
+        "SELECT COUNT(*) FROM functions WHERE docstring IS NULL OR docstring = ''"
+    ).fetchone()[0]
+    total_files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+    distilled = conn.execute(
+        "SELECT COUNT(*) FROM semantic_summaries WHERE distilled IS NOT NULL AND distilled != ''"
+    ).fetchone()[0]
+    design_note_count = k_conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'"
+    ).fetchone()[0]
+
+    # Per-module docstring gaps (first path segment)
+    mod_rows = conn.execute(
+        "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp, "
+        "SUM(CASE WHEN docstring IS NULL OR docstring='' THEN 1 ELSE 0 END) as missing, "
+        "COUNT(*) as total FROM functions GROUP BY fp"
+    ).fetchall()
+    # Group by top dir
+    from collections import defaultdict
+    mod_gaps: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for fp, miss, tot in mod_rows:
+        parts = fp.replace("\\", "/").split("/")
+        mod = parts[0] if parts else "."
+        mod_gaps[mod][0] += miss
+        mod_gaps[mod][1] += tot
+
+    gap_lines = []
+    for mod, (miss, tot) in sorted(mod_gaps.items(), key=lambda x: -x[1][0]):
+        if miss > 0:
+            gap_lines.append(f"    {mod}: {miss}/{tot} missing")
+
+    lines = [
+        "GAPS AT A GLANCE:",
+        f"  Docstring coverage:    {total_fns - missing_docs}/{total_fns} functions documented",
+        f"  Distillation coverage: {distilled}/{total_files} files distilled",
+        f"  Design notes:          {design_note_count} total",
+    ]
+    if gap_lines:
+        lines.append("  Modules with missing docstrings:")
+        lines.extend(gap_lines[:10])
+    return "\n".join(lines)
+
+
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
     distill_corpus() - compress each semantic_summary into a one-sentence
@@ -2239,6 +2515,9 @@ TOOLS = {
     # Symbol context + concept search (items 21/22)
     "symbol_context":          (symbol_context,          "assessor"),
     "concept_search":          (concept_search,          "assessor"),
+    # Docstring health + gap analysis (items 23/24)
+    "docstring_health":        (docstring_health,        "assessor"),
+    "gap_analysis":            (gap_analysis,            "assessor"),
 }
 
 

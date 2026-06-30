@@ -77,6 +77,14 @@ _DETECT_RULES: list[tuple] = [
     # goal_intake - subject is the full goal text
     (re.compile(r"(?:i want to|i(?:'m| am) trying to|help me|how do i|i need to)\s+(?:add|build|implement|create|write|extend|make)\s+(.+)", re.I),
      "goal_intake", 1),
+
+    # docstring_health - no subject
+    (re.compile(r"docstring\s+health|missing\s+docstrings?|stale\s+docstrings?|document(?:ation)?\s+(?:gaps?|coverage|health)", re.I),
+     "docstring_health", None),
+
+    # gap_analysis - no subject (or subject is the area)
+    (re.compile(r"gap\s+analysis|what(?:'s| is)\s+missing|what\s+could\s+bridge|analyze\s+(?:the\s+)?gaps?", re.I),
+     "gap_analysis", None),
 ]
 
 

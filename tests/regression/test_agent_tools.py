@@ -504,6 +504,8 @@ def test_dispatch_all_tools_registered():
         "reingest_file",
         "symbol_context",
         "concept_search",
+        "docstring_health",
+        "gap_analysis",
     }
     assert set(TOOLS.keys()) == expected
 
