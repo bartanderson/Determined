@@ -56,7 +56,7 @@ def _make_assessor_with_severity(severity, structure_risk=0.0, integrity_risk=0.
         run_algebra=lambda text, views: {
             "text": text,
             "intent": "general_query",
-            "oracle": SimpleNamespace(expanded=[]),
+            "oracle": SimpleNamespace(seeds=[], expanded=[]),
             "compiled_ast": None,
             "compiler_explanation": "",
             "algebra_result": {},

@@ -62,7 +62,7 @@ def test_hard_block_prevents_llm_call():
         run_algebra=lambda text, views: {
             "text": text,
             "intent": "general_query",
-            "oracle": SimpleNamespace(expanded=[]),
+            "oracle": SimpleNamespace(seeds=[], expanded=[]),
             "compiled_ast": None,
             "compiler_explanation": "",
             "algebra_result": {},
@@ -116,7 +116,7 @@ def test_hard_block_requires_both_thresholds():
         run_algebra=lambda text, views: {
             "text": text,
             "intent": "general_query",
-            "oracle": SimpleNamespace(expanded=[]),
+            "oracle": SimpleNamespace(seeds=[], expanded=[]),
             "compiled_ast": None,
             "compiler_explanation": "",
             "algebra_result": {},

@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 LLM_BASE_URL     = "http://localhost:8080"
 LLM_TIMEOUT      = 30   # GPU inference: complex prompts ~2-5s, 30s is generous safety margin
 LLM_COLD_TIMEOUT = 10   # probe timeout for warmup (GPU loads model in <5s)
+LLM_MAX_TOKENS   = 400  # cap generation; without this, large prompts cause llama-server to hang
 
 
-def generate(prompt: str, timeout: int = LLM_TIMEOUT) -> str | None:
+def generate(prompt: str, timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
     """
     Single-prompt completion via /v1/completions.
     Returns the generated text, or None on any failure.
@@ -30,7 +31,7 @@ def generate(prompt: str, timeout: int = LLM_TIMEOUT) -> str | None:
     try:
         resp = requests.post(
             f"{LLM_BASE_URL}/v1/completions",
-            json={"prompt": prompt, "stream": False},
+            json={"prompt": prompt, "stream": False, "max_tokens": max_tokens},
             timeout=timeout,
         )
         resp.raise_for_status()
@@ -40,7 +41,7 @@ def generate(prompt: str, timeout: int = LLM_TIMEOUT) -> str | None:
         return None
 
 
-def chat(messages: list[dict], timeout: int = LLM_TIMEOUT) -> str | None:
+def chat(messages: list[dict], timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
     """
     Chat completion via /v1/chat/completions.
     Returns the assistant content string, or None on any failure.
@@ -48,7 +49,7 @@ def chat(messages: list[dict], timeout: int = LLM_TIMEOUT) -> str | None:
     try:
         resp = requests.post(
             f"{LLM_BASE_URL}/v1/chat/completions",
-            json={"messages": messages, "stream": False},
+            json={"messages": messages, "stream": False, "max_tokens": max_tokens},
             timeout=timeout,
         )
         resp.raise_for_status()
