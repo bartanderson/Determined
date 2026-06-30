@@ -289,6 +289,24 @@ REGISTRY: dict[str, dict] = {
         "category": "ingestion",
     },
 
+    "symbol_context": {
+        "purpose": "Unified view of everything known about a named symbol: declaration, docstring, risk, references, callers/callees, design frame, findings.",
+        "args": {"symbol": "exact function or class name", "file_path": "(optional) disambiguate when same name appears in multiple files"},
+        "output": "multi-section report covering all structural and knowledge surfaces for the symbol",
+        "feeds": ["check_design_violations", "risk_profile", "reingest_file"],
+        "use_when": "User asks 'show me everything about X', 'context for X', or 'understand X'. Replaces chaining symbol_intent + list_callers + list_callees + get_findings.",
+        "category": "understanding",
+    },
+
+    "concept_search": {
+        "purpose": "Search a term or concept across all text surfaces (symbol names, docstrings, contracts, design notes, distilled summaries), ranked by semantic similarity.",
+        "args": {"query": "concept or term to search for"},
+        "output": "results grouped by surface type (symbol_name, docstring, contract, design_note, distilled_summary), each with file, line, and snippet",
+        "feeds": ["symbol_context", "goal_intake", "check_design_violations"],
+        "use_when": "User has a concept or idea but not necessarily a known symbol name. Use search_symbols when you know the exact name; use concept_search to explore.",
+        "category": "discovery",
+    },
+
     # ── CODE HYGIENE ───────────────────────────────────────────────
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",
@@ -483,13 +501,16 @@ REGISTRY: dict[str, dict] = {
 TASK_PATTERNS: dict[str, dict] = {
 
     "understand_symbol": {
-        "description": "Full picture of one symbol: intent, risk, callers, known findings.",
+        "description": "Full picture of one symbol: declaration, risk, references, design frame, findings.",
         "steps": [
-            {"tool": "search_symbols",   "args_hint": {"query": "<name>"},    "why": "find exact name and location"},
-            {"tool": "symbol_intent",    "args_hint": {"symbol": "<name>"},   "why": "read the docstring"},
-            {"tool": "risk_profile",     "args_hint": {"symbol": "<name>"},   "why": "HOT/WARM/SAFE + reasons"},
-            {"tool": "list_callers",     "args_hint": {"symbol": "<name>"},   "why": "who depends on this"},
-            {"tool": "get_findings",     "args_hint": {"symbol": "<name>"},   "why": "check what's already known"},
+            {"tool": "symbol_context",   "args_hint": {"symbol": "<name>"},   "why": "single call returns all structural + knowledge surfaces"},
+        ],
+    },
+
+    "concept_search": {
+        "description": "Search a concept across all text surfaces, ranked by semantic similarity.",
+        "steps": [
+            {"tool": "concept_search",   "args_hint": {"query": "<name>"},   "why": "semantic + keyword search across symbol names, docstrings, contracts, design notes, distilled summaries"},
         ],
     },
 

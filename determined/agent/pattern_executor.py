@@ -38,9 +38,17 @@ from determined.agent.agent_tools import dispatch
 # ------------------------------------------------------------------
 
 _DETECT_RULES: list[tuple] = [
-    # understand_symbol
+    # symbol_context (direct single-tool path)
+    (re.compile(r"(?:context for|everything about|show me|what do you know about)\s+(?:the\s+)?(?:symbol\s+)?['\"]?(\S+)['\"]?", re.I),
+     "understand_symbol", 1),
+
+    # understand_symbol (alias)
     (re.compile(r"(?:understand|explain|tell me about|describe)\s+(?:the\s+)?(?:symbol\s+)?['\"]?(\S+)['\"]?", re.I),
      "understand_symbol", 1),
+
+    # concept_search
+    (re.compile(r"(?:find everything about|search for|what mentions|concept search)\s+['\"]?(.+?)['\"]?$", re.I),
+     "concept_search", 1),
 
     # assess_change_risk
     (re.compile(r"(?:risk of (?:changing\s+)?|safe to change\s+|impact of (?:changing|modifying)\s+|should I (?:change|modify|touch)\s+)['\"]?(\S+)['\"]?", re.I),

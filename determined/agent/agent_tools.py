@@ -1855,6 +1855,270 @@ def project_status(assessor: "Assessor", args: dict) -> str:
     return structural + enrichment_note + "\n\n(llama-server unavailable for synthesis - structural data above)"
 
 
+def symbol_context(assessor: "Assessor", args: dict) -> str:
+    """
+    symbol_context(symbol[, file_path]) - everything known about a named symbol.
+    Replaces chaining symbol_intent + list_callers + list_callees + get_findings + check_design_violations.
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    file_hint = args.get("file_path", "").strip()
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    lines = [f"=== symbol_context: {symbol} ===\n"]
+
+    # 1. Declaration
+    sym_rows = conn.execute(
+        "SELECT name, file_path, line_number, symbol_type FROM symbols WHERE name = ?",
+        (symbol,),
+    ).fetchall()
+    if file_hint:
+        sym_rows = [r for r in sym_rows if file_hint in r[1]] or sym_rows
+    if sym_rows:
+        r = sym_rows[0]
+        lines.append(f"[DECLARATION]")
+        lines.append(f"  file:  {r[1]}")
+        lines.append(f"  line:  {r[2]}")
+        lines.append(f"  type:  {r[3]}")
+        # class container
+        cls_row = conn.execute(
+            "SELECT class_name FROM class_attributes WHERE attribute = ? LIMIT 1",
+            (symbol,),
+        ).fetchone()
+        if cls_row:
+            lines.append(f"  class: {cls_row[0]}")
+    else:
+        lines.append("[DECLARATION] not found in symbols table")
+
+    # 2. Docstring
+    doc = None
+    for table in ("functions", "classes"):
+        row = conn.execute(
+            f"SELECT docstring FROM {table} WHERE name = ?", (symbol,)
+        ).fetchone()
+        if row and row[0]:
+            doc = row[0]
+            break
+    lines.append(f"\n[DOCSTRING]")
+    lines.append(f"  {doc[:300] if doc else '(none)'}")
+
+    # 3. Risk badge
+    from determined.agent.risk_annotator import score_risk
+    risk = score_risk(oracle, symbol)
+    lines.append(f"\n[RISK]  {risk['level']}")
+    for reason in risk.get("reasons", []):
+        lines.append(f"  - {reason}")
+
+    # 4. Find-references
+    decl_files = {r[1] for r in sym_rows}
+    usage_rows = conn.execute(
+        "SELECT file_path, line_number, caller FROM symbol_references WHERE callee LIKE ? ORDER BY file_path, line_number",
+        (f"%{symbol}",),
+    ).fetchall()
+    out_rows = conn.execute(
+        "SELECT file_path, line_number, callee FROM symbol_references WHERE caller = ? ORDER BY file_path, line_number",
+        (symbol,),
+    ).fetchall()
+    lines.append(f"\n[FIND-REFERENCES]")
+    lines.append(f"  declarations: {len(decl_files)} file(s): {', '.join(sorted(decl_files)) or '(none)'}")
+    if usage_rows:
+        lines.append(f"  usages ({len(usage_rows)}):")
+        for fp, ln, ctx in usage_rows[:10]:
+            lines.append(f"    {fp}:{ln}  (in {ctx})")
+        if len(usage_rows) > 10:
+            lines.append(f"    ... {len(usage_rows) - 10} more")
+    else:
+        lines.append("  usages: (none found)")
+    if out_rows:
+        lines.append(f"  outgoing calls ({len(out_rows)}):")
+        for fp, ln, tgt in out_rows[:5]:
+            lines.append(f"    -> {tgt}  {fp}:{ln}")
+
+    # 5-6. Callers / callees
+    callers = _list_callers_raw(oracle, symbol)
+    callees = _list_callees_raw(oracle, symbol)
+    lines.append(f"\n[CALLERS]  {len(callers)} total")
+    for c in callers[:5]:
+        tag = " (resolved)" if c["resolved"] else ""
+        lines.append(f"  {c['caller']}{tag}  {c['file_path'] or ''}:{c['line_number'] or ''}")
+    if len(callers) > 5:
+        lines.append(f"  ... {len(callers) - 5} more")
+    lines.append(f"\n[CALLEES]  {len(callees)} total")
+    for c in callees[:5]:
+        tag = " (resolved)" if c["resolved"] else ""
+        lines.append(f"  {c['callee']}{tag}  {c['file_path'] or ''}:{c['line_number'] or ''}")
+    if len(callees) > 5:
+        lines.append(f"  ... {len(callees) - 5} more")
+
+    # 7. Class attributes (if symbol is a class)
+    attr_rows = conn.execute(
+        "SELECT attribute, inferred_type FROM class_attributes WHERE class_name = ? ORDER BY attribute",
+        (symbol,),
+    ).fetchall()
+    if attr_rows:
+        lines.append(f"\n[CLASS ATTRIBUTES]")
+        for attr, itype in attr_rows:
+            lines.append(f"  .{attr}: {itype or '?'}")
+
+    # 8. Design frame
+    fp_for_frame = sym_rows[0][1] if sym_rows else (file_hint or "")
+    frame = _get_design_frame(assessor, symbol, fp_for_frame)
+    if frame.strip():
+        lines.append(f"\n[DESIGN FRAME]\n{frame}")
+
+    # 9. Known findings
+    findings = get_findings(assessor, {"symbol": symbol})
+    if not findings.startswith("No stored"):
+        lines.append(f"\n[FINDINGS]\n{findings}")
+
+    return "\n".join(lines)
+
+
+def concept_search(assessor: "Assessor", args: dict) -> str:
+    """
+    concept_search(query) - search a term/concept across all text surfaces,
+    ranked by semantic similarity. Exploration tool (vs search_symbols name-locator).
+    """
+    query = args.get("query", "").strip()
+    if not query:
+        return "ERROR: query argument required"
+    oracle = assessor.oracle
+    conn = oracle.conn
+    like_q = f"%{query}%"
+
+    hits: list[dict] = []  # {surface, name, file_path, line_number, snippet}
+
+    # 1. Symbol names
+    for r in _search_symbols_raw(oracle, query, limit=100):
+        hits.append({
+            "surface": "symbol_name",
+            "name": r["name"],
+            "file_path": r.get("file_path", ""),
+            "line_number": r.get("line_number"),
+            "snippet": r.get("docstring", "")[:120] if r.get("docstring") else "",
+        })
+
+    # 2. Docstrings (functions + classes) - deduplicate against surface 1
+    existing_names = {h["name"] for h in hits}
+    for table in ("functions", "classes"):
+        rows = conn.execute(
+            f"SELECT name, file_path, line_number, docstring FROM {table} WHERE docstring LIKE ?",
+            (like_q,),
+        ).fetchall()
+        for name, fp, ln, doc in rows:
+            if name not in existing_names:
+                hits.append({
+                    "surface": "docstring",
+                    "name": name,
+                    "file_path": fp or "",
+                    "line_number": ln,
+                    "snippet": (doc or "")[:120],
+                })
+                existing_names.add(name)
+
+    # 3. Behavioral contracts
+    try:
+        rows = conn.execute(
+            "SELECT function_name, file_path, line_number, description FROM behavioral_contracts WHERE description LIKE ?",
+            (like_q,),
+        ).fetchall()
+        for fname, fp, ln, desc in rows:
+            hits.append({
+                "surface": "contract",
+                "name": fname,
+                "file_path": fp or "",
+                "line_number": ln,
+                "snippet": (desc or "")[:120],
+            })
+    except Exception:
+        pass
+
+    # 4. Design notes
+    try:
+        rows = conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts WHERE kind='design_note' AND content LIKE ?",
+            (like_q,),
+        ).fetchall()
+        for subj, content in rows:
+            hits.append({
+                "surface": "design_note",
+                "name": subj,
+                "file_path": "",
+                "line_number": None,
+                "snippet": (content or "")[:120],
+            })
+    except Exception:
+        pass
+
+    # 5. Distilled summaries
+    try:
+        rows = conn.execute(
+            "SELECT subject, distilled FROM semantic_summaries WHERE distilled LIKE ?",
+            (like_q,),
+        ).fetchall()
+        for subj, dist in rows:
+            hits.append({
+                "surface": "distilled_summary",
+                "name": subj,
+                "file_path": subj if "/" in subj or "\\" in subj else "",
+                "line_number": None,
+                "snippet": (dist or "")[:120],
+            })
+    except Exception:
+        pass
+
+    if not hits:
+        return f"No results for '{query}'"
+
+    # Semantic re-ranking
+    try:
+        from determined.oracle.embedding_model import embed_text
+        import numpy as np
+        q_vec = embed_text(query)
+        texts = [h["snippet"] or h["name"] for h in hits]
+        model = _get_embed_model()
+        vecs = model.encode(texts, normalize_embeddings=True)
+        scores = np.dot(vecs, q_vec)
+        threshold = 0.25
+        ranked = sorted(
+            [(float(s), h) for s, h in zip(scores, hits) if float(s) >= threshold],
+            key=lambda x: x[0],
+            reverse=True,
+        )
+        if ranked:
+            hits = [h for _, h in ranked]
+        # else fall through with original order
+    except Exception:
+        pass
+
+    # Group by surface and format
+    from collections import defaultdict
+    groups: dict[str, list] = defaultdict(list)
+    for h in hits:
+        groups[h["surface"]].append(h)
+
+    surface_order = ["symbol_name", "docstring", "contract", "design_note", "distilled_summary"]
+    out = [f"concept_search: '{query}'  ({len(hits)} results)\n"]
+    for surface in surface_order:
+        group = groups.get(surface, [])
+        if not group:
+            continue
+        out.append(f"[{surface.upper()}]  {len(group)} hit(s)")
+        for h in group[:8]:
+            loc = f"  {h['file_path']}:{h['line_number']}" if h.get("line_number") else (f"  {h['file_path']}" if h["file_path"] else "")
+            snip = f"  >> {h['snippet']}" if h["snippet"] else ""
+            out.append(f"  {h['name']}{loc}")
+            if snip:
+                out.append(snip)
+        if len(group) > 8:
+            out.append(f"  ... {len(group) - 8} more")
+        out.append("")
+
+    return "\n".join(out)
+
+
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
     distill_corpus() - compress each semantic_summary into a one-sentence
@@ -1972,6 +2236,9 @@ TOOLS = {
     "project_status":          (project_status,          "assessor"),
     # Incremental re-ingest
     "reingest_file":           (reingest_file,           "assessor"),
+    # Symbol context + concept search (items 21/22)
+    "symbol_context":          (symbol_context,          "assessor"),
+    "concept_search":          (concept_search,          "assessor"),
 }
 
 

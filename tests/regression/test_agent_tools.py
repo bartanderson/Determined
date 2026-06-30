@@ -502,6 +502,8 @@ def test_dispatch_all_tools_registered():
         "check_design_violations",
         "project_status",
         "reingest_file",
+        "symbol_context",
+        "concept_search",
     }
     assert set(TOOLS.keys()) == expected
 
