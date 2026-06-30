@@ -16,7 +16,14 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-29, session 36):** Items 25/26 filed (llama-server migration).
+**Last session (2026-06-30, session 42):** Items 21 + 22 done.
+symbol_context tool: unified single-call view of everything known about a symbol
+(declaration, docstring, risk, find-references, callers/callees, class attrs, design
+frame, findings). concept_search tool: semantic + keyword search across all text
+surfaces ranked by cosine similarity. Both wired into TOOLS, REGISTRY, TASK_PATTERNS,
+detect_pattern. understand_symbol pattern now single step. 321 tests pass.
+
+**Before that (2026-06-29, session 36):** Items 25/26 filed (llama-server migration).
 llama-server b9842 downloaded to C:\Users\bartl\models\llama-server\llama-server.exe.
 llama3.2-3b.gguf copied to C:\Users\bartl\models\gguf\. Health check passing.
 Items 21-24 designed and filed (assistant arc). Items 1/2/3 closed.
@@ -451,63 +458,17 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
 
 ---
 
-21. **[OPEN] Symbol context view** — unified aggregation of everything known about a
-    named symbol. Replaces the `understand_symbol` task pattern (which chains 5 tools)
-    with a single rich tool. New function `symbol_context(oracle, assessor, args)` in
-    agent_tools.py. Takes `symbol` arg, optional `file_path` for disambiguation.
-
-    **Output sections (in order):**
-    1. Declaration: file, line, containing class (from `symbols` + `class_attributes`)
-    2. Docstring (from `functions` or `classes` table)
-    3. Risk badge: HOT/WARM/SAFE + reasons — call `score_risk(oracle, symbol)`
-    4. Find-references: all locations where symbol appears, grouped declaration vs usage.
-       Declarations: `SELECT * FROM symbols WHERE name = ?`.
-       Usages: `SELECT file_path, line_number, caller FROM symbol_references WHERE callee LIKE ?`
-       and `SELECT file_path, line_number, callee FROM symbol_references WHERE caller = ?`.
-       Each hit: file (relative), line, containing function/context. Ordered by file then line.
-    5. Callers count + top 5 callers (from `_list_callers_raw`)
-    6. Callees count + top 5 callees (from `_list_callees_raw`)
-    7. Class attributes if symbol is a class (from `class_attributes` WHERE class_name=symbol)
-    8. Design frame: call `_get_design_frame(assessor, symbol, file_path)` — reuse as-is
-    9. Known findings: call `get_findings(assessor, {"symbol": symbol})` — reuse as-is
-
-    Wire into TOOLS, REGISTRY, agent_resolver (pattern: "context for X", "everything about X",
-    "show me X"). Add to `understand_symbol` TASK_PATTERN as first step replacing the chain.
+21. **[DONE 2026-06-30] Symbol context view** — `symbol_context(assessor, args)` in agent_tools.py.
+    Single call returns declaration, docstring, risk badge, find-references, callers/callees,
+    class attributes, design frame, and stored findings. understand_symbol task pattern
+    updated to single step. Wired into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern.
 
 ---
 
-22. **[OPEN] Wide concept search** — search a string or concept across all text
-    surfaces in one call. Returns everything relevant, ranked, grouped by surface.
-    No artificial limit. New function `concept_search(assessor, args)` in agent_tools.py.
-    Takes `query` arg.
-
-    **Distinct from `search_symbols`:** that tool is a precise name-substring locator
-    (fast, structural, feeds into symbol_intent/risk_profile). This tool is a concept
-    explorer — the user has a term or idea, not necessarily a known symbol name.
-
-    **Search surfaces and queries (run all, merge, rank):**
-    1. Symbol names: `_search_symbols_raw(oracle, query, limit=100)` — existing path
-    2. Docstrings: `SELECT name, file_path, line_number, docstring FROM functions
-       WHERE docstring LIKE ?` + same for classes. Deduplicate against surface 1.
-    3. Behavioral contracts: `SELECT function_name, file_path, line_number, description
-       FROM behavioral_contracts WHERE description LIKE ?`
-    4. Design notes: `SELECT subject, content FROM knowledge_artifacts
-       WHERE kind='design_note' AND content LIKE ?`
-    5. Distilled summaries: `SELECT subject, distilled FROM semantic_summaries
-       WHERE distilled LIKE ?`
-
-    **Semantic re-ranking:** after SQL LIKE sweep, embed query and all hit texts using
-    `_get_embed_model()`, dot-product rank. Pattern is identical to goal_intake step 1
-    (agent_tools.py:1472-1484) but over merged hits instead of all symbols.
-    Threshold: 0.25 (wider than goal_intake's 0.28 — exploration, not navigation).
-
-    **Routing in agent_resolver:** if `find_symbols(oracle, query, limit=1)` returns
-    an exact or near-exact name match, route to `search_symbols` (locate). Otherwise
-    route to `concept_search` (explore). Add pattern: "find everything about X",
-    "search for X", "what mentions X".
-
-    **Output:** grouped by surface with counts. Each hit: surface type, name/subject,
-    file (relative), line, snippet (first 120 chars of matched text).
+22. **[DONE 2026-06-30] Wide concept search** — `concept_search(assessor, args)` in agent_tools.py.
+    Searches symbol names, docstrings, behavioral contracts, design notes, distilled summaries.
+    Semantic re-ranking via all-MiniLM-L6-v2 at threshold 0.25. Grouped output by surface.
+    Wired into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern.
 
 ---
 
