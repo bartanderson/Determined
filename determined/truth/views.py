@@ -13,6 +13,12 @@ class StructureView:
     hotspots: list[tuple[str, int]]  # (module, degree)
 
 
+def _is_noise_symbol(name: str) -> bool:
+    """Parser-generated pseudo-symbols (<module>, <lambda>, <listcomp>, etc.)
+    have no semantic meaning as architectural nodes."""
+    return name.startswith("<") and name.endswith(">")
+
+
 def build_structure_view(graph: Any, builtin_symbols: set = None) -> StructureView:
     edges = [(e.caller, e.callee) for e in graph.edges]
 
@@ -20,19 +26,23 @@ def build_structure_view(graph: Any, builtin_symbols: set = None) -> StructureVi
     degree_count = {}
 
     for caller, callee in edges:
-        adjacency.setdefault(caller, set()).add(callee)
+        # Exclude noise symbols from adjacency so cycle detection is not
+        # triggered by parser artifacts like <module> -> <module>.
+        if not _is_noise_symbol(caller) and not _is_noise_symbol(callee):
+            adjacency.setdefault(caller, set()).add(callee)
 
         degree_count[caller] = degree_count.get(caller, 0) + 1
         degree_count[callee] = degree_count.get(callee, 0) + 1
 
-    # Exclude builtin symbols from hotspot ranking.
-    # Builtins (print, len, getattr, etc.) dominate degree counts by volume
-    # but carry no semantic signal about project structure.
-    # edges/adjacency are left intact - structural truth is not modified.
-    if builtin_symbols:
-        ranked = {k: v for k, v in degree_count.items() if k not in builtin_symbols}
-    else:
-        ranked = degree_count
+    # Exclude builtin symbols and parser noise from hotspot ranking.
+    # Builtins (print, len, getattr, etc.) and parser artifacts (<module>,
+    # <lambda>) dominate degree counts but carry no architectural signal.
+    # edges are left intact - structural truth is not modified.
+    exclude = builtin_symbols or set()
+    ranked = {
+        k: v for k, v in degree_count.items()
+        if k not in exclude and not _is_noise_symbol(k)
+    }
 
     hotspots = sorted(
         ranked.items(),

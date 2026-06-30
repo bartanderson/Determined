@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from determined.oracle.symbol_noise import is_noise_symbol
@@ -32,6 +32,10 @@ class RouteResult:
     execution_plan: Dict[str, Any]
     raw_query: str
     edge_count: int = 0
+    # Epistemic metadata -- attached by Assessor after risk measurement.
+    # False by default so callers that don't go through Assessor.ask() are unaffected.
+    requires_llm: bool = False
+    epistemic: Optional[Any] = None
 
 
 # =========================================================
