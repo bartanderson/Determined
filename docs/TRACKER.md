@@ -16,7 +16,15 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-30, session 42):** Items 21 + 22 done.
+**Last session (2026-06-30, session 43):** Items 23 + 24 done.
+docstring_health tool: missing detection (SQL), staleness detection (cosine similarity vs
+distilled summary, threshold 0.55), proposal storage in workflow queue. gap_analysis tool:
+on-demand LLM brainstorm of typed fills (extend/bridge/mirror/consolidate) for a scoped
+area, stores as backlog item, framed as generative/idea-mode. _gap_summary_block() fast
+DB-only helper now embedded in knowledge_status as GAPS AT A GLANCE section. Both wired
+into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern. 323 pass, 1 pre-existing flake, 1 skip.
+
+**Before that (2026-06-30, session 42):** Items 21 + 22 done.
 symbol_context tool: unified single-call view of everything known about a symbol
 (declaration, docstring, risk, find-references, callers/callees, class attrs, design
 frame, findings). concept_search tool: semantic + keyword search across all text
@@ -472,7 +480,7 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
 
 ---
 
-23. **[OPEN] Docstring health — campaign tool** — surfaces missing and stale docstrings,
+23. **[DONE 2026-06-30] Docstring health — campaign tool** — surfaces missing and stale docstrings,
     proposes fills, supports editor write-back. New function `docstring_health(assessor, args)`
     in agent_tools.py. Optional args: `file` (scope to one file), `module` (scope to
     path prefix), `propose` (bool, default True — generate proposals and store in queue).
@@ -514,7 +522,7 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
 
 ---
 
-24. **[OPEN] On-demand gap analysis with standing summary** — two-tier capability:
+24. **[DONE 2026-06-30] On-demand gap analysis with standing summary** — two-tier capability:
     a fast standing summary always available, and a deep on-demand analysis.
 
     **Gap summary (fast, DB-only, no LLM):** new section in `knowledge_status` output
