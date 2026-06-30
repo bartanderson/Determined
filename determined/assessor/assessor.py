@@ -299,12 +299,18 @@ class Assessor:
 
         # Risk measurement (pure, no side effects)
         policy = EpistemicPolicy()
+        query_context = {
+            "seed_count":     len(result["oracle"].seeds),
+            "expanded_count": len(result["oracle"].expanded),
+            "intent":         result["intent"],
+        }
         directive = policy.analyze(
             structure_view=views["STRUCTURE"],
             integrity_view=views["INTEGRITY"],
             stability_view=views["STABILITY"],
             summary_view=views["SUMMARY"],
             role_view=views["ROLE"],
+            query_context=query_context,
         )
 
         result["epistemic"] = {
@@ -339,10 +345,11 @@ class Assessor:
                     "role": "user",
                     "content": (
                         f"Question: {text}\n\n"
-                        f"Epistemic risk: severity={directive.severity:.2f}, "
-                        f"risk_vector={directive.risk_vector}\n\n"
                         f"Intent: {result['intent']}\n"
-                        f"Expanded symbols: {result['oracle'].expanded[:20]}\n"
+                        f"Relevant symbols: {result['oracle'].expanded[:15]}\n"
+                        f"Seed symbols: {result['oracle'].seeds[:5]}\n"
+                        f"Epistemic risk: severity={directive.severity:.2f}, "
+                        f"risk_vector={directive.risk_vector}\n"
                         f"Required surfaces: {directive.required_surfaces}"
                     ),
                 },

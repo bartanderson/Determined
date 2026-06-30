@@ -28,12 +28,22 @@ ERROR_RISK_CAP    = 0.40   # maximum integrity contribution
 DRIFT_RISK_SCALE  = 0.40   # stability risk = unstable_ratio * this
 DRIFT_THRESHOLD   = 0.30   # ratio above which STABILITY surface is required
 
-# Summary
-SCALE_THRESHOLD   = 10     # edge count above which scale risk applies
-SCALE_RISK        = 0.10
+# Summary -- density-based so absolute project size doesn't inflate risk.
+# Any real project exceeds a raw edge count of 10; use avg edges per file.
+EDGE_DENSITY_THRESHOLD = 20   # avg edges/file above which scale risk applies
+SCALE_RISK             = 0.10
 
 # Completeness
 COMPLETENESS_RISK = 0.05   # added when role view is empty
+
+# Query-level grounding signals
+SEED_ZERO_RISK           = 0.25   # no seeds = router blind = high uncertainty
+SEED_SPARSE_RISK         = 0.10   # 1-3 seeds = weak grounding
+SEED_SPARSE_MAX          = 3      # threshold between sparse and adequate
+EXPANSION_SPARSE_RISK    = 0.10   # expanded/seed_count < EXPANSION_RATIO_MIN
+EXPANSION_RATIO_MIN      = 2.0    # minimum expansion ratio for adequate coverage
+INTENT_INTERPRETIVE_RISK = 0.10   # debug_query/general_query = needs synthesis
+INTERPRETIVE_INTENTS     = {"debug_query", "general_query"}
 
 # Decision gate (used by Assessor.ask() -- live here so tests can import them)
 LLM_SEVERITY_THRESHOLD = 0.15  # minimum severity to consider LLM at all
@@ -115,6 +125,7 @@ class EpistemicPolicy:
         stability_view,
         summary_view,
         role_view,
+        query_context: dict = None,
     ) -> EpistemicDirective:
 
         cycles        = _has_cycles(structure_view)
@@ -124,14 +135,35 @@ class EpistemicPolicy:
         edge_count    = summary_view.edge_count
         role_empty    = not role_view.files
 
+        file_count    = summary_view.file_count
+        edge_density  = edge_count / max(file_count, 1)
+
         risk_vector = {
             "structure":    CYCLE_RISK if cycles else 0.0,
             "integrity":    min(error_count * ERROR_RISK_PER, ERROR_RISK_CAP),
             "stability":    unstable_ratio * DRIFT_RISK_SCALE,
-            "scale":        SCALE_RISK if edge_count > SCALE_THRESHOLD else 0.0,
+            "scale":        SCALE_RISK if edge_density > EDGE_DENSITY_THRESHOLD else 0.0,
             "complexity":   HOTSPOT_RISK if top_degree > HOTSPOT_THRESHOLD else 0.0,
             "completeness": COMPLETENESS_RISK if role_empty else 0.0,
         }
+
+        if query_context:
+            seed_count     = query_context.get("seed_count", 0)
+            expanded_count = query_context.get("expanded_count", 0)
+            intent         = query_context.get("intent", "general_query")
+            expansion_ratio = expanded_count / max(seed_count, 1)
+
+            risk_vector["query_grounding"] = (
+                SEED_ZERO_RISK   if seed_count == 0
+                else SEED_SPARSE_RISK if seed_count <= SEED_SPARSE_MAX
+                else 0.0
+            )
+            risk_vector["query_coverage"] = (
+                EXPANSION_SPARSE_RISK if expansion_ratio < EXPANSION_RATIO_MIN else 0.0
+            )
+            risk_vector["query_intent"] = (
+                INTENT_INTERPRETIVE_RISK if intent in INTERPRETIVE_INTENTS else 0.0
+            )
 
         severity = max(0.0, min(1.0, sum(risk_vector.values())))
 

@@ -164,3 +164,70 @@ def test_stability_surface_required_when_mostly_unstable():
     # 2 of 3 unstable -> ratio ~0.67, above DRIFT_THRESHOLD
     result = _analyze(stable=["a"], unstable=["b", "c"])
     assert "STABILITY" in result.required_surfaces
+
+
+# ------------------------------------------------------------------
+# Query context (gap 1: query-level grounding signals)
+# ------------------------------------------------------------------
+
+from determined.assessor.epistemic_policy import (
+    SEED_ZERO_RISK,
+    SEED_SPARSE_RISK,
+    EXPANSION_SPARSE_RISK,
+    INTENT_INTERPRETIVE_RISK,
+)
+
+
+def _analyze_with_query(query_context, **kwargs):
+    policy = EpistemicPolicy()
+    s, i, st, su, r = _make_views(**kwargs)
+    return policy.analyze(s, i, st, su, r, query_context=query_context)
+
+
+def test_no_query_context_leaves_no_query_keys():
+    result = _analyze()
+    assert "query_grounding" not in result.risk_vector
+    assert "query_coverage" not in result.risk_vector
+    assert "query_intent" not in result.risk_vector
+
+
+def test_seed_count_zero_adds_seed_zero_risk():
+    result = _analyze_with_query({"seed_count": 0, "expanded_count": 0, "intent": "role_query"})
+    assert result.risk_vector["query_grounding"] == SEED_ZERO_RISK
+
+
+def test_seed_count_sparse_adds_seed_sparse_risk():
+    result = _analyze_with_query({"seed_count": 2, "expanded_count": 10, "intent": "role_query"})
+    assert result.risk_vector["query_grounding"] == SEED_SPARSE_RISK
+
+
+def test_seed_count_adequate_adds_zero_grounding_risk():
+    result = _analyze_with_query({"seed_count": 10, "expanded_count": 30, "intent": "role_query"})
+    assert result.risk_vector["query_grounding"] == 0.0
+
+
+def test_low_expansion_ratio_adds_coverage_risk():
+    # ratio = 3/10 = 0.3 < EXPANSION_RATIO_MIN (2.0)
+    result = _analyze_with_query({"seed_count": 10, "expanded_count": 3, "intent": "role_query"})
+    assert result.risk_vector["query_coverage"] == EXPANSION_SPARSE_RISK
+
+
+def test_adequate_expansion_ratio_zero_coverage_risk():
+    # ratio = 30/10 = 3.0 >= EXPANSION_RATIO_MIN
+    result = _analyze_with_query({"seed_count": 10, "expanded_count": 30, "intent": "role_query"})
+    assert result.risk_vector["query_coverage"] == 0.0
+
+
+def test_debug_query_intent_adds_interpretive_risk():
+    result = _analyze_with_query({"seed_count": 5, "expanded_count": 15, "intent": "debug_query"})
+    assert result.risk_vector["query_intent"] == INTENT_INTERPRETIVE_RISK
+
+
+def test_general_query_intent_adds_interpretive_risk():
+    result = _analyze_with_query({"seed_count": 5, "expanded_count": 15, "intent": "general_query"})
+    assert result.risk_vector["query_intent"] == INTENT_INTERPRETIVE_RISK
+
+
+def test_role_query_intent_adds_zero_interpretive_risk():
+    result = _analyze_with_query({"seed_count": 5, "expanded_count": 15, "intent": "role_query"})
+    assert result.risk_vector["query_intent"] == 0.0
