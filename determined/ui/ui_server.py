@@ -154,6 +154,77 @@ def _corpus_map_data() -> dict:
     }
 
 
+def _gap_summary_data() -> dict:
+    """Structured gap data for sidebar rendering. No LLM. Safe to call on every corpus load."""
+    if not _oracle:
+        return {}
+    try:
+        conn = _oracle.conn
+        total_fns = conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
+        missing_docs = conn.execute(
+            "SELECT COUNT(*) FROM functions WHERE docstring IS NULL OR docstring = ''"
+        ).fetchone()[0]
+        total_files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        try:
+            distilled = conn.execute(
+                "SELECT COUNT(*) FROM semantic_summaries "
+                "WHERE distilled IS NOT NULL AND distilled != ''"
+            ).fetchone()[0]
+        except Exception:
+            distilled = 0
+        k_conn = _assessor._knowledge_conn if _assessor else None
+        design_note_count = 0
+        if k_conn:
+            try:
+                design_note_count = k_conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'"
+                ).fetchone()[0]
+            except Exception:
+                pass
+        mod_rows = conn.execute(
+            "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp, "
+            "SUM(CASE WHEN docstring IS NULL OR docstring='' THEN 1 ELSE 0 END) as missing, "
+            "COUNT(*) as total FROM functions GROUP BY fp"
+        ).fetchall()
+        from collections import defaultdict
+        mod_gaps: dict = defaultdict(lambda: [0, 0])
+        for fp, miss, tot in mod_rows:
+            parts = fp.replace("\\", "/").split("/")
+            mod = parts[0] if parts else "."
+            mod_gaps[mod][0] += miss
+            mod_gaps[mod][1] += tot
+        modules = [
+            {"module": mod, "missing": m, "total": t}
+            for mod, (m, t) in sorted(mod_gaps.items(), key=lambda x: -x[1][0])
+            if m > 0
+        ][:8]
+        return {
+            "total_fns": total_fns,
+            "documented_fns": total_fns - missing_docs,
+            "total_files": total_files,
+            "distilled_files": distilled,
+            "design_note_count": design_note_count,
+            "modules": modules,
+        }
+    except Exception:
+        return {}
+
+
+def _queue_count() -> int:
+    """Count of pending next_up workflow items."""
+    if not _assessor:
+        return 0
+    try:
+        k_conn = _assessor._knowledge_conn
+        if not k_conn:
+            return 0
+        return k_conn.execute(
+            "SELECT COUNT(*) FROM workflow_items WHERE kind='next_up' AND status='pending'"
+        ).fetchone()[0]
+    except Exception:
+        return 0
+
+
 def _emit_corpus_ready():
     if _oracle:
         s = _corpus_status()
@@ -169,6 +240,8 @@ def _emit_corpus_ready():
             "entry_points": m.get("entry_points", []),
             "hot_symbols": m.get("hot_symbols", []),
             "stubs_list": m.get("stubs", []),
+            "gap_summary": _gap_summary_data(),
+            "queue_count": _queue_count(),
         })
 
 
@@ -1205,6 +1278,81 @@ def handle_direct_intent(data):
         emit("intent_result", {"summary": summary_text(result), "result": result})
     except Exception as exc:
         emit("intent_result", {"error": str(exc)})
+
+
+@socketio.on("get_knowledge_artifacts")
+def handle_get_knowledge_artifacts(data=None):
+    """Return knowledge artifacts for the Knowledge tab, filtered by kind."""
+    if _assessor is None:
+        emit("knowledge_artifacts", {"error": "no corpus"}); return
+    kind = ((data or {}).get("kind") or "all").strip()
+    try:
+        k_conn = _assessor._knowledge_conn
+        if kind == "design_note":
+            rows = k_conn.execute(
+                "SELECT id, kind, subject, content, provenance, created_at, needs_review "
+                "FROM knowledge_artifacts WHERE kind='design_note' "
+                "AND subject NOT LIKE 'sots::%' ORDER BY created_at DESC"
+            ).fetchall()
+        elif kind == "sots":
+            rows = k_conn.execute(
+                "SELECT id, kind, subject, content, provenance, created_at, needs_review "
+                "FROM knowledge_artifacts WHERE kind='design_note' "
+                "AND subject LIKE 'sots::%' ORDER BY subject"
+            ).fetchall()
+        elif kind == "known_issue":
+            rows = k_conn.execute(
+                "SELECT id, kind, subject, content, provenance, created_at, needs_review "
+                "FROM knowledge_artifacts WHERE kind IN ('known_issue','violation') "
+                "ORDER BY created_at DESC"
+            ).fetchall()
+        elif kind == "query_finding":
+            rows = k_conn.execute(
+                "SELECT id, kind, subject, content, provenance, created_at, needs_review "
+                "FROM knowledge_artifacts WHERE kind='query_finding' "
+                "ORDER BY created_at DESC"
+            ).fetchall()
+        else:  # all
+            rows = k_conn.execute(
+                "SELECT id, kind, subject, content, provenance, created_at, needs_review "
+                "FROM knowledge_artifacts "
+                "WHERE kind IN ('design_note','known_issue','violation','query_finding') "
+                "ORDER BY kind, created_at DESC LIMIT 200"
+            ).fetchall()
+        artifacts = [
+            {
+                "id": r[0], "kind": r[1], "subject": r[2],
+                "content": r[3], "provenance": r[4],
+                "created_at": r[5], "needs_review": bool(r[6]),
+            }
+            for r in rows
+        ]
+        # counts per kind for filter badges
+        counts = {}
+        for k in ("design_note", "sots", "known_issue", "query_finding"):
+            if k == "design_note":
+                n = k_conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts "
+                    "WHERE kind='design_note' AND subject NOT LIKE 'sots::%'"
+                ).fetchone()[0]
+            elif k == "sots":
+                n = k_conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts "
+                    "WHERE kind='design_note' AND subject LIKE 'sots::%'"
+                ).fetchone()[0]
+            else:
+                n = k_conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind=?", (k,)
+                ).fetchone()[0]
+            counts[k] = n
+        emit("knowledge_artifacts", {
+            "artifacts": artifacts,
+            "kind": kind,
+            "counts": counts,
+            "total": sum(counts.values()),
+        })
+    except Exception as exc:
+        emit("knowledge_artifacts", {"error": str(exc)})
 
 
 def _warmup_llm() -> None:

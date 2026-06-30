@@ -5,6 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Determined — dev console</title>
 <link rel="stylesheet" href="/static/style.css">
+<style>
+.queue-badge{background:var(--surface2);border:1px solid var(--blue);color:var(--blue);border-radius:10px;padding:1px 8px;font-size:.75em;cursor:pointer;user-select:none}
+.queue-badge:hover{background:var(--blue);color:#fff}
+#gap-summary-inner .gs-mod{font-family:var(--font-mono);color:var(--text1)}
+#gap-summary-inner .gs-ok{color:var(--green)}
+#gap-summary-inner .gs-warn{color:var(--orange)}
+.kn-filter{font-size:.78em;padding:2px 9px;border:1px solid var(--border);border-radius:10px;background:none;color:var(--text2);cursor:pointer;transition:background .1s,color .1s}
+.kn-filter:hover{background:var(--surface2);color:var(--text1)}
+.kn-filter.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.kn-card{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:8px 10px;cursor:pointer;transition:border-color .12s}
+.kn-card:hover{border-color:var(--text3)}
+.kn-card-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.kn-kind{font-size:.7em;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:3px}
+.kn-kind-design_note{background:rgba(100,160,255,.15);color:var(--blue)}
+.kn-kind-sots{background:rgba(160,100,255,.15);color:#a84aff}
+.kn-kind-known_issue{background:rgba(255,80,80,.15);color:var(--orange)}
+.kn-kind-violation{background:rgba(255,80,80,.15);color:var(--orange)}
+.kn-kind-query_finding{background:rgba(80,200,120,.15);color:var(--green)}
+.kn-subject{font-family:var(--font-mono);font-size:.8em;color:var(--text1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kn-body{font-size:.8em;color:var(--text2);line-height:1.5;margin-bottom:4px}
+.kn-foot{display:flex;gap:8px;font-size:.72em;color:var(--text3)}
+.kn-review{color:var(--orange);font-weight:600}
+</style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
 </head>
@@ -20,7 +43,8 @@
     <span class="sep">·</span>
     <span class="db-badge" id="db-badge">{{ db_name }}</span>
     <span class="spacer"></span>
-    <span class="model-label">Ollama llama3.2:3b</span>
+    <span class="model-label">llama3.2:3b</span>
+    <span class="queue-badge" id="queue-badge" style="display:none" title="Pending next_up items"></span>
   </div>
 
   <!-- ── sidebar ── -->
@@ -61,6 +85,11 @@
       <div id="corpus-map-inner"></div>
     </div>
 
+    <div class="sidebar-section" id="gap-summary-section" style="display:none">
+      <div class="sidebar-label">Gaps at a glance</div>
+      <div id="gap-summary-inner" style="font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7"></div>
+    </div>
+
     <div class="sidebar-section">
       <button id="ask-toggle-btn" class="send-btn" style="width:100%;justify-content:center;background:var(--surface2)">Ask ▾</button>
     </div>
@@ -91,6 +120,7 @@
       <button class="tab tab-nodot" data-tab="bag">Bag</button>
       <button class="tab tab-nodot" data-tab="editor">Editor</button>
       <button class="tab tab-nodot" data-tab="dochealth">Doc health</button>
+      <button class="tab tab-nodot" data-tab="knowledge">Knowledge</button>
     </div>
 
     <!-- tab panels -->
@@ -188,6 +218,20 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- ── knowledge tab ── -->
+      <div class="tab-panel" id="panel-knowledge" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
+          <button class="kn-filter active" data-kind="all" id="kf-all">all</button>
+          <button class="kn-filter" data-kind="design_note" id="kf-design">design notes</button>
+          <button class="kn-filter" data-kind="sots" id="kf-sots">SOTS tenets</button>
+          <button class="kn-filter" data-kind="known_issue" id="kf-issue">known issues</button>
+          <button class="kn-filter" data-kind="query_finding" id="kf-finding">findings</button>
+          <button class="send-btn" id="kn-refresh" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+          <span id="kn-status" style="font-size:.78em;color:var(--text3)"></span>
+        </div>
+        <div id="kn-list" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
 
       <!-- ── doc health tab ── -->
@@ -295,6 +339,31 @@ socket.on("corpus_ready", data => {
     _topEntry = data.top_entry;
     document.getElementById("ct-input").placeholder = data.top_entry;
     document.getElementById("gx-input").placeholder = data.top_entry;
+  }
+
+  // gap summary sidebar
+  if (data.gap_summary && Object.keys(data.gap_summary).length) {
+    const gs = data.gap_summary;
+    const docPct = gs.total_fns > 0 ? Math.round(100 * gs.documented_fns / gs.total_fns) : 0;
+    const distPct = gs.total_files > 0 ? Math.round(100 * gs.distilled_files / gs.total_files) : 0;
+    const cls = v => v >= 80 ? "gs-ok" : "gs-warn";
+    let html = `<div><span class="${cls(docPct)}">docs ${docPct}%</span> &nbsp; <span class="${cls(distPct)}">distilled ${distPct}%</span> &nbsp; <span style="color:var(--text2)">${gs.design_note_count} design notes</span></div>`;
+    if (gs.modules && gs.modules.length) {
+      html += gs.modules.map(m => {
+        const pct = m.total > 0 ? Math.round(100 * (m.total - m.missing) / m.total) : 100;
+        return `<div><span class="gs-mod">${escHtml(m.module)}</span> <span class="${cls(pct)}">${pct}%</span> <span style="color:var(--text3)">(${m.missing} missing)</span></div>`;
+      }).join("");
+    }
+    document.getElementById("gap-summary-inner").innerHTML = html;
+    document.getElementById("gap-summary-section").style.display = "";
+  }
+
+  // queue badge
+  if (data.queue_count > 0) {
+    const badge = document.getElementById("queue-badge");
+    badge.textContent = data.queue_count + " queued";
+    badge.style.display = "";
+    badge.onclick = () => activateTab("knowledge");
   }
 
   // auto-loads once on corpus load
@@ -1746,6 +1815,58 @@ dhRefreshBtn.addEventListener("click", dhLoad);
 
 document.querySelectorAll(".tab[data-tab='dochealth']").forEach(t => {
   t.addEventListener("click", dhLoad);
+});
+
+// ── Knowledge panel ────────────────────────────────────────
+let _knKind = "all";
+
+function knLoad(kind) {
+  _knKind = kind || _knKind;
+  document.getElementById("kn-status").textContent = "Loading…";
+  document.getElementById("kn-list").innerHTML = "";
+  socket.emit("get_knowledge_artifacts", { kind: _knKind });
+}
+
+socket.on("knowledge_artifacts", data => {
+  const status = document.getElementById("kn-status");
+  const list   = document.getElementById("kn-list");
+  if (data.error) { status.textContent = "Error: " + data.error; return; }
+  const counts = data.counts || {};
+  status.textContent = `${data.total || 0} total · design:${counts.design_note||0} sots:${counts.sots||0} issues:${counts.known_issue||0} findings:${counts.query_finding||0}`;
+  if (!data.artifacts || !data.artifacts.length) {
+    list.innerHTML = `<div style="color:var(--text3);padding:8px">No artifacts found.</div>`;
+    return;
+  }
+  list.innerHTML = data.artifacts.map(a => {
+    const kindLabel = a.kind === "design_note" && a.subject && a.subject.startsWith("sots::") ? "sots" : a.kind;
+    const review = a.needs_review ? `<span class="kn-review">⚑ needs review</span>` : "";
+    const prov = a.provenance ? `<span>${escHtml(a.provenance)}</span>` : "";
+    const date = a.created_at ? `<span>${escHtml(a.created_at.slice(0,10))}</span>` : "";
+    const body = a.content ? escHtml(a.content.slice(0,280)) + (a.content.length > 280 ? "…" : "") : "";
+    return `<div class="kn-card" data-id="${a.id}">
+  <div class="kn-card-head">
+    <span class="kn-kind kn-kind-${escHtml(kindLabel)}">${escHtml(kindLabel)}</span>
+    <span class="kn-subject">${escHtml(a.subject || "")}</span>
+    ${review}
+  </div>
+  ${body ? `<div class="kn-body">${body}</div>` : ""}
+  <div class="kn-foot">${prov}${date}</div>
+</div>`;
+  }).join("");
+});
+
+document.querySelectorAll(".kn-filter").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".kn-filter").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    knLoad(btn.dataset.kind);
+  });
+});
+
+document.getElementById("kn-refresh").addEventListener("click", () => knLoad());
+
+document.querySelectorAll(".tab[data-tab='knowledge']").forEach(t => {
+  t.addEventListener("click", () => knLoad("all"));
 });
 </script>
 
