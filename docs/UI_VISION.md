@@ -92,54 +92,74 @@ not just through typed queries.
 
 ### What's broken or missing
 
+_Status updated 2026-06-30 after sessions 44-46. Items marked DONE have
+code landed but are unverified by live testing — session 47 will validate._
+
 **1. Search is the primary interface — it should be the last resort.**
 The chat input is always visible and the sidebar shortcuts are just
 canned chat queries. The system knows its own surfaces; it should
 present them without waiting to be asked.
+_Status: OPEN. Ask bar still always visible. Tool access panel reduces
+reliance on it but the bar itself isn't hidden._
 
-**2. No direct entry to most tools.**
+**2. No direct entry to most tools. DONE (session 45)**
 `goal_intake`, `concept_search`, `gap_analysis`, `ingest_design_docs`,
 `reingest_file`, `distill_corpus` — none have a UI surface. You reach
 them only by hoping the right natural-language phrase triggers the right
 pattern in detect_pattern. That's fragile and invisible.
+_Fixed: Tools sidebar panel with Navigate and Query groups. Each tool
+has a direct button or inline parameter form. No natural-language needed._
 
-**3. The editor is not a navigation surface.**
+**3. The editor is not a navigation surface. DONE (session 45)**
 Opening a file shows you the code. But clicking a function call in the
 code does nothing. The editor is a viewer, not a navigator. You cannot
 move from a call site to the called function. The symbol sidebar scrolls
 to a line but doesn't open the spotlight or seed the call tree.
+_Fixed: ed-sym-link spans carry data-sym-name; click navigates to
+definition and opens spotlight. Gutter now shows orange warning for
+symbols missing docstrings (session 46)._
 
-**4. The chat answer is the end of the road.**
+**4. The chat answer is the end of the road. DONE (session 45)**
 Every query result is a text block. Symbol names in the result are
 clickable (they open the spotlight) — this is good. But structured data
 (call lists, file lists, finding lists) comes out as prose and loses
 its structure. There's no way to see a caller list as a navigable list
 of items, each with its own drill-down.
+_Fixed: tryStructuredRender() detects survey-style answers and renders
+them as clickable card rows. Files open editor, symbols/callers open
+spotlight._
 
-**5. No knowledge layer browser.**
+**5. No knowledge layer browser. DONE (session 44)**
 `knowledge_artifacts` (design notes, findings, SOTS tenets) cannot be
 browsed directly. You can search them via concept_search through chat,
 but you can't open a panel and see "all design notes for this module" or
 "all findings provenance=human-confirmed." This is the most important
 surface for design governance and it has no UI at all.
+_Fixed: Knowledge tab with kind filter buttons (all/design notes/findings).
+Refresh button, artifact cards with kind badge and subject link._
 
-**6. No workflow queue UI.**
+**6. No workflow queue UI. DONE (session 44)**
 The `workflow_items` table accumulates next_up and backlog proposals from
 docstring_health, gap_analysis, and goal_intake. The Doc health tab shows
 docstring proposals. But the general workflow queue — backlog items,
 gap proposals — has no UI. Items accumulate invisibly.
+_Fixed: Queue badge in topbar shows next_up count. Gap summary block
+in sidebar. Doc Health tab shows proposals with accept/dismiss._
 
 **7. Context switches are not intuitive.**
-The trail breadcrumb helps (symbol → symbol → symbol) but it's one-
+The trail breadcrumb helps (symbol -> symbol -> symbol) but it's one-
 dimensional. There's no way to switch between "I'm in the context of
 module X's design" and "I'm tracing a specific call chain" and "I'm
 reviewing gap proposals" as distinct modes that each present the right
 surfaces.
+_Status: OPEN. No work done on this yet._
 
-**8. No transparency in the query pipeline.**
+**8. No transparency in the query pipeline. DONE (session 45)**
 When you ask a question via chat, you don't see: which pattern matched,
 which tools ran, what they returned, what the 3B model synthesized. If
 the answer is wrong, there's no way to know where it went wrong.
+_Fixed: buildTraceHtml() renders a collapsible pipeline trace under each
+result block: pattern matched, heuristic/llm decompose, tools called._
 
 ---
 
@@ -246,40 +266,49 @@ through the wrong path.
 
 ## Build order (toward the vision)
 
-These are in priority order — each one is self-contained and improves
-navigability independently.
+_All 7 original items landed in sessions 44-46. Unverified by live
+testing — session 47 will validate each. Open items from delta (#1, #7)
+are the remaining work after validation._
 
-**1. Editor as navigator (highest leverage)**
+**1. Editor as navigator (highest leverage) DONE (session 45)**
 Wire function-call tokens in the code view to their definitions.
 Click a name in code → navigate to that symbol (open file, scroll to
 line, open spotlight). The editor already has the symbol list; use it
 to annotate the rendered code with links.
 
-**2. Structured result rendering**
+**2. Structured result rendering DONE (session 45)**
 When agent_tools returns a list (callers, files, findings), render it
 as an interactive list in the chat panel, not prose. Each item is a row
 with click affordances.
 
-**3. Knowledge panel (new tab)**
+**3. Knowledge panel (new tab) DONE (session 44)**
 Browse knowledge_artifacts, design_notes, workflow_items directly.
 Filterable by kind, scoped by module. "Find code that touches this"
 button per design note (fires concept_search).
 
-**4. Direct tool access panel**
+**4. Direct tool access panel DONE (session 45)**
 Replace the "Ask ▾" toggle with a structured tool picker:
 tools grouped by category, each with an inline parameter form.
 No natural-language required for named tools.
 
-**5. Query transparency**
+**5. Query transparency DONE (session 45)**
 Show pipeline trace alongside every chat answer: pattern matched,
 tools called, results per tool. One click to expand.
 
-**6. Sidebar gap summary auto-display**
+**6. Sidebar gap summary auto-display DONE (session 44)**
 Run _gap_summary_block() on corpus load and show inline in sidebar.
 No query needed.
 
-**7. Workflow queue in sidebar**
+**7. Workflow queue in sidebar DONE (session 44)**
 Count badge on queue items, click to expand list, accept/dismiss inline.
+
+## Phase 3 additions (session 46)
+
+**Docstring editing workflow DONE (session 46, unverified)**
+- Editor gutter: orange warning on symbols with no docstring
+- Spotlight: "propose doc" button generates per-symbol LLM proposal
+  inline as editable textarea; Accept writes to source file
+- Doc Health tab: proposals now editable before accepting (override_text)
 
 ---
 
