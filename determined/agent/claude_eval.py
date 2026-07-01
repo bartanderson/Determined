@@ -34,7 +34,6 @@ from determined.agent.local_agent import (
     _postprocess_answer, _is_survey_needs, build_survey_answer,
     _is_git_history_needs, build_git_history_answer,
     _is_impact_needs, build_impact_answer,
-    OLLAMA_MODEL,
 )
 
 # ------------------------------------------------------------------
