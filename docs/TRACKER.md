@@ -16,7 +16,14 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-01, session 50):** Items 25 + 26 closed.
+**Last session (2026-07-01, session 50):** Items 25 + 26 + 14 closed.
+Item 14: two-tier LLM in llm_client.py. generate_quality()/chat_quality()/is_available_quality()
+target Qwen3.6-27B-Q4_K_M on port 8081, silent fallback to 3B if not running.
+_synthesize_with_ollama and gap_analysis upgraded to quality tier; distillation stays 3B.
+Start quality tier: llama-server.exe -m models/gguf/Qwen3.6-27B-Q4_K_M.gguf --port 8081
+Items 25+26: llama-server migration complete, Ollama uninstalled, ~50GB freed. 335 passed, 1 skipped.
+
+**Before that (2026-07-01, session 50 earlier):** Items 25 + 26 closed.
 All Ollama call sites in Determined were already migrated to llm_client.py targeting
 llama-server on port 8080. Fixed one broken import (OLLAMA_MODEL) in claude_eval.py
 that would have crashed on import. Ollama uninstalled; ~50GB freed. No open numbered
@@ -283,7 +290,7 @@ each step result. 293/293 tests passing.
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
 
-14. **[FUTURE] Semantic speculative decoding** - once item 10 (structured output)
+14. **[DONE 2026-07-01] Semantic speculative decoding** - once item 10 (structured output)
     is in place, explore using the 3B model as a reasoning-step predictor: 3B
     predicts which tools/symbols/docs are needed, Oracle fetches them, 8B reasons
     only over the pre-assembled result. Analogous to token-level speculative
