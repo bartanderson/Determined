@@ -1389,3 +1389,7 @@ def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 
         print(f"llama-server: WARNING — {llm_status}")
     print(f"Press Ctrl+C to stop.\n")
     socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
+
+
+if __name__ == "__main__":
+    run_server()

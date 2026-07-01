@@ -12,6 +12,16 @@ from determined.identity.edge_identity import edge_identity
 
 def ensure_schema(connection):
     initialize_database(connection)
+    _migrate(connection)
+
+
+def _migrate(connection):
+    """Add columns that were missing from older corpus DBs."""
+    cursor = connection.cursor()
+    existing = {row[1] for row in cursor.execute("PRAGMA table_info(graph_edges)").fetchall()}
+    if "resolved" not in existing:
+        cursor.execute("ALTER TABLE graph_edges ADD COLUMN resolved INTEGER DEFAULT 0")
+        connection.commit()
 
 def set_project_root(connection: sqlite3.Connection, project_root) -> None:
     """

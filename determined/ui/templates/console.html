@@ -6,15 +6,15 @@
 <title>Determined — dev console</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
-.queue-badge{background:var(--surface2);border:1px solid var(--blue);color:var(--blue);border-radius:10px;padding:1px 8px;font-size:.75em;cursor:pointer;user-select:none}
+.queue-badge{background:var(--bg3);border:1px solid var(--blue);color:var(--blue);border-radius:10px;padding:1px 8px;font-size:.75em;cursor:pointer;user-select:none}
 .queue-badge:hover{background:var(--blue);color:#fff}
 #gap-summary-inner .gs-mod{font-family:var(--font-mono);color:var(--text1)}
 #gap-summary-inner .gs-ok{color:var(--green)}
 #gap-summary-inner .gs-warn{color:var(--orange)}
-.kn-filter{font-size:.78em;padding:2px 9px;border:1px solid var(--border);border-radius:10px;background:none;color:var(--text2);cursor:pointer;transition:background .1s,color .1s}
-.kn-filter:hover{background:var(--surface2);color:var(--text1)}
+.kn-filter{font-size:.78em;padding:2px 9px;border:1px solid var(--border2);border-radius:10px;background:none;color:var(--text2);cursor:pointer;transition:background .1s,color .1s}
+.kn-filter:hover{background:var(--bg3);color:var(--text1)}
 .kn-filter.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.kn-card{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:8px 10px;cursor:pointer;transition:border-color .12s}
+.kn-card{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:8px 10px;cursor:pointer;transition:border-color .12s}
 .kn-card:hover{border-color:var(--text3)}
 .kn-card-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .kn-kind{font-size:.7em;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:3px}
@@ -229,7 +229,7 @@
           <button class="kn-filter" data-kind="known_issue" id="kf-issue">known issues</button>
           <button class="kn-filter" data-kind="query_finding" id="kf-finding">findings</button>
           <button class="send-btn" id="kn-refresh" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
-          <span id="kn-status" style="font-size:.78em;color:var(--text3)"></span>
+          <span id="kn-status" style="font-size:.78em;color:var(--text2)"></span>
         </div>
         <div id="kn-list" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
@@ -337,8 +337,8 @@ socket.on("corpus_ready", data => {
   // seed graph inputs with actual entry point from this corpus
   if (data.top_entry) {
     _topEntry = data.top_entry;
-    document.getElementById("ct-input").placeholder = data.top_entry;
-    document.getElementById("gx-input").placeholder = data.top_entry;
+    document.getElementById("ct-input").placeholder = "click a symbol or type name…";
+    document.getElementById("gx-input").placeholder = "click a symbol or type name…";
   }
 
   // gap summary sidebar
@@ -457,6 +457,7 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
   el.addEventListener("click", () => {
     input.value = el.dataset.submit;
     sendBtn.disabled = false;
+    activateTab("chat");
     sendQuery();
   });
 });
@@ -1834,7 +1835,7 @@ socket.on("knowledge_artifacts", data => {
   const counts = data.counts || {};
   status.textContent = `${data.total || 0} total · design:${counts.design_note||0} sots:${counts.sots||0} issues:${counts.known_issue||0} findings:${counts.query_finding||0}`;
   if (!data.artifacts || !data.artifacts.length) {
-    list.innerHTML = `<div style="color:var(--text3);padding:8px">No artifacts found.</div>`;
+    list.innerHTML = `<div style="color:var(--text2);padding:8px">No artifacts found. Run ingest_design_docs or store findings to populate this panel.</div>`;
     return;
   }
   list.innerHTML = data.artifacts.map(a => {
