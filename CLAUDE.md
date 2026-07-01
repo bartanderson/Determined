@@ -98,6 +98,13 @@ Common mistakes:
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
   in full with current status and next steps. This is mandatory.
 
+## UI verify rule (standing rule, added session 47)
+
+No UI feature is done until clicked in browser. "DONE (unverified)" is not done.
+Before committing any UI change: start the server, load a corpus, exercise the
+changed interaction, confirm it works. Use /verify or the chrome MCP tools.
+5 minutes of real use exposed multiple broken interactions that passed code review.
+
 ## Design reference: The Shape of the System
 
 `docs/sots.md` (source: https://shapeofthesystem.com/) is the authoritative
