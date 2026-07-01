@@ -27,6 +27,10 @@
 .kn-body{font-size:.8em;color:var(--text2);line-height:1.5;margin-bottom:4px}
 .kn-foot{display:flex;gap:8px;font-size:.72em;color:var(--text3)}
 .kn-review{color:var(--orange);font-weight:600}
+.ed-sym-link{color:var(--blue);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.ed-sym-link:hover{color:var(--text1);background:var(--bg3)}
+.ed-sym-link.ed-sym-cls{color:var(--purple)}
+.ed-sym-link.ed-sym-cls:hover{color:var(--text1)}
 </style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
@@ -1612,8 +1616,32 @@ function edRenderSymbols(symbols) {
 }
 
 function edRenderCode(lines, symbols) {
-  // build a set of symbol start lines for gutter markers
   const symLines = new Set((symbols || []).map(s => s.line));
+  // map name -> {line, kind} for linkification; longest names first to avoid partial matches
+  const symMap = new Map();
+  (symbols || []).forEach(s => { if (!symMap.has(s.name)) symMap.set(s.name, s); });
+  const symNames = [...symMap.keys()].sort((a, b) => b.length - a.length);
+  // build regex matching any symbol name as a whole word
+  const symRe = symNames.length
+    ? new RegExp(`\\b(${symNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "g")
+    : null;
+
+  function linkifyLine(text) {
+    if (!symRe) return escHtml(text);
+    // split on symbol matches, escape non-match segments, wrap matches in spans
+    let out = "", last = 0;
+    symRe.lastIndex = 0;
+    let m;
+    while ((m = symRe.exec(text)) !== null) {
+      out += escHtml(text.slice(last, m.index));
+      const s = symMap.get(m[1]);
+      out += `<span class="ed-sym-link${s.kind === "cls" ? " ed-sym-cls" : ""}" data-sym-line="${s.line}" title="${s.kind} · line ${s.line}">${escHtml(m[1])}</span>`;
+      last = m.index + m[0].length;
+    }
+    out += escHtml(text.slice(last));
+    return out;
+  }
+
   const frag = document.createDocumentFragment();
   lines.forEach((text, idx) => {
     const lineno = idx + 1;
@@ -1622,12 +1650,19 @@ function edRenderCode(lines, symbols) {
     const marker = symLines.has(lineno) ? "▸" : " ";
     tr.innerHTML = `<td style="text-align:right;padding:0 6px 0 8px;color:var(--text3);user-select:none;min-width:2.5rem;border-right:1px solid var(--border)">${lineno}</td>`
       + `<td style="color:var(--text3);padding:0 4px;user-select:none;width:1em">${marker}</td>`
-      + `<td style="padding:0 8px 0 4px;color:var(--text1);white-space:pre">${escHtml(text)}</td>`;
+      + `<td style="padding:0 8px 0 4px;color:var(--text1);white-space:pre">${linkifyLine(text)}</td>`;
     frag.appendChild(tr);
   });
   edCodeBody.innerHTML = "";
   edCodeBody.appendChild(frag);
 }
+
+// delegated click: sym-link spans in code view scroll to definition
+edCodeBody.addEventListener("click", e => {
+  const span = e.target.closest(".ed-sym-link");
+  if (!span) return;
+  edScrollToLine(parseInt(span.dataset.symLine, 10));
+});
 
 function edScrollToLine(lineno) {
   const row = document.getElementById(`ed-ln-${lineno}`);
