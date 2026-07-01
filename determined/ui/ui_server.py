@@ -340,13 +340,15 @@ def handle_query(data):
     from determined.agent.local_agent import _answer
 
     try:
+        trace = {}
         with _lock:
             answer, _history = _answer(
-                question, _history, _oracle, _assessor, verbose=True
+                question, _history, _oracle, _assessor, verbose=True, _trace=trace
             )
         emit("answer", {
             "question": question,
             "answer":   answer,
+            "trace":    trace,
         })
     except Exception as exc:
         emit("error", {"message": f"Pipeline error: {exc}"})

@@ -338,12 +338,14 @@ def _answer(
     oracle: DBOracle,
     assessor: Assessor,
     verbose: bool = False,
+    _trace: dict | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Run three-phase pipeline for one user question.
     Returns (final_answer, updated_history).
     History is a list of {role, content} dicts (user/assistant pairs),
     extended in place with the (question, answer) pair.
+    If _trace dict is provided it is filled with pipeline metadata.
     """
     # Phase 0a: PATTERN EXECUTOR - check for named task patterns before anything else
     pattern_name, subject = detect_pattern(user_input)
@@ -352,6 +354,8 @@ def _answer(
             print(f"\n[pattern detected] {pattern_name} / subject={subject}", flush=True)
         executor = PatternExecutor()
         answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
+        if _trace is not None:
+            _trace.update({"pattern": pattern_name, "subject": subject, "needs": [], "tools": []})
         history.append({"role": "user",      "content": user_input})
         history.append({"role": "assistant", "content": answer})
         return answer, history
@@ -366,7 +370,9 @@ def _answer(
     if needs:
         if verbose:
             print(f"\n[heuristic matched] {needs}", flush=True)
+        heuristic_matched = True
     else:
+        heuristic_matched = False
         decompose_msgs = _decompose_prompt(user_input, history, grounding=grounding)
         needs_text = _call_ollama(decompose_msgs, verbose=verbose, label="phase1-decompose")
         if needs_text.startswith("ERROR:"):
@@ -389,22 +395,32 @@ def _answer(
 
     # Phase 3: ASSEMBLE
     # Several heuristics get a deterministic answer (tiny model ignores or degrades facts).
+    bypass = None
     if _is_survey_needs(needs):
-        answer = build_survey_answer(facts)
+        answer = build_survey_answer(facts); bypass = "survey"
     elif _is_git_history_needs(needs):
-        answer = build_git_history_answer(facts)
+        answer = build_git_history_answer(facts); bypass = "git_history"
     elif _is_impact_needs(needs):
-        answer = build_impact_answer(facts)
+        answer = build_impact_answer(facts); bypass = "impact"
     elif needs == ["workflow status"]:
         wf_fact = next((f["result"] for f in facts if f["tool"] == "workflow_status"), None)
-        answer = wf_fact if wf_fact else "(no workflow items found)"
+        answer = wf_fact if wf_fact else "(no workflow items found)"; bypass = "workflow_status"
     elif needs == ["prioritize work"]:
         pw_fact = next((f["result"] for f in facts if f["tool"] == "prioritize_work"), None)
-        answer = pw_fact if pw_fact else "(no work items found)"
+        answer = pw_fact if pw_fact else "(no work items found)"; bypass = "prioritize_work"
     else:
         assemble_msgs = _assemble_prompt(user_input, facts_text, history, facts=facts, needs=needs)
         answer = _call_ollama(assemble_msgs, verbose=verbose, label="phase3-assemble")
         answer = _postprocess_answer(answer, facts)
+
+    if _trace is not None:
+        _trace.update({
+            "pattern": None,
+            "heuristic": "matched" if heuristic_matched else "llm",
+            "bypass": bypass,
+            "needs": needs,
+            "tools": [{"tool": f["tool"], "args": f["args"], "preview": (f.get("result") or "")[:120]} for f in facts],
+        })
 
     # Phase 4: SUGGEST
     suggestions = suggest_followups(facts, oracle, assessor)

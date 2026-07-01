@@ -17,6 +17,18 @@
 .sl-icon{flex-shrink:0;opacity:.6;font-size:.85em;width:1.2em;text-align:center}
 .sl-label{color:var(--text1);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;max-width:40%}
 .sl-sub{color:var(--text3);font-size:.9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.tr-details{margin-top:4px;font-size:.75em}
+.tr-summary{color:var(--text3);cursor:pointer;user-select:none;list-style:none;padding:2px 0}
+.tr-summary::-webkit-details-marker{display:none}
+.tr-body{padding:4px 0 2px 8px;border-left:2px solid var(--border);margin-top:2px;display:flex;flex-direction:column;gap:2px}
+.tr-line{color:var(--text2);line-height:1.4}
+.tr-tag{display:inline-block;font-size:.7em;font-weight:600;text-transform:uppercase;letter-spacing:.05em;background:var(--surface2);color:var(--text3);border-radius:3px;padding:0 4px;margin-right:4px}
+.tp-group-label{font-size:.68em;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);padding:2px 0 1px}
+.tp-row{display:flex;align-items:center;gap:4px;margin:2px 0}
+.tp-name{font-size:.75em;color:var(--text2);white-space:nowrap;min-width:72px}
+.tp-input{flex:1;min-width:0;font-size:.75em;background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:2px 5px;color:var(--text1);font-family:var(--font-mono)}
+.tp-btn{font-size:.72em;padding:2px 7px;background:var(--surface2);border:1px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;white-space:nowrap}
+.tp-btn:hover{background:var(--bg3);color:var(--text1)}
 .queue-badge{background:var(--bg3);border:1px solid var(--blue);color:var(--blue);border-radius:10px;padding:1px 8px;font-size:.75em;cursor:pointer;user-select:none}
 .queue-badge:hover{background:var(--blue);color:#fff}
 #gap-summary-inner .gs-mod{font-family:var(--font-mono);color:var(--text1)}
@@ -107,6 +119,44 @@
 
     <div class="sidebar-section">
       <button id="ask-toggle-btn" class="send-btn" style="width:100%;justify-content:center;background:var(--surface2)">Ask ▾</button>
+    </div>
+
+    <div class="sidebar-section" id="tool-picker-section">
+      <div class="sidebar-label" id="tool-picker-toggle" style="cursor:pointer;user-select:none">Tools ▾</div>
+      <div id="tool-picker-body">
+        <div class="tp-group-label">Navigate</div>
+        <div class="tp-row">
+          <span class="tp-name">Open file</span>
+          <input class="tp-input" id="tp-open-file" placeholder="path/to/file.py" autocomplete="off">
+          <button class="tp-btn" id="tp-open-file-btn">Go</button>
+        </div>
+        <div class="tp-row">
+          <span class="tp-name">Inspect symbol</span>
+          <input class="tp-input" id="tp-inspect-sym" placeholder="SymbolName" autocomplete="off">
+          <button class="tp-btn" id="tp-inspect-sym-btn">Go</button>
+        </div>
+        <div class="tp-group-label" style="margin-top:6px">Query</div>
+        <div class="tp-row">
+          <span class="tp-name">Callers of</span>
+          <input class="tp-input" id="tp-callers" placeholder="function_name" autocomplete="off">
+          <button class="tp-btn" id="tp-callers-btn">Run</button>
+        </div>
+        <div class="tp-row">
+          <span class="tp-name">Explain</span>
+          <input class="tp-input" id="tp-explain" placeholder="function_name" autocomplete="off">
+          <button class="tp-btn" id="tp-explain-btn">Run</button>
+        </div>
+        <div class="tp-row">
+          <span class="tp-name">Findings for</span>
+          <input class="tp-input" id="tp-findings" placeholder="symbol or file" autocomplete="off">
+          <button class="tp-btn" id="tp-findings-btn">Run</button>
+        </div>
+        <div class="tp-row">
+          <span class="tp-name">Files matching</span>
+          <input class="tp-input" id="tp-files" placeholder="pattern" autocomplete="off">
+          <button class="tp-btn" id="tp-files-btn">Run</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -318,6 +368,38 @@ askToggle.addEventListener("click", () => {
   askToggle.textContent = visible ? "Ask ▾" : "Ask ▴";
   if (!visible) input.focus();
 });
+
+// ── tool picker ───────────────────────────────────────────
+const toolPickerToggle = document.getElementById("tool-picker-toggle");
+const toolPickerBody   = document.getElementById("tool-picker-body");
+let _tpOpen = true;
+toolPickerToggle.addEventListener("click", () => {
+  _tpOpen = !_tpOpen;
+  toolPickerBody.style.display = _tpOpen ? "" : "none";
+  toolPickerToggle.textContent = _tpOpen ? "Tools ▾" : "Tools ▸";
+});
+
+function tpQuery(q) {
+  // show query bar, fill it, and submit
+  queryBar.style.display = "";
+  askToggle.textContent = "Ask ▴";
+  input.value = q;
+  sendBtn.click();
+}
+
+function tpBind(inputId, btnId, fn) {
+  const inp = document.getElementById(inputId);
+  const btn = document.getElementById(btnId);
+  btn.addEventListener("click", () => { const v = inp.value.trim(); if (v) { fn(v); inp.value = ""; } });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") btn.click(); });
+}
+
+tpBind("tp-open-file",    "tp-open-file-btn",   v => { edOpenFile(v); activateTab("editor"); });
+tpBind("tp-inspect-sym",  "tp-inspect-sym-btn",  v => openSpotlight(v));
+tpBind("tp-callers",      "tp-callers-btn",      v => tpQuery(`who calls ${v}`));
+tpBind("tp-explain",      "tp-explain-btn",      v => tpQuery(`explain ${v}`));
+tpBind("tp-findings",     "tp-findings-btn",     v => tpQuery(`findings for ${v}`));
+tpBind("tp-files",        "tp-files-btn",        v => tpQuery(`files matching ${v}`));
 const connDot   = document.getElementById("conn-dot");
 const connLbl   = document.getElementById("conn-label");
 const elapsed   = document.getElementById("elapsed");
@@ -817,7 +899,7 @@ socket.on("answer", data => {
   const ms = Date.now() - _t0;
   elapsed.textContent = (ms / 1000).toFixed(1) + "s";
   clearStatusMsgs();
-  addResultBlock(data.question, data.answer);
+  addResultBlock(data.question, data.answer, data.trace);
 });
 
 socket.on("error", data => {
@@ -943,7 +1025,20 @@ function tryStructuredRender(text) {
   return wrap;
 }
 
-function addResultBlock(question, answer) {
+function buildTraceHtml(trace) {
+  if (!trace || (!trace.pattern && !trace.needs && !trace.tools)) return "";
+  const parts = [];
+  if (trace.pattern)   parts.push(`<span class="tr-tag">pattern</span> ${escHtml(trace.pattern)}${trace.subject ? " / " + escHtml(trace.subject) : ""}`);
+  if (trace.heuristic) parts.push(`<span class="tr-tag">decompose</span> ${escHtml(trace.heuristic)}`);
+  if (trace.bypass)    parts.push(`<span class="tr-tag">bypass</span> ${escHtml(trace.bypass)}`);
+  if (trace.needs && trace.needs.length)
+    parts.push(`<span class="tr-tag">needs</span> ${trace.needs.map(n => escHtml(n)).join(", ")}`);
+  if (trace.tools && trace.tools.length)
+    parts.push(`<span class="tr-tag">tools</span> ${trace.tools.map(t => escHtml(t.tool)).join(", ")}`);
+  return `<details class="tr-details"><summary class="tr-summary">pipeline trace</summary><div class="tr-body">${parts.map(p => `<div class="tr-line">${p}</div>`).join("")}</div></details>`;
+}
+
+function addResultBlock(question, answer, trace) {
   const kind   = detectKind(answer);
   const kindCss = kindClass(kind);
 
@@ -981,6 +1076,7 @@ function addResultBlock(question, answer) {
       <div class="answer-text view-compact" style="display:none">${compactView(parts.body)}</div>
       <div class="answer-text view-raw"     style="display:none">${escHtml(parts.body)}</div>
       ${followupHtml}
+      ${buildTraceHtml(trace)}
     </div>`;
 
   // inject structured view into view-normal if available
