@@ -6,6 +6,17 @@
 <title>Determined — dev console</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
+.sl-wrap{display:flex;flex-direction:column;gap:8px}
+.sl-section{background:var(--bg3);border:1px solid var(--border);border-radius:5px;overflow:hidden}
+.sl-heading{font-size:.72em;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:4px 10px;border-bottom:1px solid var(--border);background:var(--bg2)}
+.sl-empty{padding:4px 10px;font-size:.8em;color:var(--text3);font-style:italic}
+.sl-row{display:flex;align-items:center;gap:6px;padding:4px 10px;cursor:pointer;font-size:.82em;transition:background .1s}
+.sl-row:hover{background:var(--bg2)}
+.sl-row-plain{cursor:default}
+.sl-row-plain:hover{background:inherit}
+.sl-icon{flex-shrink:0;opacity:.6;font-size:.85em;width:1.2em;text-align:center}
+.sl-label{color:var(--text1);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;max-width:40%}
+.sl-sub{color:var(--text3);font-size:.9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .queue-badge{background:var(--bg3);border:1px solid var(--blue);color:var(--blue);border-radius:10px;padding:1px 8px;font-size:.75em;cursor:pointer;user-select:none}
 .queue-badge:hover{background:var(--blue);color:#fff}
 #gap-summary-inner .gs-mod{font-family:var(--font-mono);color:var(--text1)}
@@ -844,13 +855,102 @@ function addErrorBlock(msg) {
   results.scrollTop = results.scrollHeight;
 }
 
+// ── structured list renderer ─────────────────────────────────────────────────
+// Detects survey-style answers (Files: / Symbols: / Call relationships: /
+// Stored findings: sections) and renders them as clickable row lists.
+// Returns an HTMLElement if the answer matches, or null to fall through to prose.
+function tryStructuredRender(text) {
+  const SECTION_RE = /^(Files|Symbols|Call relationships|Stored findings):\s*$/m;
+  if (!SECTION_RE.test(text)) return null;
+
+  // parse sections: heading line followed by indented items
+  const sections = [];
+  let cur = null;
+  for (const raw of text.split("\n")) {
+    const heading = raw.match(/^(Files|Symbols|Call relationships|Stored findings):\s*$/);
+    if (heading) {
+      cur = { title: heading[1], items: [] };
+      sections.push(cur);
+    } else if (cur && raw.startsWith("  ")) {
+      const item = raw.trim();
+      if (item) cur.items.push(item);
+    } else if (cur && raw.trim() === "") {
+      // blank line between sections — keep cur
+    } else {
+      cur = null; // non-indented non-heading line breaks the section
+    }
+  }
+  if (!sections.length) return null;
+
+  const wrap = document.createElement("div");
+  wrap.className = "sl-wrap";
+
+  sections.forEach(sec => {
+    const secEl = document.createElement("div");
+    secEl.className = "sl-section";
+    const hdr = document.createElement("div");
+    hdr.className = "sl-heading";
+    hdr.textContent = `${sec.title} (${sec.items.length})`;
+    secEl.appendChild(hdr);
+
+    if (!sec.items.length || (sec.items.length === 1 && sec.items[0].startsWith("(none"))) {
+      const empty = document.createElement("div");
+      empty.className = "sl-empty";
+      empty.textContent = sec.items[0] || "(none)";
+      secEl.appendChild(empty);
+    } else {
+      sec.items.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "sl-row";
+
+        if (sec.title === "Files") {
+          // item is a file path — click opens editor
+          const isHit = item.includes(" (") // may have " (N hits)" suffix
+          const path = isHit ? item.slice(0, item.lastIndexOf(" (")).trim() : item;
+          const label = path.split("/").pop() || path;
+          row.innerHTML = `<span class="sl-icon">📄</span><span class="sl-label" title="${escHtml(path)}">${escHtml(label)}</span><span class="sl-sub">${escHtml(path)}</span>`;
+          row.addEventListener("click", () => { edOpenFile(path); activateTab("editor"); });
+
+        } else if (sec.title === "Symbols") {
+          // item is a symbol name (possibly with (fn)/(cls) suffix)
+          const name = item.replace(/\s*\((fn|cls|class|function)\)\s*$/, "").trim();
+          row.innerHTML = `<span class="sl-icon">ƒ</span><span class="sl-label">${escHtml(name)}</span>`;
+          row.addEventListener("click", () => openSpotlight(name));
+
+        } else if (sec.title === "Call relationships") {
+          // format: "  callee <- caller (file:line)" or "callee <- caller"
+          const arrow = item.indexOf(" <- ");
+          if (arrow >= 0) {
+            const callee = item.slice(0, arrow).trim();
+            const rest   = item.slice(arrow + 4).trim();
+            row.innerHTML = `<span class="sl-icon">↑</span><span class="sl-label">${escHtml(callee)}</span><span class="sl-sub">← ${escHtml(rest)}</span>`;
+            row.addEventListener("click", () => openSpotlight(callee));
+          } else {
+            row.innerHTML = `<span class="sl-icon">↑</span><span class="sl-label">${escHtml(item)}</span>`;
+          }
+
+        } else {
+          // Stored findings — plain text, no click
+          row.innerHTML = `<span class="sl-icon">⚑</span><span class="sl-label">${escHtml(item)}</span>`;
+          row.classList.add("sl-row-plain");
+        }
+
+        secEl.appendChild(row);
+      });
+    }
+    wrap.appendChild(secEl);
+  });
+  return wrap;
+}
+
 function addResultBlock(question, answer) {
   const kind   = detectKind(answer);
   const kindCss = kindClass(kind);
 
   // split answer body from follow-ups (separated by blank line starting with ">")
   const parts    = splitFollowups(answer);
-  const bodyText = colorize(parts.body);
+  const structured = tryStructuredRender(parts.body);
+  const bodyText = structured ? "" : colorize(parts.body);
   const followupHtml = parts.followups.length
     ? `<div class="followups">
          <div class="followup-label">Suggested follow-ups</div>
@@ -882,6 +982,13 @@ function addResultBlock(question, answer) {
       <div class="answer-text view-raw"     style="display:none">${escHtml(parts.body)}</div>
       ${followupHtml}
     </div>`;
+
+  // inject structured view into view-normal if available
+  if (structured) {
+    const normalEl = block.querySelector(".view-normal");
+    normalEl.innerHTML = "";
+    normalEl.appendChild(structured);
+  }
 
   // toggle logic
   block.querySelectorAll(".tog").forEach(tog => {
@@ -1635,7 +1742,7 @@ function edRenderCode(lines, symbols) {
     while ((m = symRe.exec(text)) !== null) {
       out += escHtml(text.slice(last, m.index));
       const s = symMap.get(m[1]);
-      out += `<span class="ed-sym-link${s.kind === "cls" ? " ed-sym-cls" : ""}" data-sym-line="${s.line}" title="${s.kind} · line ${s.line}">${escHtml(m[1])}</span>`;
+      out += `<span class="ed-sym-link${s.kind === "cls" ? " ed-sym-cls" : ""}" data-sym-line="${s.line}" data-sym-name="${escHtml(s.name)}" title="${s.kind} · line ${s.line} (click to inspect)">${escHtml(m[1])}</span>`;
       last = m.index + m[0].length;
     }
     out += escHtml(text.slice(last));
@@ -1657,11 +1764,12 @@ function edRenderCode(lines, symbols) {
   edCodeBody.appendChild(frag);
 }
 
-// delegated click: sym-link spans in code view scroll to definition
+// delegated click: sym-link spans in code view scroll to definition and open spotlight
 edCodeBody.addEventListener("click", e => {
   const span = e.target.closest(".ed-sym-link");
   if (!span) return;
   edScrollToLine(parseInt(span.dataset.symLine, 10));
+  if (span.dataset.symName) openSpotlight(span.dataset.symName);
 });
 
 function edScrollToLine(lineno) {
