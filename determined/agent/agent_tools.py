@@ -361,6 +361,66 @@ def _graph_subgraph_raw(oracle: "DBOracle", symbol: str, radius: int = 2) -> dic
     return subgraph_around(oracle, symbol, radius=radius)
 
 
+def _auto_distill_and_store(conn, subject: str, content: str) -> None:
+    """
+    Compress `content` to one sentence and write it to semantic_summaries.distilled.
+    Called synchronously after a fresh describe_file generation. Silently skips
+    if llama-server is unreachable or content is a stub.
+    """
+    sentence = _distill_to_one_sentence(content, subject, conn=conn)
+    if not sentence:
+        return
+    try:
+        conn.execute(
+            "UPDATE semantic_summaries SET distilled = ? WHERE subject = ?",
+            (sentence, subject),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+
+def _trigger_background_summary(db_path: str, file_path: str, project_root: str | None) -> None:
+    """
+    Fire a daemon thread to generate a semantic summary + distillation for
+    `file_path`. The thread opens its own DB connection (check_same_thread=False
+    is set on the main connection, but separate connections avoid write contention).
+    Returns immediately; next symbol_brief call will find the cached result.
+    """
+    import threading, sqlite3 as _sq3
+    from pathlib import Path
+
+    def _work():
+        try:
+            conn = _sq3.connect(db_path, check_same_thread=False)
+            # Read source
+            p = Path(file_path)
+            if not p.is_absolute() and project_root:
+                p = Path(project_root) / file_path
+            source_text = ""
+            try:
+                source_text = p.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                return
+            if not source_text.strip():
+                return
+            from determined.intent.semantic_summary import get_or_generate_summary
+            result = get_or_generate_summary(conn, file_path, "file", source_text)
+            content = result.get("content", "")
+            if content and not content.startswith("["):
+                _auto_distill_and_store(conn, file_path, content)
+        except Exception:
+            pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_work, daemon=True)
+    t.start()
+
+
 def _distill_to_one_sentence(content: str, subject: str, conn=None) -> str | None:
     """
     Compress `content` into one sentence via llama-server.
@@ -369,10 +429,12 @@ def _distill_to_one_sentence(content: str, subject: str, conn=None) -> str | Non
     Checks semantic cache first if conn is provided.
     """
     from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
+    # Few-shot framing + hard stop word keeps 3b model from rambling
     prompt = (
-        f"Summarise the following in exactly one sentence (max 25 words). "
-        f"Be concrete and name the main thing it does.\n\n"
-        f"Subject: {subject}\n\n{content[:1500]}"
+        f"Output ONLY one sentence (≤20 words) naming what this code does. "
+        f"No explanation. No list. Stop after the period.\n"
+        f"Example: \"Manages player inventory by tracking item counts and stack limits.\"\n\n"
+        f"Subject: {subject}\n\n{content[:800]}\n\nOne sentence:"
     )
     if conn is not None:
         from determined.agent.semantic_cache import lookup, store
@@ -475,7 +537,7 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
     file_path = row[0] if row else ""
     design_frame = _get_design_frame(assessor, symbol, file_path)
 
-    # Prepend distilled preamble if available (stored in corpus DB by distill_corpus)
+    # Prepend distilled preamble if available; trigger background generation if not
     distilled_line = ""
     if file_path:
         stem = file_path.replace(chr(92), "/").split("/")[-1].replace(".py", "")
@@ -486,6 +548,9 @@ def symbol_brief(assessor: "Assessor", args: dict) -> str:
         ).fetchone()
         if dist_row:
             distilled_line = f"Summary: {dist_row[0]}\n"
+        else:
+            _trigger_background_summary(assessor.oracle.db_path, file_path,
+                                        assessor.oracle.get_project_root())
 
     return distilled_line + risk_line + "\n" + brief + design_frame
 

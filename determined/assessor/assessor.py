@@ -608,10 +608,22 @@ class Assessor:
         """
         if kind == "file" and not source_text:
             source_text = self._read_source_file(subject)
-        return _get_or_generate_summary(
+        result = _get_or_generate_summary(
             self.oracle.conn, subject, kind, source_text,
             force_refresh=force_refresh,
         )
+        # Auto-distill when distilled is missing (fresh generation OR cached but never distilled).
+        # Silently skips if LLM unavailable.
+        content = result.get("content", "")
+        if content and not content.startswith("["):
+            already = self.oracle.conn.execute(
+                "SELECT distilled FROM semantic_summaries WHERE subject = ? LIMIT 1",
+                (subject,),
+            ).fetchone()
+            if already is None or already[0] is None:
+                from determined.agent.agent_tools import _auto_distill_and_store
+                _auto_distill_and_store(self.oracle.conn, subject, content)
+        return result
 
     def _read_source_file(self, subject: str) -> str:
         """Read source file content, resolving relative paths via project root."""
