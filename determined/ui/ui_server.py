@@ -1078,18 +1078,18 @@ def handle_open_file(data):
         # symbols from DB, keyed by filename suffix match
         name_pat = f"%{fp.name}"
         fns = _oracle.conn.execute(
-            "SELECT name, line_number FROM functions "
+            "SELECT name, line_number, docstring FROM functions "
             "WHERE replace(file_path,'\\\\','/') LIKE ? OR file_path LIKE ? ORDER BY line_number",
             (name_pat, name_pat)
         ).fetchall()
         cls = _oracle.conn.execute(
-            "SELECT name, line_number FROM classes "
+            "SELECT name, line_number, docstring FROM classes "
             "WHERE replace(file_path,'\\\\','/') LIKE ? OR file_path LIKE ? ORDER BY line_number",
             (name_pat, name_pat)
         ).fetchall()
         symbols = sorted(
-            [{"name": n, "line": ln, "kind": "fn"} for n, ln in fns] +
-            [{"name": n, "line": ln, "kind": "cls"} for n, ln in cls],
+            [{"name": n, "line": ln, "kind": "fn", "has_doc": bool(doc)} for n, ln, doc in fns] +
+            [{"name": n, "line": ln, "kind": "cls", "has_doc": bool(doc)} for n, ln, doc in cls],
             key=lambda s: s["line"]
         )
         rel = str(fp).replace("\\", "/")
@@ -1225,6 +1225,9 @@ def handle_accept_docstring_proposal(data):
         line_number = payload["line_number"]
         proposed = payload["proposed_docstring"]
 
+        override = data.get("override_text", "").strip()
+        if override:
+            proposed = override
         new_content = _insert_docstring(file_path, line_number, proposed)
         Path(file_path).write_text(new_content, encoding="utf-8")
         update_item(k_conn, item_id, status="done")
@@ -1245,6 +1248,64 @@ def handle_dismiss_docstring_proposal(data):
         emit("proposal_result", {"ok": True, "id": item_id, "dismissed": True})
     except Exception as exc:
         emit("proposal_result", {"error": str(exc), "id": item_id})
+
+
+@socketio.on("propose_docstring_for")
+def handle_propose_docstring_for(data):
+    """Generate an on-demand docstring proposal for a single symbol via LLM."""
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol or _oracle is None or _assessor is None:
+        emit("docstring_proposal_for", {"error": "no corpus or missing symbol"}); return
+    try:
+        import json as _json
+        from determined.agent.llm_client import chat as _llm_chat
+        from determined.intent.workflow_store import add_item
+        conn = _oracle.conn
+        row = conn.execute(
+            "SELECT name, file_path, line_number FROM functions WHERE name = ? LIMIT 1",
+            (symbol,)
+        ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT name, file_path, line_number FROM classes WHERE name = ? LIMIT 1",
+                (symbol,)
+            ).fetchone()
+        if not row:
+            emit("docstring_proposal_for", {"error": f"symbol not found: {symbol}"}); return
+        name, file_path, line_number = row
+        dist_row = conn.execute(
+            "SELECT distilled FROM semantic_summaries WHERE subject = ? AND distilled IS NOT NULL",
+            (file_path,)
+        ).fetchone()
+        context = dist_row[0] if dist_row else ""
+        prompt = f"Write a concise one-line Python docstring for `{name}`."
+        if context:
+            prompt += f" The file is described as: {context}"
+        prompt += " Reply with only the docstring text, no quotes, no triple-quotes."
+        msgs = [
+            {"role": "system", "content": "You are a Python docstring writer. Be concise and accurate."},
+            {"role": "user", "content": prompt},
+        ]
+        proposed = _llm_chat(msgs) or context or f"No description available for {name}."
+        content_json = _json.dumps({
+            "proposed_docstring": proposed,
+            "file_path": file_path,
+            "line_number": line_number,
+        })
+        item_id = add_item(
+            _assessor._knowledge_conn, kind="next_up",
+            subject=f"docstring::{file_path}::{name}",
+            content=content_json, provenance="llm-proposed",
+        )
+        emit("docstring_proposal_for", {
+            "symbol": symbol,
+            "proposed": proposed,
+            "file_path": file_path,
+            "line_number": line_number,
+            "item_id": item_id,
+        })
+    except Exception as exc:
+        emit("docstring_proposal_for", {"error": str(exc)})
 
 
 @socketio.on("bag_add")

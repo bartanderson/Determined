@@ -54,6 +54,10 @@
 .ed-sym-link:hover{color:var(--text1);background:var(--bg3)}
 .ed-sym-link.ed-sym-cls{color:var(--purple)}
 .ed-sym-link.ed-sym-cls:hover{color:var(--text1)}
+.ed-doc-missing{color:var(--orange,#c87a00);cursor:default;font-size:.85em}
+.sp-propose-box{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.sp-propose-box textarea{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text1);font-family:var(--font-mono);font-size:.8em;padding:6px;resize:vertical;min-height:60px}
+.sp-propose-box .sp-propose-actions{display:flex;gap:6px}
 </style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
@@ -1279,6 +1283,17 @@ function openSpotlight(sym) {
     spActions.appendChild(btn);
   });
 
+  // propose docstring button
+  const propBtn = document.createElement("button");
+  propBtn.className = "sp-action";
+  propBtn.textContent = "propose doc";
+  propBtn.addEventListener("click", () => {
+    propBtn.disabled = true;
+    propBtn.textContent = "proposing…";
+    socket.emit("propose_docstring_for", { symbol: _currentSpotlight });
+  });
+  spActions.appendChild(propBtn);
+
   // view source button
   const srcBtn = document.createElement("button");
   srcBtn.className = "sp-action sp-source-btn";
@@ -1820,6 +1835,7 @@ function edRenderSymbols(symbols) {
 
 function edRenderCode(lines, symbols) {
   const symLines = new Set((symbols || []).map(s => s.line));
+  const noDocLines = new Set((symbols || []).filter(s => !s.has_doc).map(s => s.line));
   // map name -> {line, kind} for linkification; longest names first to avoid partial matches
   const symMap = new Map();
   (symbols || []).forEach(s => { if (!symMap.has(s.name)) symMap.set(s.name, s); });
@@ -1850,9 +1866,11 @@ function edRenderCode(lines, symbols) {
     const lineno = idx + 1;
     const tr = document.createElement("tr");
     tr.id = `ed-ln-${lineno}`;
-    const marker = symLines.has(lineno) ? "▸" : " ";
+    const markerCell = symLines.has(lineno)
+      ? (noDocLines.has(lineno) ? `<span class="ed-doc-missing" title="no docstring">⚠</span>` : "▸")
+      : " ";
     tr.innerHTML = `<td style="text-align:right;padding:0 6px 0 8px;color:var(--text3);user-select:none;min-width:2.5rem;border-right:1px solid var(--border)">${lineno}</td>`
-      + `<td style="color:var(--text3);padding:0 4px;user-select:none;width:1em">${marker}</td>`
+      + `<td style="color:var(--text3);padding:0 4px;user-select:none;width:1em">${markerCell}</td>`
       + `<td style="padding:0 8px 0 4px;color:var(--text1);white-space:pre">${linkifyLine(text)}</td>`;
     frag.appendChild(tr);
   });
@@ -1977,6 +1995,45 @@ function edAttachBagFileLinks(container) {
   });
 }
 
+// ── docstring proposal from spotlight ──────────────────────
+socket.on("docstring_proposal_for", data => {
+  // re-enable the propose button regardless of outcome
+  const propBtn = spActions ? [...spActions.querySelectorAll(".sp-action")].find(b => b.textContent.startsWith("propos")) : null;
+  if (propBtn) { propBtn.disabled = false; propBtn.textContent = "propose doc"; }
+
+  if (data.error) {
+    const errDiv = document.createElement("div");
+    errDiv.style.cssText = "color:var(--red);font-size:.8em;padding:4px 0";
+    errDiv.textContent = "Proposal error: " + data.error;
+    spBody.prepend(errDiv);
+    return;
+  }
+
+  // remove any existing proposal box
+  spBody.querySelector(".sp-propose-box")?.remove();
+
+  const box = document.createElement("div");
+  box.className = "sp-propose-box";
+  box.innerHTML = `
+    <div style="font-size:.78em;color:var(--text3);margin-bottom:2px">Proposed docstring — edit before accepting</div>
+    <textarea rows="3">${escHtml(data.proposed)}</textarea>
+    <div class="sp-propose-actions">
+      <button class="send-btn sp-propose-accept" style="font-size:.78em;padding:3px 10px;background:var(--green,#2a7a2a)">Accept &amp; write</button>
+      <button class="sp-propose-dismiss" style="font-size:.78em;padding:3px 10px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);cursor:pointer">Dismiss</button>
+    </div>`;
+  box.querySelector(".sp-propose-accept").addEventListener("click", () => {
+    const text = box.querySelector("textarea").value.trim();
+    box.querySelector(".sp-propose-accept").disabled = true;
+    box.querySelector(".sp-propose-accept").textContent = "Writing…";
+    socket.emit("accept_docstring_proposal", { id: data.item_id, override_text: text });
+  });
+  box.querySelector(".sp-propose-dismiss").addEventListener("click", () => {
+    socket.emit("dismiss_docstring_proposal", { id: data.item_id });
+    box.remove();
+  });
+  spBody.prepend(box);
+});
+
 // ── doc health tab ────────────────────────────────────────
 const dhList       = document.getElementById("dh-list");
 const dhStatus     = document.getElementById("dh-status");
@@ -2009,7 +2066,7 @@ socket.on("docstring_proposals", data => {
         <span style="font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${escAttr(fp)}">${escHtml(subject)}</span>
         <span style="color:var(--text3);flex-shrink:0">line ${escHtml(String(ln))}${escHtml(score)}</span>
       </div>
-      <pre style="margin:0 0 8px;white-space:pre-wrap;word-break:break-word;color:var(--text1);background:var(--bg2);border-radius:3px;padding:6px 8px;line-height:1.4">${escHtml(p.proposed_docstring)}</pre>
+      <textarea class="dh-edit" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:3px;color:var(--text1);font-family:var(--font-mono);font-size:.8em;padding:6px 8px;line-height:1.4;resize:vertical;min-height:50px;margin-bottom:8px">${escHtml(p.proposed_docstring)}</textarea>
       <div style="display:flex;gap:6px">
         <button class="dh-accept send-btn" data-id="${p.id}" style="font-size:.78em;padding:3px 10px;background:var(--green,#2a7a2a)">Accept</button>
         <button class="dh-dismiss" data-id="${p.id}" style="font-size:.78em;padding:3px 10px;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);cursor:pointer">Dismiss</button>
@@ -2019,9 +2076,13 @@ socket.on("docstring_proposals", data => {
 
   dhList.querySelectorAll(".dh-accept").forEach(btn => {
     btn.addEventListener("click", () => {
+      const card = document.getElementById("dh-card-" + btn.dataset.id);
+      const editedText = card ? card.querySelector(".dh-edit")?.value.trim() : "";
       btn.disabled = true;
       btn.textContent = "Writing…";
-      socket.emit("accept_docstring_proposal", { id: parseInt(btn.dataset.id) });
+      const payload = { id: parseInt(btn.dataset.id) };
+      if (editedText) payload.override_text = editedText;
+      socket.emit("accept_docstring_proposal", payload);
     });
   });
   dhList.querySelectorAll(".dh-dismiss").forEach(btn => {
@@ -2033,6 +2094,21 @@ socket.on("docstring_proposals", data => {
 });
 
 socket.on("proposal_result", data => {
+  // spotlight inline proposal box
+  const box = spBody ? spBody.querySelector(".sp-propose-box") : null;
+  if (box) {
+    if (data.error) {
+      const btn = box.querySelector(".sp-propose-accept");
+      if (btn) { btn.disabled = false; btn.textContent = "Error"; btn.title = data.error; }
+    } else if (!data.dismissed) {
+      box.style.opacity = "0.4";
+      box.style.pointerEvents = "none";
+      box.querySelector(".sp-propose-accept").textContent = "Written ✓";
+    } else {
+      box.remove();
+    }
+  }
+  // doc health tab cards
   const card = document.getElementById("dh-card-" + data.id);
   if (!card) return;
   if (data.error) {
@@ -2041,8 +2117,7 @@ socket.on("proposal_result", data => {
   } else {
     card.style.opacity = "0.4";
     card.style.pointerEvents = "none";
-    const btns = card.querySelectorAll("button");
-    btns.forEach(b => b.disabled = true);
+    card.querySelectorAll("button").forEach(b => b.disabled = true);
     if (data.dismissed) {
       card.querySelector(".dh-dismiss").textContent = "Dismissed";
     } else {
