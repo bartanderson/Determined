@@ -16,7 +16,13 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-06-30, session 43):** Items 23 + 24 done.
+**Last session (2026-07-01, session 50):** Items 25 + 26 closed.
+All Ollama call sites in Determined were already migrated to llm_client.py targeting
+llama-server on port 8080. Fixed one broken import (OLLAMA_MODEL) in claude_eval.py
+that would have crashed on import. Ollama uninstalled; ~50GB freed. No open numbered
+items remain. 335 passed, 1 skipped.
+
+**Before that (2026-06-30, session 43):** Items 23 + 24 done.
 docstring_health tool: missing detection (SQL), staleness detection (cosine similarity vs
 distilled summary, threshold 0.55), proposal storage in workflow queue. gap_analysis tool:
 on-demand LLM brainstorm of typed fills (extend/bridge/mirror/consolidate) for a scoped
@@ -311,7 +317,7 @@ llama.cpp itself. No wrapper, no company, pure llama.cpp output.
 
 ---
 
-25. **[OPEN] LLM backend: replace Ollama call sites with llama-server shim**
+25. **[DONE 2026-07-01] LLM backend: replace Ollama call sites with llama-server shim**
 
     All Ollama HTTP calls in Determined use one of two request shapes against
     `http://localhost:11434`. Replace with a thin `llm_client.py` module that
@@ -380,7 +386,7 @@ llama.cpp itself. No wrapper, no company, pure llama.cpp output.
 
 ---
 
-26. **[OPEN] Model file management: document and maintain GGUF library**
+26. **[DONE 2026-07-01] Model file management: document and maintain GGUF library**
 
     Ollama managed model downloads and storage. With llama-server we own the files
     directly. This item covers the transition and ongoing model management.
