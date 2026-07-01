@@ -18,9 +18,13 @@ import requests
 logger = logging.getLogger(__name__)
 
 LLM_BASE_URL     = "http://localhost:8080"
-LLM_TIMEOUT      = 30   # GPU inference: complex prompts ~2-5s, 30s is generous safety margin
-LLM_COLD_TIMEOUT = 10   # probe timeout for warmup (GPU loads model in <5s)
+LLM_TIMEOUT      = 30   # 3B model: complex prompts ~2-5s on GPU, 30s is generous
+LLM_COLD_TIMEOUT = 10   # probe timeout for warmup
 LLM_MAX_TOKENS   = 400  # cap generation; without this, large prompts cause llama-server to hang
+
+# Quality tier: Qwen3.6-27B on port 8081 (CPU inference, needs longer timeout)
+LLM_QUALITY_BASE_URL = "http://localhost:8081"
+LLM_QUALITY_TIMEOUT  = 300  # 27B on CPU: ~3-8 tok/s, 400 tokens ≈ 50-130s; 300s is safe
 
 
 def generate(prompt: str, timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
@@ -63,6 +67,51 @@ def is_available(timeout: int = 5) -> bool:
     """Quick health check — True if llama-server is reachable."""
     try:
         resp = requests.get(f"{LLM_BASE_URL}/health", timeout=timeout)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def generate_quality(prompt: str, timeout: int = LLM_QUALITY_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
+    """
+    Single-prompt completion via the quality tier (Qwen3.6-27B on port 8081).
+    Falls back to the fast tier (3B) if the quality server is not running.
+    """
+    try:
+        resp = requests.post(
+            f"{LLM_QUALITY_BASE_URL}/v1/completions",
+            json={"prompt": prompt, "stream": False, "max_tokens": max_tokens},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["text"].strip() or None
+    except Exception:
+        logger.info("llm_client.generate_quality: quality tier unavailable, falling back to fast tier")
+        return generate(prompt, timeout=LLM_TIMEOUT, max_tokens=max_tokens)
+
+
+def chat_quality(messages: list[dict], timeout: int = LLM_QUALITY_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
+    """
+    Chat completion via the quality tier (Qwen3.6-27B on port 8081).
+    Falls back to the fast tier (3B) if the quality server is not running.
+    """
+    try:
+        resp = requests.post(
+            f"{LLM_QUALITY_BASE_URL}/v1/chat/completions",
+            json={"messages": messages, "stream": False, "max_tokens": max_tokens},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip() or None
+    except Exception:
+        logger.info("llm_client.chat_quality: quality tier unavailable, falling back to fast tier")
+        return chat(messages, timeout=LLM_TIMEOUT, max_tokens=max_tokens)
+
+
+def is_available_quality(timeout: int = 5) -> bool:
+    """Quick health check — True if the quality-tier llama-server (port 8081) is reachable."""
+    try:
+        resp = requests.get(f"{LLM_QUALITY_BASE_URL}/health", timeout=timeout)
         return resp.status_code == 200
     except Exception:
         return False

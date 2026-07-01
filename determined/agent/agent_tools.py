@@ -1845,7 +1845,7 @@ def _synthesize_with_ollama(status_text: str, goal: str, conn=None) -> str | Non
     Returns None on failure (SOTS XIII: visible failure, not swallowed).
     Checks semantic cache first if conn is provided.
     """
-    from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
+    from determined.agent.llm_client import generate_quality as _llm_generate, LLM_QUALITY_TIMEOUT as LLM_TIMEOUT
     prompt = (
         f"You are a software architect reviewing a game project's structural analysis.\n\n"
         f"DATA FORMAT GUIDE:\n"
@@ -2373,7 +2373,7 @@ def gap_analysis(assessor: "Assessor", args: dict) -> str:
     design_block = "\n".join(f"  - {r[0][:120]}" for r in dn_rows) or "  (none)"
 
     # 4. Prompt the 3B model
-    from determined.agent.llm_client import chat
+    from determined.agent.llm_client import chat_quality as chat
     prompt_msgs = [
         {"role": "system", "content":
             "You are a code gap analyst. Given a set of existing symbols and design notes, "
