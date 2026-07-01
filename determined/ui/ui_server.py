@@ -1073,7 +1073,13 @@ def handle_open_file(data):
             root = Path(_oracle.get_project_root())
             fp = root / path
         if not fp.exists():
-            emit("file_content", {"error": f"not found: {path}"}); return
+            # fuzzy: find first file in project root whose path ends with the given name
+            root = Path(_oracle.get_project_root())
+            matches = [p for p in root.rglob(fp.name) if p.is_file()]
+            if matches:
+                fp = matches[0]
+            else:
+                emit("file_content", {"error": f"not found: {path}"}); return
         content = fp.read_text(encoding="utf-8", errors="replace")
         # symbols from DB, keyed by filename suffix match
         name_pat = f"%{fp.name}"

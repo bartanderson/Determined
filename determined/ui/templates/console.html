@@ -609,7 +609,7 @@ function ctMakeNode(symbol, dir, depth) {
   li.dataset.dir = dir;
   li.dataset.depth = depth;
   li.style.paddingLeft = (depth * 1.4) + "rem";
-  li.innerHTML = `<span class="ct-toggle">▶</span> <span class="ct-sym sym-link">${escHtml(symbol)}</span> <span class="ct-children-wrap"></span>`;
+  li.innerHTML = `<span class="ct-toggle" title="Expand/collapse" style="cursor:pointer">▶</span> <span class="ct-sym sym-link" style="cursor:pointer" title="Re-root call tree here">${escHtml(symbol)}</span> <span class="ct-children-wrap"></span>`;
   li.querySelector(".ct-sym").addEventListener("click", e => {
     e.stopPropagation();
     ctInput.value = symbol;
@@ -654,7 +654,16 @@ socket.on("call_tree_result", data => {
       const child = ctMakeNode(c.symbol, data.direction, +pending.dataset.depth + 1);
       const meta  = document.createElement("span");
       meta.className = "ct-meta";
-      meta.textContent = c.file ? ` — ${c.file}:${c.line}` : "";
+      if (c.file) {
+        meta.textContent = ` — ${c.file}:${c.line}`;
+        meta.style.cssText = "cursor:pointer;color:var(--blue);text-decoration:underline dotted";
+        meta.title = `Open ${c.file} at line ${c.line}`;
+        meta.addEventListener("click", e => {
+          e.stopPropagation();
+          _edPendingLine = c.line;
+          edOpenFile(c.file);
+        });
+      }
       child.appendChild(meta);
       wrap.appendChild(child);
     }
@@ -1894,9 +1903,10 @@ function edScrollToLine(lineno) {
 socket.on("file_content", data => {
   if (data.error) {
     const b = document.createElement("div");
-    b.style.cssText = "padding:.5rem;color:var(--red)";
-    b.textContent = data.error;
+    b.style.cssText = "padding:.5rem;color:var(--red);font-weight:bold";
+    b.textContent = `⚠ ${data.error}`;
     edCodeBody.innerHTML = ""; edCodeBody.appendChild(b);
+    edNoFile.style.display = "none";
     return;
   }
   // check if already open
