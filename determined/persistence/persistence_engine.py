@@ -699,6 +699,46 @@ def persist_all(connection, file_analyses, graph, project_prefixes, logger=None,
     # -----------------------------------------
     _persist_graph_edges(connection, graph)
 
+    # -----------------------------------------
+    # 6. RECALCULATE is_hot FROM GRAPH
+    # -----------------------------------------
+    _recalculate_hot_files(connection)
+
+def _recalculate_hot_files(connection):
+    """
+    Recalculate files.is_hot after the graph is written.
+
+    A file is HOT if it contains at least one project-defined symbol that has
+    >= 3 distinct callers in graph_edges. This replaces the parse-time
+    approximation (bool(mutations)) which flagged 88%+ of files as HOT.
+    Threshold 3 targets ~20% of files — meaningful signal, not noise.
+    """
+    cursor = connection.cursor()
+    cursor.execute("UPDATE files SET is_hot = 0")
+    cursor.execute("""
+        UPDATE files SET is_hot = 1
+        WHERE file_path IN (
+            SELECT DISTINCT fn.file_path
+            FROM functions fn
+            WHERE fn.name IN (
+                SELECT callee
+                FROM graph_edges
+                WHERE callee IN (SELECT name FROM functions)
+                GROUP BY callee
+                HAVING COUNT(DISTINCT caller) >= 3
+                UNION
+                SELECT SUBSTR(callee, INSTR(callee, '.') + 1)
+                FROM graph_edges
+                WHERE INSTR(callee, '.') > 0
+                  AND SUBSTR(callee, INSTR(callee, '.') + 1) IN (SELECT name FROM functions)
+                GROUP BY callee
+                HAVING COUNT(DISTINCT caller) >= 3
+            )
+        )
+    """)
+    connection.commit()
+
+
 # ==================================================
 # --- SYMBOL IDENTITY LAYER (NEW) ---
 # ==================================================

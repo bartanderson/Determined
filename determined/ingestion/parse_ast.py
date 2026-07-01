@@ -777,7 +777,7 @@ def parse_ast(
         file_path=str(path).replace("\\", "/"),
         metadata=FileMetadata(
             line_count=len(source.splitlines()),
-            is_hot=bool(mutations),
+            is_hot=len(mutations) >= 20,  # refined by _recalculate_hot_files after graph build
             role=_classify_role(path, source),
         ),
 
