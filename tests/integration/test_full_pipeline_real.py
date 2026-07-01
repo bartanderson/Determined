@@ -12,7 +12,7 @@ def test_full_pipeline_real(tmp_path):
     # -------------------------------------------------
     # 1. Point scan at real fixture folder
     # -------------------------------------------------
-    fixture_root = "tools/analysis/tests/fixtures/sample_project"
+    fixture_root = "tests/fixtures/sample_project"
 
     analyses = list(scan_project_files(
         project_root=fixture_root,
