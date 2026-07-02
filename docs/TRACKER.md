@@ -155,7 +155,7 @@ each step result. 293/293 tests passing.
 
    **The trigger for this item:** `infer_behavior`'s original 6 role patterns were invented
    from dj2's architecture rather than grounded in a published taxonomy. Wirfs-Brock RDD
-   roles replaced them (session 55, 2026-07-02). This revealed a broader principle: any
+   roles replaced them (session 56, 2026-07-02). This revealed a broader principle: any
    time Determined uses a classification scheme or taxonomy, that scheme should trace to
    a documented, general-purpose source rather than being project-specific.
 
@@ -168,11 +168,36 @@ each step result. 293/293 tests passing.
    - Compare findings against what the tool claims to support (general-purpose analysis
      of any repository) vs. what its internals assume.
 
-   **References to consider at review time:**
-   - Wirfs-Brock RDD (already adopted for `infer_behavior`)
-   - GRASP (Larman) - responsibility assignment patterns
-   - GoF design patterns - structural/behavioral/creational
-   - Clean Architecture layers (Martin) - for layer-boundary detection
+   **Two standards with clear roles here (session 56 analysis):**
+
+   Wirfs-Brock RDD -- already adopted for `infer_behavior`. Describes what a component
+   IS (its role/character). Right for classification: "what is this function?"
+
+   GRASP (Larman, "Applying UML and Patterns") -- describes WHERE to put responsibility.
+   Not a classification taxonomy but a decision framework: "should this go here or there?"
+   Two distinct uses:
+
+   1. Determined violation detection (near-term): give findings design vocabulary.
+      Current findings say "this symbol calls across a boundary." GRASP lets Determined
+      say WHY that's wrong:
+      - "Reaches across to get data it doesn't own -- violates Information Expert"
+      - "Creates objects it has no business creating -- violates Creator"
+      - "Boundary is reached around rather than through -- violates Protected Variations"
+      This makes findings actionable, not just structural.
+
+   2. dj2 design validation (longer term): dj2's Architectural Constitution already
+      embodies GRASP without naming it. The mapping is near-perfect:
+      - Protected Variations -> the AI boundary (LLM never touches game state directly)
+      - Controller -> the adjudication engine (handles player action events)
+      - Information Expert -> the authority hierarchy (only the owner mutates its data)
+      - Indirection -> the Intent layer (input passes through classification before state)
+      - Pure Fabrication -> ai_boundary.py itself (fabricated service, not a domain concept)
+      Once Determined can reference GRASP explicitly, it can validate dj2's architecture
+      with named principles rather than structural heuristics alone.
+
+   **Other references to consider at review time:**
+   - GoF design patterns -- structural/behavioral/creational
+   - Clean Architecture layers (Martin) -- for layer-boundary detection
    - Any taxonomy currently hardcoded in Determined should cite its source or be replaced
 
    **Prerequisite:** Determined must be able to run corpus synthesis on a moderately
