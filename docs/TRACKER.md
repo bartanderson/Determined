@@ -147,6 +147,41 @@ each step result. 293/293 tests passing.
 
 ---
 
+27. **[FUTURE] Standards-grounded self-review: audit Determined's own design against established patterns**
+
+   As the tool matures, it should be capable of analyzing its own codebase and comparing
+   its design decisions against documented, authoritative software design standards rather
+   than ad-hoc patterns invented for the project.
+
+   **The trigger for this item:** `infer_behavior`'s original 6 role patterns were invented
+   from dj2's architecture rather than grounded in a published taxonomy. Wirfs-Brock RDD
+   roles replaced them (session 55, 2026-07-02). This revealed a broader principle: any
+   time Determined uses a classification scheme or taxonomy, that scheme should trace to
+   a documented, general-purpose source rather than being project-specific.
+
+   **What this item covers:**
+   - When Determined is capable enough to analyze a moderately complex Python codebase,
+     point it at `C:\Users\bartl\dev\Determined` itself as a corpus.
+   - Ask it to identify places where design choices (tool names, category sets, scoring
+     heuristics, pattern libraries) appear to be project-specific rather than grounded
+     in general software engineering literature.
+   - Compare findings against what the tool claims to support (general-purpose analysis
+     of any repository) vs. what its internals assume.
+
+   **References to consider at review time:**
+   - Wirfs-Brock RDD (already adopted for `infer_behavior`)
+   - GRASP (Larman) - responsibility assignment patterns
+   - GoF design patterns - structural/behavioral/creational
+   - Clean Architecture layers (Martin) - for layer-boundary detection
+   - Any taxonomy currently hardcoded in Determined should cite its source or be replaced
+
+   **Prerequisite:** Determined must be able to run corpus synthesis on a moderately
+   large Python repo (itself) and have enough orientation capability to surface
+   design decisions from its own knowledge_artifacts. Probably ready after phase 4
+   (data flow tracing) is working.
+
+---
+
 19. **[DONE 2026-06-28] Design intent layer: check_design_violations + self-audit**
 
    The tool analyzes code structure but has no awareness of what the code is *supposed*

@@ -2380,65 +2380,71 @@ def evaluate_claim(assessor: "Assessor", args: dict) -> str:
 # ROLE PATTERN LIBRARY
 # ---------------------------------------------------------------------------
 
+# Role patterns derived from Responsibility-Driven Design (Wirfs-Brock et al., 2003).
+# These six roles cover the primary behavioral responsibilities a function/method can hold,
+# inferred from calling structure alone (callers, callees, params, file stem) without
+# reading the function body. Source: "Object Design: Roles, Responsibilities, and
+# Collaborations", Rebecca Wirfs-Brock & Alan McKean.
 _ROLE_PATTERNS = [
+    {
+        "subject": "pattern::information-holder",
+        "content": (
+            "INFORMATION-HOLDER (Wirfs-Brock): knows and provides information to others. "
+            "Profile: high in-degree (called by many), returns data without calling many "
+            "other functions, params are keys or identifiers, callers use the return value "
+            "directly. File stem contains store, registry, repository, cache, config, state, "
+            "or db. Does not make decisions or trigger side effects."
+        ),
+    },
+    {
+        "subject": "pattern::structurer",
+        "content": (
+            "STRUCTURER (Wirfs-Brock): maintains relationships between objects or components. "
+            "Profile: manages collections, graphs, or hierarchies; methods include add, remove, "
+            "link, attach, register, or connect; params are objects to relate rather than "
+            "primitive values. File stem contains graph, tree, map, registry, index, or topology. "
+            "Owns the shape of a data structure but not its business meaning."
+        ),
+    },
+    {
+        "subject": "pattern::service-provider",
+        "content": (
+            "SERVICE-PROVIDER (Wirfs-Brock): performs a well-defined unit of work on request "
+            "and returns a result. Profile: called by many, calls few; encapsulates a capability "
+            "(compute, generate, fetch, format); params are inputs to the computation; return "
+            "value is the product. File stem contains service, engine, processor, generator, "
+            "renderer, calculator, or formatter. Stateless or nearly so."
+        ),
+    },
     {
         "subject": "pattern::coordinator",
         "content": (
-            "COORDINATOR: orchestrates multiple subsystems without owning business logic. "
-            "Profile: many callees across different modules, few callers, params include "
-            "context/session/state/manager objects, file stem contains manager, controller, "
-            "handler, orchestrator, or coordinator. Dispatches, routes, or delegates to "
-            "other systems. Does not transform data directly."
+            "COORDINATOR (Wirfs-Brock): delegates work across collaborators without owning "
+            "business logic itself. Profile: many distinct callees across different modules, "
+            "few callers; does not transform data directly; params include context, session, "
+            "or manager objects. File stem contains coordinator, orchestrator, controller, "
+            "manager, handler, or dispatcher. Sequences calls but does not compute results."
         ),
     },
     {
-        "subject": "pattern::boundary",
+        "subject": "pattern::controller",
         "content": (
-            "BOUNDARY: enforces a separation between two layers or subsystems. "
-            "Profile: high in-degree (called by many), validates or filters inputs before "
-            "passing to inner layer, params often include action, request, or command. "
-            "File stem contains boundary, gate, guard, validator, enforcer, or ai_boundary. "
-            "Rejects illegal transitions. Authoritative gatekeeper."
+            "CONTROLLER (Wirfs-Brock): makes decisions and directs the actions of other objects. "
+            "Profile: contains conditional logic (if/switch on state or input type); calls "
+            "different collaborators depending on the decision; returns a verdict, status, or "
+            "routes to a handler. File stem contains controller, adjudicator, router, dispatcher, "
+            "validator, judge, or policy. Distinct from coordinator: it decides, not just delegates."
         ),
     },
     {
-        "subject": "pattern::pipeline-stage",
+        "subject": "pattern::interfacer",
         "content": (
-            "PIPELINE-STAGE: one step in a linear data transformation chain. "
-            "Profile: one primary caller, one primary callee, transforms or enriches a "
-            "data structure and passes it along. Params include the data object being "
-            "processed. File stem contains parser, processor, transformer, builder, "
-            "serializer, extractor, or filter."
-        ),
-    },
-    {
-        "subject": "pattern::adjudicator",
-        "content": (
-            "ADJUDICATOR: makes a decision or judgment about an input, returning a verdict, "
-            "score, or classification. Profile: takes structured input (action, intent, claim), "
-            "returns a result dict or enum, calls evaluation or scoring helpers. "
-            "File stem contains adjudic, judge, evaluate, score, assess, validate, or check. "
-            "Never mutates external state directly."
-        ),
-    },
-    {
-        "subject": "pattern::factory",
-        "content": (
-            "FACTORY: creates and returns objects or data structures. "
-            "Profile: returns a dict, dataclass, or object; params are configuration or "
-            "seed data; few callers; called from init or setup paths. "
-            "File stem contains factory, builder, creator, generator, spawner, or make. "
-            "Typically called once per entity lifecycle."
-        ),
-    },
-    {
-        "subject": "pattern::observer",
-        "content": (
-            "OBSERVER: records, logs, or monitors events without affecting the primary data flow. "
-            "Profile: high in-degree (called from many places) but callers do not depend on "
-            "its return value; params include event, action, or state snapshots. "
-            "File stem contains log, monitor, track, record, emit, notify, or observer. "
-            "Pure side-effect writer."
+            "INTERFACER (Wirfs-Brock): transforms information or requests as they cross a "
+            "system boundary. Profile: sits between two layers or subsystems; translates "
+            "formats, validates inputs, or enforces contracts; params include raw external "
+            "input (request, command, event); rejects or normalizes before passing inward. "
+            "File stem contains boundary, adapter, gateway, bridge, facade, proxy, or interface. "
+            "Authoritative gatekeeper at a layer seam."
         ),
     },
 ]

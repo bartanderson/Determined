@@ -130,12 +130,13 @@ class TestPatternLibrary:
     def test_patterns_defined(self):
         assert len(_ROLE_PATTERNS) >= 6
         roles = {p["subject"] for p in _ROLE_PATTERNS}
+        # Wirfs-Brock Responsibility-Driven Design roles
+        assert "pattern::information-holder" in roles
+        assert "pattern::structurer" in roles
+        assert "pattern::service-provider" in roles
         assert "pattern::coordinator" in roles
-        assert "pattern::boundary" in roles
-        assert "pattern::adjudicator" in roles
-        assert "pattern::factory" in roles
-        assert "pattern::observer" in roles
-        assert "pattern::pipeline-stage" in roles
+        assert "pattern::controller" in roles
+        assert "pattern::interfacer" in roles
 
     def test_patterns_have_subject_and_content(self):
         for p in _ROLE_PATTERNS:
@@ -224,11 +225,11 @@ class TestInferBehaviorDispatch:
 
 @pytest.mark.live_llm
 class TestInferBehaviorLive:
-    def test_adjudicator_role_detected(self):
+    def test_controller_role_detected(self):
         """
-        An adjudicator-shaped calling profile should yield MATCHES_PATTERN
-        or UNCERTAIN (not crash), and the role word 'adjudicator' should appear
-        in the output.
+        A controller-shaped calling profile (evaluate_action in adjudication_engine)
+        should yield MATCHES_PATTERN or UNCERTAIN (not crash), with a Wirfs-Brock
+        role name in the output.
         """
         from determined.agent.llm_client import is_available
         if not is_available(timeout=5):
@@ -260,4 +261,6 @@ class TestInferBehaviorLive:
         assert isinstance(result, str)
         assert "INFER BEHAVIOR" in result
         lower = result.lower()
-        assert "adjudicator" in lower or "matches_pattern" in lower or "uncertain" in lower
+        wirfs_brock_roles = {"controller", "coordinator", "interfacer", "service-provider",
+                             "information-holder", "structurer"}
+        assert any(r in lower for r in wirfs_brock_roles) or "matches_pattern" in lower or "uncertain" in lower
