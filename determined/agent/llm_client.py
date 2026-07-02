@@ -92,17 +92,29 @@ def generate_quality(prompt: str, timeout: int = LLM_QUALITY_TIMEOUT, max_tokens
 
 def chat_quality(messages: list[dict], timeout: int = LLM_QUALITY_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
     """
-    Chat completion via the quality tier (Qwen3.6-27B on port 8081).
-    Falls back to the fast tier (3B) if the quality server is not running.
+    Chat completion via the quality tier (8B on port 8081).
+    Prepends /no_think to disable Qwen3 chain-of-thought mode so content is non-empty.
     """
+    # Qwen3 thinking mode puts output in reasoning_content and leaves content empty.
+    # /no_think in the system prompt disables it via the chat template.
+    msgs = list(messages)
+    if msgs and msgs[0].get("role") == "system":
+        msgs[0] = dict(msgs[0], content="/no_think\n" + msgs[0]["content"])
+    else:
+        msgs.insert(0, {"role": "system", "content": "/no_think"})
     try:
         resp = requests.post(
             f"{LLM_QUALITY_BASE_URL}/v1/chat/completions",
-            json={"messages": messages, "stream": False, "max_tokens": max_tokens},
+            json={"messages": msgs, "stream": False, "max_tokens": max_tokens},
             timeout=timeout,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip() or None
+        data = resp.json()["choices"][0]["message"]
+        # Qwen3 thinking mode: content may be empty, answer in reasoning_content
+        content = data.get("content", "").strip()
+        if not content:
+            content = data.get("reasoning_content", "").strip()
+        return content or None
     except Exception as exc:
         logger.warning("llm_client.chat_quality failed: %s", exc)
         return None

@@ -421,31 +421,41 @@ def _trigger_background_summary(db_path: str, file_path: str, project_root: str 
     t.start()
 
 
+def _source_skeleton(source_text: str, max_chars: int = 500) -> str:
+    """Extract import lines and class/def signatures from source — no bodies."""
+    lines = source_text.splitlines()
+    out = []
+    for line in lines:
+        stripped = line.lstrip()
+        if (stripped.startswith("import ") or stripped.startswith("from ") or
+                stripped.startswith("class ") or stripped.startswith("def ") or
+                stripped.startswith("async def ")):
+            out.append(line)
+    return "\n".join(out)[:max_chars]
+
+
 def _distill_to_one_sentence(content: str, subject: str, conn=None) -> str | None:
     """
     Compress `content` into one sentence via llama-server.
     Returns None if llama-server is unreachable - callers must handle this explicitly
     so the failure is visible rather than silently swallowed (SOTS XIII).
-    Checks semantic cache first if conn is provided.
+    Does NOT use semantic cache — cache stored stale results from the old prompt.
     """
     from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
-    # Few-shot framing + hard stop word keeps 3b model from rambling
-    prompt = (
-        f"Output ONLY one sentence (≤20 words) naming what this code does. "
-        f"No explanation. No list. Stop after the period.\n"
-        f"Example: \"Manages player inventory by tracking item counts and stack limits.\"\n\n"
-        f"Subject: {subject}\n\n{content[:800]}\n\nOne sentence:"
-    )
-    if conn is not None:
-        from determined.agent.semantic_cache import lookup, store
-        cached = lookup(prompt, conn)
-        if cached is not None:
-            return cached
-    result = _llm_generate(prompt, timeout=LLM_TIMEOUT)
-    if result is not None and conn is not None:
-        from determined.agent.semantic_cache import store
-        store(prompt, result, conn)
-    return result
+    # Code-comment framing: 3B stays in "documentation" mode, avoids chatbot rambling.
+    # Uses skeleton (signatures only) when content looks like source; otherwise raw content.
+    body = _source_skeleton(content) if "\ndef " in content or "\nclass " in content else content[:500]
+    prompt = f"# {subject}\n{body}\n\n# Purpose: "
+    result = _llm_generate(prompt, timeout=LLM_TIMEOUT, max_tokens=60)
+    if not result:
+        return result
+    # Extract first sentence only
+    text = result.strip()
+    for sep in (".", "!", "\n"):
+        idx = text.find(sep)
+        if 5 < idx < 160:
+            return text[:idx + 1]
+    return text[:160]
 
 
 def _get_design_frame(assessor: "Assessor", symbol: str, file_path: str) -> str:
@@ -2606,28 +2616,34 @@ def distill_corpus(assessor: "Assessor", args: dict) -> str:
             "Re-ingest with --summarize to generate them, then run distill_corpus."
         )
 
-    # Rows needing distillation: have content but no distilled value yet (SOTS X)
+    # Re-distill ALL rows with content — overwrites stale cached values from old prompt
     pending = corpus_conn.execute(
         "SELECT id, subject, content FROM semantic_summaries "
-        "WHERE content IS NOT NULL AND (distilled IS NULL OR distilled = '')"
+        "WHERE content IS NOT NULL"
     ).fetchall()
 
-    already_done = corpus_conn.execute(
-        "SELECT COUNT(*) FROM semantic_summaries "
-        "WHERE distilled IS NOT NULL AND distilled != ''"
-    ).fetchone()[0]
-
     if not pending:
-        if already_done:
-            return f"distill_corpus: all {already_done} summaries already distilled."
         return (
             "semantic_summaries table is empty. "
             "Re-ingest with --summarize to populate it, then run distill_corpus."
         )
 
+    import pathlib
+    project_root = pathlib.Path(assessor.oracle.get_project_root())
+
     stored = 0
     for row_id, subject, content in pending:
-        sentence = _distill_to_one_sentence(content, subject, conn=corpus_conn)
+        # Prefer source skeleton from disk over stored (possibly stale) content
+        src_path = project_root / subject.replace("/", "\\")
+        if src_path.exists():
+            try:
+                source = src_path.read_text(encoding="utf-8", errors="replace")
+                input_text = _source_skeleton(source)
+            except Exception:
+                input_text = content
+        else:
+            input_text = content
+        sentence = _distill_to_one_sentence(input_text, subject, conn=None)
         if sentence is None:
             return f"ERROR: llama-server stopped responding mid-run after {stored} stored."
         corpus_conn.execute(
@@ -2637,10 +2653,7 @@ def distill_corpus(assessor: "Assessor", args: dict) -> str:
         corpus_conn.commit()
         stored += 1
 
-    return (
-        f"distill_corpus: {stored} distilled, {already_done} already cached "
-        f"({stored + already_done} total)"
-    )
+    return f"distill_corpus: {stored} distilled (all refreshed)"
 
 
 TOOLS = {
