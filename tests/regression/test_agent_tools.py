@@ -509,6 +509,7 @@ def test_dispatch_all_tools_registered():
         "corpus_synthesis",
         "evaluate_claim",
         "infer_behavior",
+        "infer_behavior_batch",
         "trace_data_flow",
     }
     assert set(TOOLS.keys()) == expected
@@ -722,6 +723,125 @@ def test_string_tools_derive_from_raw():
     for r in callers:
         assert r["caller"] in result
 
+
+# ------------------------------------------------------------------
+# infer_behavior_batch — no LLM required
+# ------------------------------------------------------------------
+
+def _make_batch_fixture():
+    """
+    In-memory DB with two functions in the same file and one in another file.
+    No LLM: all verdicts come from the pattern evaluator, which may return
+    UNCERTAIN for sparse context — that is acceptable and expected here.
+    """
+    from determined.agent.agent_tools import _ensure_pattern_library
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=MEMORY")
+    from determined.persistence.persistence_engine import ensure_schema
+    from determined.intent.semantic_summary import ensure_semantic_summaries_table
+    from determined.intent.knowledge_artifact import ensure_knowledge_artifacts_table
+    ensure_schema(conn)
+    cur = conn.cursor()
+    ensure_semantic_summaries_table(cur)
+    ensure_knowledge_artifacts_table(cur)
+    conn.commit()
+
+    conn.executescript("""
+        INSERT INTO symbols (name, file_path, symbol_type, line_number)
+            VALUES ('load_state', 'world/state_manager.py', 'function', 5);
+        INSERT INTO symbols (name, file_path, symbol_type, line_number)
+            VALUES ('save_state', 'world/state_manager.py', 'function', 20);
+        INSERT INTO symbols (name, file_path, symbol_type, line_number)
+            VALUES ('other_fn',  'world/other.py',          'function', 1);
+        INSERT INTO functions (name, file_path, line_number, param_types_json)
+            VALUES ('load_state', 'world/state_manager.py', 5,  '{"path": "str"}');
+        INSERT INTO functions (name, file_path, line_number, param_types_json)
+            VALUES ('save_state', 'world/state_manager.py', 20, '{"path": "str", "data": "dict"}');
+        INSERT INTO functions (name, file_path, line_number, param_types_json)
+            VALUES ('other_fn',  'world/other.py',          1,  '{}');
+    """)
+    conn.commit()
+    _ensure_pattern_library(conn)
+    oracle = FakeOracle(conn)
+    oracle.db_path = ":memory:"
+    return oracle
+
+
+def test_infer_behavior_batch_missing_module():
+    from determined.agent.agent_tools import infer_behavior_batch
+    oracle = _make_batch_fixture()
+    assessor = FakeAssessor(oracle)
+    result = infer_behavior_batch(assessor, {})
+    assert "ERROR" in result
+
+
+def test_infer_behavior_batch_unknown_module():
+    from determined.agent.agent_tools import infer_behavior_batch
+    oracle = _make_batch_fixture()
+    assessor = FakeAssessor(oracle)
+    result = infer_behavior_batch(assessor, {"module": "no_such_module.py"})
+    assert "no functions found" in result.lower()
+
+
+def test_infer_behavior_batch_processes_module():
+    from determined.agent.agent_tools import infer_behavior_batch
+    oracle = _make_batch_fixture()
+    assessor = FakeAssessor(oracle)
+    result = infer_behavior_batch(assessor, {"module": "state_manager.py"})
+    assert isinstance(result, str)
+    assert "INFER BEHAVIOR BATCH" in result
+    assert "state_manager" in result
+    # Both functions should appear in the output
+    assert "load_state" in result
+    assert "save_state" in result
+    # Should not include other_fn (different file)
+    assert "other_fn" not in result
+
+
+def test_infer_behavior_batch_stores_role_inference_artifacts():
+    from determined.agent.agent_tools import infer_behavior_batch
+    oracle = _make_batch_fixture()
+    assessor = FakeAssessor(oracle)
+    infer_behavior_batch(assessor, {"module": "state_manager.py"})
+    rows = oracle.conn.execute(
+        "SELECT subject, kind FROM knowledge_artifacts WHERE kind='role_inference'"
+    ).fetchall()
+    subjects = {r[0] for r in rows}
+    assert "load_state" in subjects
+    assert "save_state" in subjects
+
+
+def test_infer_behavior_batch_skips_cached():
+    from determined.agent.agent_tools import infer_behavior_batch
+    oracle = _make_batch_fixture()
+    assessor = FakeAssessor(oracle)
+    # First run — processes both
+    r1 = infer_behavior_batch(assessor, {"module": "state_manager.py"})
+    # Second run — should skip both (cached)
+    r2 = infer_behavior_batch(assessor, {"module": "state_manager.py"})
+    assert "Skipped (cached): 2" in r2
+    assert "Processed: 0" in r2
+
+
+def test_infer_behavior_batch_force_reruns():
+    from determined.agent.agent_tools import infer_behavior_batch
+    oracle = _make_batch_fixture()
+    assessor = FakeAssessor(oracle)
+    infer_behavior_batch(assessor, {"module": "state_manager.py"})
+    r2 = infer_behavior_batch(assessor, {"module": "state_manager.py", "force": "true"})
+    assert "Processed: 2" in r2
+    assert "Skipped (cached): 0" in r2
+
+
+def test_infer_behavior_batch_registered_in_tools():
+    from determined.agent.agent_tools import TOOLS
+    assert "infer_behavior_batch" in TOOLS
+
+
+def test_string_tools_callees():
+    from determined.agent.agent_tools import _list_callees_raw
+    oracle = _make_fixture()
     # list_callees with generate_encounter (calls "helper")
     callees = _list_callees_raw(oracle, "generate_encounter")
     result = _dispatch("list_callees", {"symbol": "generate_encounter"}, oracle)

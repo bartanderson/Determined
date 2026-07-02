@@ -2578,6 +2578,199 @@ def infer_behavior(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def _infer_behavior_for_symbol(assessor: "Assessor", symbol: str) -> dict:
+    """
+    Core logic of infer_behavior for a single symbol, returns a dict with
+    role/confidence/verdict/reasoning so batch mode can aggregate results
+    and store them without re-running the full string-formatting path.
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    callers = _list_callers_raw(oracle, symbol)
+    callees = _list_callees_raw(oracle, symbol)
+
+    param_names: list[str] = []
+    param_row = conn.execute(
+        "SELECT param_types_json FROM functions WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    if param_row and param_row[0]:
+        import json as _json
+        try:
+            params = _json.loads(param_row[0])
+            param_names = [k for k in params if k not in ("self", "cls")]
+        except Exception:
+            pass
+
+    sym_row = conn.execute(
+        "SELECT file_path FROM symbols WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    file_stem = ""
+    if sym_row:
+        file_stem = sym_row[0].replace("\\", "/").split("/")[-1].replace(".py", "")
+
+    caller_names = [c["caller"].rsplit(".", 1)[-1] for c in callers[:8]]
+    callee_names = [c["callee"].rsplit(".", 1)[-1] for c in callees[:8]]
+
+    context_parts = [f"function: {symbol}"]
+    if file_stem:
+        context_parts.append(f"file: {file_stem}")
+    if param_names:
+        context_parts.append(f"params: {', '.join(param_names[:6])}")
+    if caller_names:
+        context_parts.append(f"called_by: {', '.join(caller_names)}")
+    if callee_names:
+        context_parts.append(f"calls: {', '.join(callee_names)}")
+
+    context_query = "  ".join(context_parts)
+
+    pattern_rows = conn.execute(
+        "SELECT content FROM knowledge_artifacts WHERE kind='pattern' ORDER BY subject"
+    ).fetchall()
+    evidence = [r[0] for r in pattern_rows]
+
+    if not evidence:
+        return {"symbol": symbol, "role": "UNKNOWN", "confidence": 0.0,
+                "verdict": "NO_PATTERNS", "reasoning": "pattern library empty"}
+
+    from determined.agent.evaluator import evaluate
+    question = (
+        "Does this function's calling profile match one of the described architectural "
+        "role patterns? If so, return MATCHES_PATTERN. If the profile is ambiguous or "
+        "too sparse, return UNCERTAIN."
+    )
+    judgment = evaluate(context_query, evidence, question)
+
+    matched_role = ""
+    if judgment.evidence_used:
+        matched_role = judgment.evidence_used[0].split(":")[0].strip()
+
+    return {
+        "symbol": symbol,
+        "context": context_query,
+        "role": matched_role or "(uncertain)",
+        "confidence": judgment.confidence,
+        "verdict": judgment.verdict,
+        "reasoning": judgment.reasoning,
+    }
+
+
+def infer_behavior_batch(assessor: "Assessor", args: dict) -> str:
+    """
+    infer_behavior_batch(module) - run infer_behavior on every function in a module
+    and store results as knowledge_artifacts with kind='role_inference'.
+
+    module  - relative file path or module stem (e.g. 'world/encounter_generator.py'
+              or just 'encounter_generator'). Functions already having a stored
+              role_inference artifact are skipped unless force=true.
+    force   - (optional) 'true' to re-run even if a stored result exists.
+
+    Returns a summary table: symbol | role | confidence.
+    """
+    module = args.get("module", "").strip()
+    if not module:
+        return "ERROR: module argument required"
+    force = str(args.get("force", "false")).lower() == "true"
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    _ensure_pattern_library(conn)
+
+    # Resolve module to a file_path suffix
+    normalized = module.replace("\\", "/")
+    if not normalized.endswith(".py"):
+        normalized = normalized + ".py"
+
+    rows = conn.execute(
+        """
+        SELECT name FROM functions WHERE file_path LIKE ?
+        ORDER BY line_number
+        """,
+        (f"%{normalized}",),
+    ).fetchall()
+
+    if not rows:
+        return f"infer_behavior_batch: no functions found matching '{module}'"
+
+    symbols = [r[0] for r in rows]
+
+    # Check which already have stored results
+    stored: set[str] = set()
+    if not force:
+        for sym in symbols:
+            exists = conn.execute(
+                "SELECT 1 FROM knowledge_artifacts WHERE kind='role_inference' AND subject=? LIMIT 1",
+                (sym,),
+            ).fetchone()
+            if exists:
+                stored.add(sym)
+
+    to_run = [s for s in symbols if s not in stored]
+    skipped = len(stored)
+
+    results = []
+    for sym in to_run:
+        r = _infer_behavior_for_symbol(assessor, sym)
+        results.append(r)
+
+        # Persist as knowledge_artifact
+        content = (
+            f"role: {r['role']}  confidence: {int(r['confidence']*100)}%  "
+            f"verdict: {r['verdict']}  reasoning: {r['reasoning'][:200]}"
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO knowledge_artifacts
+                (subject, kind, content, provenance, created_at)
+            VALUES (?, 'role_inference', ?, 'infer_behavior_batch', datetime('now'))
+            """,
+            (sym, content),
+        )
+    conn.commit()
+
+    # Build output table
+    lines = [
+        f"INFER BEHAVIOR BATCH: {module}",
+        f"  Processed: {len(to_run)}  Skipped (cached): {skipped}  Total: {len(symbols)}",
+        "",
+        f"  {'Symbol':<45} {'Role':<22} {'Conf':>5}  Verdict",
+        f"  {'-'*45} {'-'*22} {'-'*5}  {'-'*15}",
+    ]
+
+    # Include cached results in the table
+    cached_rows = []
+    if stored:
+        cache_data = conn.execute(
+            f"SELECT subject, content FROM knowledge_artifacts "
+            f"WHERE kind='role_inference' AND subject IN ({','.join('?'*len(stored))})",
+            list(stored),
+        ).fetchall()
+        for subject, content in cache_data:
+            role = "(unknown)"
+            conf = "?"
+            verdict = "(cached)"
+            for part in content.split("  "):
+                if part.startswith("role:"):
+                    role = part[5:].strip()
+                elif part.startswith("confidence:"):
+                    conf = part[11:].strip()
+                elif part.startswith("verdict:"):
+                    verdict = part[8:].strip()
+            cached_rows.append((subject, role, conf, verdict))
+
+    for sym, role, conf, verdict in cached_rows:
+        sym_short = sym.rsplit(".", 1)[-1] if "." in sym else sym
+        lines.append(f"  {sym_short:<45} {role:<22} {conf:>5}  {verdict} [cached]")
+
+    for r in results:
+        sym_short = r["symbol"].rsplit(".", 1)[-1] if "." in r["symbol"] else r["symbol"]
+        conf_str = f"{int(r['confidence']*100)}%"
+        lines.append(f"  {sym_short:<45} {r['role']:<22} {conf_str:>5}  {r['verdict']}")
+
+    return "\n".join(lines)
+
+
 def trace_data_flow(assessor: "Assessor", args: dict) -> str:
     """
     trace_data_flow(symbol[, depth]) - walk the callee graph from symbol,
@@ -3178,6 +3371,7 @@ TOOLS = {
     # Evaluate kernel + role inference
     "evaluate_claim":          (evaluate_claim,          "assessor"),
     "infer_behavior":          (infer_behavior,          "assessor"),
+    "infer_behavior_batch":    (infer_behavior_batch,    "assessor"),
     "trace_data_flow":         (trace_data_flow,         "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),

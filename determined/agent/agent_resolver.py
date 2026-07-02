@@ -260,6 +260,10 @@ _PATTERNS = [
     (re.compile(r"infer\s+(?:behavior|role)\s+of\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "infer_behavior", "symbol", 1),
 
+    # "infer behavior batch <module>" / "batch infer <module>" / "role map of <module>"
+    (re.compile(r"(?:infer\s+behavior\s+batch|batch\s+infer(?:\s+behavior)?|role\s+map\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
+     "infer_behavior_batch", "module", 1),
+
     # "trace data flow of/for <symbol>" / "trace flow of <symbol>"
     (re.compile(r"trace\s+(?:data\s+)?flow\s+(?:of|for)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "trace_data_flow", "symbol", 1),
@@ -894,6 +898,20 @@ _HEURISTICS: list[tuple] = [
             f"infer behavior of {t}",
             f"symbols named {t}",
         ])(next(g for g in m.groups() if g)),
+    ),
+
+    # "role map for/of <module>" / "classify all symbols in <module>"
+    # / "infer behavior batch <module>" / "batch infer roles in <module>"
+    (
+        re.compile(
+            r"(?:role\s+map\s+(?:for|of)|classify\s+all\s+(?:symbols|functions)\s+in"
+            r"|infer\s+behavior\s+batch\s+(?:for|of)?|batch\s+infer\s+(?:roles?\s+(?:in|for)?)?)"
+            r"\s*['\"]?([A-Za-z_][\w/\\.-]*(?:\.py)?)['\"]?",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"infer behavior batch {t}",
+        ])(m.group(1).strip()),
     ),
 
     # "how would I add X" / "how do I implement X" / "how should I build X"

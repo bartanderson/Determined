@@ -347,8 +347,19 @@ REGISTRY: dict[str, dict] = {
             "symbol": "name of the function or class to analyze (required)",
         },
         "output": "INFER BEHAVIOR header + role label + confidence % + reasoning + matched pattern",
-        "feeds": ["symbol_context", "risk_profile", "store_finding"],
+        "feeds": ["symbol_context", "risk_profile", "store_finding", "infer_behavior_batch"],
         "use_when": "Symbol has no docstring and you want to understand its purpose from structure alone.",
+        "category": "knowledge",
+    },
+    "infer_behavior_batch": {
+        "purpose": "Run infer_behavior on every function in a module and store results as knowledge_artifacts (kind='role_inference'). Skips symbols that already have a cached result unless force=true.",
+        "args": {
+            "module": "relative file path or module stem (e.g. 'world/encounter_generator.py'). Required.",
+            "force":  "(optional) 'true' to re-run even if a cached result exists",
+        },
+        "output": "Summary table: symbol | role | confidence | verdict for every function in the module",
+        "feeds": ["trace_data_flow", "docstring_health", "gap_analysis"],
+        "use_when": "You want a role map of an entire module — e.g. before refactoring, reviewing a file, or seeding role evidence for trace_data_flow.",
         "category": "knowledge",
     },
     "trace_data_flow": {
