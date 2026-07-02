@@ -256,6 +256,10 @@ _PATTERNS = [
     (re.compile(r"(?:risk\s+profile\s+(?:for|of)|risk\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "risk_profile", "symbol", 1),
 
+    # "infer behavior of <symbol>" / "infer role of <symbol>"
+    (re.compile(r"infer\s+(?:behavior|role)\s+of\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
+     "infer_behavior", "symbol", 1),
+
     # "search <query>" / "find <query>" - fallback to search_symbols
     (re.compile(r"(?:search|find)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "search_symbols", "query", 1),
@@ -852,6 +856,23 @@ _HEURISTICS: list[tuple] = [
             f"files matching {m.group(1)}",
             f"findings for {m.group(1)}",
         ],
+    ),
+
+    # "what role does X play" / "infer behavior of X" / "what is the behavioral role of X"
+    # / "what kind of object is X" / "classify X"
+    (
+        re.compile(
+            r"(?:what\s+(?:(?:behavioral\s+)?role|kind\s+of\s+(?:object|class|function))\s+"
+            r"(?:does\s+['\"]?([A-Za-z_]\w*)['\"]?\s+(?:play|have|fulfill)|"
+            r"is\s+['\"]?([A-Za-z_]\w*)['\"]?)|"
+            r"infer\s+(?:behavior|role)\s+(?:of|for)\s+['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"(?:classify|categorize)\s+['\"]?([A-Za-z_]\w*)['\"]?\s+(?:by\s+role|behaviorally)?)",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"infer behavior of {t}",
+            f"symbols named {t}",
+        ])(next(g for g in m.groups() if g)),
     ),
 
     # "how would I add X" / "how do I implement X" / "how should I build X"
