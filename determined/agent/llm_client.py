@@ -18,13 +18,13 @@ import requests
 logger = logging.getLogger(__name__)
 
 LLM_BASE_URL     = "http://localhost:8080"
-LLM_TIMEOUT      = 30   # 3B model: complex prompts ~2-5s on GPU, 30s is generous
+LLM_TIMEOUT      = 120  # 3B model: on CPU (GPU occupied by 27B) large prompts need ~60-90s
 LLM_COLD_TIMEOUT = 10   # probe timeout for warmup
 LLM_MAX_TOKENS   = 400  # cap generation; without this, large prompts cause llama-server to hang
 
 # Quality tier: Qwen3.6-27B on port 8081 (CPU inference, needs longer timeout)
 LLM_QUALITY_BASE_URL = "http://localhost:8081"
-LLM_QUALITY_TIMEOUT  = 300  # 27B on CPU: ~3-8 tok/s, 400 tokens ≈ 50-130s; 300s is safe
+LLM_QUALITY_TIMEOUT  = 600  # 27B on CPU: ~3-8 tok/s, 400 tokens ≈ 50-130s; 600s for safety
 
 
 def generate(prompt: str, timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
@@ -103,9 +103,9 @@ def chat_quality(messages: list[dict], timeout: int = LLM_QUALITY_TIMEOUT, max_t
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip() or None
-    except Exception:
-        logger.info("llm_client.chat_quality: quality tier unavailable, falling back to fast tier")
-        return chat(messages, timeout=LLM_TIMEOUT, max_tokens=max_tokens)
+    except Exception as exc:
+        logger.warning("llm_client.chat_quality failed: %s", exc)
+        return None
 
 
 def is_available_quality(timeout: int = 5) -> bool:

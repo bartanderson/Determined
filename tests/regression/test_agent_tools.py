@@ -506,6 +506,7 @@ def test_dispatch_all_tools_registered():
         "concept_search",
         "docstring_health",
         "gap_analysis",
+        "corpus_synthesis",
     }
     assert set(TOOLS.keys()) == expected
 

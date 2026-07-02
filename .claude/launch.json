@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "determined-ui",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [".venv\\Scripts\\python.exe", "determined\\agent\\local_agent.py", "C_Users_bartl_dev_harrow.db", "--ui", "--port", "5050"],
+      "port": 5050
+    }
+  ]
+}

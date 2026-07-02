@@ -2324,71 +2324,72 @@ def gap_analysis(assessor: "Assessor", args: dict) -> str:
     oracle = assessor.oracle
     conn = oracle.conn
 
-    scope_label = file_scope or module_scope or symbol_scope
+    scope_label = file_scope or module_scope or symbol_scope or "whole corpus"
 
-    # 1. Collect gap summary to pick focus area if no scope given
-    gap_block = _gap_summary_block(assessor)
-    if not scope_label:
-        # Auto-pick: first module with 0 design notes (highest signal)
-        rows = conn.execute(
-            "SELECT SUBSTR(file_path, 1, INSTR(file_path || '/', '/') - 1) AS mod, "
-            "COUNT(*) as cnt FROM functions GROUP BY mod ORDER BY cnt DESC"
-        ).fetchall()
-        # fallback: just use the whole corpus
-        scope_label = "whole corpus"
-
-    # 2. Collect what exists in the scoped area
-    scope_clause = ""
-    scope_params: list = []
+    # 1. Semantic summaries — the real signal from distill_corpus
+    all_summaries = assessor.list_semantic_summaries(kind="file")
     if file_scope:
-        scope_clause = " AND file_path = ?"
-        scope_params = [file_scope]
+        summaries = [s for s in all_summaries if file_scope in s.get("subject", "")]
     elif module_scope:
-        scope_clause = " AND file_path LIKE ?"
-        scope_params = [f"%{module_scope}%"]
-    elif symbol_scope:
-        scope_clause = " AND name = ?"
-        scope_params = [symbol_scope]
+        summaries = [s for s in all_summaries if module_scope in s.get("subject", "")]
+    else:
+        summaries = all_summaries
 
-    fn_rows = conn.execute(
-        f"SELECT name, file_path, docstring FROM functions WHERE 1=1{scope_clause} LIMIT 60",
-        scope_params,
-    ).fetchall()
+    # Cap at ~50 summaries; prefer core game files over utility/stub files
+    _CORE_PATTERNS = ("world", "session", "event", "action", "tool", "adjudic",
+                      "dungeon", "game_state", "ai_boundary", "narrative", "player")
+    summaries.sort(key=lambda s: (
+        0 if any(p in s.get("subject", "") for p in _CORE_PATTERNS) else 1
+    ))
+    summaries = summaries[:50]
 
-    sym_block = "\n".join(
-        f"  {name} ({fp}): {(doc or '(no docstring)')[:80]}"
-        for name, fp, doc in fn_rows
-    ) or "  (none found)"
+    summary_block = "\n\n".join(
+        f"[{s.get('subject', '?')}]\n{s.get('content', '').strip()[:300]}"
+        for s in summaries
+    ) or "  (no summaries available — run --summarize first)"
 
-    # 3. Design notes for the area
-    if scope_params:
+    # 2. Design notes for context
+    if file_scope or module_scope:
+        key = file_scope or module_scope
         dn_rows = conn.execute(
             "SELECT content FROM knowledge_artifacts WHERE kind='design_note' AND subject LIKE ? LIMIT 10",
-            (f"%{scope_params[0].strip('%')}%",),
+            (f"%{key.strip('%')}%",),
         ).fetchall()
     else:
         dn_rows = conn.execute(
-            "SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 10"
+            "SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 15"
         ).fetchall()
-    design_block = "\n".join(f"  - {r[0][:120]}" for r in dn_rows) or "  (none)"
+    design_block = "\n".join(f"  - {r[0][:150]}" for r in dn_rows) or "  (none)"
 
-    # 4. Prompt the 3B model
+    # 3. Gap metrics block for grounding
+    gap_block = _gap_summary_block(assessor)
+
+    # 4. Prompt the quality-tier model with game-domain framing
     from determined.agent.llm_client import chat_quality as chat
     prompt_msgs = [
         {"role": "system", "content":
-            "You are a code gap analyst. Given a set of existing symbols and design notes, "
-            "identify what is missing, incomplete, or could bridge gaps. Propose typed fills: "
-            "extend (add to existing), bridge (connect two areas), mirror (add analogous coverage), "
-            "consolidate (merge fragmented pieces). Be concrete and brief. 5-10 proposals max."},
+            "You are analyzing a Python codebase for an AI-driven dungeon-master (DM) game. "
+            "The game uses an LLM as the DM's voice and judgment, but the LLM never mutates state — "
+            "all state changes flow through a deterministic Intent->Adjudication->Action chain. "
+            "Key game subsystems include: world state, session management, event logging, "
+            "tool dispatch, action adjudication, and AI boundary enforcement. "
+            "Given per-file semantic summaries, identify what game features are missing, "
+            "incomplete, or disconnected. Propose typed fills:\n"
+            "  extend   — add missing capability to an existing module\n"
+            "  bridge   — connect two modules that should interact but don't\n"
+            "  mirror   — add analogous coverage that exists elsewhere but is missing here\n"
+            "  consolidate — merge fragmented logic into one place\n"
+            "Be concrete: name the file, the gap, and what the fix looks like. "
+            "5-10 proposals. Focus on game functionality, not documentation."},
         {"role": "user", "content":
-            f"Area: {scope_label}\n\n"
-            f"Existing symbols:\n{sym_block}\n\n"
-            f"Design notes:\n{design_block}\n\n"
-            f"Gap summary:\n{gap_block}\n\n"
-            "What is missing, incomplete, or could bridge these areas? "
+            f"Scope: {scope_label}\n\n"
+            f"=== Per-file semantic summaries ===\n{summary_block}\n\n"
+            f"=== Design notes ===\n{design_block}\n\n"
+            f"=== Coverage metrics ===\n{gap_block}\n\n"
+            "What game features are missing, incomplete, or disconnected? "
             "Propose typed fills (extend/bridge/mirror/consolidate)."},
     ]
-    llm_response = chat(prompt_msgs, timeout=60)
+    llm_response = chat(prompt_msgs, timeout=300)
 
     if llm_response is None:
         return "ERROR: llama-server did not respond. gap_analysis requires a running LLM."
@@ -2458,6 +2459,129 @@ def _gap_summary_block(assessor: "Assessor") -> str:
         lines.append("  Modules with missing docstrings:")
         lines.extend(gap_lines[:10])
     return "\n".join(lines)
+
+
+def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
+    """
+    corpus_synthesis() - two-pass architectural gap analysis.
+    Pass 1 (3B, large context): reads all distilled one-liners and maps the
+    codebase into named subsystems.
+    Pass 2 (27B, quality reasoning): given the subsystem map, identifies
+    structural gaps, disconnections, and missing game features.
+    """
+    from determined.agent.llm_client import generate as fast_gen, chat_quality
+    from determined.config import get_fast_ctx, get_quality_ctx
+
+    conn = assessor.oracle.conn
+    fast_ctx = get_fast_ctx()
+    quality_ctx = get_quality_ctx()
+
+    # --- Pass 1: Build subsystem map from distilled one-liners ---
+    rows = conn.execute(
+        "SELECT subject, distilled FROM semantic_summaries "
+        "WHERE kind='file' AND distilled IS NOT NULL AND distilled != '' "
+        "ORDER BY subject"
+    ).fetchall()
+
+    if not rows:
+        # Fall back to truncated summaries if distill_corpus hasn't been run
+        rows = conn.execute(
+            "SELECT subject, SUBSTR(content, 1, 80) FROM semantic_summaries "
+            "WHERE kind='file' ORDER BY subject"
+        ).fetchall()
+        if not rows:
+            return ("No file summaries found. Run --summarize first:\n"
+                    "  python -m determined.agent.local_agent --source <dir> --summarize")
+
+    def _first_sentence(text: str) -> str:
+        """Extract first sentence, cap at 100 chars to strip 3B noise."""
+        text = (text or "").strip().strip('"').strip("'")
+        for sep in (".", "!", "?", "\n"):
+            idx = text.find(sep)
+            if 10 < idx < 120:
+                return text[:idx + 1]
+        return text[:100]
+
+    file_list = "\n".join(f"{r[0]}: {_first_sentence(r[1])}" for r in rows)
+    estimated_tokens = len(file_list) // 4
+
+    print(f"  Pass 1 (3B): {len(rows)} files, ~{estimated_tokens:,} tokens "
+          f"(fast ctx: {fast_ctx:,})")
+
+    if estimated_tokens > fast_ctx * 0.85:
+        # Trim to fit: keep first fast_ctx*0.85*4 chars
+        char_limit = int(fast_ctx * 0.85 * 4)
+        file_list = file_list[:char_limit]
+        print(f"  (trimmed to fit context)")
+
+    pass1_prompt = (
+        "You are analyzing a Python dungeon-master (DM) game codebase.\n"
+        "Below is a one-line description of every source file.\n"
+        "Group them into 6-10 named subsystems.\n"
+        "For each subsystem write ONE paragraph: what it does today, "
+        "which files belong to it, and how it connects to other subsystems.\n"
+        "Be concrete. Do not mention documentation quality.\n\n"
+        f"Files:\n{file_list}"
+    )
+
+    subsystem_map = fast_gen(pass1_prompt, timeout=120, max_tokens=1500)
+    if not subsystem_map:
+        return "ERROR: fast-tier LLM (3B, port 8080) did not respond for pass 1."
+
+    print(f"  Pass 2 (27B): reasoning over subsystem map "
+          f"(quality ctx: {quality_ctx:,})...")
+
+    # --- Pass 2: 27B reasons over subsystem map for architectural gaps ---
+    pass2_msgs = [
+        {"role": "system", "content": (
+            "You are analyzing an AI-driven dungeon-master game in Python. "
+            "The game's core invariant: the LLM is the DM's voice and judgment "
+            "but NEVER mutates state directly. All mutations flow through a chain: "
+            "Intent -> Adjudication -> Action -> WorldState. "
+            "Given a subsystem map of what currently exists, identify structural gaps: "
+            "subsystems that are disconnected, flows that are broken, features that "
+            "cannot work because a required bridge is missing. "
+            "Be specific: name the gap, the files involved, the type of fix "
+            "(extend / bridge / mirror / consolidate), and why it matters for gameplay. "
+            "5-8 findings. Focus on game correctness and architecture, not documentation."
+        )},
+        {"role": "user", "content": (
+            f"Subsystem map:\n{subsystem_map}\n\n"
+            "What is structurally missing or disconnected in this game system?\n"
+            "Which subsystems cannot talk to each other yet?\n"
+            "What would break if someone tried to run a game session today?"
+        )},
+    ]
+
+    analysis = chat_quality(pass2_msgs, timeout=600, max_tokens=1200)
+    if not analysis:
+        return (
+            "ERROR: quality-tier LLM (27B, port 8081) did not respond for pass 2.\n"
+            "Is the 27B server running?  Check: Invoke-RestMethod http://localhost:8081/health\n\n"
+            "=== SUBSYSTEM MAP (pass 1 only) ===\n" + subsystem_map
+        )
+
+    # Store both passes as a backlog item
+    full_result = "\n\n".join([
+        "=== SUBSYSTEM MAP (3B pass) ===",
+        subsystem_map,
+        "=== ARCHITECTURAL GAPS (27B reasoning) ===",
+        analysis,
+    ])
+    from determined.intent.workflow_store import add_item
+    k_conn = assessor._knowledge_conn
+    if k_conn:
+        add_item(k_conn, kind="backlog",
+                 subject="corpus_synthesis::gaps",
+                 content=full_result, provenance="llm-proposed")
+
+    return "\n".join([
+        "CORPUS SYNTHESIS — two-pass architectural analysis:",
+        "",
+        full_result,
+        "",
+        "Stored as backlog item. Use 'workflow_status kind=backlog' to review.",
+    ])
 
 
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
@@ -2583,6 +2707,8 @@ TOOLS = {
     # Docstring health + gap analysis (items 23/24)
     "docstring_health":        (docstring_health,        "assessor"),
     "gap_analysis":            (gap_analysis,            "assessor"),
+    # Two-pass architectural synthesis
+    "corpus_synthesis":        (corpus_synthesis,        "assessor"),
 }
 
 

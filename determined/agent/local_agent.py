@@ -664,13 +664,15 @@ def _summarize_all_files(src, oracle, assessor) -> None:
     """
     from pathlib import Path
     from determined.agent.doc_extractor import discover_docs, extract_rules
+    from determined.ingestion.scan_project_files import load_ignore_list
 
     src = Path(src)
+    skip_dirs = _SKIP_DIRS | load_ignore_list(src)
 
     # --- Pass 1: Python source files ---
     py_files = []
     for p in src.rglob("*.py"):
-        if any(part in _SKIP_DIRS or part.startswith(".") for part in p.parts):
+        if any(part in skip_dirs or part.startswith(".") for part in p.parts):
             continue
         py_files.append(p)
     py_files.sort()

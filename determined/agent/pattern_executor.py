@@ -85,6 +85,10 @@ _DETECT_RULES: list[tuple] = [
     # gap_analysis - no subject (or subject is the area)
     (re.compile(r"gap\s+analysis|what(?:'s| is)\s+missing|what\s+could\s+bridge|analyze\s+(?:the\s+)?gaps?", re.I),
      "gap_analysis", None),
+
+    # corpus_synthesis - two-pass architectural analysis
+    (re.compile(r"corpus\s+synthesis|synthesize\s+(?:the\s+)?corpus|architectural?\s+gaps?|full\s+(?:system\s+)?analysis|what\s+(?:is\s+)?broken|what\s+(?:would\s+)?break", re.I),
+     "corpus_synthesis", None),
 ]
 
 
