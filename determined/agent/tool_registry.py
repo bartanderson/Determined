@@ -351,6 +351,17 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Symbol has no docstring and you want to understand its purpose from structure alone.",
         "category": "knowledge",
     },
+    "trace_data_flow": {
+        "purpose": "Walk the callee graph from a symbol (BFS, configurable depth), annotating each step with whether it mutates external state. Uses name heuristics + design_note evidence to flag [MUTATES] vs [pure].",
+        "args": {
+            "symbol": "root symbol to trace (required)",
+            "depth":  "(optional) max recursion depth, default: 3",
+        },
+        "output": "DATA FLOW TRACE tree: each node shows [MUTATES]/[pure] flag, confidence %, and one-line reasoning",
+        "feeds": ["infer_behavior", "risk_profile", "evaluate_claim"],
+        "use_when": "You want to understand the side-effect profile of a function and its callees — e.g. before refactoring, or to find where state mutations happen in a call chain.",
+        "category": "knowledge",
+    },
     "gap_analysis": {
         "purpose": "On-demand LLM analysis of what is missing or could bridge gaps in a scoped area. Generative/idea-mode — not prescriptive.",
         "args": {

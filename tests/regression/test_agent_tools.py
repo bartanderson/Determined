@@ -509,6 +509,7 @@ def test_dispatch_all_tools_registered():
         "corpus_synthesis",
         "evaluate_claim",
         "infer_behavior",
+        "trace_data_flow",
     }
     assert set(TOOLS.keys()) == expected
 

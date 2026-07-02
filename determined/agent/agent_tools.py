@@ -2578,6 +2578,102 @@ def infer_behavior(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def trace_data_flow(assessor: "Assessor", args: dict) -> str:
+    """
+    trace_data_flow(symbol[, depth]) - walk the callee graph from symbol,
+    annotating each step with whether it mutates external state.
+
+    At each node: retrieve design_note evidence, run evaluate() with the
+    question "Does this step mutate external state or produce side effects?"
+    Accumulates a mutation log. Returns an annotated call tree.
+
+    Args:
+        symbol - root symbol to trace (required)
+        depth  - max recursion depth (default: 3)
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    max_depth = int(args.get("depth", 3))
+
+    from determined.agent.evaluator import evaluate, retrieve_evidence
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    _MUTATION_QUESTION = (
+        "Does this function mutate external state, modify shared data structures, "
+        "call I/O, or produce side effects beyond returning a value?"
+    )
+
+    # Name-based mutation prefixes — reliable regardless of evidence
+    _MUTATING_VERBS = frozenset({
+        "save", "write", "insert", "update", "delete", "remove", "add",
+        "append", "push", "pop", "set", "put", "store", "commit", "flush",
+        "execute", "exec", "run", "send", "emit", "dispatch", "publish",
+        "create", "destroy", "drop", "reset", "clear", "init", "initialize",
+        "register", "unregister", "load", "reload",
+    })
+
+    def _name_mutates(sym: str) -> bool:
+        """Return True if the bare function name starts with a known mutation verb."""
+        bare = sym.rsplit(".", 1)[-1].lstrip("_").lower()
+        return any(bare == v or bare.startswith(v + "_") for v in _MUTATING_VERBS)
+
+    visited: set[str] = set()
+    lines: list[str] = [f"DATA FLOW TRACE: {symbol} (depth={max_depth})", ""]
+
+    def _annotate(sym: str, depth: int, prefix: str) -> None:
+        if depth > max_depth or sym in visited:
+            return
+        visited.add(sym)
+
+        # Build claim from callee context
+        callees = _list_callees_raw(oracle, sym)[:10]
+        callee_names = [c["callee"] for c in callees]
+        claim = f"{sym} calls: {', '.join(callee_names[:8]) or '(none)'}"
+
+        # Retrieve evidence and evaluate
+        evidence = retrieve_evidence(claim, conn, surfaces=["design_note"], top_n=5)
+        if not evidence:
+            evidence = retrieve_evidence(sym, conn, surfaces=["design_note"], top_n=3)
+
+        # Name-based pre-check: verbs like save/execute/append are reliable signals
+        if _name_mutates(sym):
+            flag = "[MUTATES]"
+            conf = 95
+            reason = "(name heuristic: mutation verb)"
+        elif evidence:
+            judgment = evaluate(claim, evidence, _MUTATION_QUESTION)
+            # Detect mutation from reasoning text — verdict alone is ambiguous
+            # because CONFIRMS means "consistent with evidence", not "yes mutates"
+            neg_phrases = ("does not", "no side", "no external", "not modify", "not mutate",
+                           "pure", "read-only", "readonly", "no i/o", "no io")
+            r_lower = judgment.reasoning.lower()
+            negated = any(p in r_lower for p in neg_phrases)
+            unrelated = judgment.verdict in ("UNRELATED", "UNCERTAIN")
+            mutates = not negated and not unrelated and judgment.confidence >= 0.7
+            flag = "[MUTATES]" if mutates else "[pure   ]"
+            conf = int(judgment.confidence * 100)
+            reason = judgment.reasoning[:80]
+        else:
+            flag = "[?      ]"
+            conf = 0
+            reason = "no evidence"
+
+        lines.append(f"{prefix}{flag} {sym} ({conf}%) — {reason}")
+
+        # Recurse into callees
+        child_prefix = prefix + "  "
+        for c in callees[:6]:
+            _annotate(c["callee"], depth + 1, child_prefix)
+
+    _annotate(symbol, 0, "")
+
+    if len(lines) <= 2:
+        lines.append("  (no callees found)")
+    return "\n".join(lines)
+
+
 def gap_analysis(assessor: "Assessor", args: dict) -> str:
     """
     gap_analysis([file][, module][, symbol]) - on-demand LLM gap analysis.
@@ -3082,6 +3178,7 @@ TOOLS = {
     # Evaluate kernel + role inference
     "evaluate_claim":          (evaluate_claim,          "assessor"),
     "infer_behavior":          (infer_behavior,          "assessor"),
+    "trace_data_flow":         (trace_data_flow,         "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
 }

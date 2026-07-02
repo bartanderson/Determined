@@ -260,6 +260,10 @@ _PATTERNS = [
     (re.compile(r"infer\s+(?:behavior|role)\s+of\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "infer_behavior", "symbol", 1),
 
+    # "trace data flow of/for <symbol>" / "trace flow of <symbol>"
+    (re.compile(r"trace\s+(?:data\s+)?flow\s+(?:of|for)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
+     "trace_data_flow", "symbol", 1),
+
     # "search <query>" / "find <query>" - fallback to search_symbols
     (re.compile(r"(?:search|find)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "search_symbols", "query", 1),
@@ -856,6 +860,23 @@ _HEURISTICS: list[tuple] = [
             f"files matching {m.group(1)}",
             f"findings for {m.group(1)}",
         ],
+    ),
+
+    # "trace data flow of X" / "trace mutations in X" / "what does X mutate"
+    # / "what side effects does X have" / "does X mutate state"
+    (
+        re.compile(
+            r"(?:trace\s+(?:data\s+)?flow\s+(?:of|for|through)\s+['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"trace\s+mutations?\s+(?:in|of|for)\s+['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"what\s+(?:does\s+['\"]?([A-Za-z_]\w*)['\"]?\s+mutate|"
+            r"side\s+effects?\s+does\s+['\"]?([A-Za-z_]\w*)['\"]?\s+have)|"
+            r"does\s+['\"]?([A-Za-z_]\w*)['\"]?\s+mutate\s+(?:state|data|anything))",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"trace data flow of {t}",
+            f"symbols named {t}",
+        ])(next(g for g in m.groups() if g)),
     ),
 
     # "what role does X play" / "infer behavior of X" / "what is the behavioral role of X"
