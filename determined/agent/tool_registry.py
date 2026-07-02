@@ -341,6 +341,16 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You have a specific finding and want to know if it violates a design constraint, confirms one, or is noise.",
         "category": "knowledge",
     },
+    "infer_behavior": {
+        "purpose": "Infer the architectural role of an undocumented symbol from its calling context (callers, callees, param names, file stem). Returns best-matching role: coordinator / boundary / pipeline-stage / adjudicator / factory / observer.",
+        "args": {
+            "symbol": "name of the function or class to analyze (required)",
+        },
+        "output": "INFER BEHAVIOR header + role label + confidence % + reasoning + matched pattern",
+        "feeds": ["symbol_context", "risk_profile", "store_finding"],
+        "use_when": "Symbol has no docstring and you want to understand its purpose from structure alone.",
+        "category": "knowledge",
+    },
     "gap_analysis": {
         "purpose": "On-demand LLM analysis of what is missing or could bridge gaps in a scoped area. Generative/idea-mode — not prescriptive.",
         "args": {

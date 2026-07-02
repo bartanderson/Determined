@@ -2376,6 +2376,195 @@ def evaluate_claim(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# ROLE PATTERN LIBRARY
+# ---------------------------------------------------------------------------
+
+_ROLE_PATTERNS = [
+    {
+        "subject": "pattern::coordinator",
+        "content": (
+            "COORDINATOR: orchestrates multiple subsystems without owning business logic. "
+            "Profile: many callees across different modules, few callers, params include "
+            "context/session/state/manager objects, file stem contains manager, controller, "
+            "handler, orchestrator, or coordinator. Dispatches, routes, or delegates to "
+            "other systems. Does not transform data directly."
+        ),
+    },
+    {
+        "subject": "pattern::boundary",
+        "content": (
+            "BOUNDARY: enforces a separation between two layers or subsystems. "
+            "Profile: high in-degree (called by many), validates or filters inputs before "
+            "passing to inner layer, params often include action, request, or command. "
+            "File stem contains boundary, gate, guard, validator, enforcer, or ai_boundary. "
+            "Rejects illegal transitions. Authoritative gatekeeper."
+        ),
+    },
+    {
+        "subject": "pattern::pipeline-stage",
+        "content": (
+            "PIPELINE-STAGE: one step in a linear data transformation chain. "
+            "Profile: one primary caller, one primary callee, transforms or enriches a "
+            "data structure and passes it along. Params include the data object being "
+            "processed. File stem contains parser, processor, transformer, builder, "
+            "serializer, extractor, or filter."
+        ),
+    },
+    {
+        "subject": "pattern::adjudicator",
+        "content": (
+            "ADJUDICATOR: makes a decision or judgment about an input, returning a verdict, "
+            "score, or classification. Profile: takes structured input (action, intent, claim), "
+            "returns a result dict or enum, calls evaluation or scoring helpers. "
+            "File stem contains adjudic, judge, evaluate, score, assess, validate, or check. "
+            "Never mutates external state directly."
+        ),
+    },
+    {
+        "subject": "pattern::factory",
+        "content": (
+            "FACTORY: creates and returns objects or data structures. "
+            "Profile: returns a dict, dataclass, or object; params are configuration or "
+            "seed data; few callers; called from init or setup paths. "
+            "File stem contains factory, builder, creator, generator, spawner, or make. "
+            "Typically called once per entity lifecycle."
+        ),
+    },
+    {
+        "subject": "pattern::observer",
+        "content": (
+            "OBSERVER: records, logs, or monitors events without affecting the primary data flow. "
+            "Profile: high in-degree (called from many places) but callers do not depend on "
+            "its return value; params include event, action, or state snapshots. "
+            "File stem contains log, monitor, track, record, emit, notify, or observer. "
+            "Pure side-effect writer."
+        ),
+    },
+]
+
+
+def _ensure_pattern_library(conn) -> int:
+    """
+    Seed role patterns into knowledge_artifacts as kind='pattern' if not present.
+    Idempotent: skips subjects already in DB. Returns number of patterns inserted.
+    """
+    existing = {
+        r[0] for r in conn.execute(
+            "SELECT subject FROM knowledge_artifacts WHERE kind='pattern'"
+        ).fetchall()
+    }
+    inserted = 0
+    for p in _ROLE_PATTERNS:
+        if p["subject"] not in existing:
+            conn.execute(
+                "INSERT INTO knowledge_artifacts (subject, kind, content, provenance, created_at) "
+                "VALUES (?, 'pattern', ?, 'human-confirmed', datetime('now'))",
+                (p["subject"], p["content"]),
+            )
+            inserted += 1
+    if inserted:
+        conn.commit()
+    return inserted
+
+
+def infer_behavior(assessor: "Assessor", args: dict) -> str:
+    """
+    infer_behavior(symbol) - infer the behavioral role of an undocumented symbol
+    from its calling context (callers, callees, param names, file stem).
+
+    Uses the role pattern library (coordinator / boundary / pipeline-stage /
+    adjudicator / factory / observer) stored as kind='pattern' artifacts.
+    Seeds the library on first call if not present.
+
+    Returns the best-matching role + confidence + reasoning.
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    # Seed pattern library if needed
+    _ensure_pattern_library(conn)
+
+    # Gather calling context
+    callers = _list_callers_raw(oracle, symbol)
+    callees = _list_callees_raw(oracle, symbol)
+
+    param_names: list[str] = []
+    param_row = conn.execute(
+        "SELECT param_types_json FROM functions WHERE name = ? LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if param_row and param_row[0]:
+        import json as _json
+        try:
+            params = _json.loads(param_row[0])
+            param_names = [k for k in params if k not in ("self", "cls")]
+        except Exception:
+            pass
+
+    sym_row = conn.execute(
+        "SELECT file_path FROM symbols WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    file_stem = ""
+    if sym_row:
+        file_stem = sym_row[0].replace("\\", "/").split("/")[-1].replace(".py", "")
+
+    caller_names = [c["caller"].rsplit(".", 1)[-1] for c in callers[:8]]
+    callee_names = [c["callee"].rsplit(".", 1)[-1] for c in callees[:8]]
+
+    context_parts = [f"function: {symbol}"]
+    if file_stem:
+        context_parts.append(f"file: {file_stem}")
+    if param_names:
+        context_parts.append(f"params: {', '.join(param_names[:6])}")
+    if caller_names:
+        context_parts.append(f"called_by: {', '.join(caller_names)}")
+    if callee_names:
+        context_parts.append(f"calls: {', '.join(callee_names)}")
+
+    context_query = "  ".join(context_parts)
+
+    from determined.agent.evaluator import retrieve_evidence, evaluate
+    evidence = retrieve_evidence(context_query, conn, surfaces=["pattern"], top_n=3)
+
+    if not evidence:
+        return (
+            f"infer_behavior: pattern library returned no matches for '{symbol}'.\n"
+            f"  Context: {context_query[:200]}"
+        )
+
+    question = (
+        "Does this function's calling profile match one of the described architectural "
+        "role patterns? If so, return MATCHES_PATTERN. If the profile is ambiguous or "
+        "too sparse, return UNCERTAIN."
+    )
+
+    judgment = evaluate(context_query, evidence, question)
+
+    # Extract role name from the best-matching evidence item (first word before ':')
+    matched_role = ""
+    if judgment.evidence_used:
+        first_word = judgment.evidence_used[0].split(":")[0].strip()
+        matched_role = first_word
+
+    lines = [
+        f"INFER BEHAVIOR: {symbol}",
+        f"  Context:    {context_query[:200]}",
+        f"",
+        f"  Verdict:    {judgment.verdict}",
+        f"  Role:       {matched_role or '(see reasoning)'}",
+        f"  Confidence: {int(judgment.confidence * 100)}%",
+        f"  Reasoning:  {judgment.reasoning}",
+    ]
+    if judgment.evidence_used:
+        lines.append(f"  Pattern:    {judgment.evidence_used[0][:150]}")
+    return "\n".join(lines)
+
+
 def gap_analysis(assessor: "Assessor", args: dict) -> str:
     """
     gap_analysis([file][, module][, symbol]) - on-demand LLM gap analysis.
@@ -2877,8 +3066,9 @@ TOOLS = {
     # Docstring health + gap analysis (items 23/24)
     "docstring_health":        (docstring_health,        "assessor"),
     "gap_analysis":            (gap_analysis,            "assessor"),
-    # Evaluate kernel
+    # Evaluate kernel + role inference
     "evaluate_claim":          (evaluate_claim,          "assessor"),
+    "infer_behavior":          (infer_behavior,          "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
 }

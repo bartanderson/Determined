@@ -508,6 +508,7 @@ def test_dispatch_all_tools_registered():
         "gap_analysis",
         "corpus_synthesis",
         "evaluate_claim",
+        "infer_behavior",
     }
     assert set(TOOLS.keys()) == expected
 
