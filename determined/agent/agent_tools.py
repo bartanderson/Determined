@@ -2534,13 +2534,20 @@ def infer_behavior(assessor: "Assessor", args: dict) -> str:
 
     context_query = "  ".join(context_parts)
 
-    from determined.agent.evaluator import retrieve_evidence, evaluate
-    evidence = retrieve_evidence(context_query, conn, surfaces=["pattern"], top_n=3)
+    from determined.agent.evaluator import evaluate
+
+    # Always retrieve all patterns — this is a forced classification over a fixed set,
+    # not a retrieval question. Threshold-gated evidence lookup would silently drop
+    # patterns that don't embed-match the calling context, producing false "no match".
+    pattern_rows = conn.execute(
+        "SELECT content FROM knowledge_artifacts WHERE kind='pattern' ORDER BY subject"
+    ).fetchall()
+    evidence = [r[0] for r in pattern_rows]
 
     if not evidence:
         return (
-            f"infer_behavior: pattern library returned no matches for '{symbol}'.\n"
-            f"  Context: {context_query[:200]}"
+            f"infer_behavior: pattern library is empty for '{symbol}'. "
+            f"This should not happen — _ensure_pattern_library() is called above."
         )
 
     question = (
