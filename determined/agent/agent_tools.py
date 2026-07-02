@@ -2321,6 +2321,61 @@ def docstring_health(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def evaluate_claim(assessor: "Assessor", args: dict) -> str:
+    """
+    evaluate_claim(claim, question[, surfaces][, top_n]) - evaluate one
+    observation against design constraints stored in the corpus.
+
+    Runs the Observe->Situate->Evaluate kernel:
+      1. Retrieve evidence: cosine-search knowledge_artifacts for the claim
+      2. Evaluate: single focused LLM call -> structured Judgment
+      3. Return verdict, reasoning, confidence, and which evidence drove it
+
+    Args:
+        claim    - the observation to evaluate (required)
+        question - what relationship to look for (required)
+        surfaces - comma-separated knowledge_artifacts kinds to search
+                   (default: "design_note")
+        top_n    - max evidence items to retrieve (default: 5)
+    """
+    claim = args.get("claim", "").strip()
+    question = args.get("question", "").strip()
+    if not claim:
+        return "ERROR: claim argument required"
+    if not question:
+        return "ERROR: question argument required"
+
+    surfaces_raw = args.get("surfaces", "design_note")
+    surfaces = [s.strip() for s in surfaces_raw.split(",") if s.strip()]
+    top_n = int(args.get("top_n", 5))
+
+    from determined.agent.evaluator import evaluate, retrieve_evidence
+    conn = assessor.oracle.conn
+
+    evidence = retrieve_evidence(claim, conn, surfaces=surfaces, top_n=top_n)
+    if not evidence:
+        return (
+            f"EVALUATE: no evidence found in surfaces {surfaces!r} for claim:\n"
+            f"  {claim}\n\n"
+            "Run ingest_design_docs first, or check that design_note artifacts exist."
+        )
+
+    judgment = evaluate(claim, evidence, question)
+
+    lines = [
+        f"EVALUATE CLAIM",
+        f"  Claim:    {claim}",
+        f"  Question: {question}",
+        f"",
+        f"  Verdict:    {judgment.verdict}",
+        f"  Confidence: {int(judgment.confidence * 100)}%",
+        f"  Reasoning:  {judgment.reasoning}",
+    ]
+    if judgment.evidence_used:
+        lines.append(f"  Evidence:   {judgment.evidence_used[0][:120]}")
+    return "\n".join(lines)
+
+
 def gap_analysis(assessor: "Assessor", args: dict) -> str:
     """
     gap_analysis([file][, module][, symbol]) - on-demand LLM gap analysis.
@@ -2471,6 +2526,98 @@ def _gap_summary_block(assessor: "Assessor") -> str:
     return "\n".join(lines)
 
 
+def _filter_gaps_by_design_intent(
+    assessor: "Assessor", analysis_text: str
+) -> tuple[str, str]:
+    """
+    Split 27B gap analysis into individual blocks and evaluate each against
+    design_notes using the evaluate kernel.
+
+    Returns (real_gaps_text, noise_text):
+      real_gaps_text  - gaps that VIOLATE or are UNCERTAIN against design intent
+      noise_text      - gaps that CONFIRM or EXPLAIN design intent (intentional)
+
+    If no design_notes exist, returns (analysis_text, "") unchanged.
+    """
+    from determined.agent.evaluator import retrieve_evidence, evaluate
+
+    conn = assessor.oracle.conn
+
+    # Check design_notes exist — if not, skip filtering entirely
+    note_count = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'"
+    ).fetchone()[0]
+    if note_count == 0:
+        return analysis_text, ""
+
+    # Split on the markdown separator between gap blocks.
+    # The 27B uses '---' on its own line between numbered sections.
+    import re
+    blocks = re.split(r'\n---\n', analysis_text)
+    blocks = [b.strip() for b in blocks if b.strip()]
+
+    # The first block is often a preamble (no "**N." heading) — keep it always
+    preamble = ""
+    gap_blocks = []
+    for block in blocks:
+        if re.search(r'\*\*\d+\.', block):
+            gap_blocks.append(block)
+        else:
+            preamble = block
+
+    if not gap_blocks:
+        # Couldn't parse blocks — return unchanged
+        return analysis_text, ""
+
+    real_gaps = []
+    noise = []
+
+    question = (
+        "Is this missing connection intentional by design "
+        "(e.g., the architecture specifically separates these concerns), "
+        "or is it a real architectural gap that needs a fix?"
+    )
+
+    for block in gap_blocks:
+        # Extract the title line as the claim
+        title_match = re.search(r'\*\*\d+\.\s*(.+?)\*\*', block)
+        claim = title_match.group(1).strip() if title_match else block[:120]
+
+        evidence = retrieve_evidence(claim, conn, surfaces=["design_note"], top_n=5)
+        if not evidence:
+            # No relevant design notes — keep the gap (can't filter without evidence)
+            real_gaps.append(block)
+            continue
+
+        try:
+            judgment = evaluate(claim, evidence, question)
+        except RuntimeError:
+            # LLM unavailable mid-run — keep the gap, don't crash corpus_synthesis
+            real_gaps.append(block)
+            continue
+
+        verdict = judgment.verdict
+        if verdict in ("CONFIRMS", "EXPLAINS"):
+            # Design intent says this absence is intentional
+            noise.append(
+                f"{block}\n"
+                f"  [FILTERED: {verdict} ({int(judgment.confidence*100)}%) — "
+                f"{judgment.reasoning}]"
+            )
+        else:
+            # VIOLATES, UNRELATED, UNCERTAIN, MATCHES_PATTERN — keep as real gap
+            annotation = (
+                f"  [evaluate: {verdict} ({int(judgment.confidence*100)}%) — "
+                f"{judgment.reasoning}]"
+            )
+            real_gaps.append(f"{block}\n{annotation}")
+
+    real_text = ("\n\n---\n\n".join([preamble] + real_gaps)).strip() if preamble else \
+                ("\n\n---\n\n".join(real_gaps)).strip()
+    noise_text = ("\n\n---\n\n".join(noise)).strip()
+    return real_text, noise_text
+
+
 def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
     """
     corpus_synthesis() - two-pass architectural gap analysis.
@@ -2571,12 +2718,22 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
             "=== SUBSYSTEM MAP (pass 1 only) ===\n" + subsystem_map
         )
 
+    # --- Pass 3: Filter gaps through design-intent evaluate kernel ---
+    # Split the 27B output into individual gap blocks and evaluate each
+    # against ingested design_notes. Gaps that CONFIRM or EXPLAIN a design
+    # constraint are intentional and filtered as noise.
+    filtered_analysis, noise_analysis = _filter_gaps_by_design_intent(
+        assessor, analysis
+    )
+
     # Store both passes as a backlog item
     full_result = "\n\n".join([
         "=== SUBSYSTEM MAP (3B pass) ===",
         subsystem_map,
-        "=== ARCHITECTURAL GAPS (27B reasoning) ===",
-        analysis,
+        "=== ARCHITECTURAL GAPS (27B reasoning) — design-intent filtered ===",
+        filtered_analysis or "(all gaps filtered as intentional by design)",
+        "=== FILTERED AS INTENTIONAL (design-confirmed noise) ===",
+        noise_analysis or "(none filtered)",
     ])
     from determined.intent.workflow_store import add_item
     k_conn = assessor._knowledge_conn
@@ -2720,6 +2877,8 @@ TOOLS = {
     # Docstring health + gap analysis (items 23/24)
     "docstring_health":        (docstring_health,        "assessor"),
     "gap_analysis":            (gap_analysis,            "assessor"),
+    # Evaluate kernel
+    "evaluate_claim":          (evaluate_claim,          "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
 }

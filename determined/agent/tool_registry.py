@@ -328,6 +328,19 @@ REGISTRY: dict[str, dict] = {
         "use_when": "User wants a full-system architectural view of what is missing or broken. More powerful than gap_analysis — reads the whole corpus. Requires both LLM tiers running.",
         "category": "discovery",
     },
+    "evaluate_claim": {
+        "purpose": "Evaluate one observation against design constraints using the Observe->Situate->Evaluate kernel. Returns a structured verdict: VIOLATES, CONFIRMS, EXPLAINS, MATCHES_PATTERN, UNRELATED, or UNCERTAIN.",
+        "args": {
+            "claim":    "the observation to evaluate (required)",
+            "question": "what relationship to look for (required)",
+            "surfaces": "(optional) comma-separated knowledge_artifacts kinds, default: 'design_note'",
+            "top_n":    "(optional) max evidence items to retrieve, default: 5",
+        },
+        "output": "Verdict, confidence %, reasoning, and which evidence item drove the verdict",
+        "feeds": ["gap_analysis", "corpus_synthesis"],
+        "use_when": "You have a specific finding and want to know if it violates a design constraint, confirms one, or is noise.",
+        "category": "knowledge",
+    },
     "gap_analysis": {
         "purpose": "On-demand LLM analysis of what is missing or could bridge gaps in a scoped area. Generative/idea-mode — not prescriptive.",
         "args": {
