@@ -510,6 +510,7 @@ def test_dispatch_all_tools_registered():
         "evaluate_claim",
         "infer_behavior",
         "infer_behavior_batch",
+        "match_structural_pattern",
         "trace_data_flow",
     }
     assert set(TOOLS.keys()) == expected

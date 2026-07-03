@@ -2849,6 +2849,62 @@ def trace_data_flow(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def match_structural_pattern(assessor: "Assessor", args: dict) -> str:
+    """
+    match_structural_pattern(symbol[, radius]) - check whether the call subgraph
+    around a symbol matches a known architectural pattern (coordinator, pipeline,
+    adjudicator, etc.) stored in the pattern library.
+
+    Args:
+        symbol - root symbol (required)
+        radius - BFS radius around symbol (default: 2)
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    radius = int(args.get("radius", 2))
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    _ensure_pattern_library(conn)
+
+    from determined.agent.evaluator import collect_subgraph_context, retrieve_evidence, evaluate
+
+    subgraph = _graph_subgraph_raw(oracle, symbol, radius)
+    if not subgraph.get("nodes"):
+        return f"match_structural_pattern: no subgraph found around '{symbol}'"
+
+    claim = collect_subgraph_context(conn, subgraph)
+    evidence = retrieve_evidence(claim, conn, surfaces=["pattern"])
+
+    if not evidence:
+        return (
+            "match_structural_pattern: pattern library is empty. "
+            "Run infer_behavior on a symbol first to seed it."
+        )
+
+    question = (
+        "Does the topology and naming of this call subgraph match one of the described "
+        "architectural patterns? Return MATCHES_PATTERN if it fits clearly, UNCERTAIN if "
+        "the subgraph is too small or ambiguous to classify."
+    )
+    judgment = evaluate(claim, evidence, question)
+
+    matched = judgment.evidence_used[0][:120] if judgment.evidence_used else "(none)"
+    n_nodes = len(subgraph.get("nodes", set()))
+    n_edges = len(subgraph.get("edges", []))
+
+    lines = [
+        f"STRUCTURAL PATTERN MATCH: {symbol} (radius={radius})",
+        f"  Subgraph: {n_nodes} nodes, {n_edges} edges",
+        f"  Verdict:  {judgment.verdict} ({int(judgment.confidence * 100)}%)",
+        f"  Reason:   {judgment.reasoning}",
+        f"  Pattern:  {matched}",
+    ]
+    return "\n".join(lines)
+
+
 def gap_analysis(assessor: "Assessor", args: dict) -> str:
     """
     gap_analysis([file][, module][, symbol]) - on-demand LLM gap analysis.
@@ -3353,8 +3409,9 @@ TOOLS = {
     # Evaluate kernel + role inference
     "evaluate_claim":          (evaluate_claim,          "assessor"),
     "infer_behavior":          (infer_behavior,          "assessor"),
-    "infer_behavior_batch":    (infer_behavior_batch,    "assessor"),
-    "trace_data_flow":         (trace_data_flow,         "assessor"),
+    "infer_behavior_batch":       (infer_behavior_batch,       "assessor"),
+    "match_structural_pattern":   (match_structural_pattern,   "assessor"),
+    "trace_data_flow":            (trace_data_flow,            "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
 }

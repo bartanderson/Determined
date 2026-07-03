@@ -362,6 +362,17 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want a role map of an entire module — e.g. before refactoring, reviewing a file, or seeding role evidence for trace_data_flow.",
         "category": "knowledge",
     },
+    "match_structural_pattern": {
+        "purpose": "Check whether the call subgraph around a symbol matches a known architectural pattern (coordinator, pipeline, adjudicator, etc.) from the pattern library.",
+        "args": {
+            "symbol": "root symbol to examine (required)",
+            "radius": "(optional) BFS radius around symbol, default: 2",
+        },
+        "output": "STRUCTURAL PATTERN MATCH block: subgraph size, verdict, confidence %, reasoning, and matched pattern text",
+        "feeds": ["risk_profile", "infer_behavior", "gap_analysis"],
+        "use_when": "You want to know what architectural pattern a cluster of functions implements — e.g. before refactoring or when reviewing an unfamiliar module.",
+        "category": "knowledge",
+    },
     "trace_data_flow": {
         "purpose": "Walk the callee graph from a symbol (BFS, configurable depth), annotating each step with whether it mutates external state. Uses name heuristics + design_note evidence to flag [MUTATES] vs [pure].",
         "args": {

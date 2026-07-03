@@ -309,6 +309,54 @@ def collect_symbol_context(conn: sqlite3.Connection, symbol: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# collect_subgraph_context()
+# ---------------------------------------------------------------------------
+
+def collect_subgraph_context(conn: sqlite3.Connection, subgraph: dict) -> str:
+    """
+    Build a context string describing a call subgraph for pattern matching.
+
+    Args:
+        conn:     sqlite3 connection (reserved for future per-node lookups).
+        subgraph: dict with 'nodes' (set[str]) and 'edges' (list[tuple[str,str]])
+                  as returned by graph_utils.subgraph_around().
+
+    Returns a string suitable as the `claim` argument to evaluate() or as the
+    `query` argument to retrieve_evidence().
+    """
+    nodes = list(subgraph.get("nodes", set()))
+    edges = list(subgraph.get("edges", []))
+
+    if not nodes:
+        return "(empty subgraph)"
+
+    has_incoming = {b for a, b in edges}
+    has_outgoing = {a for a, b in edges}
+    entry_points = [n for n in nodes if n not in has_incoming and n in has_outgoing]
+    terminals    = [n for n in nodes if n not in has_outgoing]
+    short_names  = [n.rsplit(".", 1)[-1] for n in nodes]
+
+    parts = [
+        f"subgraph: {len(nodes)} nodes, {len(edges)} edges",
+        f"symbols: {', '.join(short_names[:12])}",
+    ]
+    if entry_points:
+        parts.append(f"entry_points: {', '.join(n.rsplit('.', 1)[-1] for n in entry_points[:4])}")
+    if terminals:
+        parts.append(f"terminals: {', '.join(n.rsplit('.', 1)[-1] for n in terminals[:4])}")
+
+    avg_out = len(edges) / len(nodes) if nodes else 0
+    if avg_out <= 1.2 and len(entry_points) == 1:
+        parts.append("topology: linear chain")
+    elif avg_out > 2.0:
+        parts.append("topology: high branching factor")
+    elif len(terminals) > len(nodes) * 0.5:
+        parts.append("topology: convergent")
+
+    return "  ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Internal: parse LLM output -> Judgment
 # ---------------------------------------------------------------------------
 

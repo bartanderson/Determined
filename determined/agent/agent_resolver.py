@@ -264,6 +264,10 @@ _PATTERNS = [
     (re.compile(r"(?:infer\s+behavior\s+batch|batch\s+infer(?:\s+behavior)?|role\s+map\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "infer_behavior_batch", "module", 1),
 
+    # "match pattern for/around/of <symbol>" / "structural pattern <symbol>"
+    (re.compile(r"(?:match\s+(?:structural\s+)?pattern\s+(?:for|around|of)|structural\s+pattern)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
+     "match_structural_pattern", "symbol", 1),
+
     # "trace data flow of/for <symbol>" / "trace flow of <symbol>"
     (re.compile(r"trace\s+(?:data\s+)?flow\s+(?:of|for)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "trace_data_flow", "symbol", 1),
@@ -898,6 +902,19 @@ _HEURISTICS: list[tuple] = [
             f"infer behavior of {t}",
             f"symbols named {t}",
         ])(next(g for g in m.groups() if g)),
+    ),
+
+    # "what pattern does <symbol> implement" / "does <symbol> match a pattern"
+    # / "check structural pattern of <symbol>"
+    (
+        re.compile(
+            r"(?:what\s+pattern\s+does|does\s+.+\s+match\s+a\s+pattern|"
+            r"check\s+(?:structural\s+)?pattern\s+(?:of|for|around))\s*['\"]?([A-Za-z_][\w.]*)['\"]?",
+            re.I,
+        ),
+        lambda m: (lambda t: [
+            f"match structural pattern {t}",
+        ])(m.group(1).strip()),
     ),
 
     # "role map for/of <module>" / "classify all symbols in <module>"
