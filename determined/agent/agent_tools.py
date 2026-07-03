@@ -575,35 +575,30 @@ def _check_design_violations_core(
     assessor: "Assessor", symbol: str, file_path: str
 ) -> list[dict]:
     """
-    Pure analysis: embed symbol context, cosine-search bundled SOTS tenets
-    filtered for constraint language. Returns list[dict]: subject, content, score.
+    Pure analysis: collect symbol context, retrieve matching design norms
+    (design_notes + SOTS tenets), return list[dict]: subject, content, score.
     Returns empty list on embedding failure (XIII). SOTS XI: pure, no mutations.
-    No knowledge.db required.
     """
-    from determined.data.sots_loader import load_tenets, search_tenets
+    import re
+    from determined.agent.evaluator import collect_symbol_context, retrieve_evidence_scored
+    from determined.data.sots_loader import tenet_texts
 
-    # Build a rich query: symbol name + docstring + callee names
-    docstring = ""
-    row = assessor.oracle.conn.execute(
-        "SELECT docstring FROM functions WHERE name = ? LIMIT 1", (symbol,)
-    ).fetchone()
-    if not row:
-        row = assessor.oracle.conn.execute(
-            "SELECT docstring FROM classes WHERE name = ? LIMIT 1", (symbol,)
-        ).fetchone()
-    if row and row[0]:
-        docstring = row[0][:300]
-
-    callee_names = " ".join(r["callee"].rsplit(".", 1)[-1] for r in _list_callees_raw(assessor.oracle, symbol)[:10])
-    stem = file_path.replace("\\", "/").split("/")[-1].replace(".py", "") if file_path else ""
-    query = f"symbol: {symbol}  file: {stem}  {docstring}  calls: {callee_names}"
-
-    # SOTS tenets already contain constraint language - search directly
-    hits = search_tenets(query, threshold=0.30, top_n=5)
-    return [
-        {"subject": f"SOTS {t['id']}", "content": f"{t['title']}: {t['description']}", "score": t["score"]}
-        for t in hits
-    ]
+    query = collect_symbol_context(assessor.oracle.conn, symbol)
+    scored = retrieve_evidence_scored(
+        query,
+        assessor.oracle.conn,
+        surfaces=["design_note"],
+        top_n=5,
+        threshold=0.30,
+        extra_items=list(tenet_texts()),
+    )
+    _tenet_re = re.compile(r"^\[([IVX]+)\]")
+    results = []
+    for score, content in scored:
+        m = _tenet_re.match(content)
+        subject = f"SOTS {m.group(1)}" if m else "design_note"
+        results.append({"subject": subject, "content": content, "score": score})
+    return results
 
 
 def check_design_violations(assessor: "Assessor", args: dict) -> str:
@@ -2584,56 +2579,16 @@ def _infer_behavior_for_symbol(assessor: "Assessor", symbol: str) -> dict:
     role/confidence/verdict/reasoning so batch mode can aggregate results
     and store them without re-running the full string-formatting path.
     """
-    oracle = assessor.oracle
-    conn = oracle.conn
+    from determined.agent.evaluator import collect_symbol_context, retrieve_evidence, evaluate
 
-    callers = _list_callers_raw(oracle, symbol)
-    callees = _list_callees_raw(oracle, symbol)
-
-    param_names: list[str] = []
-    param_row = conn.execute(
-        "SELECT param_types_json FROM functions WHERE name = ? LIMIT 1", (symbol,)
-    ).fetchone()
-    if param_row and param_row[0]:
-        import json as _json
-        try:
-            params = _json.loads(param_row[0])
-            param_names = [k for k in params if k not in ("self", "cls")]
-        except Exception:
-            pass
-
-    sym_row = conn.execute(
-        "SELECT file_path FROM symbols WHERE name = ? LIMIT 1", (symbol,)
-    ).fetchone()
-    file_stem = ""
-    if sym_row:
-        file_stem = sym_row[0].replace("\\", "/").split("/")[-1].replace(".py", "")
-
-    caller_names = [c["caller"].rsplit(".", 1)[-1] for c in callers[:8]]
-    callee_names = [c["callee"].rsplit(".", 1)[-1] for c in callees[:8]]
-
-    context_parts = [f"function: {symbol}"]
-    if file_stem:
-        context_parts.append(f"file: {file_stem}")
-    if param_names:
-        context_parts.append(f"params: {', '.join(param_names[:6])}")
-    if caller_names:
-        context_parts.append(f"called_by: {', '.join(caller_names)}")
-    if callee_names:
-        context_parts.append(f"calls: {', '.join(callee_names)}")
-
-    context_query = "  ".join(context_parts)
-
-    pattern_rows = conn.execute(
-        "SELECT content FROM knowledge_artifacts WHERE kind='pattern' ORDER BY subject"
-    ).fetchall()
-    evidence = [r[0] for r in pattern_rows]
+    conn = assessor.oracle.conn
+    context_query = collect_symbol_context(conn, symbol)
+    evidence = retrieve_evidence(context_query, conn, surfaces=["pattern"])
 
     if not evidence:
         return {"symbol": symbol, "role": "UNKNOWN", "confidence": 0.0,
                 "verdict": "NO_PATTERNS", "reasoning": "pattern library empty"}
 
-    from determined.agent.evaluator import evaluate
     question = (
         "Does this function's calling profile match one of the described architectural "
         "role patterns? If so, return MATCHES_PATTERN. If the profile is ambiguous or "

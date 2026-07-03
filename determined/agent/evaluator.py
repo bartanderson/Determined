@@ -153,35 +153,34 @@ def evaluate(
 
 
 # ---------------------------------------------------------------------------
-# retrieve_evidence()
+# retrieve_evidence() and retrieve_evidence_scored()
 # ---------------------------------------------------------------------------
 
-def retrieve_evidence(
+def retrieve_evidence_scored(
     query: str,
     conn: sqlite3.Connection,
     surfaces: list[str] = ("design_note",),
     top_n: int = 5,
     threshold: float = 0.25,
-) -> list[str]:
+    extra_items: list[str] = (),
+) -> list[tuple[float, str]]:
     """
-    Cosine-search named knowledge surfaces in the corpus DB.
+    Cosine-search knowledge surfaces and return (score, content) pairs.
 
     Args:
-        query:    Natural language description of the claim being evaluated.
-        conn:     sqlite3 connection to the corpus DB.
-        surfaces: Which `kind` values in knowledge_artifacts to search.
-                  Common values: "design_note", "pattern", "role".
-        top_n:    Maximum number of items to return.
-        threshold: Minimum cosine similarity to include.
+        query:       Natural language description of the claim being evaluated.
+        conn:        sqlite3 connection to the corpus DB.
+        surfaces:    Which `kind` values in knowledge_artifacts to search.
+        top_n:       Maximum number of items to return.
+        threshold:   Minimum cosine similarity to include.
+        extra_items: Additional content strings to score alongside DB results
+                     (e.g. SOTS tenet texts that live outside knowledge_artifacts).
 
     Returns:
-        List of content strings (already trimmed), best-match first.
-        Returns empty list if the embedding model is unavailable or the
-        knowledge_artifacts table has no matching rows.
+        List of (score, content) tuples, best-match first.
     """
     from determined.oracle.embedding_model import embed_text, cosine_similarity
 
-    # Pull all content rows for the requested surface kinds
     placeholders = ",".join("?" * len(surfaces))
     try:
         rows = conn.execute(
@@ -191,12 +190,11 @@ def retrieve_evidence(
         ).fetchall()
     except Exception as exc:
         logger.warning("retrieve_evidence: DB query failed: %s", exc)
-        return []
+        rows = []
 
-    if not rows:
+    contents = [r[0] for r in rows] + list(extra_items)
+    if not contents:
         return []
-
-    contents = [r[0] for r in rows]
 
     try:
         q_vec = embed_text(query)
@@ -207,10 +205,107 @@ def retrieve_evidence(
             if sim >= threshold:
                 scored.append((sim, content))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [c for _, c in scored[:top_n]]
+        return scored[:top_n]
     except Exception as exc:
         logger.warning("retrieve_evidence: embedding failed: %s", exc)
         return []
+
+
+def retrieve_evidence(
+    query: str,
+    conn: sqlite3.Connection,
+    surfaces: list[str] = ("design_note",),
+    top_n: int = 5,
+    threshold: float = 0.25,
+    extra_items: list[str] = (),
+) -> list[str]:
+    """
+    Cosine-search named knowledge surfaces in the corpus DB.
+
+    Returns content strings only (scores stripped).  Use retrieve_evidence_scored()
+    when scores are needed (e.g. for display in violation reports).
+
+    Args:
+        query:       Natural language description of the claim being evaluated.
+        conn:        sqlite3 connection to the corpus DB.
+        surfaces:    Which `kind` values in knowledge_artifacts to search.
+                     Common values: "design_note", "pattern", "role".
+        top_n:       Maximum number of items to return.
+        threshold:   Minimum cosine similarity to include.
+        extra_items: Additional content strings to score alongside DB results.
+
+    Returns:
+        List of content strings, best-match first.  Pass directly to evaluate().
+    """
+    return [c for _, c in retrieve_evidence_scored(query, conn, surfaces, top_n, threshold, extra_items)]
+
+
+# ---------------------------------------------------------------------------
+# collect_symbol_context()
+# ---------------------------------------------------------------------------
+
+def collect_symbol_context(conn: sqlite3.Connection, symbol: str) -> str:
+    """
+    Build a rich context string describing a symbol.
+
+    Pulls name, file stem, docstring, param names, callers, and callees
+    directly from the corpus DB.  The result is suitable as the `claim`
+    argument to evaluate() or as the `query` argument to retrieve_evidence().
+
+    Uses only a sqlite3.Connection so this function stays importable without
+    pulling in agent_tools (avoids circular imports).
+    """
+    import json as _json
+
+    sym_row = conn.execute(
+        "SELECT file_path FROM symbols WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    file_stem = ""
+    if sym_row and sym_row[0]:
+        file_stem = sym_row[0].replace("\\", "/").split("/")[-1].replace(".py", "")
+
+    docstring = ""
+    row = conn.execute(
+        "SELECT docstring FROM functions WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    if not row:
+        row = conn.execute(
+            "SELECT docstring FROM classes WHERE name = ? LIMIT 1", (symbol,)
+        ).fetchone()
+    if row and row[0]:
+        docstring = row[0][:300]
+
+    param_names: list[str] = []
+    param_row = conn.execute(
+        "SELECT param_types_json FROM functions WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    if param_row and param_row[0]:
+        try:
+            params = _json.loads(param_row[0])
+            param_names = [k for k in params if k not in ("self", "cls")]
+        except Exception:
+            pass
+
+    callers = [r[0].rsplit(".", 1)[-1] for r in conn.execute(
+        "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? LIMIT 8", (symbol,)
+    ).fetchall()]
+    callees = [r[0].rsplit(".", 1)[-1] for r in conn.execute(
+        "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? LIMIT 8", (symbol,)
+    ).fetchall()]
+
+    parts = [f"function: {symbol}"]
+    if file_stem:
+        parts.append(f"file: {file_stem}")
+    if docstring:
+        parts.append(docstring)
+    if param_names:
+        parts.append(f"params: {', '.join(param_names[:6])}")
+    if callers:
+        parts.append(f"called_by: {', '.join(callers)}")
+    if callees:
+        parts.append(f"calls: {', '.join(callees)}")
+
+    return "  ".join(parts)
 
 
 # ---------------------------------------------------------------------------
