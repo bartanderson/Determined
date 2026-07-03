@@ -919,6 +919,55 @@ def handle_graph_subgraph(data):
         emit("graph_result", {"error": str(exc)})
 
 
+@socketio.on("get_frontier_graph")
+def handle_get_frontier_graph(_data):
+    """
+    Return the implementation frontier: functional nodes that directly call stub functions.
+    Nodes: red = stub (unimplemented), amber = frontier caller.
+    Edges cross the stub boundary.
+    Uses suffix-match join so module/class-qualified target_ids resolve to bare stub names.
+    """
+    if _oracle is None:
+        emit("frontier_graph_result", {"error": "no corpus loaded"})
+        return
+    try:
+        rows = _oracle.conn.execute("""
+            SELECT DISTINCT f_caller.name, f_caller.file_path, f_caller.line_number,
+                            f_callee.name, f_callee.file_path, f_callee.line_number
+            FROM graph_edges ge
+            JOIN functions f_caller ON ge.source_id = f_caller.name
+            JOIN functions f_callee ON (
+                ge.target_id = f_callee.name
+                OR ge.target_id LIKE '%.' || f_callee.name
+            )
+            WHERE f_caller.is_stub = 0 AND f_callee.is_stub = 1
+        """).fetchall()
+
+        def _short(path):
+            return (path or "").replace("\\", "/").split("/")[-1]
+
+        nodes: dict[str, dict] = {}
+        edges: list[dict] = []
+
+        for caller, caller_file, caller_line, callee, callee_file, callee_line in rows:
+            if caller not in nodes:
+                nodes[caller] = {"id": caller, "label": caller, "role": "frontier",
+                                 "file": _short(caller_file), "line": caller_line or 0}
+            if callee not in nodes:
+                nodes[callee] = {"id": callee, "label": callee, "role": "stub",
+                                 "file": _short(callee_file), "line": callee_line or 0}
+            edges.append({"source": caller, "target": callee})
+
+        emit("frontier_graph_result", {
+            "nodes": list(nodes.values()),
+            "edges": edges,
+            "stub_count": sum(1 for n in nodes.values() if n["role"] == "stub"),
+            "frontier_count": sum(1 for n in nodes.values() if n["role"] == "frontier"),
+        })
+    except Exception as exc:
+        emit("frontier_graph_result", {"error": str(exc)})
+
+
 @socketio.on("call_tree_expand")
 def handle_call_tree_expand(data):
     """

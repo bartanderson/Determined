@@ -176,6 +176,7 @@
       <button class="tab tab-nodot" data-tab="call_tree">Call tree</button>
       <button class="tab tab-nodot" data-tab="graph">Graph</button>
       <button class="tab tab-nodot" data-tab="imports">Imports</button>
+      <button class="tab tab-nodot" data-tab="frontier">Frontier</button>
       <button class="tab tab-nodot" data-tab="bag">Bag</button>
       <button class="tab tab-nodot" data-tab="editor">Editor</button>
       <button class="tab tab-nodot" data-tab="dochealth">Doc health</button>
@@ -221,6 +222,16 @@
         </div>
         <div id="ig-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
         <div id="ig-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
+      </div>
+
+      <!-- ── frontier graph tab ── -->
+      <div class="tab-panel" id="panel-frontier" style="flex-direction:column;min-height:0">
+        <div class="graph-toolbar" style="flex-shrink:0">
+          <span style="color:var(--text2);font-size:.85em">Implementation frontier — functional callers of unimplemented stubs</span>
+          <button class="send-btn" id="fg-load" style="margin-left:auto">Load ↵</button>
+        </div>
+        <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
+        <div id="fg-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
       </div>
 
       <!-- ── bag tab ── -->
@@ -1718,6 +1729,72 @@ igLoad.addEventListener("click", igLoad_);
 // auto-load when imports tab is activated
 document.querySelectorAll(".tab[data-tab='imports']").forEach(t => {
   t.addEventListener("click", () => { if (!_igCy) igLoad_(); });
+});
+
+// ── frontier graph ────────────────────────────────────────
+const fgLoad   = document.getElementById("fg-load");
+const fgStatus = document.getElementById("fg-status");
+let _fgCy = null;
+
+const FG_STYLE = [
+  { selector: "node[role='stub']",
+    style: { "background-color": "#c0392b", "label": "data(label)",
+             "font-size": 10, color: "#fff", "text-valign": "bottom",
+             "text-margin-y": 4, width: 28, height: 28 }},
+  { selector: "node[role='frontier']",
+    style: { "background-color": "#e67e22", "label": "data(label)",
+             "font-size": 10, color: "#fff", "text-valign": "bottom",
+             "text-margin-y": 4, width: 22, height: 22 }},
+  { selector: "edge",
+    style: { width: 1.5, "line-color": "#555", "target-arrow-color": "#555",
+             "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: 0.7 }},
+];
+
+function fgLoad_() {
+  if (_fgCy) { _fgCy.destroy(); _fgCy = null; }
+  document.getElementById("fg-cy").innerHTML = "";
+  fgStatus.textContent = "Loading frontier graph…";
+  socket.emit("get_frontier_graph", {});
+}
+
+socket.on("frontier_graph_result", data => {
+  if (data.error) { fgStatus.textContent = `Error: ${data.error}`; return; }
+  if (!data.nodes || !data.nodes.length) {
+    fgStatus.textContent = "No frontier edges found — no functional code calls any stub directly.";
+    return;
+  }
+  const nodes = data.nodes.map(n => ({
+    data: { id: n.id, label: n.label, role: n.role, file: n.file, line: n.line }
+  }));
+  const edges = data.edges.map(e => ({
+    data: { id: `${e.source}__${e.target}`, source: e.source, target: e.target }
+  }));
+  fgStatus.textContent = `${data.frontier_count} frontier callers → ${data.stub_count} stubs · ${edges.length} edges`;
+  _fgCy = cytoscape({
+    container: document.getElementById("fg-cy"),
+    elements: [...nodes, ...edges],
+    style: FG_STYLE,
+    layout: { name: "cose", animate: false, randomize: false,
+               nodeRepulsion: 14000, idealEdgeLength: 120,
+               nodeDimensionsIncludeLabels: true, gravity: 0.3 },
+  });
+  _fgCy.on("tap", "node", evt => {
+    const d = evt.target.data();
+    fgStatus.textContent = `${d.id}  —  ${d.file}:${d.line}`;
+    openSpotlight(d.id);
+  });
+  _fgCy.on("mouseover", "node", evt => {
+    const d = evt.target.data();
+    fgStatus.textContent = `${d.id}  [${d.role}]  ${d.file}:${d.line}`;
+  });
+  _fgCy.on("mouseout", "node", () => {
+    fgStatus.textContent = `${data.frontier_count} frontier callers → ${data.stub_count} stubs · ${edges.length} edges`;
+  });
+});
+
+fgLoad.addEventListener("click", fgLoad_);
+document.querySelectorAll(".tab[data-tab='frontier']").forEach(t => {
+  t.addEventListener("click", () => { if (!_fgCy) fgLoad_(); });
 });
 
 // ── bag tab ───────────────────────────────────────────────

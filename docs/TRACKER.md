@@ -154,6 +154,32 @@ each step result. 293/293 tests passing.
 
 ---
 
+29. **[FUTURE] Frontier graph: ABC/unimplemented-interface shape**
+
+   The current frontier graph query (functional caller -> stub callee, suffix-match join)
+   finds direct call edges to unimplemented functions. It does NOT detect the ABC pattern:
+   abstract methods defined on a base class that have no concrete override anywhere in the
+   corpus.
+
+   dj2's `engine/phases.py` is the canonical example: 47 `@abstractmethod` stubs on ABC
+   classes (`InputPhase`, `IntentPhase`, etc.) that are completely disconnected from game
+   code -- no class inherits from them yet. The call graph has no edges to these stubs
+   because nothing calls an ABC method directly.
+
+   **What a query for this shape needs:**
+   - Detect which functions are abstract methods (body is stub AND decorated with
+     `@abstractmethod`, OR parent class inherits ABC).
+   - Find all classes in the corpus that inherit from the ABC (via class_attributes or
+     a new class_hierarchy table).
+   - For each abstract method, check whether any subclass overrides it.
+   - Surface: abstract methods with zero overrides = true unimplemented frontier.
+
+   **Why deferred:** requires class hierarchy data that isn't currently in the DB schema.
+   May also need to handle multi-level inheritance. File when class hierarchy tracking
+   is added (or add it then).
+
+---
+
 27. **[FUTURE] Standards-grounded self-review: audit Determined's own design against established patterns**
 
    As the tool matures, it should be capable of analyzing its own codebase and comparing
@@ -225,7 +251,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-28. **[OPEN] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
+28. **[DONE 2026-07-03] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
 
    **Source:** Self-review 2026-07-03. check_design_violations flagged SOTS XI on
    `determined.agent.evaluator.evaluate` (score 0.30).
