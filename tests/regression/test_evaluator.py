@@ -11,9 +11,12 @@ import sqlite3
 import pytest
 
 from determined.agent.evaluator import (
+    EvalRequest,
     Judgment,
     VALID_VERDICTS,
     _parse_judgment,
+    build_eval_request,
+    execute_eval_request,
     evaluate,
     retrieve_evidence,
 )
@@ -189,6 +192,54 @@ class TestEvaluate:
         assert "unique_claim_marker_xyz" in prompt
         assert "unique_evidence_marker_abc" in prompt
         assert "unique_question_marker_def" in prompt
+
+
+# ---------------------------------------------------------------------------
+# build_eval_request() and execute_eval_request()
+# ---------------------------------------------------------------------------
+
+class TestBuildEvalRequest:
+    def test_returns_eval_request(self):
+        req = build_eval_request("some claim", ["evidence A", "evidence B"], "is this ok?")
+        assert isinstance(req, EvalRequest)
+        assert req.claim == "some claim"
+        assert req.question == "is this ok?"
+        assert req.evidence_items == ["evidence A", "evidence B"]
+
+    def test_prompt_contains_inputs(self):
+        req = build_eval_request("claim_xyz", ["evidence_abc"], "question_def")
+        assert "claim_xyz" in req.prompt
+        assert "evidence_abc" in req.prompt
+        assert "question_def" in req.prompt
+
+    def test_evidence_indexed_in_prompt(self):
+        req = build_eval_request("claim", ["first", "second"], "q")
+        assert "[0] first" in req.prompt
+        assert "[1] second" in req.prompt
+
+    def test_execute_eval_request_calls_llm_with_prompt(self):
+        req = build_eval_request("claim", ["evidence"], "question")
+        captured = []
+        def stub(p: str) -> str:
+            captured.append(p)
+            return json.dumps({"verdict": "CONFIRMS", "reasoning": "ok",
+                               "confidence": 0.8, "evidence_indices": [0]})
+        j = execute_eval_request(req, llm_fn=stub)
+        assert captured[0] == req.prompt
+        assert j.verdict == "CONFIRMS"
+
+    def test_evaluate_and_build_execute_agree(self):
+        """evaluate() must produce the same judgment as build+execute."""
+        resp = json.dumps({"verdict": "UNRELATED", "reasoning": "x",
+                           "confidence": 0.5, "evidence_indices": []})
+        def stub(_p: str) -> str:
+            return resp
+
+        j1 = evaluate("claim", ["evidence"], "question", llm_fn=stub)
+        req = build_eval_request("claim", ["evidence"], "question")
+        j2 = execute_eval_request(req, llm_fn=stub)
+        assert j1.verdict == j2.verdict
+        assert j1.confidence == j2.confidence
 
 
 # ---------------------------------------------------------------------------

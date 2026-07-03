@@ -88,7 +88,90 @@ Reply with ONLY this JSON (no other text):
 
 
 # ---------------------------------------------------------------------------
-# evaluate()
+# EvalRequest — the unit of work for evaluate() and MCTS
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EvalRequest:
+    """
+    A fully-specified evaluation request, ready to send to the LLM.
+
+    Separating construction (build_eval_request) from execution
+    (execute_eval_request) lets MCTS generate and score candidate
+    requests without committing to LLM calls.
+    """
+    claim: str
+    question: str
+    evidence_items: list[str]
+    prompt: str          # pre-rendered, ready to pass to llm_fn
+
+
+# ---------------------------------------------------------------------------
+# build_eval_request() — pure, no LLM call
+# ---------------------------------------------------------------------------
+
+def build_eval_request(
+    claim: str,
+    evidence_items: list[str],
+    question: str,
+) -> EvalRequest:
+    """
+    Build an EvalRequest from inputs — no LLM call.
+
+    Pure and independently testable.  MCTS uses this to generate
+    candidate evaluation nodes before deciding which to score.
+
+    Does not enforce guards (empty claim, no evidence); call evaluate()
+    for guarded convenience, or enforce guards in the caller.
+    """
+    evidence_block = "\n".join(
+        f"[{i}] {item[:300]}" for i, item in enumerate(evidence_items)
+    )
+    prompt = _PROMPT.format(
+        claim=claim.strip(),
+        question=question.strip(),
+        n=len(evidence_items),
+        evidence_block=evidence_block,
+    )
+    return EvalRequest(
+        claim=claim,
+        question=question,
+        evidence_items=evidence_items,
+        prompt=prompt,
+    )
+
+
+# ---------------------------------------------------------------------------
+# execute_eval_request() — LLM call + parse
+# ---------------------------------------------------------------------------
+
+def execute_eval_request(
+    request: EvalRequest,
+    llm_fn: Optional[Callable[[str], Optional[str]]] = None,
+) -> Judgment:
+    """
+    Execute an EvalRequest: call the LLM and parse the response.
+
+    MCTS uses this to score candidate nodes.  Raises RuntimeError if
+    the LLM returns no output (llama-server not running).
+    """
+    if llm_fn is None:
+        from determined.agent import llm_client
+        # Use chat() not generate(): the prompt ends with '}' so a completion
+        # model sees a finished JSON object and produces nothing.  Chat treats
+        # the prompt as an instruction and responds to it.
+        def llm_fn(p: str) -> str | None:
+            return llm_client.chat([{"role": "user", "content": p}])
+
+    raw = llm_fn(request.prompt)
+    if not raw:
+        raise RuntimeError("evaluator.evaluate: LLM returned no output (is llama-server running?)")
+
+    return _parse_judgment(raw, request.evidence_items)
+
+
+# ---------------------------------------------------------------------------
+# evaluate() — guarded convenience wrapper
 # ---------------------------------------------------------------------------
 
 def evaluate(
@@ -98,23 +181,22 @@ def evaluate(
     llm_fn: Optional[Callable[[str], Optional[str]]] = None,
 ) -> Judgment:
     """
-    Core reasoning kernel.
+    Core reasoning kernel.  Convenience wrapper: guards → build → execute.
 
     Args:
         claim:          A single, specific observation about the codebase.
         evidence_items: Pre-selected norms, constraints, or patterns relevant
                         to the claim.  Retrieve via retrieve_evidence().
-        question:       Frames what relationship to look for, e.g.
-                        "Does this observation violate a documented constraint,
-                        or is it intentional by design?"
+        question:       Frames what relationship to look for.
         llm_fn:         Optional override for the LLM call (for testing).
                         Must accept a prompt str and return str | None.
-                        Defaults to llm_client.generate().
 
     Returns:
-        A Judgment.  On LLM failure or parse error, returns Judgment with
-        verdict=UNCERTAIN and confidence=0.0 so callers can always rely on
-        the return type.
+        A Judgment.  On LLM failure, raises RuntimeError.  On parse error,
+        returns Judgment(UNCERTAIN) so callers can always rely on the type.
+
+    For MCTS or batched use, call build_eval_request() + execute_eval_request()
+    directly to control when the LLM call happens.
     """
     if not claim.strip():
         return Judgment(verdict="UNCERTAIN", reasoning="empty claim", confidence=0.0)
@@ -126,30 +208,7 @@ def evaluate(
             confidence=0.0,
         )
 
-    evidence_block = "\n".join(
-        f"[{i}] {item[:300]}" for i, item in enumerate(evidence_items)
-    )
-
-    prompt = _PROMPT.format(
-        claim=claim.strip(),
-        question=question.strip(),
-        n=len(evidence_items),
-        evidence_block=evidence_block,
-    )
-
-    if llm_fn is None:
-        from determined.agent import llm_client
-        # Use chat() not generate(): the prompt ends with '}' so a completion
-        # model sees a finished JSON object and produces nothing.  Chat treats
-        # the prompt as an instruction and responds to it.
-        def llm_fn(p: str) -> str | None:
-            return llm_client.chat([{"role": "user", "content": p}])
-
-    raw = llm_fn(prompt)
-    if not raw:
-        raise RuntimeError("evaluator.evaluate: LLM returned no output (is llama-server running?)")
-
-    return _parse_judgment(raw, evidence_items)
+    return execute_eval_request(build_eval_request(claim, evidence_items, question), llm_fn)
 
 
 # ---------------------------------------------------------------------------
