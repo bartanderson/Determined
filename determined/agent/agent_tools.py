@@ -2770,7 +2770,10 @@ def trace_data_flow(assessor: "Assessor", args: dict) -> str:
     visited: set[str] = set()
     lines: list[str] = [f"DATA FLOW TRACE: {symbol} (depth={max_depth})", ""]
 
+    _PURE_ROLES = frozenset({"information-holder", "interfacer", "pure fabrication"})
+
     def _annotate(sym: str, depth: int, prefix: str) -> None:
+        import json as _json
         if depth > max_depth or sym in visited:
             return
         visited.add(sym)
@@ -2780,16 +2783,40 @@ def trace_data_flow(assessor: "Assessor", args: dict) -> str:
         callee_names = [c["callee"] for c in callees]
         claim = f"{sym} calls: {', '.join(callee_names[:8]) or '(none)'}"
 
-        # Retrieve evidence and evaluate
+        # Retrieve design_note evidence
         evidence = retrieve_evidence(claim, conn, surfaces=["design_note"], top_n=5)
         if not evidence:
             evidence = retrieve_evidence(sym, conn, surfaces=["design_note"], top_n=3)
+
+        # Append role_inference evidence for this symbol if available
+        role_row = conn.execute(
+            "SELECT content FROM knowledge_artifacts WHERE kind='role_inference' AND subject=? LIMIT 1",
+            (sym,)
+        ).fetchone()
+        inferred_role = ""
+        if role_row and role_row[0]:
+            try:
+                rd = _json.loads(role_row[0])
+                inferred_role = rd.get("role", "")
+                role_conf = rd.get("confidence", 0.0)
+                if inferred_role:
+                    evidence.append(
+                        f"Inferred role: {inferred_role} (confidence {role_conf:.0%}). "
+                        f"{rd.get('reasoning', '')}"
+                    )
+            except Exception:
+                pass
 
         # Name-based pre-check: verbs like save/execute/append are reliable signals
         if _name_mutates(sym):
             flag = "[MUTATES]"
             conf = 95
             reason = "(name heuristic: mutation verb)"
+        elif inferred_role and inferred_role.lower() in _PURE_ROLES and not _name_mutates(sym):
+            # Role evidence is sufficient — skip LLM call for obviously pure symbols
+            flag = "[pure   ]"
+            conf = 95
+            reason = f"(role: {inferred_role})"
         elif evidence:
             judgment = evaluate(claim, evidence, _MUTATION_QUESTION)
             # Detect mutation from reasoning text — verdict alone is ambiguous
