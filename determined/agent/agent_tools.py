@@ -3273,6 +3273,24 @@ def score_stub(assessor: "Assessor", args: dict) -> str:
     )
 
 
+def reason_about(assessor: "Assessor", args: dict) -> str:
+    """
+    reason_about(question, symbol?) - AI-assisted architectural decision pipeline.
+    Decomposes the question into sub-questions, answers each (DB or evaluate()),
+    then synthesizes a recommendation with confidence and provenance.
+    Uses quality LLM (8B) for decomposition and synthesis; 3B for sub-evaluations.
+    May take 60-120 seconds when the quality tier is cold.
+    """
+    question = args.get("question", "").strip()
+    symbol = args.get("symbol", "").strip()
+    if not question:
+        return "ERROR: question argument required"
+
+    from determined.agent.reasoning_engine import reason_about as _reason_about
+    conn = assessor.oracle.conn
+    return _reason_about(question, symbol, conn)
+
+
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
     distill_corpus() - compress each semantic_summary into a one-sentence
@@ -3408,6 +3426,8 @@ TOOLS = {
     "trace_data_flow":            (trace_data_flow,            "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
+    # Reasoning pipeline (REASONING_MODEL.md R4)
+    "reason_about":            (reason_about,            "assessor"),
 }
 
 
