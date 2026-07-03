@@ -242,7 +242,15 @@
         </div>
         <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
         <div id="fg-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
-        <div id="fg-projection" style="display:none;flex-shrink:0;max-height:200px;overflow-y:auto;border-top:1px solid var(--border);padding:.5rem;font-family:var(--font-mono);font-size:.78em;background:var(--bg3);white-space:pre-wrap"></div>
+        <!-- reasoning progress log — collapsible -->
+        <div id="fg-progress-bar" style="display:none;flex-shrink:0;border-top:1px solid var(--border);background:var(--bg3)">
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.25rem .5rem;cursor:pointer;user-select:none" id="fg-progress-toggle">
+            <span style="font-size:.75em;color:var(--text3)">▶ Reasoning log</span>
+            <span id="fg-progress-spinner" style="font-size:.75em;color:var(--accent)">●</span>
+          </div>
+          <div id="fg-progress-log" style="display:none;max-height:140px;overflow-y:auto;padding:.25rem .6rem .4rem;font-family:var(--font-mono);font-size:.74em;color:var(--text2);white-space:pre-wrap"></div>
+        </div>
+        <div id="fg-projection" style="display:none;flex-shrink:0;max-height:220px;overflow-y:auto;border-top:1px solid var(--border);padding:.5rem;font-family:var(--font-mono);font-size:.78em;background:var(--bg3);white-space:pre-wrap"></div>
       </div>
 
       <!-- ── bag tab ── -->
@@ -1819,6 +1827,7 @@ function fgLoad_() {
   fgProject.style.display = "none";
   fgReason.style.display = "none";
   fgProjection.style.display = "none";
+  if (typeof fgProgressBar !== "undefined") fgProgressBar.style.display = "none";
   document.getElementById("fg-cy").innerHTML = "";
   fgStatus.textContent = "Loading frontier graph…";
   socket.emit("get_frontier_graph", { mode: fgMode.value });
@@ -1907,19 +1916,56 @@ socket.on("project_stub_result", data => {
   fgProjection.style.display = "";
 });
 
+const fgProgressBar    = document.getElementById("fg-progress-bar");
+const fgProgressLog    = document.getElementById("fg-progress-log");
+const fgProgressToggle = document.getElementById("fg-progress-toggle");
+const fgProgressToggleLabel = fgProgressToggle.querySelector("span");
+const fgProgressSpinner = document.getElementById("fg-progress-spinner");
+let _fgLogOpen = true;
+
+fgProgressToggle.addEventListener("click", () => {
+  _fgLogOpen = !_fgLogOpen;
+  fgProgressLog.style.display = _fgLogOpen ? "" : "none";
+  fgProgressToggleLabel.textContent = (_fgLogOpen ? "▼" : "▶") + " Reasoning log";
+});
+
+function fgResetProgress() {
+  fgProgressLog.textContent = "";
+  fgProgressBar.style.display = "none";
+  fgProgressSpinner.style.display = "";
+  _fgLogOpen = true;
+  fgProgressLog.style.display = "";
+  fgProgressToggleLabel.textContent = "▼ Reasoning log";
+}
+
 fgReason.addEventListener("click", () => {
   if (!_fgSelected) return;
   _fgResultMode = "reason";
   fgReason.textContent = "Reasoning…";
   fgReason.disabled = true;
   fgProjection.style.display = "none";
+  fgResetProgress();
+  fgProgressBar.style.display = "";
   socket.emit("reason_about_request", { symbol: _fgSelected });
+});
+
+socket.on("reason_about_progress", data => {
+  const line = (data.msg || "").trim();
+  if (!line) return;
+  fgProgressLog.textContent += line + "\n";
+  fgProgressLog.scrollTop = fgProgressLog.scrollHeight;
+  fgProgressBar.style.display = "";
 });
 
 socket.on("reason_about_result", data => {
   fgReason.textContent = "Reason ↵";
   fgReason.disabled = false;
-  if (data.error) { fgProjection.textContent = `Error: ${data.error}`; fgProjection.style.display = ""; return; }
+  fgProgressSpinner.style.display = "none";  // stop the spinner dot
+  if (data.error) {
+    fgProgressLog.textContent += `\nERROR: ${data.error}\n`;
+    fgProjection.style.display = "none";
+    return;
+  }
   fgProjection.textContent = data.text || "(no result)";
   fgProjection.style.display = "";
 });

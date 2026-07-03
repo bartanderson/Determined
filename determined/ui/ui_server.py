@@ -1047,7 +1047,9 @@ def handle_stub_score_quick(data):
 def handle_reason_about(data):
     """
     Run the full Decompose -> Route -> Synthesize pipeline on a symbol.
-    Emits reason_about_result: { symbol, text } or { error }.
+    Runs in a background thread so the socket server stays responsive.
+    Emits reason_about_progress: { msg } as each step completes.
+    Emits reason_about_result: { symbol, text } or { error } when done.
     """
     symbol = (data or {}).get("symbol", "").strip()
     question = (data or {}).get("question", "").strip()
@@ -1055,13 +1057,41 @@ def handle_reason_about(data):
         emit("reason_about_result", {"error": "symbol and corpus required"})
         return
     if not question:
-        question = f"should {symbol} be a standalone function or a method, and is it the right priority to implement next?"
-    try:
-        from determined.agent.reasoning_engine import reason_about as _reason
-        text = _reason(question, symbol, _oracle.conn, knowledge_conn=_assessor._knowledge_conn)
-        emit("reason_about_result", {"symbol": symbol, "text": text})
-    except Exception as exc:
-        emit("reason_about_result", {"error": str(exc)})
+        question = (f"should {symbol} be a standalone function or a method, "
+                    f"and is it the right priority to implement next?")
+
+    db_path   = _oracle.db_path
+    k_conn_db = getattr(_assessor, "_knowledge_conn", None)
+    k_db_path = getattr(k_conn_db, "row_factory", None)  # just a sentinel check
+    # Pass paths not connections — background thread opens its own connections
+    k_path = None
+    if k_conn_db is not None:
+        try:
+            k_path = k_conn_db.execute("PRAGMA database_list").fetchone()[2]
+        except Exception:
+            pass
+
+    def _run():
+        import sqlite3 as _sq
+        conn = _sq.connect(db_path, check_same_thread=False)
+        k_conn = _sq.connect(k_path, check_same_thread=False) if k_path else None
+
+        def progress(msg: str):
+            socketio.emit("reason_about_progress", {"msg": msg})
+
+        try:
+            from determined.agent.reasoning_engine import reason_about as _reason
+            text = _reason(question, symbol, conn, knowledge_conn=k_conn,
+                           progress_fn=progress)
+            socketio.emit("reason_about_result", {"symbol": symbol, "text": text})
+        except Exception as exc:
+            socketio.emit("reason_about_result", {"error": str(exc)})
+        finally:
+            conn.close()
+            if k_conn:
+                k_conn.close()
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @socketio.on("frontier_to_queue")

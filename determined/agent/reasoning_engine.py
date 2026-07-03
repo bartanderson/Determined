@@ -413,26 +413,43 @@ def reason_about(
     symbol: str,
     conn: sqlite3.Connection,
     knowledge_conn: Optional[sqlite3.Connection] = None,
+    progress_fn: Optional[callable] = None,
 ) -> str:
     """
     Full pipeline: Decompose -> Route (all sub-questions) -> Synthesize.
     Returns a formatted recommendation block.
     If knowledge_conn is provided, persists the chain as a reasoning_chain artifact (RM8).
+    If progress_fn is provided, calls it with a status string at each step.
     """
+    def _progress(msg: str):
+        if progress_fn:
+            try:
+                progress_fn(msg)
+            except Exception:
+                pass
+
     # Check for prior chain — report staleness before running
     stale_note = _check_stale_chain(knowledge_conn, question, symbol, conn) if knowledge_conn else ""
+    if stale_note:
+        _progress(f"Warning: {stale_note}")
 
     # R1 — Decompose
+    _progress("Decomposing question into sub-questions (8B model)…")
     subquestions = decompose(question, symbol, conn)
+    _progress(f"Decomposed into {len(subquestions)} sub-questions")
 
     # R2 — Route each sub-question
     findings: list[Finding] = []
-    for subq in subquestions:
+    for i, subq in enumerate(subquestions, 1):
+        _progress(f"[{i}/{len(subquestions)}] {subq.route.upper()}: {subq.question}")
         finding = route(subq, symbol, conn)
+        _progress(f"  → {finding.answer[:120]}")
         findings.append(finding)
 
     # R3 — Synthesize
+    _progress("Synthesizing recommendation (8B model)…")
     rec = synthesize(question, findings)
+    _progress(f"Done — {rec.decision[:80]}")
 
     # Format output
     lines = [
