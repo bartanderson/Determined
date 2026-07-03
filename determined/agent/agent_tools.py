@@ -3213,6 +3213,66 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
     ])
 
 
+def score_stub(assessor: "Assessor", args: dict) -> str:
+    """
+    score_stub(symbol) - evaluate how central a stub is to making the system runnable.
+    Chains gather_context() -> build claim -> evaluate_claim() kernel.
+    Returns verdict, confidence, and reasoning as a priority score.
+    """
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    from determined.agent.stub_projector import gather_context
+    from determined.agent.evaluator import evaluate, retrieve_evidence, collect_symbol_context
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    # Structural rank: caller count
+    caller_count_row = conn.execute(
+        """
+        SELECT COUNT(DISTINCT ge.caller)
+        FROM graph_edges ge
+        WHERE ge.callee = ? OR ge.callee LIKE '%.' || ?
+        """,
+        (symbol, symbol),
+    ).fetchone()
+    caller_count = caller_count_row[0] if caller_count_row else 0
+
+    # Build claim from stub context
+    ctx = gather_context(conn, symbol)
+    if ctx is None:
+        return f"'{symbol}' not found in corpus or is not a stub"
+
+    stub = ctx["stub"]
+    caller_names = [c["caller"] for c in ctx["callers"] if c["caller"]]
+    claim = collect_symbol_context(conn, symbol)
+
+    # Evidence from design notes
+    evidence = retrieve_evidence(claim, conn, surfaces=["design_note"], top_n=4)
+    if not evidence:
+        # Fall back to structural score only
+        return (
+            f"score_stub: '{symbol}'\n"
+            f"  Structural rank: {caller_count} callers\n"
+            f"  Semantic score: N/A (no design_note evidence; run ingest_design_docs first)\n"
+            f"  Called by: {', '.join(caller_names[:5]) or '(none)'}"
+        )
+
+    question = "how central is implementing this stub to making the system runnable and unblocking its callers?"
+    judgment = evaluate(claim, evidence, question)
+
+    return (
+        f"score_stub: '{symbol}'\n"
+        f"  Structural rank:  {caller_count} callers\n"
+        f"  Semantic verdict: {judgment.verdict}  ({int(judgment.confidence * 100)}%)\n"
+        f"  Reasoning:        {judgment.reasoning}\n"
+        f"  Called by: {', '.join(caller_names[:5]) or '(none)'}\n"
+        f"  File: {stub.get('file_path', '?')} line {stub.get('line_number', '?')}"
+    )
+
+
 def distill_corpus(assessor: "Assessor", args: dict) -> str:
     """
     distill_corpus() - compress each semantic_summary into a one-sentence
@@ -3320,6 +3380,7 @@ TOOLS = {
     # Stub tools
     "list_stubs":           (list_stubs,            "oracle"),
     "project_stub":         (project_stub,          "oracle"),
+    "score_stub":           (score_stub,            "assessor"),
     # Doc tools
     "discover_docs":        (discover_docs_tool,    "oracle"),
     "ingest_design_docs":   (ingest_design_docs,    "assessor"),

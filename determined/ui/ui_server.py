@@ -1613,6 +1613,60 @@ def handle_get_knowledge_artifacts(data=None):
         emit("knowledge_artifacts", {"error": str(exc)})
 
 
+@socketio.on("get_build_queue")
+def handle_get_build_queue(_data=None):
+    """Return workflow_items WHERE kind='next_up' for the Build queue tab."""
+    if _assessor is None:
+        emit("build_queue_result", {"error": "no corpus"}); return
+    try:
+        k_conn = _assessor._knowledge_conn
+        if k_conn is None:
+            emit("build_queue_result", {"error": "no knowledge DB"}); return
+        from determined.intent.workflow_store import list_items
+        items = list_items(k_conn, kind="next_up", status="all", limit=100)
+        emit("build_queue_result", {"items": items})
+    except Exception as exc:
+        emit("build_queue_result", {"error": str(exc)})
+
+
+@socketio.on("mark_queue_done")
+def handle_mark_queue_done(data):
+    """Mark a workflow item as done."""
+    item_id = int((data or {}).get("id", 0))
+    if not item_id or _assessor is None:
+        emit("build_queue_result", {"error": "bad request"}); return
+    try:
+        from determined.intent.workflow_store import mark_done, list_items
+        k_conn = _assessor._knowledge_conn
+        mark_done(k_conn, item_id)
+        items = list_items(k_conn, kind="next_up", status="all", limit=100)
+        emit("build_queue_result", {"items": items})
+    except Exception as exc:
+        emit("build_queue_result", {"error": str(exc)})
+
+
+@socketio.on("get_waypoints")
+def handle_get_waypoints(_data=None):
+    """Return knowledge_artifacts WHERE kind='waypoint' for the Waypoints tab."""
+    if _assessor is None:
+        emit("waypoints_result", {"error": "no corpus"}); return
+    try:
+        k_conn = _assessor._knowledge_conn
+        if k_conn is None:
+            emit("waypoints_result", {"error": "no knowledge DB"}); return
+        rows = k_conn.execute(
+            "SELECT id, subject, content, provenance, created_at FROM knowledge_artifacts "
+            "WHERE kind='waypoint' ORDER BY created_at DESC LIMIT 200"
+        ).fetchall()
+        waypoints = [
+            {"id": r[0], "subject": r[1], "content": r[2], "provenance": r[3], "created_at": r[4]}
+            for r in rows
+        ]
+        emit("waypoints_result", {"waypoints": waypoints})
+    except Exception as exc:
+        emit("waypoints_result", {"error": str(exc)})
+
+
 def _warmup_llm() -> None:
     """Send a trivial prompt to load the model into memory."""
     from determined.agent.llm_client import generate as _llm_generate
