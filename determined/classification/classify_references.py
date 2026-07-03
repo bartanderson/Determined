@@ -69,7 +69,7 @@ def classify_references(analysis, project_prefixes, logger=None):
         route = route_symbol(
             name=ref.callee,
             runtime_bindings=analysis.runtime_bindings,
-            project_symbols=analysis.project_symbols,
+            project_symbols=ctx.project_symbols,
         )
 
         ref.bucket = route
@@ -80,7 +80,7 @@ def classify_references(analysis, project_prefixes, logger=None):
         shadow_route, trace = route_symbol_shadow(
             name=ref.callee,
             runtime_bindings=analysis.runtime_bindings,
-            project_symbols=analysis.project_symbols,
+            project_symbols=ctx.project_symbols,
         )
 
         # attach trace if your analysis supports it
