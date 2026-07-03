@@ -919,19 +919,16 @@ def handle_graph_subgraph(data):
         emit("graph_result", {"error": str(exc)})
 
 
-@socketio.on("get_frontier_graph")
-def handle_get_frontier_graph(_data):
+def _frontier_rows(conn, mode: str):
     """
-    Return the implementation frontier: functional nodes that directly call stub functions.
-    Nodes: red = stub (unimplemented), amber = frontier caller.
-    Edges cross the stub boundary.
-    Uses suffix-match join so module/class-qualified target_ids resolve to bare stub names.
+    Core frontier query parameterized by mode:
+      direct — functional callers of stubs  (amber -> red)
+      chain  — stubs that call other stubs  (gray  -> red)
+      all    — both combined
+    Returns rows of (caller_name, caller_file, caller_line, callee_name, callee_file, callee_line).
     """
-    if _oracle is None:
-        emit("frontier_graph_result", {"error": "no corpus loaded"})
-        return
-    try:
-        rows = _oracle.conn.execute("""
+    def _run(caller_stub: int, callee_stub: int):
+        return conn.execute("""
             SELECT DISTINCT f_caller.name, f_caller.file_path, f_caller.line_number,
                             f_callee.name, f_callee.file_path, f_callee.line_number
             FROM graph_edges ge
@@ -940,8 +937,29 @@ def handle_get_frontier_graph(_data):
                 ge.target_id = f_callee.name
                 OR ge.target_id LIKE '%.' || f_callee.name
             )
-            WHERE f_caller.is_stub = 0 AND f_callee.is_stub = 1
-        """).fetchall()
+            WHERE f_caller.is_stub = ? AND f_callee.is_stub = 1
+        """, (caller_stub,)).fetchall()
+
+    if mode == "chain":
+        return _run(caller_stub=1, callee_stub=1)
+    if mode == "all":
+        return _run(0, 1) + _run(1, 1)
+    return _run(caller_stub=0, callee_stub=1)  # default: direct
+
+
+@socketio.on("get_frontier_graph")
+def handle_get_frontier_graph(data):
+    """
+    Return the implementation frontier.
+    mode: 'direct' (functional->stub), 'chain' (stub->stub), 'all' (both).
+    Nodes: red=stub, amber=frontier-caller, gray=stub-caller (chain mode).
+    """
+    if _oracle is None:
+        emit("frontier_graph_result", {"error": "no corpus loaded"})
+        return
+    mode = (data or {}).get("mode", "direct")
+    try:
+        rows = _frontier_rows(_oracle.conn, mode)
 
         def _short(path):
             return (path or "").replace("\\", "/").split("/")[-1]
@@ -951,7 +969,11 @@ def handle_get_frontier_graph(_data):
 
         for caller, caller_file, caller_line, callee, callee_file, callee_line in rows:
             if caller not in nodes:
-                nodes[caller] = {"id": caller, "label": caller, "role": "frontier",
+                caller_stub = _oracle.conn.execute(
+                    "SELECT is_stub FROM functions WHERE name=? LIMIT 1", (caller,)
+                ).fetchone()
+                role = "chain" if (caller_stub and caller_stub[0]) else "frontier"
+                nodes[caller] = {"id": caller, "label": caller, "role": role,
                                  "file": _short(caller_file), "line": caller_line or 0}
             if callee not in nodes:
                 nodes[callee] = {"id": callee, "label": callee, "role": "stub",
@@ -961,11 +983,82 @@ def handle_get_frontier_graph(_data):
         emit("frontier_graph_result", {
             "nodes": list(nodes.values()),
             "edges": edges,
+            "mode": mode,
             "stub_count": sum(1 for n in nodes.values() if n["role"] == "stub"),
             "frontier_count": sum(1 for n in nodes.values() if n["role"] == "frontier"),
+            "chain_count": sum(1 for n in nodes.values() if n["role"] == "chain"),
         })
     except Exception as exc:
         emit("frontier_graph_result", {"error": str(exc)})
+
+
+@socketio.on("project_stub_request")
+def handle_project_stub(data):
+    """Call stub_projector for a single stub and return the suggested implementation."""
+    stub_name = (data or {}).get("symbol", "").strip()
+    if not stub_name or _oracle is None:
+        emit("project_stub_result", {"error": "stub name and corpus required"})
+        return
+    try:
+        from determined.agent.stub_projector import project_stub as _proj
+        result = _proj(_oracle.db_path, stub_name)
+        emit("project_stub_result", result)
+    except Exception as exc:
+        emit("project_stub_result", {"error": str(exc)})
+
+
+@socketio.on("frontier_to_queue")
+def handle_frontier_to_queue(_data):
+    """
+    Load stub ranking from list_stubs() and write each into workflow_items
+    as kind='next_up' ranked by caller count. Idempotent — skips stubs
+    already present as next_up items.
+    """
+    if _oracle is None or _assessor is None:
+        emit("frontier_to_queue_result", {"error": "no corpus loaded"})
+        return
+    try:
+        from determined.agent.agent_tools import list_stubs
+        from determined.intent.workflow_store import list_items, add_item
+
+        raw = list_stubs(_oracle, {"limit": 50})
+        # parse the text output into (name, callers) pairs
+        entries = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Stub functions"):
+                continue
+            # format: "name in file.py  (N callers)"
+            parts = line.rsplit("(", 1)
+            name = parts[0].split(" in ")[0].strip()
+            try:
+                callers = int(parts[1].split()[0]) if len(parts) > 1 else 0
+            except (ValueError, IndexError):
+                callers = 0
+            if name:
+                entries.append((name, callers))
+
+        conn = _assessor._knowledge_conn
+        if conn is None:
+            emit("frontier_to_queue_result", {"error": "no knowledge DB"})
+            return
+
+        existing = {i["subject"] for i in list_items(conn, kind="next_up", status="active", limit=200)}
+        added = 0
+        for rank, (name, callers) in enumerate(entries, 1):
+            subject = f"implement stub: {name}"
+            if subject not in existing:
+                add_item(conn, kind="next_up", subject=subject,
+                         content=f"{callers} caller(s) — ranked #{rank} by caller count",
+                         rank=rank, provenance="frontier")
+                added += 1
+
+        emit("frontier_to_queue_result", {
+            "added": added, "total": len(entries),
+            "message": f"Added {added} stubs to build queue ({len(entries) - added} already present)"
+        })
+    except Exception as exc:
+        emit("frontier_to_queue_result", {"error": str(exc)})
 
 
 @socketio.on("call_tree_expand")

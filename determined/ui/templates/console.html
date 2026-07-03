@@ -226,12 +226,20 @@
 
       <!-- ── frontier graph tab ── -->
       <div class="tab-panel" id="panel-frontier" style="flex-direction:column;min-height:0">
-        <div class="graph-toolbar" style="flex-shrink:0">
-          <span style="color:var(--text2);font-size:.85em">Implementation frontier — functional callers of unimplemented stubs</span>
-          <button class="send-btn" id="fg-load" style="margin-left:auto">Load ↵</button>
+        <div class="graph-toolbar" style="flex-shrink:0;gap:.4rem">
+          <span style="color:var(--text2);font-size:.85em">Frontier</span>
+          <select id="fg-mode" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:.82em">
+            <option value="direct">Direct (caller→stub)</option>
+            <option value="chain">Chain (stub→stub)</option>
+            <option value="all">All</option>
+          </select>
+          <button class="send-btn" id="fg-load">Load ↵</button>
+          <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
+          <button class="send-btn" id="fg-to-queue" style="background:var(--bg3);margin-left:auto" title="Add all stubs to build queue ranked by caller count">→ Queue</button>
         </div>
         <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
         <div id="fg-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
+        <div id="fg-projection" style="display:none;flex-shrink:0;max-height:200px;overflow-y:auto;border-top:1px solid var(--border);padding:.5rem;font-family:var(--font-mono);font-size:.78em;background:var(--bg3);white-space:pre-wrap"></div>
       </div>
 
       <!-- ── bag tab ── -->
@@ -1732,9 +1740,14 @@ document.querySelectorAll(".tab[data-tab='imports']").forEach(t => {
 });
 
 // ── frontier graph ────────────────────────────────────────
-const fgLoad   = document.getElementById("fg-load");
-const fgStatus = document.getElementById("fg-status");
+const fgLoad       = document.getElementById("fg-load");
+const fgMode       = document.getElementById("fg-mode");
+const fgProject    = document.getElementById("fg-project");
+const fgToQueue    = document.getElementById("fg-to-queue");
+const fgStatus     = document.getElementById("fg-status");
+const fgProjection = document.getElementById("fg-projection");
 let _fgCy = null;
+let _fgSelected = null;  // currently selected node id
 
 const FG_STYLE = [
   { selector: "node[role='stub']",
@@ -1745,6 +1758,12 @@ const FG_STYLE = [
     style: { "background-color": "#e67e22", "label": "data(label)",
              "font-size": 10, color: "#fff", "text-valign": "bottom",
              "text-margin-y": 4, width: 22, height: 22 }},
+  { selector: "node[role='chain']",
+    style: { "background-color": "#7f8c8d", "label": "data(label)",
+             "font-size": 10, color: "#fff", "text-valign": "bottom",
+             "text-margin-y": 4, width: 22, height: 22 }},
+  { selector: "node.fg-selected",
+    style: { "border-width": 3, "border-color": "#f1c40f" }},
   { selector: "edge",
     style: { width: 1.5, "line-color": "#555", "target-arrow-color": "#555",
              "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: 0.7 }},
@@ -1752,15 +1771,18 @@ const FG_STYLE = [
 
 function fgLoad_() {
   if (_fgCy) { _fgCy.destroy(); _fgCy = null; }
+  _fgSelected = null;
+  fgProject.style.display = "none";
+  fgProjection.style.display = "none";
   document.getElementById("fg-cy").innerHTML = "";
   fgStatus.textContent = "Loading frontier graph…";
-  socket.emit("get_frontier_graph", {});
+  socket.emit("get_frontier_graph", { mode: fgMode.value });
 }
 
 socket.on("frontier_graph_result", data => {
   if (data.error) { fgStatus.textContent = `Error: ${data.error}`; return; }
   if (!data.nodes || !data.nodes.length) {
-    fgStatus.textContent = "No frontier edges found — no functional code calls any stub directly.";
+    fgStatus.textContent = "No frontier edges found for this mode.";
     return;
   }
   const nodes = data.nodes.map(n => ({
@@ -1769,7 +1791,10 @@ socket.on("frontier_graph_result", data => {
   const edges = data.edges.map(e => ({
     data: { id: `${e.source}__${e.target}`, source: e.source, target: e.target }
   }));
-  fgStatus.textContent = `${data.frontier_count} frontier callers → ${data.stub_count} stubs · ${edges.length} edges`;
+  const modeLabel = { direct: "Direct", chain: "Chain", all: "All" }[data.mode] || data.mode;
+  const summary = () => `[${modeLabel}] ${data.frontier_count || 0} callers · ${data.stub_count} stubs · ${data.chain_count || 0} chain · ${edges.length} edges`;
+  fgStatus.textContent = summary();
+
   _fgCy = cytoscape({
     container: document.getElementById("fg-cy"),
     elements: [...nodes, ...edges],
@@ -1778,20 +1803,71 @@ socket.on("frontier_graph_result", data => {
                nodeRepulsion: 14000, idealEdgeLength: 120,
                nodeDimensionsIncludeLabels: true, gravity: 0.3 },
   });
+
   _fgCy.on("tap", "node", evt => {
+    _fgCy.nodes().removeClass("fg-selected");
+    evt.target.addClass("fg-selected");
     const d = evt.target.data();
-    fgStatus.textContent = `${d.id}  —  ${d.file}:${d.line}`;
-    openSpotlight(d.id);
+    _fgSelected = d.id;
+    fgStatus.textContent = `${d.id}  [${d.role}]  ${d.file}:${d.line}`;
+    // show Project button only for stubs
+    fgProject.style.display = (d.role === "stub") ? "" : "none";
+    fgProjection.style.display = "none";
   });
+
+  _fgCy.on("tap", evt => {
+    if (evt.target === _fgCy) {
+      _fgCy.nodes().removeClass("fg-selected");
+      _fgSelected = null;
+      fgProject.style.display = "none";
+      fgProjection.style.display = "none";
+      fgStatus.textContent = summary();
+    }
+  });
+
   _fgCy.on("mouseover", "node", evt => {
     const d = evt.target.data();
     fgStatus.textContent = `${d.id}  [${d.role}]  ${d.file}:${d.line}`;
   });
   _fgCy.on("mouseout", "node", () => {
-    fgStatus.textContent = `${data.frontier_count} frontier callers → ${data.stub_count} stubs · ${edges.length} edges`;
+    if (_fgSelected) {
+      const n = _fgCy.getElementById(_fgSelected);
+      if (n.length) { const d = n.data(); fgStatus.textContent = `${d.id}  [${d.role}]  ${d.file}:${d.line}`; return; }
+    }
+    fgStatus.textContent = summary();
   });
 });
 
+fgProject.addEventListener("click", () => {
+  if (!_fgSelected) return;
+  fgProject.textContent = "Projecting…";
+  fgProject.disabled = true;
+  socket.emit("project_stub_request", { symbol: _fgSelected });
+});
+
+socket.on("project_stub_result", data => {
+  fgProject.textContent = "Project ↵";
+  fgProject.disabled = false;
+  if (data.error) { fgProjection.textContent = `Error: ${data.error}`; fgProjection.style.display = ""; return; }
+  fgProjection.textContent = `# ${data.stub_name}  (${data.file_path || ""}:${data.line_number || ""})\n` +
+    `# callers: ${data.context_summary?.callers || 0}  contracts: ${data.context_summary?.contracts || 0}\n\n` +
+    (data.suggested_body || "(no suggestion)");
+  fgProjection.style.display = "";
+});
+
+fgToQueue.addEventListener("click", () => {
+  fgToQueue.textContent = "Adding…";
+  fgToQueue.disabled = true;
+  socket.emit("frontier_to_queue", {});
+});
+
+socket.on("frontier_to_queue_result", data => {
+  fgToQueue.textContent = "→ Queue";
+  fgToQueue.disabled = false;
+  fgStatus.textContent = data.error ? `Queue error: ${data.error}` : data.message;
+});
+
+fgMode.addEventListener("change", fgLoad_);
 fgLoad.addEventListener("click", fgLoad_);
 document.querySelectorAll(".tab[data-tab='frontier']").forEach(t => {
   t.addEventListener("click", () => { if (!_fgCy) fgLoad_(); });
