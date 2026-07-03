@@ -140,7 +140,7 @@ evidence is a direct, concrete use of the existing kernel for planning purposes.
 - [ ] **Q4** — Tree search over the frontier: given the current stub set, what is the optimal
   implementation sequence to make the largest runnable subset of the program available soonest?
   This is MCTS on the implementation graph. Expensive but worth profiling on dj2's 47 stubs.
-  Disposition: `→ deferred: blocked on Q3 (evaluate() scoring per stub) and F4 (chain detection). Do after those prove out. The evaluate() kernel split (build_eval_request / execute_eval_request) from session 60 already makes this composable when ready.`
+  Disposition: `→ deferred: blocked on Q3 (evaluate() scoring per stub) and F4 (chain detection). Do after those prove out. The evaluate() kernel split (build_eval_request / execute_eval_request) from session 60 already makes this composable when ready. See REASONING_MODEL.md — R1/R2/R3 (Decomposer/Router/Synthesizer) is the concrete design for Q4's evaluator node. RM9 is the explicit connection item.`
 
 - [ ] **Q5** — UI: a sortable queue table. Columns: stub name, file, caller count, chain depth,
   evaluate() score (on demand), disposition (not started / in progress / done). This is the
