@@ -16,7 +16,14 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-01, session 50):** Items 25 + 26 + 14 closed.
+**Last session (2026-07-03, session 60):** Item 27 executed (self-review). Item 28 filed.
+infer_behavior refactored to delegate to _infer_behavior_for_symbol (70 lines removed).
+classify_references crash on --reingest-file fixed (project_symbols via ctx not analysis).
+Determined corpus DB migrated (param_types_json column added); 9 files reingested.
+Self-review findings: role inference accurate, match_structural_pattern limited at radius=2
+with 3B model, SOTS XI on evaluate() filed as item 28. 372 tests pass.
+
+**Before that (2026-07-01, session 50):** Items 25 + 26 + 14 closed.
 Item 14: two-tier LLM in llm_client.py. generate_quality()/chat_quality()/is_available_quality()
 target Qwen3.6-27B-Q4_K_M on port 8081, silent fallback to 3B if not running.
 _synthesize_with_ollama and gap_analysis upgraded to quality tier; distillation stays 3B.
@@ -204,6 +211,44 @@ each step result. 293/293 tests passing.
    large Python repo (itself) and have enough orientation capability to surface
    design decisions from its own knowledge_artifacts. Probably ready after phase 4
    (data flow tracing) is working.
+
+   **Self-review run 2026-07-03 (session 60):** Item 27 executed. Determined's own corpus
+   was ingested and the agent modules were analyzed. Key findings:
+   - Role inference (infer_behavior_batch): COORDINATORs and CONTROLLERs correctly identified
+     across agent_tools.py; INTERFACER for evaluate() accurate (thin LLM boundary).
+   - match_structural_pattern: evaluator primitives return UNCERTAIN/STRUCTURER at radius=2;
+     subgraphs too sparse for 3B model to reason about. agent_tools symbols had 1-node
+     subgraphs due to stale inbound edges -- fixed by reingesting caller files.
+   - check_design_violations: SOTS XI flagged on evaluate() (score 0.30) -- filed as item 28.
+     SOTS XXIV on collect_symbol_context (reproducibility), XVI on check_design_violations
+     (least privilege), XVIII on infer_behavior (observability) -- all borderline, low priority.
+
+---
+
+28. **[OPEN] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
+
+   **Source:** Self-review 2026-07-03. check_design_violations flagged SOTS XI on
+   `determined.agent.evaluator.evaluate` (score 0.30).
+
+   **What SOTS XI says:** "Separate the irreversible decision from its effect -- make
+   'should we / which ones' a pure, exhaustively-testable function that returns a plan;
+   make the doing a thin wrapper that only executes the plan."
+
+   **The issue:** `evaluate()` currently does both: it builds the prompt, decides on
+   the LLM call shape (question + evidence), and executes the LLM call in one step.
+   The "decide" part (what to send, which evidence to include) is not separately testable
+   without triggering an actual LLM call.
+
+   **What to change:**
+   - Extract a pure `build_eval_request(context, evidence, question) -> EvalRequest` that
+     returns the prompt and parameters as a data structure (no LLM call).
+   - `evaluate()` becomes: `build_eval_request(...)` then `_call_llm(request)` then
+     `_parse_judgment(response)`.
+   - Tests can exercise `build_eval_request` directly and verify prompt shape without
+     mocking the LLM.
+
+   **Priority:** Low. The current code is correct; this is a testability improvement.
+   Worth doing before evaluate() grows more complexity.
 
 ---
 
