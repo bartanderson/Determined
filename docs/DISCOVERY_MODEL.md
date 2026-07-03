@@ -1,6 +1,6 @@
 # Discovery Model — Determined Navigation & Analysis Architecture
 
-_Created session 61, 2026-07-03. Living document — update disposition fields in place._
+_Created session 61, 2026-07-03. Updated session 61 (composability audit). Living document — update disposition fields in place._
 _Companion to DESIGN_ARC.md (what the investigation arc does) and DESIGN.md (why things are built the way they are)._
 _This document covers the richer conceptual layer: how analysis surfaces hidden structure, how it connects to planning, and how the UI makes it navigable._
 
@@ -89,7 +89,7 @@ the direct-call shape. Each topology has its own frontier type.
 
 - [ ] **F4** — Chain-of-stubs detection: find stubs that call other stubs. The chain length is a
   measure of how far a subsystem is from being runnable.
-  Disposition: `→ not explored`
+  Disposition: `→ finding: trivially derived from frontier query — change f_caller.is_stub=0 to f_caller.is_stub=1. One-line change produces stub->stub edges. Add as a toolbar toggle on the Frontier tab ('Direct' / 'Chain' / 'All'). Tier 1 connection.`
 
 - [ ] **F5** — Composite frontier signal: a function appearing in multiple frontier types
   simultaneously is high priority. Build a query that scores stubs by how many shape-frontiers
@@ -123,34 +123,34 @@ evidence is a direct, concrete use of the existing kernel for planning purposes.
 
 **Exploration checklist:**
 
-- [ ] **Q1** — Rank stubs by caller in-degree (number of functional callers). Verify against dj2
+- [x] **Q1** — Rank stubs by caller in-degree (number of functional callers). Verify against dj2
   frontier results (validate_action=5, get_player_by_session=4 are the predicted top two).
-  Disposition: `→ not explored`
+  Disposition: `→ finding: list_stubs() in agent_tools.py already does this — suffix-match JOIN on callee column, ranks by caller count. validate_action and get_player_by_session confirmed as top two. NOTE: list_stubs uses 'callee' column; frontier query uses 'target_id'. These are parallel implementations of the same lookup — should converge into one canonical function (see A1 notes).`
 
 - [ ] **Q2** — Define "unblocking value": implementing stub X removes N frontier edges. If X also
   calls stubs Y and Z, those must be counted too. Is this the right metric, or should it be
   purely in-degree?
-  Disposition: `→ not explored`
+  Disposition: `→ finding: depends on F4 (chain detection) being built first. In-degree alone (Q1) is already meaningful and available. Full unblocking value needs chain depth added to in-degree — defer until F4 exists.`
 
 - [ ] **Q3** — Wire `evaluate()` to score a stub for implementation priority. Prompt shape:
   subject = stub function, evidence = its callers + its docstring + its stub body, question =
   "what becomes possible if this is implemented, and how central is it to the system?"
-  Disposition: `→ not explored`
+  Disposition: `→ finding: backbone fully exists. stub_projector.gather_context() already collects callers + contracts + sibling callees. evaluate_claim() takes claim + question + searches knowledge_artifacts for evidence. A new agent tool that sequences gather_context() -> evaluate_claim() is ~30 lines. No new infrastructure needed.`
 
 - [ ] **Q4** — Tree search over the frontier: given the current stub set, what is the optimal
   implementation sequence to make the largest runnable subset of the program available soonest?
   This is MCTS on the implementation graph. Expensive but worth profiling on dj2's 47 stubs.
-  Disposition: `→ not explored`
+  Disposition: `→ deferred: blocked on Q3 (evaluate() scoring per stub) and F4 (chain detection). Do after those prove out. The evaluate() kernel split (build_eval_request / execute_eval_request) from session 60 already makes this composable when ready.`
 
 - [ ] **Q5** — UI: a sortable queue table. Columns: stub name, file, caller count, chain depth,
   evaluate() score (on demand), disposition (not started / in progress / done). This is the
   primary game-work planning view once the tool is mature enough.
-  Disposition: `→ not explored`
+  Disposition: `→ finding: backbone exists. prioritize_work() + workflow_items + store_workflow_item() is a full planning system. Missing link: frontier ranking -> workflow_items. One new function (~20 lines) runs list_stubs() and calls store_workflow_item() for each result ranked by caller count. Then prioritize_work() sees the frontier automatically. UI: a new tab reading workflow_items WHERE kind='next_up', rendered as a table instead of text.`
 
-- [ ] **Q6** — Implementation scaffold: given a stub + its callers as context, generate a partial
+- [x] **Q6** — Implementation scaffold: given a stub + its callers as context, generate a partial
   implementation (parameter handling, return type, likely logic sketch) using the quality-tier
   LLM. Not a full implementation — a starting skeleton. Saves the jump-start cost.
-  Disposition: `→ not explored`
+  Disposition: `→ finding: fully built. stub_projector.py is a complete module: gather_context() collects callers/contracts/sibling callees, _build_prompt() constructs the prompt, project_stub() runs it end-to-end. project_all_stubs() batches all stubs. Exposed as project_stub tool in agent_tools.py. NOT yet wired into frontier UI — clicking a red stub node should offer a 'Project' button. Tier 1 connection needed.`
 
 ---
 
@@ -184,7 +184,7 @@ failure. Separating these two meanings would lift graph accuracy across all feat
 - [ ] **A1** — Audit the `resolved` flag: rename or add a column. Proposal: keep `resolved` for
   annotation-derived (its current correct use), add `is_project_call BOOLEAN` that is true
   whenever the callee matches any project function name (by any path). Requires a migration.
-  Disposition: `→ not explored`
+  Disposition: `→ finding: confirmed needed. 'resolved=1' means annotation-derived (correct use), NOT 'is a project function' (wrong assumption in original frontier design). list_stubs() joins on 'callee' column; frontier query joins on 'target_id' — parallel implementations of same lookup. Convergence + is_project_call flag would lift accuracy across all graph features. Schema migration required. Not Tier 1 — do after other connections are validated.`
 
 - [ ] **A2** — Build an `access_paths(symbol)` query: given a function name, return all known
   names/paths by which it is referenced in the corpus. Output: list of (path, resolution_method,
@@ -203,7 +203,7 @@ failure. Separating these two meanings would lift graph accuracy across all feat
   - Its queue priority
   - Pin as waypoint
   This is the primary navigation hook that connects all views.
-  Disposition: `→ not explored`
+  Disposition: `→ finding: backbone is symbol_context() — already returns role, risk, callers, callees, class, docstring, design frame, findings. Sub-menu is symbol_context() rendered as a hover popover on any element with data-sym attribute. No new backend code needed; only CSS + JS popover + socket event wiring. Depends on A2 (access paths query) for the 'also known as' section.`
 
 - [ ] **A5** — Method 8 (chained attribute calls like `self.subsystem.fetcher.fetch_data()`) is
   currently unresolvable without runtime type information. Determine whether class_attributes
@@ -266,7 +266,7 @@ support both: single click = navigate to destination, expand = reveal journey.
 - [ ] **W6** — Auto-waypoint: should the tool automatically create a waypoint when a finding is
   confirmed via check_design_violations or evaluate()? The finding already has a subject and
   context — a waypoint is nearly free to generate alongside it.
-  Disposition: `→ not explored`
+  Disposition: `→ finding: knowledge_artifacts + store_finding() is the exact infrastructure needed. A waypoint is kind='waypoint' with content = {name, view_origin, context_data, trail} serialized as JSON. Auto-creation hook: store_finding() called inside evaluate_claim() when verdict != UNRELATED. Low effort, high value for session continuity.`
 
 ---
 
@@ -325,16 +325,95 @@ validate_action
 
 ---
 
+## Composability Audit (session 61)
+
+What exists, what connects to what, and how much new code each tier needs.
+
+### Already built — ready to connect
+
+| Tool / module | What it does | Connects to |
+|---|---|---|
+| `list_stubs()` | Ranks stubs by caller count, suffix-match JOIN | Q1 done; feed output into workflow_items for Q5 |
+| `stub_projector.py` | gather_context + build_prompt + LLM call | Q6 done; wire into frontier UI as "Project" button |
+| `project_stub` tool | Agent-facing wrapper for stub_projector | Q6 agent access done; needs UI socket event |
+| `evaluate_claim()` | Observe->Situate->Evaluate kernel | Q3 backbone; needs stub-specific prompt + gather_context feed |
+| `gather_context()` | Callers + contracts + sibling callees for a stub | Q3 context; feeds directly into evaluate_claim() |
+| `prioritize_work()` | Reads workflow_items, returns ranked recommendation | Q5 planner; needs frontier ranking as input |
+| `store_workflow_item()` | Writes to workflow_items backlog | Q5 bridge; call with list_stubs() output |
+| `knowledge_artifacts` + `store_finding()` | Generic artifact store | W6 backbone; kind='waypoint' is all that's needed |
+| `symbol_context()` | Everything known about a symbol in one call | A4 backbone; render as inline popover, no new backend |
+
+### Tier 1 — connect existing pieces (~15-20 lines each)
+
+1. **Frontier + project_stub**: new `project_stub_request` socket event; "Project ↵" button
+   appears in Frontier tab when a red stub node is selected. Calls `project_stub(db, stub_name)`,
+   emits result into a result panel below the graph.
+
+2. **F4 chain toggle**: add `mode` param to `handle_get_frontier_graph` — `direct` (current,
+   functional->stub), `chain` (stub->stub), `all` (both). Toolbar toggle in Frontier tab.
+   One conditional in the SQL WHERE clause.
+
+3. **Frontier -> build queue**: new `frontier_to_queue` socket event that calls `list_stubs()`,
+   then `store_workflow_item()` for each result with rank=caller_count and kind='next_up'.
+   "Add to queue" button in Frontier toolbar. After this, `prioritize_work()` sees frontier data.
+
+### Tier 2 — new prompt on existing kernel (~30 lines)
+
+4. **Stub scorer** (`score_stub` tool): `gather_context(stub)` -> format as claim ->
+   `evaluate_claim(claim, question="how central is implementing this to making the system runnable?")`.
+   Returns verdict + confidence as a stub priority score. Adds an optional "Score" column to
+   the build queue.
+
+### Tier 3 — new rendering of existing data (UI only, no new backend)
+
+5. **Sub-menu popover**: hover any `<span data-sym="X">` -> emit `symbol_context` -> render
+   subset as a floating panel. Backend: `symbol_context()` already exists. Frontend: ~40 lines
+   JS + CSS.
+
+6. **Build queue tab**: new tab reading `workflow_items WHERE kind='next_up'`, rendered as a
+   sortable table. Same data `prioritize_work()` reads, different presentation.
+
+7. **Waypoints panel**: new tab reading `knowledge_artifacts WHERE kind='waypoint'`. Collapsed
+   list with expand-to-trail. `store_finding()` already writes; just need a reader UI.
+
+### Tier 4 — foundational accuracy (schema migration, unlocks everything)
+
+8. **A1 resolved flag**: add `is_project_call BOOLEAN` to graph_edges. Converge `list_stubs`
+   and frontier query onto one canonical lookup. All graph features get more accurate edges.
+   Do after Tier 1-3 validate the concepts.
+
+---
+
 ## Mining Priority
 
-Rough order based on value and dependency:
+Updated after composability audit (session 61). Earlier ranking assumed everything needed
+building from scratch — composability audit shows most pieces exist and need connecting, not building.
 
-1. **A1** — Fix `resolved` flag (foundational; lifts all graph accuracy)
-2. **Q1** — Rank stubs by in-degree (quick win; makes frontier actionable today)
-3. **T2** — detect_topology() query (enables topology-aware UI)
-4. **A4** — Universal sub-menu (the navigation hub; depends on A1 + T2 + F* being queryable)
-5. **Q3** — Wire evaluate() to score stubs (MCTS groundwork)
-6. **W1/W2/W3** — Waypoints persistence + UI (session memory; lower urgency than analysis)
-7. **Q4** — Tree search / build sequencing (exciting but expensive; do after Q3 validates)
-8. **F3/F4** — Orphan and chain frontier shapes (expands topology coverage)
-9. **A5** — Multi-hop type trace for chained attributes (hardest; highest graph coverage gain)
+**Tier 1 — connect existing pieces (do now):**
+1. Frontier + project_stub UI connection (Q6 surface)
+2. F4 chain toggle in Frontier tab
+3. Frontier -> build queue bridge (Q5 backbone connection)
+
+**Tier 2 — new prompt on existing kernel:**
+4. **Q3** — Stub scorer tool (gather_context -> evaluate_claim)
+
+**Tier 3 — new UI rendering of existing data:**
+5. **A4** — Sub-menu popover (symbol_context rendered inline)
+6. **Q5** — Build queue tab (workflow_items as table)
+7. **W3** — Waypoints panel (knowledge_artifacts kind='waypoint')
+
+**Tier 4 — new queries (build on Tier 1 results):**
+8. **T2** — detect_topology() (composes F4 + F3 + existing frontier)
+9. **F3** — Orphaned implementation detection
+10. **F5** — Composite frontier signal (multi-shape scoring)
+11. **Q2** — Full unblocking value (in-degree + chain depth, needs F4)
+
+**Tier 5 — foundational schema (do last, after concepts validated):**
+12. **A1** — Fix resolved flag + converge callee/target_id lookup
+13. **A5** — Multi-hop type trace for chained attribute calls
+
+**Deferred (needs prerequisites):**
+- **Q4** — MCTS tree search (needs Q3 + F4 + Q2)
+- **W1/W2** — Waypoints persistence design (needs W3 UI to validate the concept first)
+- **T1** — Complete topology taxonomy (do during F3 + chain work, emerges naturally)
+- **F2** — ABC frontier (TRACKER item 29, needs class hierarchy schema)
