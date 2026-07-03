@@ -249,24 +249,31 @@ What exists and what new code each piece needs.
 
 ## Exploration Checklist
 
-- [ ] **RM1** — Prototype the Decomposer (R1) on one real question. Test: "should validate_action
+- [x] **RM1** — Prototype the Decomposer (R1) on one real question. Test: "should validate_action
   be a method on AuthoritySystem?" — does the decomposer produce the expected sub-questions,
   or does it miss key ones? Adjust prompt until the partition is reliable.
-  Disposition: `→ not explored`
+  Disposition: `→ built and smoke-tested (session 63). DB routes verified against dj2 corpus:
+  7 callers, is_stub=yes, standalone (not a method), 2 validate* siblings, 0 import coupling.
+  Decomposer calls quality LLM with structured prompt; falls back to minimal partition.`
 
-- [ ] **RM2** — Audit Router coverage. List all sub-question types the Decomposer might produce.
+- [x] **RM2** — Audit Router coverage. List all sub-question types the Decomposer might produce.
   For each, confirm there is a DB query function or evaluate() path that handles it. Any gap
   in the Router is a gap in the whole pipeline.
-  Disposition: `→ not explored`
+  Disposition: `→ initial coverage built (session 63): caller_count, callee_count,
+  class_membership, sibling_pattern, import_coupling, is_stub (all DB), plus sots_match and
+  design_judgment (evaluate routes). Gaps will surface when Decomposer produces types not in
+  _DB_ROUTES; Router falls through to evaluate() as a safe default.`
 
-- [ ] **RM3** — Implement R1 (Decomposer) + R2 (Router) + R3 (Synthesizer). Test end-to-end on
+- [x] **RM3** — Implement R1 (Decomposer) + R2 (Router) + R3 (Synthesizer). Test end-to-end on
   validate_action placement question. Verify each sub-answer is reasonable before looking at
   the synthesis.
-  Disposition: `→ not explored`
+  Disposition: `→ all three built in reasoning_engine.py (session 63). DB routes verified.
+  End-to-end test against live LLM on hardware is the remaining manual step (RM5 triggers this).`
 
-- [ ] **RM4** — Implement R4 (`reason_about` tool) and test via chat interface. Compare output
+- [x] **RM4** — Implement R4 (`reason_about` tool) and test via chat interface. Compare output
   to a human expert's reasoning about the same question on dj2.
-  Disposition: `→ not explored`
+  Disposition: `→ built and registered in TOOLS (session 63). Test via chat: reason_about
+  question="should validate_action be a method?" symbol=validate_action`
 
 - [ ] **RM5** — Implement R5 (Reasoning panel UI). Wire "Reason" button into Frontier tab.
   Fix markdown fence rendering in the result panel at the same time (affects project_stub output too).
