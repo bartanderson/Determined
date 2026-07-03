@@ -2484,92 +2484,17 @@ def infer_behavior(assessor: "Assessor", args: dict) -> str:
     if not symbol:
         return "ERROR: symbol argument required"
 
-    oracle = assessor.oracle
-    conn = oracle.conn
-
-    # Seed pattern library if needed
-    _ensure_pattern_library(conn)
-
-    # Gather calling context
-    callers = _list_callers_raw(oracle, symbol)
-    callees = _list_callees_raw(oracle, symbol)
-
-    param_names: list[str] = []
-    param_row = conn.execute(
-        "SELECT param_types_json FROM functions WHERE name = ? LIMIT 1",
-        (symbol,),
-    ).fetchone()
-    if param_row and param_row[0]:
-        import json as _json
-        try:
-            params = _json.loads(param_row[0])
-            param_names = [k for k in params if k not in ("self", "cls")]
-        except Exception:
-            pass
-
-    sym_row = conn.execute(
-        "SELECT file_path FROM symbols WHERE name = ? LIMIT 1", (symbol,)
-    ).fetchone()
-    file_stem = ""
-    if sym_row:
-        file_stem = sym_row[0].replace("\\", "/").split("/")[-1].replace(".py", "")
-
-    caller_names = [c["caller"].rsplit(".", 1)[-1] for c in callers[:8]]
-    callee_names = [c["callee"].rsplit(".", 1)[-1] for c in callees[:8]]
-
-    context_parts = [f"function: {symbol}"]
-    if file_stem:
-        context_parts.append(f"file: {file_stem}")
-    if param_names:
-        context_parts.append(f"params: {', '.join(param_names[:6])}")
-    if caller_names:
-        context_parts.append(f"called_by: {', '.join(caller_names)}")
-    if callee_names:
-        context_parts.append(f"calls: {', '.join(callee_names)}")
-
-    context_query = "  ".join(context_parts)
-
-    from determined.agent.evaluator import evaluate
-
-    # Always retrieve all patterns — this is a forced classification over a fixed set,
-    # not a retrieval question. Threshold-gated evidence lookup would silently drop
-    # patterns that don't embed-match the calling context, producing false "no match".
-    pattern_rows = conn.execute(
-        "SELECT content FROM knowledge_artifacts WHERE kind='pattern' ORDER BY subject"
-    ).fetchall()
-    evidence = [r[0] for r in pattern_rows]
-
-    if not evidence:
-        return (
-            f"infer_behavior: pattern library is empty for '{symbol}'. "
-            f"This should not happen — _ensure_pattern_library() is called above."
-        )
-
-    question = (
-        "Does this function's calling profile match one of the described architectural "
-        "role patterns? If so, return MATCHES_PATTERN. If the profile is ambiguous or "
-        "too sparse, return UNCERTAIN."
-    )
-
-    judgment = evaluate(context_query, evidence, question)
-
-    # Extract role name from the best-matching evidence item (first word before ':')
-    matched_role = ""
-    if judgment.evidence_used:
-        first_word = judgment.evidence_used[0].split(":")[0].strip()
-        matched_role = first_word
+    result = _infer_behavior_for_symbol(assessor, symbol)
 
     lines = [
         f"INFER BEHAVIOR: {symbol}",
-        f"  Context:    {context_query[:200]}",
+        f"  Context:    {result.get('context', '')[:200]}",
         f"",
-        f"  Verdict:    {judgment.verdict}",
-        f"  Role:       {matched_role or '(see reasoning)'}",
-        f"  Confidence: {int(judgment.confidence * 100)}%",
-        f"  Reasoning:  {judgment.reasoning}",
+        f"  Verdict:    {result['verdict']}",
+        f"  Role:       {result['role']}",
+        f"  Confidence: {int(result['confidence'] * 100)}%",
+        f"  Reasoning:  {result['reasoning']}",
     ]
-    if judgment.evidence_used:
-        lines.append(f"  Pattern:    {judgment.evidence_used[0][:150]}")
     return "\n".join(lines)
 
 
@@ -2579,11 +2504,19 @@ def _infer_behavior_for_symbol(assessor: "Assessor", symbol: str) -> dict:
     role/confidence/verdict/reasoning so batch mode can aggregate results
     and store them without re-running the full string-formatting path.
     """
-    from determined.agent.evaluator import collect_symbol_context, retrieve_evidence, evaluate
+    from determined.agent.evaluator import collect_symbol_context, evaluate
 
     conn = assessor.oracle.conn
+    _ensure_pattern_library(conn)
     context_query = collect_symbol_context(conn, symbol)
-    evidence = retrieve_evidence(context_query, conn, surfaces=["pattern"])
+
+    # Force-fetch all patterns: this is a classification over a fixed set, not a
+    # retrieval question. Threshold-gated similarity would silently drop patterns
+    # that don't embed-match the context, producing false "no match" results.
+    pattern_rows = conn.execute(
+        "SELECT content FROM knowledge_artifacts WHERE kind='pattern' ORDER BY subject"
+    ).fetchall()
+    evidence = [r[0] for r in pattern_rows]
 
     if not evidence:
         return {"symbol": symbol, "role": "UNKNOWN", "confidence": 0.0,
