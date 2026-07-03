@@ -1229,11 +1229,14 @@ const shell      = document.querySelector(".shell");
 let _currentSpotlight = null;
 
 const SP_SECTIONS = {
-  risk:    { label: "Risk Profile",  order: 0 },
-  intent:  { label: "Intent",        order: 1 },
-  callers: { label: "Callers",       order: 2 },
-  callees: { label: "Calls",         order: 3 },
-  findings:{ label: "Findings",      order: 4 },
+  risk:       { label: "Risk Profile",  order: 0 },
+  intent:     { label: "Intent",        order: 1 },
+  role:       { label: "Role",          order: 2 },
+  violations: { label: "Violations",    order: 3 },
+  callers:    { label: "Callers",       order: 4 },
+  callees:    { label: "Calls",         order: 5 },
+  findings:   { label: "Findings",      order: 6 },
+  // data_flow and pattern are on-demand — injected dynamically
 };
 
 function openSpotlight(sym) {
@@ -1278,6 +1281,24 @@ function openSpotlight(sym) {
     btn.addEventListener("click", () => {
       input.value = a.q;
       if (!a.q.endsWith(" ")) { sendQuery(); } else { input.focus(); }
+    });
+    spActions.appendChild(btn);
+  });
+
+  // on-demand analysis buttons
+  ["trace data flow", "match pattern"].forEach(label => {
+    const tool = label === "trace data flow" ? "trace_data_flow" : "match_structural_pattern";
+    const key  = label === "trace data flow" ? "data_flow" : "pattern";
+    const btn  = document.createElement("button");
+    btn.className = "sp-action";
+    btn.textContent = label;
+    btn.dataset.analysisTool = tool;
+    btn.addEventListener("click", () => {
+      if (btn.dataset.running) return;
+      btn.dataset.running = "1";
+      btn.textContent = label + "…";
+      spInjectSection(key, label === "trace data flow" ? "Data Flow" : "Pattern");
+      socket.emit("symbol_analysis", { symbol: sym, tool });
     });
     spActions.appendChild(btn);
   });
@@ -1346,16 +1367,26 @@ socket.on("source_result", data => {
 
 socket.on("spotlight_section", data => {
   if (data.symbol !== _currentSpotlight) return;
+  // on-demand sections (data_flow / pattern) may not exist yet — inject them
+  if (!document.getElementById(`sp-sec-${data.key}`)) {
+    const LABELS = { data_flow: "Data Flow", pattern: "Pattern" };
+    if (LABELS[data.key]) spInjectSection(data.key, LABELS[data.key]);
+  }
   const el = document.getElementById(`sp-content-${data.key}`);
   if (!el) return;
   el.className = "sp-section-content";
-  // linkify "<name> in <file>.py line N" lines so callers/calls are walkable
-  el.innerHTML = escHtml(data.content).replace(
-    /^(\s*)([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(\s+in\s+)(\S+\.py)(\s+line\s+\d+)/gm,
-    (m, ind, name, inw, fp, tail) =>
-      `${ind}<span class="sym" data-nav="${escHtml(name.split('.').pop())}">${escHtml(name)}</span>${inw}<span class="fp">${fp}</span>${tail}`
-  );
-  attachSymbolHandlers(el);
+
+  if (data.key === "violations") {
+    renderViolations(data.symbol, data.content, el);
+  } else {
+    // linkify "<name> in <file>.py line N" lines so callers/calls are walkable
+    el.innerHTML = escHtml(data.content).replace(
+      /^(\s*)([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(\s+in\s+)(\S+\.py)(\s+line\s+\d+)/gm,
+      (m, ind, name, inw, fp, tail) =>
+        `${ind}<span class="sym" data-nav="${escHtml(name.split('.').pop())}">${escHtml(name)}</span>${inw}<span class="fp">${fp}</span>${tail}`
+    );
+    attachSymbolHandlers(el);
+  }
 
   // extract risk badge from risk section
   if (data.key === "risk") {
@@ -1367,11 +1398,107 @@ socket.on("spotlight_section", data => {
       spBadge.className = `spotlight-badge ${cls}`;
     }
   }
+
+  // auto-trigger pattern match when role is COORDINATOR or CONTROLLER
+  if (data.key === "role") {
+    const roleMatch = data.content.match(/Role:\s+(COORDINATOR|CONTROLLER)/i);
+    if (roleMatch) {
+      const patBtn = spActions.querySelector('[data-analysis-tool="match_structural_pattern"]');
+      if (patBtn && !patBtn.dataset.running) {
+        patBtn.dataset.running = "1";
+        patBtn.textContent = "match pattern…";
+        spInjectSection("pattern", "Pattern");
+        socket.emit("symbol_analysis", { symbol: data.symbol, tool: "match_structural_pattern" });
+      }
+    }
+  }
+
+  // reset on-demand button label when section arrives
+  if (data.key === "data_flow" || data.key === "pattern") {
+    const tool = data.key === "data_flow" ? "trace_data_flow" : "match_structural_pattern";
+    const btn  = spActions.querySelector(`[data-analysis-tool="${tool}"]`);
+    if (btn) { delete btn.dataset.running; btn.textContent = data.key === "data_flow" ? "trace data flow" : "match pattern"; }
+  }
 });
 
 socket.on("spotlight_done", data => {
   if (data.symbol !== _currentSpotlight) return;
   spMeta.textContent = "ready";
+});
+
+// inject an on-demand section (data_flow / pattern) into the spotlight body
+function spInjectSection(key, label) {
+  if (document.getElementById(`sp-sec-${key}`)) return; // already present
+  const sec = document.createElement("div");
+  sec.className = "sp-section";
+  sec.id = `sp-sec-${key}`;
+  sec.innerHTML = `<div class="sp-section-label">${label}</div>
+                   <div class="sp-section-content sp-loading" id="sp-content-${key}">loading…</div>`;
+  spBody.appendChild(sec);
+}
+
+// render violations content with inline ⚑ store chips
+function renderViolations(symbol, content, el) {
+  const noViolation = content.includes("No design violations detected");
+  if (noViolation) {
+    el.innerHTML = `<span style="color:var(--text3)">${escHtml(content.split("(")[0].trim())}</span>`;
+    return;
+  }
+  // parse blocks: lines starting with [SOTS or [score or the tenet text
+  const lines = content.split("\n");
+  const html = [];
+  let pendingBlock = [];
+
+  function flushBlock() {
+    if (!pendingBlock.length) return;
+    const blockText = pendingBlock.join("\n").trim();
+    const scoreMatch = pendingBlock[0].match(/\(score=([\d.]+)\)/);
+    const score = scoreMatch ? parseFloat(scoreMatch[1]) : 0;
+    const id = `viol-${Math.random().toString(36).slice(2,7)}`;
+    html.push(`<div style="margin-bottom:6px;padding:5px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px">
+      <div style="display:flex;align-items:flex-start;gap:6px">
+        <span style="flex:1;font-size:.8em;color:var(--text2);line-height:1.5">${escHtml(blockText)}</span>
+        <button class="sp-store-chip" data-block="${escAttr(blockText)}" title="Store as finding"
+          style="flex-shrink:0;font-size:.72em;padding:2px 6px;background:none;border:1px solid var(--border2);border-radius:3px;color:var(--text3);cursor:pointer;white-space:nowrap">⚑ store</button>
+      </div>
+    </div>`);
+    pendingBlock = [];
+  }
+
+  for (const line of lines) {
+    if (line.match(/^\s+\[SOTS/) || line.match(/^\s+\[score/)) {
+      flushBlock();
+      pendingBlock.push(line.trim());
+    } else if (pendingBlock.length && line.trim() && !line.startsWith("Review these")) {
+      pendingBlock.push(line.trim());
+    }
+  }
+  flushBlock();
+
+  if (!html.length) {
+    el.textContent = content;
+    return;
+  }
+  el.innerHTML = html.join("") +
+    `<div style="font-size:.72em;color:var(--text3);margin-top:4px">similarity match — review manually</div>`;
+
+  el.querySelectorAll(".sp-store-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      if (chip.dataset.stored) return;
+      chip.dataset.stored = "1";
+      chip.textContent = "storing…";
+      socket.emit("store_finding_inline", { symbol, content: chip.dataset.block });
+    });
+  });
+}
+
+socket.on("store_finding_result", data => {
+  if (data.ok) {
+    // find the chip that triggered this (match by symbol in current spotlight)
+    document.querySelectorAll(".sp-store-chip[data-stored='1']").forEach(chip => {
+      if (!chip.dataset.done) { chip.dataset.done = "1"; chip.textContent = "✓ stored"; chip.style.color = "var(--green)"; chip.style.borderColor = "var(--green)"; }
+    });
+  }
 });
 
 socket.on("spotlight_error", data => {

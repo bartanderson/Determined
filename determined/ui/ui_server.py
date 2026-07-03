@@ -620,22 +620,69 @@ def handle_symbol_spotlight(data):
     def _run():
         try:
             from determined.agent.agent_tools import dispatch
-            sections = {}
             for tool, args, key in [
-                ("symbol_intent",  {"symbol": symbol}, "intent"),
-                ("risk_profile",   {"symbol": symbol}, "risk"),
-                ("list_callers",   {"symbol": symbol}, "callers"),
-                ("list_callees",   {"symbol": symbol}, "callees"),
-                ("get_findings",   {"symbol": symbol}, "findings"),
+                # Fast DB-only sections first — visible immediately
+                ("symbol_intent",           {"symbol": symbol}, "intent"),
+                ("risk_profile",            {"symbol": symbol}, "risk"),
+                ("list_callers",            {"symbol": symbol}, "callers"),
+                ("list_callees",            {"symbol": symbol}, "callees"),
+                ("get_findings",            {"symbol": symbol}, "findings"),
+                # LLM sections after — appear once model responds (~3-5s each)
+                ("infer_behavior",          {"symbol": symbol}, "role"),
+                ("check_design_violations", {"symbol": symbol}, "violations"),
             ]:
                 result = dispatch(tool, args, _oracle, _assessor)
-                sections[key] = result
                 socketio.emit("spotlight_section", {"symbol": symbol, "key": key, "content": result}, to=sid)
             socketio.emit("spotlight_done", {"symbol": symbol}, to=sid)
         except Exception as exc:
             socketio.emit("spotlight_error", {"message": str(exc)}, to=sid)
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+@socketio.on("symbol_analysis")
+def handle_symbol_analysis(data):
+    """
+    On-demand analysis section: trace_data_flow or match_structural_pattern.
+    Emits spotlight_section with key="data_flow" or "pattern" when done.
+    """
+    symbol = (data.get("symbol") or "").strip()
+    tool   = (data.get("tool")   or "").strip()
+    KEY_MAP = {"trace_data_flow": "data_flow", "match_structural_pattern": "pattern"}
+    if not symbol or tool not in KEY_MAP or _oracle is None:
+        emit("spotlight_error", {"message": "invalid symbol_analysis request"})
+        return
+    sid = request.sid
+    key = KEY_MAP[tool]
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import dispatch
+            result = dispatch(tool, {"symbol": symbol}, _oracle, _assessor)
+            socketio.emit("spotlight_section", {"symbol": symbol, "key": key, "content": result}, to=sid)
+        except Exception as exc:
+            socketio.emit("spotlight_section",
+                          {"symbol": symbol, "key": key,
+                           "content": f"Error: {exc}"}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+@socketio.on("store_finding_inline")
+def handle_store_finding_inline(data):
+    """Store a single finding (from an inline ⚑ chip) without going through chat."""
+    symbol  = (data.get("symbol")  or "").strip()
+    content = (data.get("content") or "").strip()
+    if not symbol or not content or _oracle is None:
+        emit("store_finding_result", {"ok": False, "symbol": symbol})
+        return
+    try:
+        from determined.agent.agent_tools import dispatch
+        dispatch("store_finding", {"symbol": symbol, "kind": "known_issue", "content": content},
+                 _oracle, _assessor)
+        emit("store_finding_result", {"ok": True, "symbol": symbol})
+    except Exception as exc:
+        emit("store_finding_result", {"ok": False, "symbol": symbol, "error": str(exc)})
 
 
 @socketio.on("project_stub")
