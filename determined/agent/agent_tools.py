@@ -3288,7 +3288,8 @@ def reason_about(assessor: "Assessor", args: dict) -> str:
 
     from determined.agent.reasoning_engine import reason_about as _reason_about
     conn = assessor.oracle.conn
-    return _reason_about(question, symbol, conn)
+    k_conn = getattr(assessor, "_knowledge_conn", None)
+    return _reason_about(question, symbol, conn, knowledge_conn=k_conn)
 
 
 def distill_corpus(assessor: "Assessor", args: dict) -> str:

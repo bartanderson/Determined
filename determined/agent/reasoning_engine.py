@@ -412,11 +412,16 @@ def reason_about(
     question: str,
     symbol: str,
     conn: sqlite3.Connection,
+    knowledge_conn: Optional[sqlite3.Connection] = None,
 ) -> str:
     """
     Full pipeline: Decompose -> Route (all sub-questions) -> Synthesize.
     Returns a formatted recommendation block.
+    If knowledge_conn is provided, persists the chain as a reasoning_chain artifact (RM8).
     """
+    # Check for prior chain — report staleness before running
+    stale_note = _check_stale_chain(knowledge_conn, question, symbol, conn) if knowledge_conn else ""
+
     # R1 — Decompose
     subquestions = decompose(question, symbol, conn)
 
@@ -433,6 +438,7 @@ def reason_about(
     lines = [
         f"=== reason_about: {symbol or '(no symbol)'} ===",
         f"Question: {question}",
+        *(["[STALE PRIOR CHAIN DETECTED] " + stale_note] if stale_note else []),
         "",
         "Sub-question findings:",
     ]
@@ -451,4 +457,98 @@ def reason_about(
     if rec.provenance:
         lines.append(f"Driven by:  {', '.join(rec.provenance)}")
 
-    return "\n".join(lines)
+    result = "\n".join(lines)
+
+    # RM8 — persist reasoning chain to knowledge_artifacts
+    if knowledge_conn is not None:
+        _store_chain(knowledge_conn, question, symbol, findings, rec)
+
+    return result
+
+
+def _check_stale_chain(
+    k_conn: sqlite3.Connection,
+    question: str,
+    symbol: str,
+    corpus_conn: sqlite3.Connection,
+) -> str:
+    """
+    If a prior reasoning_chain exists for this symbol+question, check whether
+    structural facts have changed (caller_count is the most common driver).
+    Returns a staleness note string, or "" if chain is current or absent.
+    """
+    subject = symbol if symbol else "reasoning::global"
+    try:
+        rows = k_conn.execute(
+            "SELECT content FROM knowledge_artifacts "
+            "WHERE subject = ? AND kind = 'reasoning_chain' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (subject,),
+        ).fetchone()
+        if not rows:
+            return ""
+        prior = json.loads(rows[0])
+        # Find stored caller_count finding
+        for f in prior.get("findings", []):
+            if f.get("source") == "db:caller_count":
+                prior_count = int(f["answer"].split()[0])
+                # Re-query current count
+                row = corpus_conn.execute(
+                    "SELECT COUNT(DISTINCT caller) FROM graph_edges "
+                    "WHERE callee = ? OR callee LIKE '%.' || ?",
+                    (symbol, symbol),
+                ).fetchone()
+                current_count = row[0] if row else 0
+                if current_count != prior_count:
+                    return (
+                        f"caller count changed from {prior_count} to {current_count} "
+                        f"since last analysis — recommendation may no longer hold"
+                    )
+                break
+    except Exception as e:
+        logger.debug("_check_stale_chain: %s", e)
+    return ""
+
+
+def _store_chain(
+    k_conn: sqlite3.Connection,
+    question: str,
+    symbol: str,
+    findings: list[Finding],
+    rec: Recommendation,
+) -> None:
+    """
+    RM8: Persist the full reasoning chain as a knowledge_artifact.
+    kind='reasoning_chain', subject=symbol (or 'reasoning::global' if no symbol).
+    Idempotent: duplicate question+symbol pairs are skipped.
+    """
+    subject = symbol if symbol else "reasoning::global"
+    chain_json = json.dumps({
+        "question": question,
+        "findings": [
+            {"q": f.question, "answer": f.answer, "source": f.source, "conf": f.confidence}
+            for f in findings
+        ],
+        "decision": rec.decision,
+        "confidence": rec.confidence,
+        "reasoning": rec.reasoning,
+        "provenance": rec.provenance,
+    })
+
+    try:
+        # Skip if identical question already stored for this subject
+        existing = k_conn.execute(
+            "SELECT id FROM knowledge_artifacts "
+            "WHERE subject = ? AND kind = 'reasoning_chain' AND content LIKE ?",
+            (subject, f'%"question": "{question[:60]}%'),
+        ).fetchone()
+        if existing:
+            return
+        k_conn.execute(
+            "INSERT INTO knowledge_artifacts (subject, kind, content, provenance, created_at) "
+            "VALUES (?, 'reasoning_chain', ?, 'ai-generated', datetime('now'))",
+            (subject, chain_json),
+        )
+        k_conn.commit()
+    except Exception as e:
+        logger.warning("_store_chain: failed to persist chain: %s", e)

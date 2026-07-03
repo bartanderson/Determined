@@ -83,6 +83,20 @@ def _get_contracts(conn: sqlite3.Connection, function_names: list[str]) -> list[
     return [dict(r) for r in rows]
 
 
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences (``` ... ```) wrapping LLM output."""
+    if not text:
+        return text
+    lines = text.strip().splitlines()
+    # Drop leading fence line (```python, ```py, ```, etc.)
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    # Drop trailing fence line
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
 def _get_source_lines(file_path: str, around_line: int, window: int = 30) -> str:
     try:
         lines = Path(file_path).read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -213,7 +227,7 @@ def project_stub(db_path: str, stub_name: str, *, verbose: bool = False) -> dict
         "stub_name": stub_name,
         "file_path": ctx["stub"]["file_path"],
         "line_number": ctx["stub"]["line_number"],
-        "suggested_body": body,
+        "suggested_body": _strip_fences(body),
         "context_summary": {
             "callers": len(ctx["callers"]),
             "contracts": len(ctx["contracts"]),

@@ -237,6 +237,7 @@
           </select>
           <button class="send-btn" id="fg-load">Load ↵</button>
           <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
+          <button class="send-btn" id="fg-reason" style="background:var(--bg3);display:none" title="AI architectural reasoning for selected stub (uses 8B model, ~60s)">Reason ↵</button>
           <button class="send-btn" id="fg-to-queue" style="background:var(--bg3);margin-left:auto" title="Add all stubs to build queue ranked by caller count">→ Queue</button>
         </div>
         <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
@@ -612,7 +613,11 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
 // ── tabs ──────────────────────────────────────────────────
 function activateTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
-  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + name));
+  document.querySelectorAll(".tab-panel").forEach(p => {
+    const isActive = p.id === "panel-" + name;
+    p.classList.toggle("active", isActive);
+    p.style.display = isActive ? "" : "none";  // inline beats any library-set inline styles
+  });
   const cyEl = document.getElementById("gx-cy");
   if (cyEl) cyEl.style.display = name === "graph" ? "" : "none";
 }
@@ -1780,11 +1785,13 @@ document.querySelectorAll(".tab[data-tab='imports']").forEach(t => {
 const fgLoad       = document.getElementById("fg-load");
 const fgMode       = document.getElementById("fg-mode");
 const fgProject    = document.getElementById("fg-project");
+const fgReason     = document.getElementById("fg-reason");
 const fgToQueue    = document.getElementById("fg-to-queue");
 const fgStatus     = document.getElementById("fg-status");
 const fgProjection = document.getElementById("fg-projection");
 let _fgCy = null;
 let _fgSelected = null;  // currently selected node id
+let _fgResultMode = null; // 'project' | 'reason'
 
 const FG_STYLE = [
   { selector: "node[role='stub']",
@@ -1810,6 +1817,7 @@ function fgLoad_() {
   if (_fgCy) { _fgCy.destroy(); _fgCy = null; }
   _fgSelected = null;
   fgProject.style.display = "none";
+  fgReason.style.display = "none";
   fgProjection.style.display = "none";
   document.getElementById("fg-cy").innerHTML = "";
   fgStatus.textContent = "Loading frontier graph…";
@@ -1847,9 +1855,13 @@ socket.on("frontier_graph_result", data => {
     const d = evt.target.data();
     _fgSelected = d.id;
     fgStatus.textContent = `${d.id}  [${d.role}]  ${d.file}:${d.line}`;
-    // show Project button only for stubs
-    fgProject.style.display = (d.role === "stub") ? "" : "none";
+    // show Project + Reason buttons only for stubs
+    const isStub = d.role === "stub";
+    fgProject.style.display = isStub ? "" : "none";
+    fgReason.style.display = isStub ? "" : "none";
     fgProjection.style.display = "none";
+    // fire quick structural score for badge
+    if (isStub) socket.emit("stub_score_quick", { symbol: d.id });
   });
 
   _fgCy.on("tap", evt => {
@@ -1857,6 +1869,7 @@ socket.on("frontier_graph_result", data => {
       _fgCy.nodes().removeClass("fg-selected");
       _fgSelected = null;
       fgProject.style.display = "none";
+      fgReason.style.display = "none";
       fgProjection.style.display = "none";
       fgStatus.textContent = summary();
     }
@@ -1877,8 +1890,10 @@ socket.on("frontier_graph_result", data => {
 
 fgProject.addEventListener("click", () => {
   if (!_fgSelected) return;
+  _fgResultMode = "project";
   fgProject.textContent = "Projecting…";
   fgProject.disabled = true;
+  fgProjection.style.display = "none";
   socket.emit("project_stub_request", { symbol: _fgSelected });
 });
 
@@ -1890,6 +1905,32 @@ socket.on("project_stub_result", data => {
     `# callers: ${data.context_summary?.callers || 0}  contracts: ${data.context_summary?.contracts || 0}\n\n` +
     (data.suggested_body || "(no suggestion)");
   fgProjection.style.display = "";
+});
+
+fgReason.addEventListener("click", () => {
+  if (!_fgSelected) return;
+  _fgResultMode = "reason";
+  fgReason.textContent = "Reasoning…";
+  fgReason.disabled = true;
+  fgProjection.style.display = "none";
+  socket.emit("reason_about_request", { symbol: _fgSelected });
+});
+
+socket.on("reason_about_result", data => {
+  fgReason.textContent = "Reason ↵";
+  fgReason.disabled = false;
+  if (data.error) { fgProjection.textContent = `Error: ${data.error}`; fgProjection.style.display = ""; return; }
+  fgProjection.textContent = data.text || "(no result)";
+  fgProjection.style.display = "";
+});
+
+socket.on("stub_score_result", data => {
+  if (data.error || !_fgSelected || data.symbol !== _fgSelected) return;
+  const risk = data.risk_level || "?";
+  const callers = data.caller_count ?? "?";
+  const riskColor = risk === "HOT" ? "#c0392b" : risk === "WARM" ? "#e67e22" : "#27ae60";
+  const badge = `<span style="color:${riskColor};font-weight:bold">${risk}</span>`;
+  fgStatus.innerHTML = `${data.symbol}  [stub]  ${data.file}:${data.line} &nbsp;·&nbsp; ${badge} · ${callers} callers`;
 });
 
 fgToQueue.addEventListener("click", () => {

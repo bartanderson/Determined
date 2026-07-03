@@ -1007,6 +1007,63 @@ def handle_project_stub(data):
         emit("project_stub_result", {"error": str(exc)})
 
 
+@socketio.on("stub_score_quick")
+def handle_stub_score_quick(data):
+    """
+    Fast structural score for a symbol — no LLM, pure DB.
+    Returns caller_count, is_stub, risk_level, file, line.
+    Fires on node click so UI can show a badge immediately.
+    """
+    symbol = (data or {}).get("symbol", "").strip()
+    if not symbol or _oracle is None:
+        emit("stub_score_result", {"error": "no corpus"})
+        return
+    conn = _oracle.conn
+    row = conn.execute(
+        "SELECT f.file_path, f.line_number, f.is_stub "
+        "FROM functions f WHERE f.name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    caller_count = conn.execute(
+        "SELECT COUNT(DISTINCT caller) FROM graph_edges WHERE callee = ? OR callee LIKE '%.' || ?",
+        (symbol, symbol),
+    ).fetchone()[0]
+    try:
+        from determined.agent.risk_annotator import score_risk
+        risk = score_risk(_oracle, symbol)
+        risk_level = risk["level"]
+    except Exception:
+        risk_level = "UNKNOWN"
+    emit("stub_score_result", {
+        "symbol": symbol,
+        "caller_count": caller_count,
+        "is_stub": bool(row and row[2]) if row else False,
+        "risk_level": risk_level,
+        "file": (row[0] or "").replace("\\", "/").split("/")[-1] if row else "",
+        "line": row[1] if row else 0,
+    })
+
+
+@socketio.on("reason_about_request")
+def handle_reason_about(data):
+    """
+    Run the full Decompose -> Route -> Synthesize pipeline on a symbol.
+    Emits reason_about_result: { symbol, text } or { error }.
+    """
+    symbol = (data or {}).get("symbol", "").strip()
+    question = (data or {}).get("question", "").strip()
+    if not symbol or _oracle is None or _assessor is None:
+        emit("reason_about_result", {"error": "symbol and corpus required"})
+        return
+    if not question:
+        question = f"should {symbol} be a standalone function or a method, and is it the right priority to implement next?"
+    try:
+        from determined.agent.reasoning_engine import reason_about as _reason
+        text = _reason(question, symbol, _oracle.conn, knowledge_conn=_assessor._knowledge_conn)
+        emit("reason_about_result", {"symbol": symbol, "text": text})
+    except Exception as exc:
+        emit("reason_about_result", {"error": str(exc)})
+
+
 @socketio.on("frontier_to_queue")
 def handle_frontier_to_queue(_data):
     """
