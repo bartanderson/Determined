@@ -36,13 +36,14 @@ Three new files in `examples/commonplace/` to give Determined topology variety:
 
 ## NEXT SESSION -- start here
 
-**Commonplace step 3: seed state**
+**Commonplace next: journey step validation**
 
-All topology shapes are verified. Next is defining the seed state:
-- Document which files/stubs are present at seed vs complete
-- The guide takes user from seed to complete using Determined's tools
+Seed state is done and verified. The three-phase model is documented in
+COMMONPLACE_VISION.md. Next natural step is validating that the seed-to-complete
+journey steps in COMMONPLACE_VISION.md actually work as described -- walk through
+them against the real tool output and see if the story holds.
 
-**Alternatively: RM12 (SearXNG web search)** -- medium effort, local-first.
+Alternatively: RM12 (SearXNG web search) or any DISCOVERY_MODEL item.
 
 ## Current Determined status
 
@@ -80,7 +81,9 @@ All topology shapes are verified. Next is defining the seed state:
   - Disconnected: 1
 - DESIGN.md written and ingested -- 10 rules live in Commonplace DB
 - DB re-ingested and verified this session
-- Missing: seed state (demo entries), guided UI highlighting
+- Seed state built and verified (examples/commonplace/seed/) -- 2 stubs, clean first read
+- Three-phase build model documented in COMMONPLACE_VISION.md
+- Missing: journey step validation, guided UI highlighting
 
 ## Hardware facts
 - llama-server-8b: NSSM auto service, port 8081 (8B on GPU, ~3s/call)
