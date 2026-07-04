@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "determined-ui",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [".venv\\Scripts\\python.exe", "determined\\agent\\local_agent.py", "C_Users_bartl_dev_harrow.db", "--ui", "--port", "5050"],
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["determined\\agent\\local_agent.py", "C_Users_bartl_dev_dj2.db", "--ui", "--port", "5050"],
       "port": 5050
     }
   ]

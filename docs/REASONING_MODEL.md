@@ -279,17 +279,17 @@ What exists and what new code each piece needs.
   Fix markdown fence rendering in the result panel at the same time (affects project_stub output too).
   Disposition: `→ done (session 66). Reason button wired: socket reason_about_request -> threading -> reason_about() -> reason_about_progress + reason_about_result. fgProjection renders plain text (no fences needed - stub_projector already strips them via _strip_fences; reason_about output uses === text decorators). stub_score_quick fires on node select, result shown as HOT/WARM/SAFE badge. Manual test pending (requires live 8B model on port 8081).`
 
-- [ ] **RM6** — 3B vs 8B benchmark. Run R2 (focused evaluate() calls) on 3B vs 8B for the same
+- [x] **RM6** — 3B vs 8B benchmark. Run R2 (focused evaluate() calls) on 3B vs 8B for the same
   sub-questions. Measure: does 8B produce noticeably better focused verdicts, or is 3B sufficient
   for micro-judgment? If 3B is sufficient for Router calls, 8B is only needed at Decomposer + Synthesizer
   (two calls total instead of N+2).
-  Disposition: `→ not explored`
+  Disposition: `→ done (session 67, 2026-07-04). 4 cases tested. Verdicts agree 3/4 times (EXPLAINS, VIOLATES, UNRELATED/EXPLAINS differ on low-signal case). 8B is faster (3.0-3.2s vs 4.9-5.7s) and higher confidence (95-100% vs 80-90%). Key finding: 3B sufficient for clear-cut cases (boundary violations, coordinator patterns); 8B adds value on low-signal inputs where 3B returns UNRELATED and 8B returns EXPLAINS with a plausible reading. Current design (3B for micro-judgment, 8B for Decomposer+Synthesizer) is correct — but if speed is a concern, 3B-only Router is acceptable for high-signal questions.`
 
-- [ ] **RM7** — Confidence aggregation. When multiple sub-answers have low confidence, does the
+- [x] **RM7** — Confidence aggregation. When multiple sub-answers have low confidence, does the
   Synthesizer correctly produce a low-confidence recommendation, or does it confidently synthesize
   uncertain inputs? Test: deliberately give the Synthesizer conflicting sub-answers and measure
   whether the output confidence reflects the conflict.
-  Disposition: `→ not explored`
+  Disposition: `→ done (session 67, 2026-07-04). 3 scenarios tested against 8B Synthesizer. (1) All-agree high: 95% confidence, correct decision. (2) All-uncertain low: 60% confidence, correctly hedged — "avoids potential ownership ambiguity". (3) Directly conflicting (external callers vs heavy instance-state access vs sibling pattern all point different ways): 90% confidence, picks standalone, driven by caller distribution + sibling pattern. Verdict: Synthesizer DOES reflect uncertainty when inputs are low-confidence (60% vs 95%). However, Scenario 3 shows a weakness: with high-confidence conflicting findings it picks a side at 90% rather than reporting a genuine conflict. The reasoning is coherent but the confidence is overconfident for a split picture. Not a blocker — behavior is useful in practice — but worth noting for future calibration work.`
 
 - [x] **RM8** — Persistence and replay. Store each reasoning chain (question + sub-questions +
   answers + synthesis) as a knowledge_artifact with kind='reasoning_chain'. This enables:

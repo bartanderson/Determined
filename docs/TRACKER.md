@@ -16,8 +16,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-03, session 66):** Items 29, RM5, RM8 done. Stub detection extended
-(trivial returns + STUB: docstring). find_abc_gaps tool + ABC mode in Frontier graph. 399 tests pass.
+**Last session (2026-07-04, session 67):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
 
 **Session 60 (2026-07-03):** Item 27 executed (self-review). Item 28 filed.
 infer_behavior refactored to delegate to _infer_behavior_for_symbol (70 lines removed).
@@ -259,7 +258,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-28. **[DONE 2026-07-03 (confirmed session 66)] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
+28. **[DONE — already implemented, confirmed session 67] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
 
    **Source:** Self-review 2026-07-03. check_design_violations flagged SOTS XI on
    `determined.agent.evaluator.evaluate` (score 0.30).
