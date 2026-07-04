@@ -236,6 +236,7 @@
             <option value="chain">Chain (stub→stub)</option>
             <option value="all">All</option>
             <option value="abc">ABC (interface gaps)</option>
+            <option value="orphan">Orphan (disconnected)</option>
           </select>
           <button class="send-btn" id="fg-load">Load ↵</button>
           <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
@@ -407,6 +408,19 @@
 
   <!-- ── hover tooltip ── -->
   <div class="sym-tooltip" id="sym-tooltip" style="display:none"></div>
+
+  <!-- ── symbol popover (sticky on click) ── -->
+  <div id="sym-popover" style="display:none;position:fixed;z-index:180;min-width:210px;max-width:320px;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;box-shadow:0 6px 24px rgba(0,0,0,.4);padding:0;overflow:hidden">
+    <div id="sp2-header" style="display:flex;align-items:center;gap:5px;padding:7px 10px 5px;border-bottom:1px solid var(--border);background:var(--bg3)">
+      <span id="sp2-badge" style="font-size:.72em;font-weight:700"></span>
+      <span id="sp2-name" style="font-family:var(--font-mono);font-size:.85em;font-weight:600;color:var(--text1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1"></span>
+      <button id="sp2-close" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:.9em;line-height:1" title="Close">✕</button>
+    </div>
+    <div id="sp2-meta" style="padding:4px 10px 2px;font-size:.75em;color:var(--text3);font-family:var(--font-mono)"></div>
+    <div id="sp2-doc" style="padding:2px 10px 6px;font-size:.78em;color:var(--text2);line-height:1.45;max-height:56px;overflow:hidden"></div>
+    <div id="sp2-stats" style="display:flex;gap:12px;padding:4px 10px 6px;font-size:.78em;color:var(--text2)"></div>
+    <div id="sp2-actions" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px 8px;border-top:1px solid var(--border);background:var(--bg3)"></div>
+  </div>
 
   <!-- ── statusbar ── -->
   <div class="statusbar">
@@ -837,8 +851,7 @@ socket.on("graph_result", data => {
     const sym = evt.target.data("id");
     gxInput.value = sym;
     ctInput.value = sym;
-    // single tap = open spotlight for inspect
-    openSpotlight(sym);
+    openPopover(sym, evt.originalEvent || { clientX: _mouseX, clientY: _mouseY });
   });
   _cy.on("dblclick dbltap", "node", evt => {
     // double tap = re-center graph on this node
@@ -1238,7 +1251,7 @@ function attachSymbolHandlers(container) {
   container.querySelectorAll(".sym-link").forEach(el => {
     el.addEventListener("mouseenter", onSymHover);
     el.addEventListener("mouseleave", onSymLeave);
-    el.addEventListener("click",      e => { e.stopPropagation(); openSpotlight(el.dataset.sym); });
+    el.addEventListener("click",      e => { e.stopPropagation(); openPopover(el.dataset.sym, e); });
   });
   // Ambient badge: fire quick lookups for all new symbols so HOT/WARM get tinted immediately
   newSyms.forEach(sym => socket.emit("symbol_quick", { symbol: sym }));
@@ -1264,6 +1277,11 @@ function onSymLeave() {
 }
 
 socket.on("symbol_quick_result", data => {
+  // Cache result for popover reuse
+  if (!data.error && data.symbol) {
+    _sqCache.set(data.symbol, data);
+    if (typeof _renderPopover === "function") _renderPopover(data);
+  }
   // Ambient badge: tint every sym-link for HOT/WARM symbols regardless of hover state
   if (!data.error && data.symbol && data.risk) {
     const ambientCls = { HOT: "sym-risk-hot", WARM: "sym-risk-warm" }[data.risk];
@@ -1288,8 +1306,8 @@ socket.on("symbol_quick_result", data => {
     });
     spActions.appendChild(btn);
   }
-  // Tooltip: only show when this result matches the currently-hovered symbol
-  if (data.error || _pendingSym !== data.symbol) return;
+  // Tooltip: only show when this result matches the currently-hovered symbol and no popover open
+  if (data.error || _pendingSym !== data.symbol || _popoverSym) return;
   const riskCls = { HOT: "risk-hot", WARM: "risk-warm", SAFE: "risk-safe" }[data.risk] || "";
   tooltip.innerHTML = `
     <div class="tt-name"><span class="${riskCls}">${data.badge || ""}</span> ${escHtml(data.symbol)}</div>
@@ -1452,6 +1470,102 @@ spClose.addEventListener("click", closeSpotlight);
 document.getElementById("sp-source-close").addEventListener("click", () => {
   document.getElementById("sp-source").style.display = "none";
 });
+
+// ── symbol popover ────────────────────────────────────────
+const symPopover   = document.getElementById("sym-popover");
+const sp2Name      = document.getElementById("sp2-name");
+const sp2Badge     = document.getElementById("sp2-badge");
+const sp2Meta      = document.getElementById("sp2-meta");
+const sp2Doc       = document.getElementById("sp2-doc");
+const sp2Stats     = document.getElementById("sp2-stats");
+const sp2Actions   = document.getElementById("sp2-actions");
+const sp2Close     = document.getElementById("sp2-close");
+let _popoverSym    = null;
+const _sqCache     = new Map();  // symbol -> symbol_quick_result data
+
+function _popoverRiskCls(risk) {
+  return risk === "HOT" ? "sym-risk-hot" : risk === "WARM" ? "sym-risk-warm" : "";
+}
+
+function _renderPopover(data) {
+  if (data.symbol !== _popoverSym) return;
+  const rCls = _popoverRiskCls(data.risk);
+  sp2Badge.textContent = data.badge || "";
+  sp2Badge.className   = rCls;
+  sp2Name.textContent  = data.symbol;
+  sp2Meta.textContent  = `${data.type}  ·  ${data.file}:${data.line}${data.is_stub ? "  · stub" : ""}`;
+  sp2Doc.textContent   = data.docstring || "";
+  sp2Doc.style.display = data.docstring ? "" : "none";
+  sp2Stats.innerHTML   =
+    `<span>↙ ${data.caller_count} callers</span>` +
+    `<span>↗ ${data.callee_count} callees</span>` +
+    (data.findings_count ? `<span>◈ ${data.findings_count}</span>` : "");
+
+  sp2Actions.innerHTML = "";
+  const btns = [
+    { label: "↙ callers",  fn: () => { ctUp.checked = true;  ctTrace(data.symbol); activateTab("call_tree"); closePopover(); } },
+    { label: "↗ callees",  fn: () => { ctUp.checked = false; ctTrace(data.symbol); activateTab("call_tree"); closePopover(); } },
+    { label: "graph",      fn: () => { gxMap(data.symbol); activateTab("graph"); closePopover(); } },
+    { label: "spotlight",  fn: () => { closePopover(); openSpotlight(data.symbol); } },
+  ];
+  btns.forEach(b => {
+    const btn = document.createElement("button");
+    btn.className   = "tp-btn";
+    btn.textContent = b.label;
+    btn.addEventListener("click", b.fn);
+    sp2Actions.appendChild(btn);
+  });
+}
+
+function openPopover(sym, evt) {
+  tooltip.style.display = "none";
+  if (_popoverSym === sym) { closePopover(); return; }
+  _popoverSym = sym;
+
+  // seed with loading state
+  sp2Name.textContent  = sym;
+  sp2Badge.textContent = "";
+  sp2Badge.className   = "";
+  sp2Meta.textContent  = "loading…";
+  sp2Doc.textContent   = "";
+  sp2Stats.innerHTML   = "";
+  sp2Actions.innerHTML = "";
+
+  // position near click
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const pw = 320, ph = 160;
+  let x = (evt.clientX || _mouseX) + 10;
+  let y = (evt.clientY || _mouseY) + 10;
+  if (x + pw > vw) x = (evt.clientX || _mouseX) - pw - 10;
+  if (y + ph > vh) y = (evt.clientY || _mouseY) - ph - 10;
+  symPopover.style.left    = x + "px";
+  symPopover.style.top     = y + "px";
+  symPopover.style.display = "";
+
+  // use cached data if available, else request
+  if (_sqCache.has(sym)) {
+    _renderPopover(_sqCache.get(sym));
+  } else {
+    socket.emit("symbol_quick", { symbol: sym });
+  }
+}
+
+function closePopover() {
+  _popoverSym = null;
+  symPopover.style.display = "none";
+}
+
+sp2Close.addEventListener("click", e => { e.stopPropagation(); closePopover(); });
+
+// close on outside click
+document.addEventListener("click", e => {
+  if (_popoverSym && !symPopover.contains(e.target) && !e.target.closest(".sym-link")) {
+    closePopover();
+  }
+});
+
+// close on Escape
+document.addEventListener("keydown", e => { if (e.key === "Escape") closePopover(); });
 
 socket.on("source_result", data => {
   const panel = document.getElementById("sp-source");
@@ -1852,6 +1966,14 @@ const FG_STYLE = [
     style: { "background-color": "#7f8c8d", "label": "data(label)",
              "font-size": 10, color: "#fff", "text-valign": "bottom",
              "text-margin-y": 4, width: 22, height: 22 }},
+  { selector: "node[role='anticipatory']",
+    style: { "background-color": "#2980b9", "label": "data(label)",
+             "font-size": 10, color: "#fff", "text-valign": "bottom",
+             "text-margin-y": 4, width: 22, height: 22 }},
+  { selector: "node[role='stranded']",
+    style: { "background-color": "#5d6d7e", "label": "data(label)",
+             "font-size": 10, color: "#ccc", "text-valign": "bottom",
+             "text-margin-y": 4, width: 22, height: 22 }},
   { selector: "node.fg-selected",
     style: { "border-width": 3, "border-color": "#f1c40f" }},
   { selector: "edge",
@@ -1883,9 +2005,11 @@ socket.on("frontier_graph_result", data => {
   const edges = data.edges.map(e => ({
     data: { id: `${e.source}__${e.target}`, source: e.source, target: e.target }
   }));
-  const modeLabel = { direct: "Direct", chain: "Chain", all: "All", abc: "ABC interfaces" }[data.mode] || data.mode;
+  const modeLabel = { direct: "Direct", chain: "Chain", all: "All", abc: "ABC interfaces", orphan: "Orphan" }[data.mode] || data.mode;
   const summary = () => data.mode === "abc"
     ? `[${modeLabel}] ${data.abc_count || 0} abstract classes · ${data.stub_count || 0} unimplemented methods`
+    : data.mode === "orphan"
+    ? `[${modeLabel}] ${data.anticipatory_count || 0} anticipatory · ${data.stranded_count || 0} stranded · ${data.nodes.length} total`
     : `[${modeLabel}] ${data.frontier_count || 0} callers · ${data.stub_count} stubs · ${data.chain_count || 0} chain · ${edges.length} edges`;
   fgStatus.textContent = summary();
 

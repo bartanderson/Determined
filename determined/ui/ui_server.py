@@ -974,6 +974,53 @@ def handle_get_frontier_graph(data):
         return
     mode = (data or {}).get("mode", "direct")
 
+    if mode == "orphan":
+        # Orphan/disconnected mode: implemented fns with no real callers
+        try:
+            conn = _oracle.conn
+
+            rows = conn.execute(
+                """
+                SELECT f.name, f.file_path, f.line_number,
+                       COUNT(ge.caller) AS total_callers,
+                       SUM(CASE WHEN cf.is_stub = 1 THEN 1 ELSE 0 END) AS stub_callers
+                FROM functions f
+                LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+                LEFT JOIN functions cf ON cf.name = ge.caller
+                WHERE f.is_stub = 0
+                GROUP BY f.name, f.file_path, f.line_number
+                HAVING total_callers = 0
+                    OR (stub_callers IS NOT NULL AND stub_callers = total_callers)
+                ORDER BY f.file_path, f.line_number
+                LIMIT 80
+                """
+            ).fetchall()
+
+            def _short(path):
+                return (path or "").replace("\\", "/").split("/")[-1]
+
+            nodes: dict[str, dict] = {}
+            for name, file_path, line_no, total_callers, stub_callers in rows:
+                role = "stranded" if (total_callers or 0) > 0 else "anticipatory"
+                nodes[name] = {
+                    "id": name, "label": name, "role": role,
+                    "file": _short(file_path), "line": line_no or 0,
+                }
+
+            emit("frontier_graph_result", {
+                "nodes": list(nodes.values()),
+                "edges": [],
+                "mode": mode,
+                "stub_count": 0,
+                "frontier_count": 0,
+                "chain_count": 0,
+                "anticipatory_count": sum(1 for n in nodes.values() if n["role"] == "anticipatory"),
+                "stranded_count": sum(1 for n in nodes.values() if n["role"] == "stranded"),
+            })
+        except Exception as exc:
+            emit("frontier_graph_result", {"error": str(exc)})
+        return
+
     if mode == "abc":
         # ABC mode: show abstract-interface stubs grouped by class, edges from class->method
         try:
