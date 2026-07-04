@@ -4017,6 +4017,65 @@ def distill_corpus(assessor: "Assessor", args: dict) -> str:
     return f"distill_corpus: {stored} distilled (all refreshed)"
 
 
+def edit_file(assessor: "Assessor", args: dict) -> str:
+    """
+    Read, write, or patch a file within the project root.
+
+    Operations (args["op"]):
+      read_file       -- return file content as a string
+      write_file      -- overwrite the file with args["content"]
+      replace_in_file -- replace first occurrence of args["old"] with args["new"]
+
+    All paths are validated against the project root to prevent writes outside
+    the corpus. Relative paths are resolved from the project root.
+    """
+    import pathlib
+
+    op = args.get("op", "").strip()
+    file_path = (args.get("file_path") or "").strip()
+    if not file_path:
+        return "ERROR: edit_file requires file_path"
+    if op not in ("read_file", "write_file", "replace_in_file"):
+        return "ERROR: op must be read_file, write_file, or replace_in_file"
+
+    root = pathlib.Path(assessor.oracle.get_project_root()).resolve()
+    fp = pathlib.Path(file_path)
+    if not fp.is_absolute():
+        fp = root / fp
+    try:
+        fp.resolve().relative_to(root)
+    except ValueError:
+        return f"ERROR: path outside project root ({root})"
+
+    if op == "read_file":
+        if not fp.exists():
+            return f"ERROR: file not found: {fp}"
+        return fp.read_text(encoding="utf-8")
+
+    if op == "write_file":
+        content = args.get("content")
+        if content is None:
+            return "ERROR: write_file requires content"
+        fp.write_text(content, encoding="utf-8")
+        return f"write_file: wrote {len(content)} chars to {fp}"
+
+    if op == "replace_in_file":
+        old = args.get("old")
+        new = args.get("new")
+        if old is None or new is None:
+            return "ERROR: replace_in_file requires old and new"
+        if not fp.exists():
+            return f"ERROR: file not found: {fp}"
+        original = fp.read_text(encoding="utf-8")
+        if old not in original:
+            return f"ERROR: old string not found in {fp}"
+        updated = original.replace(old, new, 1)
+        fp.write_text(updated, encoding="utf-8")
+        return f"replace_in_file: replaced 1 occurrence in {fp}"
+
+    return "ERROR: unknown op"
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -4098,6 +4157,8 @@ TOOLS = {
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
     # Reasoning pipeline (REASONING_MODEL.md R4)
     "reason_about":            (reason_about,            "assessor"),
+    # File editing (RM11)
+    "edit_file":               (edit_file,               "assessor"),
 }
 
 

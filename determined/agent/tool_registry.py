@@ -652,6 +652,22 @@ REGISTRY: dict[str, dict] = {
         "use_when": "End of an investigation; writing a report; deciding what to act on.",
         "category": "bag",
     },
+
+    # ── FILE EDITING (RM11) ────────────────────────────────────────
+    "edit_file": {
+        "purpose": "Read, overwrite, or patch a file within the project root. Closes the read-reason-write loop.",
+        "args": {
+            "op": "read_file | write_file | replace_in_file",
+            "file_path": "absolute or project-relative path to the file",
+            "content": "(write_file only) full new content as a string",
+            "old": "(replace_in_file only) exact string to find and replace",
+            "new": "(replace_in_file only) replacement string",
+        },
+        "output": "read_file: file content string. write_file/replace_in_file: confirmation with char count.",
+        "feeds": ["reingest_file", "check_design_violations"],
+        "use_when": "After reasoning produces a proposed change (e.g. from score_stub or docstring_health) and you want to apply it without leaving the agent loop.",
+        "category": "edit",
+    },
 }
 
 

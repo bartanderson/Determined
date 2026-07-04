@@ -520,6 +520,7 @@ def test_dispatch_all_tools_registered():
         "frontier_priority",
         "find_conditional_stubs",
         "frontier_coverage",
+        "edit_file",
     }
     assert set(TOOLS.keys()) == expected
 
