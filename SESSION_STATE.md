@@ -64,10 +64,9 @@ The tool is in good shape. The only open items are explicitly future/deferred.
 Next natural work: either start on something new (ask Bart), or use the tool on dj2
 to surface real findings now that the full pipeline is verified.
 
-## Hardware facts (unchanged)
-- llama-server-3b: NSSM auto service, port 8080
-- llama-server-8b: NSSM manual service, port 8081 (needed for Decomposer + Synthesizer)
-- Start 8B: nssm start llama-server-8b (admin PowerShell)
+## Hardware facts
+- llama-server-8b: NSSM auto service, port 8081 (8B on GPU, ~3s/call)
+- llama-server-3b: DELETED (was slower than 8B on GPU, no longer needed)
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)

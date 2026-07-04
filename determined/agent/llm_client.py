@@ -3,8 +3,8 @@
 # Thin LLM backend shim. All inference calls go through here.
 # Backend: llama-server (llama.cpp built-in OpenAI-compatible server).
 #
-# Both models run on port 8081 (8B on GPU).
-# Port 8080 (3B on CPU) is slower — not used.
+# Model: 8B on GPU, port 8081, NSSM auto-start service (llama-server-8b).
+# 3B service removed.
 #
 # Public API:
 #   generate(prompt)   -> str | None   -- single prompt, text completion
