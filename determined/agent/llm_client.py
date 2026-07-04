@@ -3,7 +3,7 @@
 # Thin LLM backend shim. All inference calls go through here.
 # Backend: llama-server (llama.cpp built-in OpenAI-compatible server).
 #
-# Model: 8B on GPU, port 8081, NSSM auto-start service (llama-server-8b).
+# Model: Qwen3-8B (Q4_K_M) on GPU, port 8081, NSSM auto-start service (llama-server-8b).
 # 3B service removed.
 #
 # Public API:
@@ -21,6 +21,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 LLM_BASE_URL     = "http://localhost:8081"
+LLM_DISPLAY_NAME = "Qwen3-8B"
 LLM_TIMEOUT      = 600
 LLM_COLD_TIMEOUT = 10
 LLM_MAX_TOKENS   = 400

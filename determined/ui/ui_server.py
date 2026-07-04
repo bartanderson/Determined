@@ -89,9 +89,10 @@ def _corpus_status() -> dict:
 
 @app.route("/")
 def index():
+    from determined.agent.llm_client import LLM_DISPLAY_NAME
     db_name = Path(_db_path).name if _db_path else "no corpus"
     status  = _corpus_status()
-    return render_template("console.html", db_name=db_name, status=status)
+    return render_template("console.html", db_name=db_name, status=status, model_name=LLM_DISPLAY_NAME)
 
 
 def _corpus_map_data() -> dict:

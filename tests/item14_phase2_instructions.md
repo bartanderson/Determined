@@ -1,8 +1,10 @@
 # Item 14 - Phase 2: Full LLM test
 
+> **HISTORICAL** — Item 14 is closed (2026-06-27). This procedure was written against Ollama/llama3.2:3b and the harrow corpus. The current backend is llama-server-8b (port 8081, NSSM service). Kept for reference only; do not run as-is.
+
 ## Prerequisites
 - Phase 1 passed (tools return data, no errors)
-- Ollama running with llama3.2:3b loaded
+- llama-server-8b running (port 8081) with Qwen3-8B loaded
 - harrow DB ingested
 
 ## Step 1: Ingest harrow (if not done)
