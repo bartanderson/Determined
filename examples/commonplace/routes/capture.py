@@ -1,6 +1,7 @@
 from flask import Blueprint, request, redirect, url_for, render_template, flash, current_app
 from utils.url import validate_url, normalize
 from services import extractor, tagger
+from services.pipeline import enrich_entry
 from storage import queries
 
 capture_bp = Blueprint("capture", __name__)
@@ -44,6 +45,11 @@ def capture():
         return render_template("capture.html"), 400
 
     entry_id = queries.insert_entry(entry_type, content, title, source_url, excerpt)
+
+    # enrich_entry is the chain-middle: called here (chain-head), calls
+    # find_connections and suggest_tags (chain-tail stubs).
+    all_entries = queries.list_entries(limit=200)
+    enriched = enrich_entry({"id": entry_id, "content": content}, all_entries)
 
     if current_app.config.get("TAGGING_ENABLED"):
         suggested = tagger.suggest_tags(content)
