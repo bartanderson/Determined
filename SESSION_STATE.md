@@ -1,73 +1,49 @@
-# SESSION STATE - session 71 handoff
+# SESSION STATE - session 72 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 71, 2026-07-04)
+## What happened this session (session 72, 2026-07-04)
 
-### Design documentation and housekeeping
+### Commonplace DESIGN.md written and verified
 
-- T5 (topology drift) disposition updated: deferred until Determined is actively
-  driving design decisions and the codebase moves in response. No drift without
-  Determined-guided changes. Revisit post-production.
+- **`examples/commonplace/docs/DESIGN.md`** created:
+  - Four-layer architecture spec (routes / services / storage / utils) with
+    explicit responsibility rules for each layer
+  - Six authority rules in Determined-detectable language:
+    - "Only storage/ touches the DB directly"
+    - "Routes delegate to services, never to storage directly"
+    - "Tags are always lowercase"
+    - "Connections are bidirectional -- both directions must be stored"
+    - "Content is required for every entry"
+    - "URL validation must occur before network fetch"
+  - Four open design questions promoted from code comments (extractor split,
+    tagger eager-vs-lazy, searcher boundary bypass, capture URL duplication)
+  - Stub roadmap with LLM dependencies for all five stubs
 
-- A1 (resolved flag migration) disposition updated: no migration needed. Corpus
-  DBs are expendable and rebuilt from scratch. Schema changes go into CREATE TABLE.
-  Memory and DISCOVERY_MODEL.md updated.
-
-- **COMMONPLACE_VISION.md written** (`docs/COMMONPLACE_VISION.md`): authoritative
-  design intent for the Commonplace sample program. Captures:
-  - Dual role: canonical demo corpus + guided journey vehicle
-  - Seed-to-complete arc (user builds Commonplace using Determined's tools)
-  - Guided UI model: highlighted controls with pedagogical hover tooltips
-  - Current status: what is implemented, what stubs exist, what design tensions
-    are already in code comments
-  - Gaps: no markdown design doc, no ABC/chain-middle/conditional-stub examples,
-    seed state not defined, guided UI not built
-  - Next steps in order
+- **Ingested and verified:**
+  - `ingest_design_docs` extracted 10 rules from the doc
+  - `check_design_violations('search')` flagged service-layer bypass (score 0.50)
+  - `check_design_violations('capture')` flagged duplicate URL validation (score 0.30)
+  - Both known violations detected correctly
 
 ## NEXT SESSION -- start here
 
-**Task: Write the Commonplace design doc**
+**Pick up from Bart's additions below, then continue Commonplace step 2.**
 
-File to create: `examples/commonplace/docs/DESIGN.md`
+After addressing anything Bart adds, the next COMMONPLACE_VISION step is:
 
-This is the highest-leverage next step because it immediately unlocks two
-Determined features on the demo corpus:
-- `ingest_design_docs` -- mines the doc for invariants and authority rules
-- `check_design_violations` -- cross-references code against those rules
+**Step 2: Add missing topology shapes to Commonplace**
 
-Read `docs/COMMONPLACE_VISION.md` section "Next steps -- 1. Design doc for
-Commonplace itself" for the spec. Key content to include:
+Add to `examples/commonplace/`:
+- An ABC with at least one abstract method and no override (exercises `find_abc_gaps`)
+- A chain-middle stub (called by another stub, calls another stub -- exercises chain topology)
+- A conditional stub (`raise NotImplementedError` inside an if branch, exercises
+  `find_conditional_stubs`)
 
-1. **Architecture** -- the intended layer structure:
-   - routes/ -- HTTP boundary only, no business logic
-   - services/ -- all business logic lives here
-   - storage/ -- only layer that touches the DB
-   - utils/ -- pure functions, no state
-
-2. **Authority rules** (things Determined's violation detection can flag):
-   - "Only storage/ touches the DB directly"
-   - "Routes delegate to services, never to storage directly"
-   - "Tags are always lowercase"
-   - "Connections are bidirectional -- both directions must be stored"
-
-3. **Open design questions** (promote from code comments to doc):
-   - extractor: fetch + parse + metadata -- one module or three?
-   - tagger: eager-on-capture vs lazy-on-view
-   - searcher: bypasses service layer to call storage directly
-   - capture route: URL validation in two places
-
-4. **Stub roadmap** -- what each stub is waiting for and why it matters:
-   - `extract_full_content` -- readability/trafilatura
-   - `semantic_search` -- sentence-transformers or llama-server embeddings
-   - `find_connections` / `_similarity_score` -- embedding cosine similarity
-   - `suggest_tags` -- LLM endpoint (llama-server port 8081)
-
-After writing the doc, ingest it against the Commonplace corpus DB and run
-`check_design_violations` on `searcher.py` and `routes/capture.py` to verify
-the violations Determined can now detect.
+These give the Commonplace corpus the topology variety needed to demo all Determined
+frontier features against its own codebase.
 
 ## Current Determined status
 
@@ -93,16 +69,17 @@ the violations Determined can now detect.
 - Working skeleton exists: capture, browse, search, storage, utils all functional
 - 5 deliberate stubs: extract_full_content, semantic_search, find_connections,
   _similarity_score, suggest_tags
-- 4 deliberate design tensions annotated in code comments
-- Missing: markdown design doc, ABC shape, chain-middle stub, conditional stub,
-  seed state definition, guided UI highlighting
+- 4 deliberate design tensions in code comments (all promoted to DESIGN.md)
+- DESIGN.md written and ingested -- 10 rules live in Commonplace DB
+- Missing: ABC shape, chain-middle stub, conditional stub, seed state definition,
+  guided UI highlighting
 
 ## Hardware facts
 - llama-server-8b: NSSM auto service, port 8081 (8B on GPU, ~3s/call)
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)
-- Commonplace DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db (5 stubs)
+- Commonplace DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db (5 stubs, 10 design rules)
 - Determined DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined.db
 
 ## Two-terminal reminder
