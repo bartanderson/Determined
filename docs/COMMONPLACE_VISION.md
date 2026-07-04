@@ -1,5 +1,5 @@
-Commonplace — Design Vision and Current Status
-===============================================
+Commonplace -- Design Vision and Build Model
+=============================================
 
 _Written 2026-07-04. Authoritative intent for the Commonplace sample program
 and its role in the Determined guided-journey UI._
@@ -11,17 +11,17 @@ and its role in the Determined guided-journey UI._
 Commonplace is not a test fixture. It is the vehicle for demonstrating and
 teaching Determined. It exists in two roles simultaneously:
 
-1. **Canonical demonstration corpus** — a real Python project with enough
+1. **Canonical demonstration corpus** -- a real Python project with enough
    structure (stubs, design tensions, topology variety, layering) to exercise
    every Determined capability meaningfully.
 
-2. **Guided journey vehicle** — the project a new user builds, step by step,
-   using Determined's tools. By the end they have a working program and a
-   working understanding of the tool. The learning came from doing.
+2. **Guided journey vehicle** -- the project a user builds, step by step,
+   using Determined's tools as navigation. By the end they have a working
+   program and a working understanding of the tool. The learning came from doing.
 
 These two roles are coupled by design: when a new Determined feature lands,
-Commonplace gets a corresponding structure that exercises it, and the guided
-path gains a step. The two evolve together.
+Commonplace gets a corresponding structure that exercises it. The two evolve
+together.
 
 **Out of scope:** using Determined on Determined itself as the demonstration
 corpus. That's circular, hard to control, and confusing to new users. Commonplace
@@ -29,192 +29,206 @@ gives us full control over what the corpus contains and when.
 
 ---
 
-## The guided journey model
+## The three-phase build model
 
-### Seed and complete
+Commonplace is designed around three distinct states. The user travels through
+all three using Determined as their guide.
 
-Commonplace exists in two states:
+### Phase 0 -- Scratch
 
-- **Seed** — the tiny shell a new user starts with. Deliberate stubs, gaps,
-  and design tensions are present from the beginning, staged to reveal
-  progressively as the user works through the guide.
+A completely blank directory. No files. No DB. The user has Determined open
+and starts writing software from nothing.
 
-- **Complete** — the fuller working application. The user arrives here by
-  following the guide and making the implementation decisions Determined
-  surfaces along the way.
+The scratch-to-seed arc teaches:
+- How to create a project and ingest it for the first time
+- What Determined's first read looks like (sparse, entry-point focused)
+- How write-then-reingest works as a development loop
 
-The guide walks the user from seed to complete. The stubs are not bugs —
-they are the curriculum.
+The key tool here is the write-then-reingest cycle:
+  edit_file (write) → reingest_file → frontier changes → decide what to write next
 
-### Highlighted controls
+This arc demonstrates edit_file and reingest_file working together -- the
+read-reason-write loop closed at the file level.
+
+### Phase 1 -- Seed
+
+The minimum viable corpus: enough structure for Determined to give a
+meaningful first read. Written top-down (route first, stubs below) so the
+first ingest is clean: one entry point, 2-3 direct-call stubs, near-zero
+orphaned implementations.
+
+The seed lives in `examples/commonplace/seed/`. It is a standalone runnable
+project -- not a diff, not a partial checkout. A user can copy it, ingest it,
+and start working immediately.
+
+The first ingest of the seed should produce:
+- 1 entry point (the capture route)
+- 2 direct-call stubs (extractor functions called by the route)
+- 1 disconnected stub (init_db -- storage not yet wired into the route)
+- 0 ABC gaps, 0 chain shapes, 0 conditional stubs
+- frontier_priority clearly points at the extractor stubs
+
+This is the lesson: Determined shows you exactly where the edges of the
+working system are. The stubs are the frontier. Implement them in priority order.
+
+### Phase 2 -- Complete
+
+The full Commonplace application as it exists in `examples/commonplace/`. The
+user arrives here by working through the seed, making implementation decisions
+Determined surfaces along the way.
+
+The complete state has:
+- 8 stubs across multiple topology shapes (direct-call, chain-head, chain-tail,
+  ABC-interface, conditional)
+- Design tensions documented and detectable via check_design_violations
+- Full layering (routes / services / storage / utils) with known violations
+- All Determined frontier features exercised
+
+The journey from seed to complete teaches:
+- frontier_priority and detect_topology for implementation ordering
+- symbol_context and score_stub for understanding individual stubs
+- check_design_violations for design intent cross-reference
+- reingest_file for watching the frontier move after each change
+- reason_about for architectural decisions (extractor split? eager vs lazy tagging?)
+
+### Phase 3 -- Extras
+
+Optional extensions beyond complete. These are features the user can add
+after finishing the guided journey, using Determined on a codebase they
+now understand. They demonstrate Determined's value on a non-trivial,
+actively-evolving project.
+
+Candidate extras (not yet built):
+- LLM tagging wired live (suggest_tags connected to llama-server port 8081)
+- Semantic search live (semantic_search using sentence-transformers or llama-server embeddings)
+- Connection inference live (_similarity_score + find_connections implemented)
+- EnrichmentProcessor override (closes the ABC gap)
+- Strict validation mode (implements the conditional stub in validate_entry)
+
+Each extra is a natural next step that Determined surfaces on its own --
+the user doesn't need the guide anymore at this point. The tool has become
+their navigation layer.
+
+---
+
+## Seed state specification
+
+### Files
+
+```
+seed/
+  app.py              Flask factory. Registers capture blueprint. Calls init_db().
+  config.py           DATABASE path, DEBUG flag, TAGGING_ENABLED = False.
+  routes/
+    __init__.py
+    capture.py        GET: render form. POST: validate url, call extractor.extract()
+                      (stub), store result. Two stubs are the direct-call frontier.
+  services/
+    __init__.py
+    extractor.py      extract_metadata() -- STUB. extract_full_content() -- STUB.
+                      Module docstring notes the three-responsibility tension.
+  storage/
+    __init__.py
+    db.py             init_db() creates entries table. get_db() returns connection.
+                      No queries yet -- insert_entry does not exist at seed.
+```
+
+### What Determined sees at seed (first ingest)
+
+```
+CORPUS TOPOLOGY
+  Total stubs: 3  |  Total implemented: 6
+
+  Shape          Count
+  Direct-call    2     extractor.extract_metadata, extractor.extract_full_content
+  Disconnected   1     storage.db.init_db (not yet called from route)
+  Orphaned-impl  0
+
+  frontier_priority: extract_metadata > extract_full_content
+```
+
+The first read is unambiguous: implement the extractor stubs. Everything else
+is either working (Flask wiring, route handler structure) or not yet needed
+(storage queries don't exist until the extractor returns real data to store).
+
+### Why top-down matters for the seed
+
+If the seed were built bottom-up (storage first, then services, then routes),
+the first ingest would show storage functions as orphaned -- working code with
+no callers. "Write callers for these 6 functions" is noise, not a lesson.
+
+Top-down means the route exists first and its downstream dependencies are stubs.
+The frontier is at the bottom, not in the middle. Determined's output reads
+from the entry point down to the gap, which matches how a developer thinks
+about a feature: "what does this route need that doesn't exist yet?"
+
+---
+
+## The guided journey steps (seed to complete)
+
+Each step: user reads Determined output, makes a decision, writes code,
+re-ingests, reads again. The tool drives the order.
+
+**Step 1 -- Orient**
+Load seed corpus. Run corpus_status and detect_topology.
+Lesson: entry point + direct-call frontier. "Here is what exists. Here is
+where it stops."
+
+**Step 2 -- Implement the first stub**
+frontier_priority points at extract_metadata. Run symbol_context on it.
+Run score_stub to understand what implementing it requires (urllib, HTML parsing).
+Implement it. Re-ingest. Watch direct-call count drop, orphaned-impl possibly rise
+(storage queries still missing).
+
+**Step 3 -- Add storage**
+The extractor now returns data but nothing stores it. Add queries.insert_entry.
+Re-ingest. The route now has a path to completion. Watch orphaned-impl drop.
+
+**Step 4 -- Design decision**
+run check_design_violations on extractor.py. It surfaces the three-responsibility
+tension from the DESIGN.md rules. Run reason_about: "should extractor be split
+into fetcher + parser + extractor?"
+Lesson: Determined surfaces design questions, not just structural gaps.
+
+**Step 5 -- Expand the frontier**
+Add search, tagging, linking as stubs. Re-ingest. Topology grows:
+chain-head appears (pipeline.enrich_entry), ABC gap appears (EntryProcessor).
+frontier_priority reorders.
+
+**Step 6 -- Work the topology**
+find_abc_gaps, find_conditional_stubs, detect_topology chain shapes.
+Each shape has a different priority and a different implementation story.
+Lesson: not all stubs are equal. Position in the chain determines urgency.
+
+**Step 7 -- Implement and close**
+User picks remaining stubs in priority order, implements each, re-ingests.
+Frontier shrinks to zero. The corpus is complete.
+
+---
+
+## Guided UI (future -- Phase 4)
 
 The guided path is expressed through the Determined UI itself, not a
 separate tutorial layer:
 
-- Controls relevant to the current step are **highlighted in color**
-- Hovering a highlighted control shows a **pedagogical tooltip**: what this
-  control shows you, why it matters here, what the data is telling you,
-  and what comes next
-- The path may be non-linear — multiple valid next steps can be lit
-  simultaneously, each tooltip explaining what that branch explores
+- Controls relevant to the current step are highlighted in color
+- Hovering a highlighted control shows a pedagogical tooltip: what this
+  control shows you, why it matters here, what to do next
+- Multiple valid next steps can be lit simultaneously
 - The highlights live on the real controls; there is no "tutorial mode"
-  that bypasses normal use
 
-This is the GOT navigation model made explicit and teachable. The user
-learns the surfaces by using them on a real problem, not by reading docs.
+The step sequence above maps to specific Determined controls. Each step
+lights up 1-2 controls with a tooltip explaining what they show and why.
 
-### What the journey teaches
-
-Each step connects data to decision:
-
-1. **Orient** — corpus map, gap summary, hot/warm/safe distribution.
-   "Here is what this project is. Here is where the risk lives."
-
-2. **Frontier** — stub list, chain topology, ABC gaps.
-   "Here is what is unimplemented. Here is which stub blocks the most."
-
-3. **Understand a stub** — symbol context, design frame, callers.
-   "Here is everything known about this symbol. Here is why it matters."
-
-4. **Reason about implementation** — stub scorer, evaluate_claim, waypoints.
-   "Here is what implementing this stub requires. Here is the tradeoff."
-
-5. **Design tensions** — check_design_violations, design frame comparison.
-   "Here is a place where the code and the design intent diverge."
-
-6. **Plan** — frontier priority, workflow queue, build queue tab.
-   "Here is the recommended order. Here is what unblocks what."
-
-7. **Implement and re-ingest** — reingest_file, topology drift.
-   "You changed something. Here is what moved."
+This is not built yet. It requires the step sequence to be validated
+against real tool output first -- the journey writes itself from what
+the tool actually does, not from what we hoped it would do.
 
 ---
 
-## Current Commonplace design status
+## Relationship to other docs
 
-### What is implemented (as of 2026-07-04)
-
-**Working application skeleton:**
-- `app.py` — Flask factory, all blueprints registered
-- `storage/db.py` — SQLite init, schema (entries, tags, entry_tags, connections)
-- `storage/queries.py` — CRUD for entries, tags, connections (fully implemented)
-- `services/extractor.py` — `extract_metadata()` working; `extract_full_content()` stub
-- `services/searcher.py` — `search()` working (SQL LIKE); `semantic_search()` stub
-- `routes/capture.py` — URL and note capture, tag wiring, config flag for LLM tagging
-- `utils/text.py`, `utils/url.py` — supporting utilities
-
-**Deliberate stubs (the curriculum):**
-- `extractor.extract_full_content()` — readable text extraction not implemented
-- `searcher.semantic_search()` — falls back to text search; embedding not wired
-- `linker.find_connections()` — always returns []; similarity inference not implemented
-- `linker._similarity_score()` — always returns 0.0
-- `tagger.suggest_tags()` — always returns []; LLM endpoint not wired
-- `tagger._call_llm()` / `_parse_tags()` — implemented but never called
-
-**Deliberate design tensions (the reasoning prompts):**
-- `extractor.py` docstring: three responsibilities in one module (fetch + parse + extract)
-- `searcher.py` docstring: calls storage directly, bypasses service layer boundary
-- `queries.py` comment: `search_entries` called from both service and storage layers
-- `routes/capture.py` comment: URL validation duplicated between route and utils
-- `tagger.py` docstring: eager-on-capture vs lazy-on-view open question
-
-### What is missing from Commonplace
-
-**Seed/complete staging not yet defined:**
-- There is no documented seed state (which files exist, which are absent)
-- The progression from seed to complete has not been designed
-- The stubs exist but their order of introduction is not planned
-
-**Design doc is incomplete:**
-- `docs/design.html` exists but its content and authority are unknown
-- No markdown design doc with invariants, authority rules, or layer boundaries
-  that Determined's `ingest_design_docs` and `check_design_violations` can mine
-
-**ABC pattern not represented:**
-- No abstract base class with unimplemented methods
-- Needed to exercise `find_abc_gaps()` and the ABC frontier UI mode
-
-**Topology variety is limited:**
-- Current stubs are mostly leaf stubs (chain-tail)
-- No chain-middle or chain-head examples
-- No entry-point topology examples (routes register correctly but not documented
-  as entry points for Determined's topology detection)
-
-**Conditional stub not represented:**
-- No `raise NotImplementedError` inside an if/elif branch
-- Needed to exercise `find_conditional_stubs()`
-
-**LLM integration path not documented:**
-- `tagger` and `semantic_search` need an endpoint — should point at
-  llama-server on port 8081 for consistency with Determined's own LLM setup
-- No config or README explaining how to wire this
-
-**Guided journey not built:**
-- The UI highlighting and hover-tooltip system does not exist yet
-- The step sequence has not been authored
-- The pedagogical content (what and why) has not been written
-
----
-
-## Next steps — in order
-
-### 1. Design doc for Commonplace itself
-
-Write `examples/commonplace/docs/DESIGN.md` (markdown, not HTML) with:
-- The application's intended architecture (capture service → storage → search → link)
-- Authority rules: "only storage layer touches the DB directly"
-- Invariants: "tags are always lowercase", "connections are bidirectional"
-- Open questions: the design tensions already in code comments, promoted to doc
-
-This makes `ingest_design_docs` and `check_design_violations` exercisable
-on Commonplace's own codebase.
-
-### 2. Add missing topology shapes
-
-Add to Commonplace:
-- An ABC with at least one abstract method and no override (exercises `find_abc_gaps`)
-- A chain-middle stub (called by another stub, calls another stub)
-- A conditional stub (`raise NotImplementedError` inside an if branch)
-
-### 3. Define the seed state
-
-Document and commit a `seed/` snapshot of Commonplace — the minimal starting
-point for the guided journey. The seed has:
-- `app.py`, `config.py`, `storage/db.py` with schema
-- Route stubs (registered but body is NotImplementedError)
-- Service stubs (all methods stub)
-- No utils, no extractor, no tagger
-
-The complete version is `examples/commonplace/` as it exists. The guide
-takes the user from seed to complete.
-
-### 4. Guided UI — highlighting and tooltips
-
-In the Determined UI, add:
-- A `data-guide-step` attribute system on navigable controls
-- A guide stylesheet: highlighted controls get a colored ring + cursor affordance
-- A hover tooltip component that reads step content from a guide definition file
-- A guide definition file: JSON or markdown mapping step names to (control, what, why, next)
-
-The guide is off by default, activated by loading a guide-enabled corpus
-(Commonplace with a `guide.json` at its root).
-
-### 5. Author the journey steps
-
-Write the step sequence: what the user does at each step, which controls
-light up, what the tooltip says, what decision they make, what changes in
-the corpus as a result.
-
----
-
-## Relationship to UI_VISION.md
-
-`docs/UI_VISION.md` describes the GOT navigation model — surfaces presenting
-themselves, editor as nav hub, structured panels over prose. The guided
-journey described here is that model made pedagogically explicit: the same
-surfaces, the same controls, but with highlighted paths and contextual
-explanations that teach the user what they are doing and why.
-
-The two documents are complementary. UI_VISION describes the target UI.
-This document describes how Commonplace and the guided journey validate and
-demonstrate it.
+- `docs/UI_VISION.md` -- the GOT navigation model that the guided journey demonstrates
+- `examples/commonplace/docs/DESIGN.md` -- design rules for Commonplace itself,
+  ingested via ingest_design_docs, checked via check_design_violations
+- `docs/TRACKER.md` -- open items for Determined features that Commonplace exercises
