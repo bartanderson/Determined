@@ -1,73 +1,56 @@
-# SESSION STATE - session 73 handoff
+# SESSION STATE - session 74 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 73, 2026-07-04)
+## What happened this session (session 74, 2026-07-04)
 
-### Commonplace topology shapes + re-ingest verified
-- `services/processor.py`: ABC (EntryProcessor) with EnrichmentProcessor gap
-- `services/pipeline.py`: enrich_entry wired into capture route -- shows as chain-head
-- `utils/validator.py`: conditional stub in validate_entry strict branch
-- All three topology shapes verified against re-ingested Commonplace DB
+### UI redesign scoped -- DISCOVERY_MODEL closed
 
-### RM11: edit_file agent tool
-- `edit_file(assessor, args)` in agent_tools.py -- read_file / write_file / replace_in_file
-- Path guard against project root. REGISTRY entry. 12 regression tests.
-- 426 tests pass.
+Reconciled all DISCOVERY_MODEL items against UI_VISION.md (GOT model).
+Filed RM13 in TRACKER.md as the single UI redesign pass item.
 
-### Commonplace seed state
-- `examples/commonplace/seed/` built -- 5 files, top-down (route first, stubs below)
-- First ingest verified: 2 stubs (both direct-call in extractor.py), 3 orphaned-impl,
-  0 noise shapes. frontier_priority points unambiguously at the extractor stubs.
-- Seed DB: C_Users_bartl_dev_Determined_examples_commonplace_seed.db
+**UI items folded into RM13:**
+- F7: Frontier tab Orphan/Disconnected mode
+- A3: Collapse duplicate graph edges (Cytoscape)
+- A4: Universal sub-menu popover (symbol_context inline anywhere)
+- W4-W5: Trail rendering and export polish
 
-### COMMONPLACE_VISION.md rewritten
-- Three-phase build model: scratch -> seed -> complete -> extras
-- Seed spec documented with expected first-ingest output
-- 7-step seed-to-complete journey sequence documented (hypothesis -- not yet validated)
+**UI_VISION.md open items also in RM13:**
+- #1: Chat/ask bar hidden by default
+- #7: Context mode switching (module-design / call-trace / gap-review modes)
 
-### Strategic decisions made this session
-- DISCOVERY_MODEL items are patches on a UI that needs a redesign pass.
-  Fold them into the UI redesign as requirements, not individual tickets.
-  Do the UI as one coherent pass against the GOT model in UI_VISION.md.
-- Commonplace journey steps cannot be validated until the tool is stable.
-  The correct order: finish the tool, then walk the journey and write it
-  from what actually happens -- not from what we hoped it would do.
-- RM12 (SearXNG) is agent capability, not UI. Lower priority than UI redesign
-  for the Commonplace journey goal.
+**Non-UI items disposition:**
+- F1 (false positive audit): backend accuracy, file separately if needed
+- A1 (resolved flag + is_project_call): fold into item 20 territory
+- A2 (access_paths query): file separately when needed
+- A5 (multi-hop type trace): file separately when needed
+- Q4: already RM9 (FUTURE)
+- T5: FUTURE, post-production
+
+DISCOVERY_MODEL is closed as a tracking category.
 
 ## NEXT SESSION -- start here
 
-**UI redesign: close DISCOVERY_MODEL, scope the redesign pass**
+**Begin RM13: UI redesign pass**
 
-1. Read `docs/UI_VISION.md` (GOT model -- navigation-first, editor as nav hub)
-2. Read the open DISCOVERY_MODEL items in SESSION_STATE (below)
-3. Reconcile: which items are still valid requirements for the redesign,
-   which are superseded by the new UI model
-4. File a single TRACKER item for the UI redesign pass with the reconciled
-   requirements list
-5. Close DISCOVERY_MODEL as a tracking category
+Start with the highest-leverage items first:
+1. A4 -- universal sub-menu popover: symbol_context as inline popover on
+   any symbol reference (chat results, editor, call tree rows). This is
+   the core GOT gear-on-gear interaction. Read `determined/ui/ui_server.py`
+   and the existing spotlight implementation before touching anything.
+2. F7 -- Frontier tab: add Orphan/Disconnected mode to the type selector.
+   Mechanical, low risk. `find_orphaned_impls()` already exists in agent_tools.py.
+3. After both verified in browser, continue with #1 (chat hidden), A3 (edge
+   collapse), W4-W5 (trail), and #7 (context modes) in that rough order.
 
-Do NOT implement individual DISCOVERY_MODEL items. The goal of this step
-is to scope the redesign, not to patch the current UI.
+Do NOT batch all items into one large change. Verify each in browser before
+moving to the next. Follow UI verify rule from CLAUDE.md.
 
 ## Current Determined status
 
 ### Test count: 426 passed, 1 skipped
-
-### Open DISCOVERY_MODEL items (fold into UI redesign)
-- F1: Validate direct-call query accuracy (false positive audit) -- accuracy, not UI
-- F7: Frontier tab type selector (add Orphan mode to dropdown)
-- A1: resolved flag + is_project_call column (no migration needed -- rebuild fresh)
-- A2: access_paths(symbol) query
-- A3: collapse duplicate graph edges
-- A4: universal sub-menu popover (symbol_context rendered inline)
-- A5: multi-hop type trace for chained attribute calls
-- W4-W5: Trail rendering and export (UI polish)
-- Q4: MCTS tree search (deferred, see RM9)
-- T5: Topology drift (deferred until post-production)
 
 ### Open TRACKER items
 - Item 27: Standards self-review (FUTURE)
@@ -75,6 +58,7 @@ is to scope the redesign, not to patch the current UI.
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
 - RM11: DONE (edit_file agent tool)
 - RM12: SearXNG web search agent tool (MEDIUM -- lower priority than UI redesign)
+- RM13: UI redesign pass (HIGH -- start here)
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional

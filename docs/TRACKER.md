@@ -158,6 +158,50 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM13. **[HIGH] UI redesign pass: close remaining delta, fold DISCOVERY_MODEL**
+
+   Coherent redesign pass against the GOT model in UI_VISION.md.
+   Do NOT patch individual items piecemeal — implement as one pass.
+
+   **Requirements (from UI_VISION.md open items #1 and #7):**
+   - #1: Chat/ask bar hidden by default; revealed only when natural navigation
+     doesn't answer the question. The sidebar's Ask toggle handles this.
+   - #7: Context mode switching — module-design mode, call-trace mode,
+     gap-review mode as distinct contexts that each surface the right panels.
+
+   **Requirements (from DISCOVERY_MODEL, UI items only):**
+   - F7: Frontier tab type selector — add Orphan/Disconnected mode to the
+     existing dropdown alongside Direct-call and ABC modes.
+   - A3: Collapse duplicate graph edges in Cytoscape display (same caller →
+     same callee via multiple paths should show as one edge with a count badge).
+   - A4: Universal sub-menu popover — symbol_context rendered as an inline
+     popover on any symbol reference anywhere in the UI (chat results, editor,
+     call tree rows), not just in the spotlight. Replaces need to open spotlight
+     to get quick risk/caller/callee info.
+   - W4-W5: Trail rendering and export polish — trail breadcrumb shows file
+     context alongside symbol name; export trail as a session summary
+     (symbol path + risk scores + any findings gathered).
+
+   **Non-UI DISCOVERY_MODEL items (handled separately, not in this pass):**
+   - F1 (false positive audit): backend accuracy work, file separately if needed.
+   - A1 (resolved flag + is_project_call): backend schema; fold into item 20
+     territory on next call-graph accuracy pass.
+   - A2 (access_paths query): new agent tool; file separately when needed.
+   - A5 (multi-hop type trace): new agent tool; file separately when needed.
+   - Q4 (MCTS): already RM9, FUTURE.
+   - T5 (topology drift): FUTURE, post-production.
+
+   **Prerequisite:** DISCOVERY_MODEL is closed as a tracking category after
+   this item is filed. Items above are the reconciled requirements list.
+
+   **Effort:** Medium (2-3 sessions). Start with A4 (highest leverage for
+   the GOT gear model) and F7 (mechanical, low risk), then #1 and #7
+   (requires layout decisions). W4-W5 and A3 are polish, can trail.
+
+   **Verify rule:** each sub-item must be clicked in browser before marking done.
+
+---
+
 29. **[DONE 2026-07-03] Frontier graph: ABC/unimplemented-interface shape**
 
    The current frontier graph query (functional caller -> stub callee, suffix-match join)
