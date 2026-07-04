@@ -9,41 +9,51 @@ Clean state. All commits landed.
 ### Commonplace DESIGN.md written and verified
 
 - **`examples/commonplace/docs/DESIGN.md`** created:
-  - Four-layer architecture spec (routes / services / storage / utils) with
-    explicit responsibility rules for each layer
-  - Six authority rules in Determined-detectable language:
-    - "Only storage/ touches the DB directly"
-    - "Routes delegate to services, never to storage directly"
-    - "Tags are always lowercase"
-    - "Connections are bidirectional -- both directions must be stored"
-    - "Content is required for every entry"
-    - "URL validation must occur before network fetch"
-  - Four open design questions promoted from code comments (extractor split,
-    tagger eager-vs-lazy, searcher boundary bypass, capture URL duplication)
+  - Four-layer architecture spec (routes / services / storage / utils)
+  - Six authority rules in Determined-detectable language
+  - Four open design questions promoted from code comments
   - Stub roadmap with LLM dependencies for all five stubs
+- Ingested: `ingest_design_docs` extracted 10 rules
+- Verified: `check_design_violations` correctly flags both known violations
+  (searcher service-layer bypass 0.50, capture URL duplication 0.30)
 
-- **Ingested and verified:**
-  - `ingest_design_docs` extracted 10 rules from the doc
-  - `check_design_violations('search')` flagged service-layer bypass (score 0.50)
-  - `check_design_violations('capture')` flagged duplicate URL validation (score 0.30)
-  - Both known violations detected correctly
+### New TRACKER items filed
+
+- **RM10** (FUTURE): DeRe-CoT recomposition pass in `goal_intake` -- after
+  decomposing a goal into sub-queries, recompose and check semantic alignment
+  with the original to verify coherence before committing. Paper: Lee & Lee,
+  Engineering Applications of AI, Vol 181 Part 3, Oct 2026.
+- **RM11** (MEDIUM): `edit_file` agent tool -- closes the read→reason→write
+  loop. Write logic already exists in ui_server socket handlers; this is
+  wiring it as an agent tool (read_file, write_file, replace_in_file).
+- **RM12** (MEDIUM): SearXNG web search -- self-hosted, no API key, local-first.
+  `search_web(assessor, args)` agent tool hitting configurable endpoint.
+  Use cases: stub scorer ("what library implements X?"), goal_intake enrichment.
+
+### Confirmed already present (no item needed)
+
+- Complex task decomposition and resynthesis: `score_stub` chains
+  gather_context → build_claim → evaluate_claim; `reason_about` does
+  structural assembly + LLM synthesis; `goal_intake` does semantic
+  decomposition. The deterministic skeleton is there.
 
 ## NEXT SESSION -- start here
 
-**Pick up from Bart's additions below, then continue Commonplace step 2.**
-
-After addressing anything Bart adds, the next COMMONPLACE_VISION step is:
-
-**Step 2: Add missing topology shapes to Commonplace**
+**Commonplace step 2: add missing topology shapes**
 
 Add to `examples/commonplace/`:
-- An ABC with at least one abstract method and no override (exercises `find_abc_gaps`)
-- A chain-middle stub (called by another stub, calls another stub -- exercises chain topology)
-- A conditional stub (`raise NotImplementedError` inside an if branch, exercises
-  `find_conditional_stubs`)
+- An ABC with at least one abstract method and no override
+  (exercises `find_abc_gaps`)
+- A chain-middle stub (called by another stub, calls another stub --
+  exercises chain topology)
+- A conditional stub (`raise NotImplementedError` inside an if branch --
+  exercises `find_conditional_stubs`)
 
-These give the Commonplace corpus the topology variety needed to demo all Determined
-frontier features against its own codebase.
+These give Commonplace the topology variety to demo all Determined frontier
+features against its own codebase.
+
+Alternatively: pick up RM11 (edit_file agent tool) -- it's Low effort and
+closes a meaningful capability gap.
 
 ## Current Determined status
 
@@ -64,14 +74,16 @@ frontier features against its own codebase.
 ### Open TRACKER items
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
+- RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
+- RM11: edit_file agent tool -- closes read→reason→write loop (MEDIUM)
+- RM12: SearXNG web search agent tool (MEDIUM)
 
 ### Commonplace status
-- Working skeleton exists: capture, browse, search, storage, utils all functional
+- Working skeleton: capture, browse, search, storage, utils all functional
 - 5 deliberate stubs: extract_full_content, semantic_search, find_connections,
   _similarity_score, suggest_tags
-- 4 deliberate design tensions in code comments (all promoted to DESIGN.md)
 - DESIGN.md written and ingested -- 10 rules live in Commonplace DB
-- Missing: ABC shape, chain-middle stub, conditional stub, seed state definition,
+- Missing: ABC shape, chain-middle stub, conditional stub, seed state,
   guided UI highlighting
 
 ## Hardware facts
