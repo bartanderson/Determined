@@ -275,9 +275,9 @@ What exists and what new code each piece needs.
   Disposition: `→ built and registered in TOOLS (session 63). Test via chat: reason_about
   question="should validate_action be a method?" symbol=validate_action`
 
-- [ ] **RM5** — Implement R5 (Reasoning panel UI). Wire "Reason" button into Frontier tab.
+- [x] **RM5** — Implement R5 (Reasoning panel UI). Wire "Reason" button into Frontier tab.
   Fix markdown fence rendering in the result panel at the same time (affects project_stub output too).
-  Disposition: `→ not explored`
+  Disposition: `→ done (session 66). Reason button wired: socket reason_about_request -> threading -> reason_about() -> reason_about_progress + reason_about_result. fgProjection renders plain text (no fences needed - stub_projector already strips them via _strip_fences; reason_about output uses === text decorators). stub_score_quick fires on node select, result shown as HOT/WARM/SAFE badge. Manual test pending (requires live 8B model on port 8081).`
 
 - [ ] **RM6** — 3B vs 8B benchmark. Run R2 (focused evaluate() calls) on 3B vs 8B for the same
   sub-questions. Measure: does 8B produce noticeably better focused verdicts, or is 3B sufficient
@@ -291,12 +291,12 @@ What exists and what new code each piece needs.
   whether the output confidence reflects the conflict.
   Disposition: `→ not explored`
 
-- [ ] **RM8** — Persistence and replay. Store each reasoning chain (question + sub-questions +
+- [x] **RM8** — Persistence and replay. Store each reasoning chain (question + sub-questions +
   answers + synthesis) as a knowledge_artifact with kind='reasoning_chain'. This enables:
   (a) reviewing prior decisions, (b) detecting when a prior reasoning chain is now stale (e.g.
   a new caller was added that changes a count sub-answer), (c) using prior chains as context
   for new decompositions.
-  Disposition: `→ not explored`
+  Disposition: `→ done (session 66). _store_chain() in reasoning_engine.py persists kind='reasoning_chain' to knowledge_artifacts. _check_stale_chain() detects when caller_count changed since last run. Both called by reason_about() if knowledge_conn is provided.`
 
 - [ ] **RM9** — Connect to Q4 (MCTS). Once `reason_about` is proven on single questions, extend
   to iterative frontier decisions: "given the current frontier, which stub should be implemented

@@ -91,6 +91,26 @@ def _extract_imports(
     return imports, alias_map
 
 
+_TRIVIAL_RETURN_VALUES = (None, [], {}, "", 0, 0.0, False)
+
+
+def _is_trivial_return(node: ast.Return) -> bool:
+    """True for `return`, `return None`, `return []`, `return {}`, `return ""`, `return 0/0.0/False`."""
+    v = node.value
+    if v is None:
+        return True
+    # return None / return 0 / return "" / return False / return 0.0
+    if isinstance(v, ast.Constant):
+        return v.value in _TRIVIAL_RETURN_VALUES
+    # return []  (empty list)
+    if isinstance(v, ast.List) and not v.elts:
+        return True
+    # return {}  (empty dict)
+    if isinstance(v, ast.Dict) and not v.keys:
+        return True
+    return False
+
+
 def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """True if the function body contains only stub-like statements."""
     body = node.body
@@ -111,7 +131,7 @@ def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
             name = getattr(exc, "id", None) or getattr(getattr(exc, "func", None), "id", None)
             if name == "NotImplementedError":
                 continue
-        if isinstance(stmt, ast.Return) and (stmt.value is None or (isinstance(stmt.value, ast.Constant) and stmt.value.value is None)):
+        if isinstance(stmt, ast.Return) and _is_trivial_return(stmt):
             continue
         return False
     return True
@@ -133,6 +153,8 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                 if arg.arg != "self" and arg.annotation is not None
             }
 
+            docstring = ast.get_docstring(node)
+            stub_by_doc = bool(docstring and docstring.strip().upper().startswith("STUB:"))
             results.append(
                 FunctionRepresentation(
                     name=node.name,
@@ -140,8 +162,8 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                     arguments=args,
                     param_types=param_types,
                     return_type=ast.unparse(node.returns) if getattr(node, "returns", None) else None,
-                    docstring=ast.get_docstring(node),
-                    is_stub=_is_stub(node),
+                    docstring=docstring,
+                    is_stub=_is_stub(node) or stub_by_doc,
                 )
             )
 

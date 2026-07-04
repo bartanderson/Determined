@@ -384,6 +384,27 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to understand the side-effect profile of a function and its callees — e.g. before refactoring, or to find where state mutations happen in a call chain.",
         "category": "knowledge",
     },
+    "score_stub": {
+        "purpose": "Evaluate how central a stub is to making the system runnable: caller count, depth from entry points, sibling coverage, and SOTS alignment.",
+        "args": {
+            "symbol": "stub function name (required)",
+        },
+        "output": "Score block: caller_count, depth, sibling_coverage, sots_score, composite priority",
+        "feeds": ["reason_about", "project_stub", "risk_profile"],
+        "use_when": "You want to prioritize which stubs to implement first — e.g. building a Frontier work queue.",
+        "category": "knowledge",
+    },
+    "reason_about": {
+        "purpose": "AI-assisted architectural decision pipeline (Decompose -> Route -> Synthesize) for a symbol and question. Uses quality LLM.",
+        "args": {
+            "question": "architectural question to reason about (required)",
+            "symbol":   "(optional) symbol to anchor the reasoning",
+        },
+        "output": "Recommendation block: sub-question findings, decision, confidence %, reasoning, provenance",
+        "feeds": ["store_finding", "goal_intake"],
+        "use_when": "User wants architectural reasoning about a symbol or design decision — e.g. 'should this be split?', 'what SOTS tenets apply?'.",
+        "category": "knowledge",
+    },
     "gap_analysis": {
         "purpose": "On-demand LLM analysis of what is missing or could bridge gaps in a scoped area. Generative/idea-mode — not prescriptive.",
         "args": {
