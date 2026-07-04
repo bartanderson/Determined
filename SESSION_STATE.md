@@ -4,76 +4,76 @@ _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 69, 2026-07-04)
+## What happened this session (session 69/70, 2026-07-04)
 
-### W1/W3/W6 - Waypoint infrastructure
+### Topology shape reasoning + full implementation
 
-- Added 'waypoint' and 'reasoning_chain' to VALID_KINDS (both were used via raw SQL,
-  now valid through add_artifact)
-- Auto-waypoint wired into evaluate_claim() and score_stub(): when verdict not in
-  {UNRELATED, UNCERTAIN}, stores kind='waypoint' artifact in corpus DB
-- Pins tab (panel-waypoints) will now actually show entries after evaluate_claim fires
-- Updated DISCOVERY_MODEL: Q3, W1, W2, W3, W6 marked implemented
+Design reasoning over the original five shapes found four gaps:
 
-### T2 - detect_topology()
+1. **Chain has three positions** with different implementation priorities:
+   - chain-tail (leaf, no stub callees): implement FIRST — unblocks chain upward
+   - chain-middle (stub callers + stub callees): blocked above and below
+   - chain-head (functional callers + stub callees): bridging real code into a chain
 
-- Five-shape inventory: direct-call, ABC-interface, chain, orphaned-impl, disconnected
-- _dominant_shape() labels the leading pattern
-- Wired into TOOLS + REGISTRY. 5 regression tests.
+2. **Disconnected conflated two different things**:
+   - Entry-point stubs (routes/handlers/cli files): externally triggered, not unreachable
+   - Truly disconnected: isolated, decide implement-or-delete
 
-### F3 - find_orphaned_impls()
+3. **Orphaned-impl conflated two opposite situations**:
+   - Anticipatory: no callers ever — write the caller, not the implementation
+   - Possibly-stranded: had stub callers, stubs never implemented — verify before investing
 
-- Lists non-stub functions where all callers are stubs or missing
-- Groups by file, labels each entry (no callers / all N callers are stubs)
-- Wired into TOOLS + REGISTRY. 4 regression tests.
+4. **New shape: conditional-stub** — non-stub function with `raise NotImplementedError`
+   inside an `if/elif/else` branch. Passes `_is_stub()` detection, crashes at runtime
+   on specific inputs. Source file scan via regex.
 
-### F5 - frontier_priority()
+**Implemented:**
+- `detect_topology()`: updated with chain-head/middle/tail, entry-point shape, action queues section
+- `frontier_priority()`: chain-tail=+5, middle=+2, head=+1, abc=+3; orphaned-impls excluded
+- `find_orphaned_impls()`: labels anticipatory vs possibly-stranded
+- `find_conditional_stubs()`: new tool, scans source files for conditional NIE
+- `_get_chain_positions()`, `_get_abc_gap_set()`: extracted helpers (DRY)
+- `_is_entry_point_hint()`: file-path/name heuristic
+- DISCOVERY_MODEL T1, T3 marked implemented
 
-- Composite score = caller count + shape bonus (chain=+2, abc-interface=+3)
-- Stubs appearing in multiple topology shapes sort above single-shape stubs
-- Wired into TOOLS + REGISTRY.
+### Waypoints (earlier this session)
+- `waypoint` + `reasoning_chain` added to VALID_KINDS
+- Auto-waypoint in evaluate_claim() and score_stub()
 
-### Test count: 408 passed, 1 skipped
+### T2, F3, F5 (earlier this session)
+- `detect_topology()` first version (now superseded by T1/T3 improvements)
+- `find_orphaned_impls()` first version (now improved)
+- `frontier_priority()` first version (now improved)
+
+### Test count: 414 passed, 1 skipped
 
 ## Current Determined status
-
-### Reasoning pipeline - fully built, benchmarked, and verified
-- Router/Decomposer/Synthesizer all implemented and tested live
-- UI: Frontier tab ABC mode working, Reason button fires, progress log, result panel
-- Persistence: reasoning chains saved as knowledge_artifacts (kind='reasoning_chain')
-- RM1-RM8 all done
 
 ### Open TRACKER items
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 
-### Living design documents - maintain their own status
-- **docs/DISCOVERY_MODEL.md** - Five concepts with disposition-tracked checklists.
-  T2, F3, F5, W1-W3, W6, Q3, Q5, Q6, F4 all implemented.
-
-### Remaining DISCOVERY_MODEL unexplored items
-Genuine open work (not yet started):
-- T1: Complete shape taxonomy (are there shapes beyond the 5?)
-- T3: Multi-shape membership signal (already captured in frontier_priority now)
-- T4: Topology summary panel in UI
+### DISCOVERY_MODEL status
+T1, T2, T3, F3, F5, W1-W3, W6, Q3, Q5, Q6, F4 all implemented.
+Remaining genuinely open items:
+- T4: Topology summary panel in UI (show detect_topology output as a panel)
 - T5: Topology drift via git history
-- F1: Validate direct-call query accuracy (false positive audit vs real corpus)
-- F6: Frontier coverage metric (% of corpus behind the frontier)
-- F7: Frontier tab type selector UI (Direct/ABC/Orphan/Chain modes)
-- Q2: Unblocking value metric (chain depth added to in-degree; blocked on F4 done now)
+- F1: Validate direct-call query accuracy (false positive audit)
+- F6: Frontier coverage metric (% of corpus reachable only through stubs)
+- F7: Frontier tab type selector (add Orphan mode to dropdown)
+- Q2: Unblocking value = chain depth + caller count (F4 done, can now implement)
 - Q4: MCTS tree search (deferred, see RM9)
 - A1-A5: Access paths (schema migration needed for A1)
 - W4-W5: Trail rendering and export (UI polish)
 
 **Best next candidates:**
-1. Q2 - Unblocking value: F4 is done so chain depth is queryable; extend list_stubs
-   to include chain depth alongside caller count (~10 lines SQL)
-2. F6 - Coverage metric: % of corpus reachable only through stubs (~1 SQL query)
-3. F7 - Frontier tab type selector: add Orphan mode to existing Direct/Chain/All/ABC dropdown
+1. Q2 - Unblocking value: extend list_stubs to include chain depth (~15 lines SQL)
+2. F6 - Frontier coverage %: single SQL query, high orientation value
+3. T4 - Topology panel in UI: render detect_topology() output as a panel
 
 ## Hardware facts
 - llama-server-8b: NSSM auto service, port 8081 (8B on GPU, ~3s/call)
-- llama-server-3b: DELETED (was slower than 8B on GPU, no longer needed)
+- llama-server-3b: DELETED
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)
