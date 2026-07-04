@@ -64,7 +64,7 @@ queries, different visualizations, and different fix strategies.
 - [ ] **T5** — Topology drift. Can git history be used to detect when a shape changes (e.g. a
   direct-call stub gets implemented — the frontier shrinks)? Would require comparing DB snapshots
   or re-ingesting on commit.
-  Disposition: `→ not explored`
+  Disposition: `→ deferred: drift only matters once Determined is actively driving design decisions and the codebase moves in response. Until then, fresh re-ingest at session start gives current state. No drift without Determined-guided changes. Revisit post-production.`
 
 ---
 
@@ -184,7 +184,7 @@ failure. Separating these two meanings would lift graph accuracy across all feat
 - [ ] **A1** — Audit the `resolved` flag: rename or add a column. Proposal: keep `resolved` for
   annotation-derived (its current correct use), add `is_project_call BOOLEAN` that is true
   whenever the callee matches any project function name (by any path). Requires a migration.
-  Disposition: `→ finding: confirmed needed. 'resolved=1' means annotation-derived (correct use), NOT 'is a project function' (wrong assumption in original frontier design). list_stubs() joins on 'callee' column; frontier query joins on 'target_id' — parallel implementations of same lookup. Convergence + is_project_call flag would lift accuracy across all graph features. Schema migration required. Not Tier 1 — do after other connections are validated.`
+  Disposition: `→ finding: confirmed needed. 'resolved=1' means annotation-derived (correct use), NOT 'is a project function' (wrong assumption in original frontier design). list_stubs() joins on 'callee' column; frontier query joins on 'target_id' — parallel implementations of same lookup. Convergence + is_project_call flag would lift accuracy across all graph features. No migration needed — corpus DBs are expendable and rebuilt from scratch on re-ingest; schema changes just go into CREATE TABLE. Not Tier 1 — do after other connections are validated.`
 
 - [ ] **A2** — Build an `access_paths(symbol)` query: given a function name, return all known
   names/paths by which it is referenced in the corpus. Output: list of (path, resolution_method,
