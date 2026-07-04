@@ -786,6 +786,17 @@ document.addEventListener("click", e => {
   if (el && el.dataset && el.dataset.symbol) ctInput.value = el.dataset.symbol;
 });
 
+// ── graph helpers ─────────────────────────────────────────
+function dedupeEdges(rawEdges) {
+  const map = new Map();
+  for (const e of rawEdges) {
+    const key = `${e.source}__${e.target}`;
+    if (map.has(key)) map.get(key).data.count++;
+    else map.set(key, { data: { id: key, source: e.source, target: e.target, count: 1 } });
+  }
+  return [...map.values()];
+}
+
 // ── graph (cytoscape) ────────────────────────────────────
 const gxInput  = document.getElementById("gx-input");
 const gxGo     = document.getElementById("gx-go");
@@ -817,6 +828,10 @@ const GX_STYLE = [
       "target-arrow-color": "#3a4055", "target-arrow-shape": "triangle",
       "curve-style": "bezier", opacity: 0.7,
   }},
+  { selector: "edge[count > 1]", style: {
+      label: "data(count)", "font-size": 8, color: "#6a7a9a",
+      "text-rotation": "autorotate", "text-margin-y": -6,
+  }},
   { selector: "node:selected", style: { "border-color": "#8af", "border-width": 2 } },
 ];
 
@@ -836,10 +851,10 @@ socket.on("graph_result", data => {
     id: n.id, label: n.label || n.id.split(".").pop(),
     risk: n.risk || "cool", file: n.file || "", line: n.line || 0,
   }, classes: n.id === data.root ? "gx-root" : "" }));
-  const edges = data.edges.map(e => ({ data: {
-    id: `${e.source}__${e.target}`, source: e.source, target: e.target,
-  }}));
-  gxStatus.textContent = `${nodes.length} nodes · ${edges.length} edges`;
+  const edges = dedupeEdges(data.edges);
+  const rawE  = data.edges.length;
+  const dupNote = rawE > edges.length ? ` (${rawE} raw)` : "";
+  gxStatus.textContent = `${nodes.length} nodes · ${edges.length} edges${dupNote}`;
   _cy = cytoscape({
     container: document.getElementById("gx-cy"),
     elements: [...nodes, ...edges],
@@ -1979,6 +1994,10 @@ const FG_STYLE = [
   { selector: "edge",
     style: { width: 1.5, "line-color": "#555", "target-arrow-color": "#555",
              "target-arrow-shape": "triangle", "curve-style": "bezier", opacity: 0.7 }},
+  { selector: "edge[count > 1]", style: {
+      label: "data(count)", "font-size": 8, color: "#888",
+      "text-rotation": "autorotate", "text-margin-y": -6,
+  }},
 ];
 
 function fgLoad_() {
@@ -2002,15 +2021,15 @@ socket.on("frontier_graph_result", data => {
   const nodes = data.nodes.map(n => ({
     data: { id: n.id, label: n.label, role: n.role, file: n.file, line: n.line }
   }));
-  const edges = data.edges.map(e => ({
-    data: { id: `${e.source}__${e.target}`, source: e.source, target: e.target }
-  }));
+  const edges    = dedupeEdges(data.edges);
+  const rawFgE   = data.edges.length;
+  const fgDupNote = rawFgE > edges.length ? ` (${rawFgE} raw)` : "";
   const modeLabel = { direct: "Direct", chain: "Chain", all: "All", abc: "ABC interfaces", orphan: "Orphan" }[data.mode] || data.mode;
   const summary = () => data.mode === "abc"
     ? `[${modeLabel}] ${data.abc_count || 0} abstract classes · ${data.stub_count || 0} unimplemented methods`
     : data.mode === "orphan"
     ? `[${modeLabel}] ${data.anticipatory_count || 0} anticipatory · ${data.stranded_count || 0} stranded · ${data.nodes.length} total`
-    : `[${modeLabel}] ${data.frontier_count || 0} callers · ${data.stub_count} stubs · ${data.chain_count || 0} chain · ${edges.length} edges`;
+    : `[${modeLabel}] ${data.frontier_count || 0} callers · ${data.stub_count} stubs · ${data.chain_count || 0} chain · ${edges.length} edges${fgDupNote}`;
   fgStatus.textContent = summary();
 
   _fgCy = cytoscape({
