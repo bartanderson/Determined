@@ -515,6 +515,7 @@ def test_dispatch_all_tools_registered():
         "reason_about",
         "score_stub",
         "find_abc_gaps",
+        "detect_topology",
     }
     assert set(TOOLS.keys()) == expected
 

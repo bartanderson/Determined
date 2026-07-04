@@ -47,9 +47,9 @@ queries, different visualizations, and different fix strategies.
   for patterns that don't fit any current category.
   Disposition: `→ not explored`
 
-- [ ] **T2** — Detect which shape(s) a given corpus exhibits. Write a `detect_topology()` query
+- [x] **T2** — Detect which shape(s) a given corpus exhibits. Write a `detect_topology()` query
   that returns a shape inventory (counts per shape) for the loaded corpus.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 69. detect_topology() in agent_tools.py. Five shape counts: direct-call (stubs with functional callers), ABC-interface (abstract methods with no concrete override), chain (stubs calling stubs), orphaned-impl (implemented fns with no non-stub callers), disconnected (stubs with no callers or callees). _dominant_shape() identifies the leading pattern. Wired into TOOLS + REGISTRY. 5 regression tests.`
 
 - [ ] **T3** — A function can participate in multiple shapes simultaneously (e.g. a stub that is
   both direct-call AND part of a chain). Is multi-shape membership a stronger signal? Test

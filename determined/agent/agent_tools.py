@@ -971,6 +971,121 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def detect_topology(oracle: "DBOracle", args: dict) -> str:
+    """
+    detect_topology() - inventory the incompleteness shapes present in the corpus.
+    Returns counts for each known topology: direct-call, ABC-interface, chain,
+    orphaned-impl, and disconnected stubs. High counts in a shape tell you which
+    kind of frontier work dominates this corpus.
+    """
+    conn = oracle.conn
+
+    # Shape 1: Direct-call — stubs with at least one functional (non-stub) caller
+    direct_call = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 1 AND caller_fn.is_stub = 0
+        """
+    ).fetchone()[0]
+
+    # Shape 2: ABC-interface — stub methods on ABC-derived classes with no non-stub override
+    import json as _json
+    abc_classes = conn.execute(
+        "SELECT name, methods_json, file_path FROM classes "
+        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+    ).fetchall()
+    abc_gap_count = 0
+    for cls_name, methods_json, file_path in abc_classes:
+        try:
+            methods = _json.loads(methods_json or "[]")
+        except Exception:
+            continue
+        for method in methods:
+            row = conn.execute(
+                "SELECT is_stub FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if not (row and row[0]):
+                continue
+            override = conn.execute(
+                "SELECT 1 FROM functions WHERE name = ? AND file_path != ? AND is_stub = 0 LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if not override:
+                abc_gap_count += 1
+
+    # Shape 3: Chain — stubs that call other stubs (both ends are stubs)
+    chain_stubs = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        JOIN graph_edges ge ON (ge.caller = f.name)
+        JOIN functions callee_fn ON (callee_fn.name = ge.callee OR ge.callee LIKE '%.' || callee_fn.name)
+        WHERE f.is_stub = 1 AND callee_fn.is_stub = 1
+        """
+    ).fetchone()[0]
+
+    # Shape 4: Orphaned-impl — non-stub functions with no callers OR all callers are stubs
+    total_non_stub = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 0").fetchone()[0]
+    orphaned_impl = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        WHERE f.is_stub = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM graph_edges ge
+            JOIN functions caller_fn ON caller_fn.name = ge.caller
+            WHERE (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+              AND caller_fn.is_stub = 0
+          )
+        """
+    ).fetchone()[0]
+
+    # Shape 5: Disconnected — stubs with no callers AND no callees
+    disconnected = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        WHERE f.is_stub = 1
+          AND NOT EXISTS (SELECT 1 FROM graph_edges ge WHERE ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+          AND NOT EXISTS (SELECT 1 FROM graph_edges ge WHERE ge.caller = f.name)
+        """
+    ).fetchone()[0]
+
+    total_stubs = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 1").fetchone()[0]
+
+    lines = [
+        "CORPUS TOPOLOGY",
+        f"  Total stubs: {total_stubs}  |  Total implemented: {total_non_stub}",
+        "",
+        "  Shape                 Count  Description",
+        "  ─────────────────────────────────────────────────────────────",
+        f"  Direct-call           {direct_call:>5}  stubs called by functional code",
+        f"  ABC-interface         {abc_gap_count:>5}  abstract methods with no concrete override",
+        f"  Chain                 {chain_stubs:>5}  stubs that call other stubs",
+        f"  Orphaned-impl         {orphaned_impl:>5}  implemented fns with no non-stub callers",
+        f"  Disconnected          {disconnected:>5}  stubs with no callers and no callees",
+        "",
+        "  Dominant shape: " + _dominant_shape(direct_call, abc_gap_count, chain_stubs, disconnected),
+    ]
+    return "\n".join(lines)
+
+
+def _dominant_shape(direct: int, abc: int, chain: int, disconnected: int) -> str:
+    shapes = [("direct-call", direct), ("ABC-interface", abc), ("chain", chain), ("disconnected", disconnected)]
+    shapes.sort(key=lambda x: x[1], reverse=True)
+    top = shapes[0]
+    if top[1] == 0:
+        return "none (no stubs detected)"
+    second = shapes[1]
+    if second[1] > 0 and second[1] >= top[1] * 0.5:
+        return f"{top[0]} + {second[0]}"
+    return top[0]
+
+
 def project_stub(oracle: "DBOracle", args: dict) -> str:
     """
     project_stub(symbol) - generate a concrete implementation for a stub function
@@ -3505,6 +3620,7 @@ TOOLS = {
     # Stub tools
     "list_stubs":           (list_stubs,            "oracle"),
     "find_abc_gaps":        (find_abc_gaps,         "oracle"),
+    "detect_topology":      (detect_topology,       "oracle"),
     "project_stub":         (project_stub,          "oracle"),
     "score_stub":           (score_stub,            "assessor"),
     # Doc tools

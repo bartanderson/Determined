@@ -392,6 +392,14 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to understand the side-effect profile of a function and its callees — e.g. before refactoring, or to find where state mutations happen in a call chain.",
         "category": "knowledge",
     },
+    "detect_topology": {
+        "purpose": "Inventory the incompleteness shapes present in the corpus: direct-call stubs, ABC-interface gaps, stub chains, orphaned implementations, and disconnected stubs. Returns counts per shape and identifies the dominant pattern.",
+        "args": {},
+        "output": "CORPUS TOPOLOGY table with shape counts and dominant shape label",
+        "feeds": ["list_stubs", "find_abc_gaps", "score_stub"],
+        "use_when": "You want an overview of how this codebase is incomplete — orientation step before deciding which frontier work to prioritize.",
+        "category": "knowledge",
+    },
     "score_stub": {
         "purpose": "Evaluate how central a stub is to making the system runnable: caller count, depth from entry points, sibling coverage, and SOTS alignment.",
         "args": {
