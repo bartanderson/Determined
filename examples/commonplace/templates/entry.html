@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ entry['title'] or 'Entry' }} — Commonplace{% endblock %}
+{% block content %}
+<div class="entry-detail">
+  <div class="entry-header">
+    <span class="entry-type">{{ entry['type'] }}</span>
+    <h1>{{ entry['title'] or 'Untitled' }}</h1>
+    {% if entry['source_url'] %}
+      <a class="source-url" href="{{ entry['source_url'] }}" target="_blank" rel="noopener">{{ entry['source_url'] }}</a>
+    {% endif %}
+    <span class="entry-date">{{ entry['created_at'][:10] }}</span>
+  </div>
+
+  {% if tags %}
+  <div class="tags">
+    {% for t in tags %}
+      <span class="tag tag-{{ t['source'] }}">{{ t['name'] }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="entry-content">
+    <pre>{{ entry['content'] }}</pre>
+  </div>
+
+  {% if connections %}
+  <div class="connections">
+    <h2>Connections</h2>
+    <ul>
+      {% for c in connections %}
+      <li>
+        <span class="relation">{{ c['relation'] }}</span>
+        {% if c['from_entry_id'] == entry['id'] %}
+          <a href="{{ url_for('browse.entry_detail', entry_id=c['to_entry_id']) }}">Entry {{ c['to_entry_id'] }}</a>
+        {% else %}
+          <a href="{{ url_for('browse.entry_detail', entry_id=c['from_entry_id']) }}">Entry {{ c['from_entry_id'] }}</a>
+        {% endif %}
+        {% if c['note'] %}<span class="conn-note">{{ c['note'] }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

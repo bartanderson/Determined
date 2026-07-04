@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "commonplace",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "flask", "--app", "app", "run", "--port", "5050"],
+      "port": 5050,
+      "cwd": "C:\\Users\\bartl\\dev\\Determined\\examples\\commonplace"
+    }
+  ]
+}
