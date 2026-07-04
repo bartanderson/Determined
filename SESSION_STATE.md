@@ -36,20 +36,11 @@ Three new files in `examples/commonplace/` to give Determined topology variety:
 
 ## NEXT SESSION -- start here
 
-**Commonplace step 3: seed state and re-ingest**
+**Commonplace step 3: seed state**
 
-The Commonplace DB was last ingested before the new topology files existed. Re-ingest
-to pick up processor.py, pipeline.py, validator.py:
-
-```
-# Run from Determined with Commonplace as corpus
-# (use the Commonplace DB path from corpus state below)
-```
-
-Then verify Determined detects:
-- `EnrichmentProcessor` as an ABC gap via `find_abc_gaps`
-- `enrich_entry` as chain-middle via `detect_topology`
-- `validate_entry` as conditional stub via `find_conditional_stubs`
+All topology shapes are verified. Next is defining the seed state:
+- Document which files/stubs are present at seed vs complete
+- The guide takes user from seed to complete using Determined's tools
 
 **Alternatively: RM12 (SearXNG web search)** -- medium effort, local-first.
 
@@ -78,12 +69,17 @@ Then verify Determined detects:
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional
-- 5 deliberate stubs: extract_full_content, semantic_search, find_connections,
-  _similarity_score, suggest_tags
-- Topology shapes: ABC gap (EnrichmentProcessor), chain-middle (enrich_entry),
-  conditional stub (validate_entry) -- all three added this session
+- 8 stubs total: extract_full_content, semantic_search, find_connections,
+  _similarity_score, suggest_tags, enrich_entry, process, can_handle
+- Topology shapes VERIFIED in corpus:
+  - ABC-interface: 2 (EntryProcessor.process, can_handle -- find_abc_gaps detects)
+  - Chain-head: 1 (enrich_entry -- capture route -> enrich_entry -> stub callees)
+  - Chain-tail: 2 (find_connections, _similarity_score)
+  - Direct-call: 5
+  - Conditional stub: 1 (validate_entry strict branch -- find_conditional_stubs detects)
+  - Disconnected: 1
 - DESIGN.md written and ingested -- 10 rules live in Commonplace DB
-- DB NOT re-ingested yet -- needs re-ingest to pick up new topology files
+- DB re-ingested and verified this session
 - Missing: seed state (demo entries), guided UI highlighting
 
 ## Hardware facts
