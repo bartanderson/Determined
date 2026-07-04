@@ -157,9 +157,6 @@ def execute_eval_request(
     """
     if llm_fn is None:
         from determined.agent import llm_client
-        # Use chat() not generate(): the prompt ends with '}' so a completion
-        # model sees a finished JSON object and produces nothing.  Chat treats
-        # the prompt as an instruction and responds to it.
         def llm_fn(p: str) -> str | None:
             return llm_client.chat([{"role": "user", "content": p}])
 
