@@ -259,7 +259,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-28. **[DONE 2026-07-03] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
+28. **[DONE 2026-07-03 (confirmed session 66)] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
 
    **Source:** Self-review 2026-07-03. check_design_violations flagged SOTS XI on
    `determined.agent.evaluator.evaluate` (score 0.30).
