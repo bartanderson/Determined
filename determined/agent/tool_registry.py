@@ -392,6 +392,26 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to understand the side-effect profile of a function and its callees — e.g. before refactoring, or to find where state mutations happen in a call chain.",
         "category": "knowledge",
     },
+    "frontier_priority": {
+        "purpose": "Rank stubs by composite frontier score: caller count + shape-membership bonus (chain=+2, abc-interface=+3). Multi-shape stubs block more of the system and score higher.",
+        "args": {
+            "limit": "(optional) max results, default 20",
+        },
+        "output": "Ranked table: score, caller count, shapes (direct-call/chain/abc), stub name and file",
+        "feeds": ["score_stub", "project_stub", "reason_about"],
+        "use_when": "You want a prioritized implementation order — which stubs, when implemented, unblock the most of the system.",
+        "category": "knowledge",
+    },
+    "find_orphaned_impls": {
+        "purpose": "List implemented functions that are never called by other implemented code — written ahead of their interfaces or unreachable dead code.",
+        "args": {
+            "limit": "(optional) max results, default 30",
+        },
+        "output": "Per-file list of orphaned function names with line numbers and reason (no callers / all callers are stubs)",
+        "feeds": ["risk_profile", "symbol_context", "detect_topology"],
+        "use_when": "You want to find implementations waiting for callers — useful before writing new stubs (the implementation may already exist).",
+        "category": "knowledge",
+    },
     "detect_topology": {
         "purpose": "Inventory the incompleteness shapes present in the corpus: direct-call stubs, ABC-interface gaps, stub chains, orphaned implementations, and disconnected stubs. Returns counts per shape and identifies the dominant pattern.",
         "args": {},

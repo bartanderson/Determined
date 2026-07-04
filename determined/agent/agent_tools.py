@@ -1086,6 +1086,148 @@ def _dominant_shape(direct: int, abc: int, chain: int, disconnected: int) -> str
     return top[0]
 
 
+def frontier_priority(oracle: "DBOracle", args: dict) -> str:
+    """
+    frontier_priority(limit?) - rank stubs by composite frontier score.
+    Score = direct-call weight (caller count) + shape-membership bonus.
+    A stub appearing in multiple topology shapes (direct-call AND chain, or
+    direct-call AND abc-interface) scores higher than single-shape stubs.
+    Returned list is the multi-shape work queue: highest-value stubs first.
+    """
+    import json as _json
+    limit = int(args.get("limit", 20))
+    conn = oracle.conn
+
+    # 1. All stubs with direct-call caller count
+    stubs = conn.execute(
+        """
+        SELECT f.name, f.file_path, COUNT(ge.caller) AS callers
+        FROM functions f
+        LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller AND caller_fn.is_stub = 0
+        WHERE f.is_stub = 1
+        GROUP BY f.name, f.file_path
+        """,
+    ).fetchall()
+
+    if not stubs:
+        return "No stubs with functional callers found. Use list_stubs() for all stubs."
+
+    # 2. Chain-stub set: stubs that also call other stubs
+    chain_set = {r[0] for r in conn.execute(
+        """
+        SELECT DISTINCT f.name FROM functions f
+        JOIN graph_edges ge ON ge.caller = f.name
+        JOIN functions callee_fn ON (callee_fn.name = ge.callee OR ge.callee LIKE '%.' || callee_fn.name)
+        WHERE f.is_stub = 1 AND callee_fn.is_stub = 1
+        """
+    ).fetchall()}
+
+    # 3. ABC-gap set: stubs on ABC classes with no override
+    abc_classes = conn.execute(
+        "SELECT name, methods_json, file_path FROM classes "
+        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+    ).fetchall()
+    abc_gap_set: set[str] = set()
+    for cls_name, methods_json, file_path in abc_classes:
+        try:
+            methods = _json.loads(methods_json or "[]")
+        except Exception:
+            continue
+        for method in methods:
+            row = conn.execute(
+                "SELECT is_stub FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if not (row and row[0]):
+                continue
+            override = conn.execute(
+                "SELECT 1 FROM functions WHERE name = ? AND file_path != ? AND is_stub = 0 LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if not override:
+                abc_gap_set.add(method)
+
+    # 4. Score and rank
+    scored = []
+    for name, file_path, callers in stubs:
+        shapes = ["direct-call"]
+        bonus = 0
+        if name in chain_set:
+            shapes.append("chain")
+            bonus += 2
+        if name in abc_gap_set:
+            shapes.append("abc")
+            bonus += 3
+        score = callers + bonus
+        scored.append((score, callers, name, file_path, shapes))
+
+    scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
+    scored = scored[:limit]
+
+    lines = [
+        f"Frontier priority (composite score = caller count + shape bonus):",
+        f"  Shapes: direct-call=base, chain=+2, abc-interface=+3",
+        "",
+        f"  Score  Callers  Shapes          Name",
+        f"  ──────────────────────────────────────────────────────────",
+    ]
+    for score, callers, name, file_path, shapes in scored:
+        fp = (file_path or "").replace("\\", "/").split("/")[-1]
+        shape_str = "+".join(shapes)
+        lines.append(f"  {score:>5}  {callers:>7}  {shape_str:<15}  {name}  ({fp})")
+    return "\n".join(lines)
+
+
+def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_orphaned_impls(limit?) - find implemented functions that are never called
+    by other implemented functions. These are implementations written ahead of their
+    interfaces, or dead code that slipped past stub detection.
+
+    An orphaned-impl is a non-stub function where every caller in graph_edges is
+    either a stub or non-existent in the corpus.
+    """
+    limit = int(args.get("limit", 30))
+    conn = oracle.conn
+
+    rows = conn.execute(
+        """
+        SELECT f.name, f.file_path, f.line_number,
+               COUNT(ge.caller) AS total_callers,
+               SUM(CASE WHEN caller_fn.is_stub = 1 OR caller_fn.name IS NULL THEN 1 ELSE 0 END) AS stub_or_missing_callers
+        FROM functions f
+        LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        LEFT JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 0
+        GROUP BY f.name, f.file_path, f.line_number
+        HAVING total_callers = 0
+            OR total_callers = stub_or_missing_callers
+        ORDER BY f.file_path, f.line_number
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    if not rows:
+        return "No orphaned implementations found."
+
+    lines = [
+        f"Orphaned implementations ({len(rows)} shown) — non-stub functions with no functional callers:",
+        "",
+    ]
+    prev_file = None
+    for name, file_path, line_no, total_callers, stub_callers in rows:
+        fp = (file_path or "").replace("\\", "/")
+        fp_short = fp.split("/")[-1]
+        if fp_short != prev_file:
+            lines.append(f"  {fp_short}")
+            prev_file = fp_short
+        reason = "no callers" if total_callers == 0 else f"all {int(stub_callers)} callers are stubs"
+        lines.append(f"    {name}  (line {line_no})  [{reason}]")
+    return "\n".join(lines)
+
+
 def project_stub(oracle: "DBOracle", args: dict) -> str:
     """
     project_stub(symbol) - generate a concrete implementation for a stub function
@@ -3621,6 +3763,8 @@ TOOLS = {
     "list_stubs":           (list_stubs,            "oracle"),
     "find_abc_gaps":        (find_abc_gaps,         "oracle"),
     "detect_topology":      (detect_topology,       "oracle"),
+    "find_orphaned_impls":  (find_orphaned_impls,   "oracle"),
+    "frontier_priority":    (frontier_priority,     "oracle"),
     "project_stub":         (project_stub,          "oracle"),
     "score_stub":           (score_stub,            "assessor"),
     # Doc tools

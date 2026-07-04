@@ -83,18 +83,18 @@ the direct-call shape. Each topology has its own frontier type.
   override. Requires class hierarchy data not currently in schema.
   Disposition: `→ filed: item 29`
 
-- [ ] **F3** — Orphaned-implementation detection: find functional code whose only callers are stubs
+- [x] **F3** — Orphaned-implementation detection: find functional code whose only callers are stubs
   or missing. These are implementations written ahead of their interfaces.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 69. find_orphaned_impls() in agent_tools.py. Queries non-stub functions where all callers in graph_edges are either stubs or missing from corpus. Groups output by file with reason label ("no callers" / "all N callers are stubs"). Wired into TOOLS + REGISTRY. 4 regression tests.`
 
 - [x] **F4** — Chain-of-stubs detection: find stubs that call other stubs. The chain length is a
   measure of how far a subsystem is from being runnable.
   Disposition: `→ implemented: session 68. _frontier_rows(conn, mode) in ui_server.py — 'chain' passes caller_stub=1 to the WHERE clause, 'all' unions both. Frontier tab toolbar has Direct/Chain/All/ABC dropdown; fgMode drives the socket event. Verified in browser (dj2 corpus).`
 
-- [ ] **F5** — Composite frontier signal: a function appearing in multiple frontier types
+- [x] **F5** — Composite frontier signal: a function appearing in multiple frontier types
   simultaneously is high priority. Build a query that scores stubs by how many shape-frontiers
   they appear in.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 69. frontier_priority() in agent_tools.py. Score = caller count (direct-call weight) + shape bonus (chain=+2, abc-interface=+3). Returns ranked table showing score, callers, active shapes, stub name. Wired into TOOLS + REGISTRY. Multi-shape stubs sort above single-shape stubs with same caller count.`
 
 - [ ] **F6** — Frontier coverage metric: what percentage of the corpus is "behind the frontier"
   (reachable only through at least one unimplemented stub)? Useful as a project health indicator.

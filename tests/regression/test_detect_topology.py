@@ -1,12 +1,12 @@
 # tests/regression/test_detect_topology.py
 #
-# Guards detect_topology() shape-counting logic against a minimal in-memory corpus.
+# Guards detect_topology() and find_orphaned_impls() against a minimal in-memory corpus.
 
 import sqlite3
 import pytest
 from determined.persistence.persistence_engine import ensure_schema
 from determined.oracle.db_oracle import DBOracle
-from determined.agent.agent_tools import detect_topology
+from determined.agent.agent_tools import detect_topology, find_orphaned_impls
 
 
 def _make_oracle(tmp_path):
@@ -106,3 +106,48 @@ def test_orphaned_impl_count(tmp_path):
     # impl_fn has no callers -> orphaned; other_impl has fn_caller -> not orphaned
     count = int(orphan_line.strip().split()[1])
     assert count >= 1
+
+
+# ── find_orphaned_impls ────────────────────────────────────────────────
+
+
+def test_find_orphaned_impls_no_callers(tmp_path):
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "lonely_impl", "a.py", False)
+    conn.commit()
+
+    result = find_orphaned_impls(oracle, {})
+    assert "lonely_impl" in result
+    assert "no callers" in result
+
+
+def test_find_orphaned_impls_stub_only_callers(tmp_path):
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "impl_fn", "a.py", False)
+    _add_fn(conn, "stub_caller", "b.py", True)
+    _add_edge(conn, "stub_caller", "impl_fn")
+    conn.commit()
+
+    result = find_orphaned_impls(oracle, {})
+    assert "impl_fn" in result
+    assert "stub" in result
+
+
+def test_find_orphaned_impls_excludes_called(tmp_path):
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "called_impl", "a.py", False)
+    _add_fn(conn, "caller_impl", "b.py", False)
+    _add_edge(conn, "caller_impl", "called_impl")
+    conn.commit()
+
+    result = find_orphaned_impls(oracle, {})
+    # called_impl has a functional caller -> should NOT appear
+    assert "called_impl" not in result
+
+
+def test_find_orphaned_impls_empty(tmp_path):
+    oracle, conn = _make_oracle(tmp_path)
+    conn.commit()
+
+    result = find_orphaned_impls(oracle, {})
+    assert "No orphaned" in result

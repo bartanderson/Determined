@@ -516,6 +516,8 @@ def test_dispatch_all_tools_registered():
         "score_stub",
         "find_abc_gaps",
         "detect_topology",
+        "find_orphaned_impls",
+        "frontier_priority",
     }
     assert set(TOOLS.keys()) == expected
 
