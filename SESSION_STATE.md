@@ -6,26 +6,34 @@ Clean state. All commits landed.
 
 ## What happened this session (session 69, 2026-07-04)
 
-### DISCOVERY_MODEL audit + Waypoint infrastructure (W1/W3/W6)
+### W1/W3/W6 - Waypoint infrastructure
 
-Started by confirming what was truly unimplemented vs. already done:
-- Q3 (score_stub): already fully implemented in agent_tools.py:3285 + tool_registry. Updated disposition.
-- A4 (symbol hover): already done - sym-tooltip + onSymHover/symbol_quick event fully wired.
-- Q5 full tab (build queue): already done - panel-build_queue + get_build_queue socket event live.
-- W3 (waypoints panel): UI tab already existed (panel-waypoints, get_waypoints event). BUT...
+- Added 'waypoint' and 'reasoning_chain' to VALID_KINDS (both were used via raw SQL,
+  now valid through add_artifact)
+- Auto-waypoint wired into evaluate_claim() and score_stub(): when verdict not in
+  {UNRELATED, UNCERTAIN}, stores kind='waypoint' artifact in corpus DB
+- Pins tab (panel-waypoints) will now actually show entries after evaluate_claim fires
+- Updated DISCOVERY_MODEL: Q3, W1, W2, W3, W6 marked implemented
 
-**Critical gap found:** `waypoint` was not in VALID_KINDS in knowledge_artifact.py. The Pins tab
-always showed empty because no code could ever successfully write a waypoint artifact.
+### T2 - detect_topology()
 
-**Fixed:**
-1. Added `'waypoint'` and `'reasoning_chain'` to VALID_KINDS (reasoning_chain was used via raw SQL
-   in reasoning_engine.py but bypassed add_artifact validation)
-2. Auto-waypoint in `evaluate_claim()`: when verdict not in {UNRELATED, UNCERTAIN}, stores a
-   kind='waypoint' artifact with view_origin='evaluate_claim', note=reasoning, verdict, confidence
-3. Auto-waypoint in `score_stub()`: same pattern, view_origin='score_stub', plus caller count
-4. Updated DISCOVERY_MODEL.md: Q3, W1, W2, W3, W6 all marked implemented
+- Five-shape inventory: direct-call, ABC-interface, chain, orphaned-impl, disconnected
+- _dominant_shape() labels the leading pattern
+- Wired into TOOLS + REGISTRY. 5 regression tests.
 
-Test count: 399 passed, 1 skipped.
+### F3 - find_orphaned_impls()
+
+- Lists non-stub functions where all callers are stubs or missing
+- Groups by file, labels each entry (no callers / all N callers are stubs)
+- Wired into TOOLS + REGISTRY. 4 regression tests.
+
+### F5 - frontier_priority()
+
+- Composite score = caller count + shape bonus (chain=+2, abc-interface=+3)
+- Stubs appearing in multiple topology shapes sort above single-shape stubs
+- Wired into TOOLS + REGISTRY.
+
+### Test count: 408 passed, 1 skipped
 
 ## Current Determined status
 
@@ -40,39 +48,28 @@ Test count: 399 passed, 1 skipped.
 - RM9: Connect to Q4 MCTS (FUTURE)
 
 ### Living design documents - maintain their own status
-These documents carry their own checklists/disposition fields. Read them directly
-for current status - do not duplicate into TRACKER or SESSION_STATE.
+- **docs/DISCOVERY_MODEL.md** - Five concepts with disposition-tracked checklists.
+  T2, F3, F5, W1-W3, W6, Q3, Q5, Q6, F4 all implemented.
 
-- **docs/DISCOVERY_MODEL.md** - Five concepts (Topology, Frontier, Queue, Access Paths,
-  Waypoints) with exploration checklists (T1-T5, F1-F7, Q1-Q6, A1-A5, W1-W6).
-  Each item has a Disposition field updated in place.
-  Tier 1 complete. Most Tier 2+3 items now implemented. See document for full status.
-
-- **docs/DESIGN_ARC.md** - The investigation arc (SEE/RECOGNIZE/PROJECT/TEST) and
-  node state table showing COMPLETE/FUNCTIONAL/PARTIAL/STUB status for each layer.
-  Update node states as capabilities advance.
-
-### Next work: DISCOVERY_MODEL remaining unexplored items
-Many items are already done. Genuinely unexplored/unimplemented:
-
-**Topology (T1-T5):** None implemented. T2 (detect_topology query) is the most actionable —
-a single query returning shape inventory (direct-call count, ABC gap count, chain count).
-
-**Frontier gaps:**
-- F1: Validate direct-call frontier query accuracy (false positive audit)
-- F3: Orphaned-impl detection (functional code whose only callers are stubs)
-- F5: Composite frontier signal (stubs appearing in multiple frontier types = higher priority)
+### Remaining DISCOVERY_MODEL unexplored items
+Genuine open work (not yet started):
+- T1: Complete shape taxonomy (are there shapes beyond the 5?)
+- T3: Multi-shape membership signal (already captured in frontier_priority now)
+- T4: Topology summary panel in UI
+- T5: Topology drift via git history
+- F1: Validate direct-call query accuracy (false positive audit vs real corpus)
 - F6: Frontier coverage metric (% of corpus behind the frontier)
-
-**Access paths (A1-A3, A5):** Schema work (A1 - add is_project_call column) is the foundation.
-Low urgency until graph accuracy becomes a pain point.
-
-**Waypoints (W4-W5):** Trail rendering (W4) and export (W5) are deferred UI polish.
+- F7: Frontier tab type selector UI (Direct/ABC/Orphan/Chain modes)
+- Q2: Unblocking value metric (chain depth added to in-degree; blocked on F4 done now)
+- Q4: MCTS tree search (deferred, see RM9)
+- A1-A5: Access paths (schema migration needed for A1)
+- W4-W5: Trail rendering and export (UI polish)
 
 **Best next candidates:**
-1. T2 - detect_topology(): ~20 lines, pure SQL, high orientation value
-2. F3 - orphaned-impl detection: interesting shape, may have real examples in dj2
-3. F5 - composite frontier signal: augments existing frontier with priority scoring
+1. Q2 - Unblocking value: F4 is done so chain depth is queryable; extend list_stubs
+   to include chain depth alongside caller count (~10 lines SQL)
+2. F6 - Coverage metric: % of corpus reachable only through stubs (~1 SQL query)
+3. F7 - Frontier tab type selector: add Orphan mode to existing Direct/Chain/All/ABC dropdown
 
 ## Hardware facts
 - llama-server-8b: NSSM auto service, port 8081 (8B on GPU, ~3s/call)
