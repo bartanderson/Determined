@@ -634,11 +634,10 @@ responsible for", "what do we already know about character creation" - by
 giving the model sharp, focused tools backed by the analysis layers already
 built, rather than asking it to reason over raw code.
 
-The model is `llama3.2:3b` (already running locally for semantic summaries
-and query compilation). It is small and will not reason well over large
-inputs. The design compensates by keeping every tool's output small and flat,
-and by decomposing questions into sequences of focused tool calls rather than
-one large context dump. The model orchestrates; the tools do the work.
+The model is a local LLM via llama-server (port 8081). It will not reason well
+over large inputs. The design compensates by keeping every tool's output small
+and flat, and by decomposing questions into sequences of focused tool calls
+rather than one large context dump. The model orchestrates; the tools do the work.
 
 ### Conversation model
 
@@ -736,9 +735,9 @@ one large context dump. The model orchestrates; the tools do the work.
     health, stability, or a system-wide view - not for per-symbol questions,
     which the other tools handle more directly.
 
-### Tool call protocol (ReAct pattern for llama3.2:3b)
+### Tool call protocol (ReAct pattern)
 
-The model does not natively output JSON tool calls reliably at 3b scale.
+The model does not natively output JSON tool calls reliably at local-model scale.
 We use a simple text protocol the system prompt defines and we parse:
 
 ```
@@ -761,7 +760,7 @@ individual Ollama calls small and the reasoning transparent.
 
 ### System prompt design
 
-The system prompt must be short enough that llama3.2:3b can hold it in
+The system prompt must be short enough that the local model can hold it in
 context alongside the conversation history and tool results without
 degrading. Key elements:
 

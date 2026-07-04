@@ -1,7 +1,7 @@
 # tests/regression/test_evaluator_live.py
 #
 # Live LLM smoke tests for the evaluate kernel.
-# Skipped automatically if the 3B llama-server is not running.
+# Skipped automatically if llama-server is not running.
 # Run manually: pytest tests/regression/test_evaluator_live.py -v -s
 
 import pytest
@@ -13,7 +13,7 @@ from determined.agent.evaluator import evaluate, VALID_VERDICTS
 @pytest.fixture(scope="module", autouse=True)
 def require_llm():
     if not llm_client.is_available():
-        pytest.skip("3B llama-server not running on port 8080")
+        pytest.skip("llama-server not running on port 8081")
 
 
 class TestEvaluateLive:

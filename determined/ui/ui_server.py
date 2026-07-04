@@ -355,7 +355,7 @@ def handle_query(data):
 
 
 # Tab -> direct tool dispatch. These are deterministic structural lookups;
-# no LLM needed, so they're instant and never hit Ollama timeouts.
+# no LLM needed, so they're instant and never hit LLM timeouts.
 _TAB_TOOLS = {
     "work_queue": ("workflow_status",      {}),
     "docstrings": ("missing_docstrings",   {"limit": 50}),
@@ -688,7 +688,7 @@ def handle_store_finding_inline(data):
 @socketio.on("project_stub")
 def handle_project_stub(data):
     """
-    Run stub projector for a symbol. Background thread (Ollama call may take ~30s).
+    Run stub projector for a symbol. Background thread (LLM call may take ~30s).
     Emits stub_projection: {stub_name, file_path, line_number, suggested_body, context_summary}
     or {error: str}.
     """
@@ -715,7 +715,7 @@ def handle_project_stub(data):
 def _check_llm() -> str:
     """Return 'ok' or an error message."""
     from determined.agent.llm_client import is_available
-    return "ok" if is_available() else "llama-server unreachable at localhost:8080"
+    return "ok" if is_available() else "llama-server unreachable at localhost:8081"
 
 
 _REQUIRED_TABLES = {"files", "functions", "graph_edges"}

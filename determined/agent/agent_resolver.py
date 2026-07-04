@@ -280,8 +280,8 @@ _PATTERNS = [
 
 # ------------------------------------------------------------------
 # Named heuristics: high-level query patterns → pre-wired NEED sequences
-# Checked before Phase 1 (Ollama decompose). If matched, the NEED lines
-# are returned directly and the Ollama call is skipped entirely.
+# Checked before Phase 1 (LLM decompose). If matched, the NEED lines
+# are returned directly and the LLM call is skipped entirely.
 # Each entry: (regex, builder_fn) where builder_fn(match) -> list[str]
 # ------------------------------------------------------------------
 
@@ -800,7 +800,7 @@ _HEURISTICS: list[tuple] = [
     ),
 
     # "reprioritize" / "suggest order" / "what should I do first"
-    # Returns workflow status so Ollama can read it and suggest priority order
+    # Returns workflow status so LLM can read it and suggest priority order
     (
         re.compile(
             r"(?:reprioritize|re-prioritize|suggest\s+(?:priority\s+)?order|"

@@ -52,7 +52,7 @@ def run_question(
     # Phase 0: GROUND
     grounding = ground_question(question, oracle, assessor)
 
-    # Phase 1: DECOMPOSE (heuristic or Ollama)
+    # Phase 1: DECOMPOSE (heuristic or LLM)
     heuristic_name = None
     needs = detect_heuristic(question)
     if needs:
@@ -64,7 +64,7 @@ def run_question(
         if needs_text.startswith("ERROR:"):
             return {"question": question, "error": needs_text}
         needs = parse_needs(needs_text)
-        needs_source = "ollama"
+        needs_source = "llm"
 
     # Phase 2: RESOLVE
     facts = []
@@ -325,7 +325,7 @@ def cmd_pick(args, oracle, assessor):
     """
     PICK: run a question twice, surface only what the two answers disagree on.
     Survey questions (deterministic) are shown once with a note.
-    Ollama questions are run twice and diffed at the sentence level.
+    LLM questions are run twice and diffed at the sentence level.
     """
     question = args.question
 
@@ -434,7 +434,7 @@ _ADVERSARIAL_SUITE = [
             "trace the authority system",
             "how is authority implemented",
         ],
-        None,  # Ollama-assembled; check content overlap only
+        None,  # LLM-assembled; check content overlap only
     ),
     # --- survey ---
     (

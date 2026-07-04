@@ -5,7 +5,7 @@
 # The embedding is stored as a raw float32 blob alongside the response text.
 #
 # Table: semantic_cache (created by persistence_engine on first open)
-# Wired into agent_tools._distill_to_one_sentence and _synthesize_with_ollama.
+# Wired into agent_tools._distill_to_one_sentence and _synthesize_with_ollama (historical name).
 
 from __future__ import annotations
 

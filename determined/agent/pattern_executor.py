@@ -275,7 +275,7 @@ class PatternExecutor:
     ) -> str:
         """
         Run the pattern tool sequence and return structured results without
-        any Ollama calls. Used for testing pattern execution independently
+        any LLM calls. Used for testing pattern execution independently
         of model availability.
         Returns a formatted string of tool results.
         """

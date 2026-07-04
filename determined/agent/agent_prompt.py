@@ -1,7 +1,7 @@
 # tools/analysis/agent/agent_prompt.py
 #
 # System prompt and tool call protocol for the local conversational agent.
-# Model: llama3.2:3b via Ollama.
+# Model: local LLM via llama-server (port 8081).
 #
 # Design constraints (DESIGN.md section 8):
 # - Model is small: keep system prompt short, tool descriptions one line each.
@@ -37,7 +37,7 @@ When you have the answer, respond in plain English. Be concise.
 
 def build_messages(history: list[dict], user_input: str) -> list[dict]:
     """
-    Build the Ollama message list from conversation history + new user input.
+    Build the LLM message list from conversation history + new user input.
     history is a list of {role, content} dicts (assistant/user turns).
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]

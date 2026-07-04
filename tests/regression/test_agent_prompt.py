@@ -1,7 +1,7 @@
 ﻿# tools/analysis/tests/regression/test_agent_prompt.py
 #
 # Tests for agent_prompt.py - system prompt construction and tool call parsing.
-# The parser is the most fragile piece: llama3.2:3b output varies.
+# The parser is the most fragile piece: local LLM output varies.
 
 from determined.agent.agent_prompt import (
     parse_tool_call, build_messages, format_observation, SYSTEM_PROMPT,

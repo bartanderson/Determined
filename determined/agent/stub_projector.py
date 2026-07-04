@@ -1,7 +1,7 @@
 # determined/agent/stub_projector.py
 #
 # Given a stub function, gather its call-graph context and behavioral
-# contracts, then ask Ollama to suggest a concrete implementation.
+# contracts, then ask the LLM to suggest a concrete implementation.
 #
 # The key insight: the stub's callers constrain what it must accept and
 # return; the stub's expected callees (inferred from sibling functions in

@@ -76,7 +76,7 @@ REGISTRY: dict[str, dict] = {
 
     # ── UNDERSTANDING ──────────────────────────────────────────────
     "describe_file": {
-        "purpose": "AI semantic summary of a file's role and contents (uses Ollama).",
+        "purpose": "AI semantic summary of a file's role and contents (uses local LLM).",
         "args": {"file_path": "relative or bare filename"},
         "output": "natural-language summary; cached on second call",
         "feeds": ["symbols_in_file", "get_findings", "store_finding"],
@@ -195,7 +195,7 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
     "ask_truth_layer": {
-        "purpose": "Ask a free-form question; Ollama reasons over stored knowledge artifacts.",
+        "purpose": "Ask a free-form question; LLM reasons over stored knowledge artifacts.",
         "args": {"question": "natural language question about the codebase"},
         "output": "LLM-generated answer grounded in knowledge artifacts",
         "feeds": ["store_finding", "get_findings"],
@@ -249,9 +249,9 @@ REGISTRY: dict[str, dict] = {
 
     # ── PROJECT STATUS ─────────────────────────────────────────────
     "project_status": {
-        "purpose": "Structural picture of the whole project: subsystems, implementation status, critical path gaps, coupling, and architecture constraints. Synthesizes with Ollama when a goal is given.",
+        "purpose": "Structural picture of the whole project: subsystems, implementation status, critical path gaps, coupling, and architecture constraints. Synthesizes with LLM when a goal is given.",
         "args": {"goal": "optional question to focus synthesis (e.g. 'what should I work on first?')"},
-        "output": "subsystem matrix (fns/stubs/entry_pts/hot), critical stubs ranked by callers, cluster pairs, architecture flags; optionally followed by Ollama narrative synthesis",
+        "output": "subsystem matrix (fns/stubs/entry_pts/hot), critical stubs ranked by callers, cluster pairs, architecture flags; optionally followed by LLM narrative synthesis",
         "feeds": ["risk_profile", "list_stubs", "goal_intake"],
         "use_when": "Start of a session to get the big-picture view of the project before diving into specifics.",
         "category": "understanding",

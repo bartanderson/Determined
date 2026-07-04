@@ -4,7 +4,7 @@
 #   Sub-layer A: semantic_summaries table + get_or_generate_summary()
 #   Sub-layer B: knowledge_artifacts table + add/get/list/delete/highest_provenance
 #
-# All tests use in-memory SQLite; no Ollama needed (Ollama unavailability
+# All tests use in-memory SQLite; no LLM needed (LLM unavailability
 # is tested explicitly via the heuristic-fallback test).
 
 import sqlite3
@@ -140,7 +140,7 @@ def test_list_summaries_filtered_by_kind():
     assert all(r["kind"] == "module" for r in module_rows)
 
 
-def test_heuristic_stub_no_ollama():
+def test_heuristic_stub_no_llm():
     result = _heuristic_stub("myfile.py", "file", "def foo(): pass\ndef bar(): pass\n")
     assert "heuristic" in result
     assert "myfile.py" in result

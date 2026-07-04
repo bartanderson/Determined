@@ -68,7 +68,7 @@ Venv paths:
 
 Common mistakes:
 - Running pytest outside the venv (missing deps)
-- Running Ollama queries without Ollama running (`ollama serve`)
+- Running LLM calls without llama-server running (NSSM service `llama-server-8b`, port 8081)
 - Assuming corpus DBs exist -- they must be ingested first
 
 ## Where things live

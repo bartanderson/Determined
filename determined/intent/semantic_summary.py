@@ -7,8 +7,7 @@
 # with a source_hash for staleness detection. Generation is lazy:
 # only computed on first query for a given subject, never at ingestion.
 #
-# LLM backend: llama-server (llama.cpp built-in server, port 8080).
-# Falls back to a heuristic stub if llama-server is unreachable.
+# LLM backend: llama-server (port 8081). Falls back to a heuristic stub if unreachable.
 
 from __future__ import annotations
 
@@ -22,11 +21,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Legacy aliases kept for any callers that import these names directly.
-# All actual LLM calls now go through determined.agent.llm_client.
-OLLAMA_URL     = "http://localhost:8080/v1/completions"
-OLLAMA_MODEL   = "llama3.2-3b"
-OLLAMA_TIMEOUT = 60
+_LLM_TIMEOUT = 60  # distillation budget; shorter than llm_client default
 
 VALID_KINDS = {"file", "module", "subsystem"}
 
@@ -95,7 +90,7 @@ def get_or_generate_summary(
             return cached
 
     content = _generate(subject, kind, source_text)
-    model_version = OLLAMA_MODEL
+    model_version = "llm-client"
     generated_at = datetime.now(timezone.utc).isoformat()
 
     _store(connection, subject, kind, content, current_hash, model_version, generated_at)
@@ -253,7 +248,7 @@ def _generate(subject: str, kind: str, source_text: str) -> str:
     )
 
     from determined.agent.llm_client import generate as _llm_generate
-    content = _llm_generate(prompt, timeout=OLLAMA_TIMEOUT)
+    content = _llm_generate(prompt, timeout=_LLM_TIMEOUT)
     if content:
         return content
 
@@ -262,7 +257,7 @@ def _generate(subject: str, kind: str, source_text: str) -> str:
 
 
 def _heuristic_stub(subject: str, kind: str, source_text: str) -> str:
-    """Minimal summary when Ollama is unavailable."""
+    """Minimal summary when LLM is unavailable."""
     lines = [l for l in source_text.splitlines() if l.strip()]
     line_count = len(lines)
     # Count def/class lines as a rough capability signal

@@ -1,6 +1,6 @@
 # tools/analysis/agent/local_agent.py
 #
-# Local conversational agent backed by Ollama (llama3.2:3b).
+# Local conversational agent backed by llama-server (port 8081).
 # Three-phase pipeline (DESIGN.md section 8):
 #   Phase 1 DECOMPOSE - AI lists what it needs (NEED: lines)
 #   Phase 2 RESOLVE   - deterministic pattern router runs tool calls
@@ -28,7 +28,7 @@ from determined.agent.agent_resolver import (
 from determined.agent.knowledge_status import coverage_summary, suggest_followups
 from determined.agent.pattern_executor import PatternExecutor, detect_pattern
 
-from determined.agent.llm_client import chat as _llm_chat, LLM_TIMEOUT as OLLAMA_TIMEOUT
+from determined.agent.llm_client import chat as _llm_chat, LLM_TIMEOUT as _LLM_TIMEOUT
 
 
 # ------------------------------------------------------------------
@@ -118,7 +118,7 @@ def _required_elements(facts: list[dict]) -> str:
 
 def _assembly_hint(needs: list[str]) -> str:
     """
-    Per-heuristic focus instruction injected into the ASSEMBLE prompt. Steers Ollama
+    Per-heuristic focus instruction injected into the ASSEMBLE prompt. Steers LLM
     on genuine synthesis cases (deterministic cases bypass assembly entirely).
     In-code for now; could migrate to knowledge.db for data-level tuning once stable.
     """
@@ -155,12 +155,12 @@ def _assemble_prompt(question: str, facts_text: str, history: list[dict],
 
 # ------------------------------------------------------------------
 # Survey bypass: build structured answer directly from facts
-# (bypasses Ollama for survey heuristic - tiny model ignores facts)
+# (bypasses LLM for survey heuristic - tiny model ignores facts)
 # ------------------------------------------------------------------
 
 def _is_survey_needs(needs: list[str]) -> bool:
     # dev_plan heuristic has the same symbols/files/findings pattern but also has
-    # "entry points" - exclude those so they go through Ollama for synthesis
+    # "entry points" - exclude those so they go through LLM for synthesis
     if any(n == "entry points" for n in needs):
         return False
     return (any(n.startswith("symbols named ") for n in needs) and
@@ -171,7 +171,7 @@ def _is_survey_needs(needs: list[str]) -> bool:
 def build_survey_answer(facts: list[dict]) -> str:
     """
     Deterministic survey answer built directly from facts.
-    Used when survey heuristic fires to avoid Ollama ignoring the fact set.
+    Used when survey heuristic fires to avoid LLM ignoring the fact set.
     """
     files: list[str] = []
     symbols: list[str] = []
@@ -235,7 +235,7 @@ def build_survey_answer(facts: list[dict]) -> str:
 
 # ------------------------------------------------------------------
 # git_history bypass: the git log output IS the answer.
-# Ollama ignores the log fact and talks about callers instead, so
+# LLM ignores the log fact and talks about callers instead, so
 # we return the log directly (same rationale as survey/workflow).
 # ------------------------------------------------------------------
 
@@ -254,7 +254,7 @@ def build_git_history_answer(facts: list[dict]) -> str:
 
 # ------------------------------------------------------------------
 # impact bypass: symbol_brief (task_generator output) already IS the
-# impact analysis - direct callers + impact zone. Ollama degrades it
+# impact analysis - direct callers + impact zone. LLM degrades it
 # (can't synthesize "no direct callers" into "this is an entry point").
 # Return the brief directly, append knowledge.db findings for context.
 # ------------------------------------------------------------------
@@ -322,7 +322,7 @@ def _postprocess_answer(answer: str, facts: list[dict]) -> str:
 # ------------------------------------------------------------------
 
 def _call_ollama(messages: list[dict], verbose: bool = False, label: str = "") -> str:
-    text = _llm_chat(messages, timeout=OLLAMA_TIMEOUT) or "ERROR: llama-server is not running. Start with: llama-server.exe -m C:\\Users\\bartl\\models\\gguf\\llama3.2-3b.gguf --port 8080"
+    text = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "ERROR: llama-server is not running. Check service: nssm status llama-server-8b"
     if verbose and label:
         print(f"\n[{label}]\n{text}\n[/{label}]", flush=True)
     return text
@@ -365,7 +365,7 @@ def _answer(
     if verbose and grounding:
         print(f"\n[phase0-ground]\n{grounding}\n[/phase0-ground]", flush=True)
 
-    # Phase 1: DECOMPOSE - try named heuristic first, fall back to Ollama
+    # Phase 1: DECOMPOSE - try named heuristic first, fall back to LLM
     needs = detect_heuristic(user_input)
     if needs:
         if verbose:
@@ -447,7 +447,7 @@ def run(db_path: str, verbose: bool = False) -> None:
 
     root = oracle.get_project_root() or db_path
     print(f"Project root:   {root}")
-    print(f"Model:          llama3.2-3b (llama-server)")
+    print(f"Model:          llama-server (port 8081)")
     print(f"\n{coverage_summary(oracle, assessor)}")
     print(f"\nType your question. 'clear' to reset. 'quit' to exit.")
     print(f"Special: 'what do you know?' | 'what haven't you explored?' | 'discover'")
@@ -637,7 +637,7 @@ def _ingest_source(source_dir: str, summarize: bool = False) -> str:
         )
     oracle.conn.commit()
 
-    # Optional: generate AI summaries for every file (requires Ollama)
+    # Optional: generate AI summaries for every file (requires LLM)
     if summarize:
         _summarize_all_files(src, oracle, assessor)
 
@@ -660,7 +660,7 @@ def _summarize_all_files(src, oracle, assessor) -> None:
     Source pass: .py files processed via semantic_summary().
     Doc pass: text/doc files checked for relevance via doc_extractor,
     then ingested into knowledge_artifacts if they describe the code.
-    Skips already-cached. Aborts gracefully if Ollama is unreachable.
+    Skips already-cached. Aborts gracefully if LLM is unreachable.
     """
     from pathlib import Path
     from determined.agent.doc_extractor import discover_docs, extract_rules
@@ -678,7 +678,7 @@ def _summarize_all_files(src, oracle, assessor) -> None:
     py_files.sort()
 
     total_py = len(py_files)
-    print(f"Generating AI summaries for {total_py} source files (requires Ollama) ...")
+    print(f"Generating AI summaries for {total_py} source files (requires LLM) ...")
     done = skipped = failed = 0
 
     for p in py_files:
@@ -697,7 +697,7 @@ def _summarize_all_files(src, oracle, assessor) -> None:
         except Exception as e:
             msg = str(e).lower()
             if "connection" in msg or "refused" in msg or "timeout" in msg:
-                print(f"\nOllama unreachable ({e}). Stopping -- {done} summaries written.")
+                print(f"\nLLM unreachable ({e}). Stopping -- {done} summaries written.")
                 return
             failed += 1
 
@@ -737,7 +737,7 @@ def _summarize_all_files(src, oracle, assessor) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Local codebase analysis agent backed by Ollama."
+        description="Local codebase analysis agent backed by LLM."
     )
     parser.add_argument("db_path", nargs="?",
                         help="Path to corpus DB (e.g. corpus.db). "
@@ -745,7 +745,7 @@ if __name__ == "__main__":
     parser.add_argument("--source", metavar="DIR",
                         help="Source directory to ingest; DB is derived automatically.")
     parser.add_argument("--summarize", action="store_true",
-                        help="After ingestion, generate AI file summaries via Ollama (slow; skips cached).")
+                        help="After ingestion, generate AI file summaries via LLM (slow; skips cached).")
     parser.add_argument("--reingest-file", metavar="FILE",
                         help="Re-ingest a single changed file into an existing corpus DB. "
                              "Requires db_path.")

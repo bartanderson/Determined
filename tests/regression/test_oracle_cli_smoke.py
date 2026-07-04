@@ -5,7 +5,7 @@
 # QuerySessionResult) against real data, with no seeded fixtures.
 #
 # Skips gracefully if the self-corpus DB does not exist (e.g. CI).
-# Does NOT require Ollama / sentence-transformers.
+# Does NOT require LLM / sentence-transformers.
 #
 # Tests:
 #   1. DBOracle opens the real DB without error.

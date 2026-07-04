@@ -1,6 +1,6 @@
 # tools/analysis/truth/query_compiler.py
 # CLAUDE-EDIT 2026-06-16: full rewrite of Layer 4 compiler. Was a rule-based
-# stub only. Now tries local Ollama (llama3.2:3b @ localhost:11434/api/generate)
+# stub only. Now tries local LLM (via llm_client, llama-server port 8081)
 # first, validates output through QueryPlanner, falls back to the original
 # rule-based intent->AST table on any failure (connection error, timeout,
 # bad JSON, invalid view/combine). Does NOT use Anthropic API - local only.
@@ -10,14 +10,14 @@
 # Translates natural language -> valid Query AST.
 #
 # Two modes (selected automatically):
-#   1. Ollama mode  - calls llama3.2:3b via local Ollama API.
+#   1. LLM mode     - calls local LLM via llm_client (llama-server port 8081).
 #                     The model is given the closed algebra spec and must
 #                     emit only valid JSON. Output is validated through
 #                     QueryPlanner before use. Falls back to rule-based
 #                     on any failure (service down, invalid JSON, invalid AST).
 #
 #   2. Rule-based fallback - deterministic intent->AST table.
-#                     Always available. Used when Ollama is unreachable or
+#                     Always available. Used when llama-server is unreachable or
 #                     the model output fails validation.
 #
 # CONTRACT (from Truth Kernel spec):
@@ -152,14 +152,14 @@ def _rule_based_ast(intent: str):
 # db_probe_toolsold.py. Root cause: truth/query_ast.py's Filter and
 # truth/query_executor.py's _apply_filter were both fully implemented and
 # already passing planner-validation tests, but NOTHING upstream ever
-# constructed a Filter - not the Ollama prompt spec (_build_algebra_spec()
+# constructed a Filter - not the LLM prompt spec (_build_algebra_spec()
 # only teaches Select/Combine), not the rule-based fallback table above.
 # Select.filter has been None end-to-end since the algebra was built. Same
 # "orphaned primitive" shape as the 2026-06-17 drift_signals fix (Truth.md
 # Phase 3 Row 3) - the capability existed, nothing called it.
 #
 # This is deterministic on purpose, not an AI-compiler responsibility:
-# Ollama was actually in the loop for the run that surfaced this (compiler
+# LLM was actually in the loop for the run that surfaced this (compiler
 # explanation showed "[llama]") and still produced metric=None despite the
 # prompt explicitly preferring metric="files" for one-named-file questions
 # - prompt-following compliance isn't guaranteed at temperature 0 either,
@@ -198,7 +198,7 @@ def _maybe_scope_to_named_file(plan: QueryPlan, text: str) -> QueryPlan:
     documented as still-open in Truth Kernel Board.md.
 
     Only triggers when metric is ALSO None (the exact bug shape:
-    Select('ROLE', metric=None, filter=None)) - if the compiler (Ollama or
+    Select('ROLE', metric=None, filter=None)) - if the compiler (LLM or
     rule-based) already chose a specific metric like "totals", that was a
     deliberate choice this function should not silently override.
     """
@@ -243,7 +243,7 @@ def _parse_ast_node(node: dict):
 
 
 # =========================================================
-# OLLAMA COMPILER CORE
+# LLM COMPILER CORE
 # =========================================================
 
 def _compile_via_llm(text: str, intent: str):
@@ -284,7 +284,7 @@ def _compile_via_llm(text: str, intent: str):
         logger.debug("llm compiler failed: %s - using rule-based compiler", e)
         return None
     except Exception as e:
-        logger.warning("Ollama compiler unexpected failure: %s", e)
+        logger.warning("LLM compiler unexpected failure: %s", e)
         return None
 
 
@@ -295,7 +295,7 @@ def _compile_via_llm(text: str, intent: str):
 def compile_query(intent: str, text: str = ""):
     """
     Translate intent (and optionally the raw NL text) into a QueryPlan.
-    Tries Ollama first; falls back to rule-based table on any failure.
+    Tries LLM first; falls back to rule-based table on any failure.
     Returns: QueryPlan (always valid, never raises)
     """
     if text:

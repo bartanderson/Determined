@@ -2,7 +2,7 @@
 #
 # Regression tests for agent/agent_tools.py (DESIGN.md section 8).
 # All 12 tools tested against a controlled in-memory fixture.
-# No dependency on world_corpus.db, Ollama, or network.
+# No dependency on world_corpus.db, LLM, or network.
 
 import os
 import sqlite3
@@ -200,7 +200,7 @@ class FakeAssessor:
         self._knowledge_conn = oracle.conn
 
     def semantic_summary(self, subject, kind="file", source_text="", **_):
-        # Return a deterministic stub - no Ollama in tests
+        # Return a deterministic stub - no LLM in tests
         return {
             "subject": subject,
             "kind": kind,
@@ -560,18 +560,18 @@ def test_describe_tool_fn_lookup():
     assert "Unknown tool" in result_bad
 
 
-def test_distill_corpus_no_ollama():
-    """distill_corpus returns a clear error when Ollama is unreachable."""
+def test_distill_corpus_no_llm():
+    """distill_corpus returns a clear error when llama-server is unreachable."""
     from determined.agent.agent_tools import distill_corpus
     oracle = _make_fixture()
     assessor = FakeAssessor(oracle)
-    # Ollama is not running in tests - should get a clear error, not a crash
+    # LLM is not running in tests - should get a clear error, not a crash
     result = distill_corpus(assessor, {})
     assert "ERROR" in result or "distill_corpus" in result
 
 
 def test_distill_corpus_idempotent():
-    """distill_corpus skips already-distilled subjects without re-calling Ollama."""
+    """distill_corpus skips already-distilled subjects without re-calling the LLM."""
     import unittest.mock as mock
     from determined.agent.agent_tools import distill_corpus
     oracle = _make_fixture()
@@ -583,7 +583,7 @@ def test_distill_corpus_idempotent():
         "INSERT INTO semantic_summaries "
         "(subject, kind, content, source_hash, model_version, generated_at) "
         "VALUES (?, ?, ?, ?, ?, datetime('now'))",
-        ("engine.py", "file", "Handles encounter generation.", "abc123", "llama3.2:3b"),
+        ("engine.py", "file", "Handles encounter generation.", "abc123", "llm-client"),
     )
     conn.commit()
 
@@ -647,7 +647,7 @@ def test_raw_helpers_return_dicts():
 
 
 def test_project_status_structural():
-    """project_status returns subsystem matrix and totals without Ollama."""
+    """project_status returns subsystem matrix and totals without LLM."""
     from determined.agent.agent_tools import project_status
     oracle = _make_fixture()
     assessor = FakeAssessor(oracle)

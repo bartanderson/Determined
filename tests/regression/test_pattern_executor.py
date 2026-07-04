@@ -1,7 +1,7 @@
 # tests/regression/test_pattern_executor.py
 #
 # Regression tests for pattern_executor.py.
-# Tests detect_pattern and run_no_llm (no Ollama needed).
+# Tests detect_pattern and run_no_llm (no LLM needed).
 
 import os
 import sqlite3
@@ -94,7 +94,7 @@ def test_fill_args_literal_value():
 
 
 # ------------------------------------------------------------------
-# PatternExecutor.run_no_llm - validates tool dispatch without Ollama
+# PatternExecutor.run_no_llm - validates tool dispatch without LLM
 # Uses a minimal fake oracle/assessor duck-type
 # ------------------------------------------------------------------
 

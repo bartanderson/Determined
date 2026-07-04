@@ -1532,7 +1532,7 @@ def project_stub(oracle: "DBOracle", args: dict) -> str:
     """
     project_stub(symbol) - generate a concrete implementation for a stub function
     using its call-graph context, behavioral contracts, and sibling code.
-    Requires Ollama running. May take 20-40 seconds.
+    Requires llama-server running. May take 20-40 seconds.
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
@@ -2279,7 +2279,7 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
 def _project_status_data(oracle: "DBOracle", assessor: "Assessor") -> dict:
     """
     Gather structural facts needed for project_status synthesis.
-    Pure data assembly - no Ollama, no side effects (SOTS XI).
+    Pure data assembly - no LLM, no side effects (SOTS XI).
     Returns a dict with: subsystems, critical_stubs, clusters, arch_flags, totals.
     """
     root = (oracle.get_project_root() or "").replace("\\", "/").rstrip("/")
@@ -2417,7 +2417,7 @@ def _project_status_data(oracle: "DBOracle", assessor: "Assessor") -> dict:
 
 
 def _format_project_status(data: dict) -> str:
-    """Format _project_status_data as readable text (no Ollama)."""
+    """Format _project_status_data as readable text (no LLM)."""
     t = data["totals"]
     lines = [
         f"Project: {data['root'].split('/')[-1]}  "
@@ -2509,7 +2509,7 @@ def project_status(assessor: "Assessor", args: dict) -> str:
     """
     project_status(goal?) - structural picture of the whole project: which subsystems
     exist, which are skeleton vs active, what's blocking the critical path, how things
-    couple, and what design constraints apply. Optionally synthesizes with Ollama.
+    couple, and what design constraints apply. Optionally synthesizes with LLM.
 
     goal: optional question to focus the synthesis (e.g. 'what should I work on first
           to make the game playable?'). If omitted, returns structural breakdown only.
@@ -2546,7 +2546,7 @@ def project_status(assessor: "Assessor", args: dict) -> str:
     if not goal:
         return structural + enrichment_note
 
-    # Attempt Ollama synthesis; degrade to structural if unavailable (SOTS XIII)
+    # Attempt LLM synthesis; degrade to structural if unavailable (SOTS XIII)
     synthesis = _synthesize_with_ollama(structural, goal, conn=assessor.oracle.conn)
     if synthesis:
         return structural + enrichment_note + "\n\n--- Synthesis ---\n" + synthesis
@@ -3789,9 +3789,9 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
 
     subsystem_map = fast_gen(pass1_prompt, timeout=120, max_tokens=1500)
     if not subsystem_map:
-        return "ERROR: fast-tier LLM (3B, port 8080) did not respond for pass 1."
+        return "ERROR: LLM (port 8081) did not respond for pass 1."
 
-    print(f"  Pass 2 (27B): reasoning over subsystem map "
+    print(f"  Pass 2: reasoning over subsystem map "
           f"(quality ctx: {quality_ctx:,})...")
 
     # --- Pass 2: 27B reasons over subsystem map for architectural gaps ---

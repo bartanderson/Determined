@@ -27,14 +27,14 @@ def _load() -> configparser.ConfigParser:
 
 
 def get_fast_ctx(default: int = 131072) -> int:
-    """Context window (tokens) for the fast tier (3B, port 8080)."""
+    """Context window (tokens) for the fast tier (llama-server, port 8081)."""
     if "LLM_FAST_CTX" in os.environ:
         return int(os.environ["LLM_FAST_CTX"])
     return _load().getint("llm", "fast_ctx", fallback=default)
 
 
 def get_quality_ctx(default: int = 4096) -> int:
-    """Context window (tokens) for the quality tier (27B, port 8081)."""
+    """Context window (tokens) for the quality tier (llama-server, port 8081)."""
     if "LLM_QUALITY_CTX" in os.environ:
         return int(os.environ["LLM_QUALITY_CTX"])
     return _load().getint("llm", "quality_ctx", fallback=default)

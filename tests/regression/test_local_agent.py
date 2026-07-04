@@ -1,7 +1,7 @@
 ﻿# tools/analysis/tests/regression/test_local_agent.py
 #
 # Smoke tests for local_agent.py (three-phase pipeline).
-# Does not call Ollama - patches _call_ollama to return controlled responses.
+# Does not call LLM - patches _call_ollama to return controlled responses.
 
 import sqlite3
 from unittest.mock import patch
@@ -62,7 +62,7 @@ def test_answer_basic_three_phase():
 
     with patch("determined.agent.local_agent._call_ollama",
                side_effect=lambda msgs, verbose=False, label="": next(responses)):
-        # Use a question that doesn't trigger any heuristic so Ollama decompose fires
+        # Use a question that doesn't trigger any heuristic so LLM decompose fires
         answer, history = _answer("count the encounter modules", [], oracle, assessor)
 
     assert "encounter" in answer.lower()
@@ -97,7 +97,7 @@ def test_answer_phase1_error_short_circuits():
     assessor = _FakeAssessor(oracle)
 
     with patch("determined.agent.local_agent._call_ollama",
-               return_value="ERROR: Ollama is not running. Start it with: ollama serve"):
+               return_value="ERROR: llama-server is not running"):
         answer, history = _answer("anything", [], oracle, assessor)
 
     assert "ERROR" in answer
@@ -150,7 +150,7 @@ def test_answer_multiple_needs_deduped():
 
     assert "phase1-decompose" in call_log
     assert "phase3-assemble" in call_log
-    # Only two Ollama calls total (phases 1 and 3); resolve is deterministic
+    # Only two LLM calls total (phases 1 and 3); resolve is deterministic
     assert call_log.count("phase1-decompose") == 1
     assert call_log.count("phase3-assemble") == 1
 
