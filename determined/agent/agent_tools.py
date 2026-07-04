@@ -442,7 +442,6 @@ def _distill_to_one_sentence(content: str, subject: str, conn=None) -> str | Non
     Does NOT use semantic cache — cache stored stale results from the old prompt.
     """
     from determined.agent.llm_client import generate as _llm_generate, LLM_TIMEOUT
-    # Code-comment framing: 3B stays in "documentation" mode, avoids chatbot rambling.
     # Uses skeleton (signatures only) when content looks like source; otherwise raw content.
     body = _source_skeleton(content) if "\ndef " in content or "\nclass " in content else content[:500]
     prompt = f"# {subject}\n{body}\n\n# Purpose: "
@@ -2427,6 +2426,24 @@ def evaluate_claim(assessor: "Assessor", args: dict) -> str:
 
     judgment = evaluate(claim, evidence, question)
 
+    # Auto-waypoint: pin actionable findings so they surface in the Pins tab
+    if judgment.verdict not in {"UNRELATED", "UNCERTAIN"}:
+        try:
+            import json as _json
+            from determined.intent.knowledge_artifact import add_artifact as _add_artifact
+            k_conn = assessor._knowledge_conn
+            if k_conn is not None:
+                _add_artifact(k_conn, subject=claim[:120], kind="waypoint", content=_json.dumps({
+                    "name": claim[:120],
+                    "view_origin": "evaluate_claim",
+                    "note": judgment.reasoning,
+                    "verdict": judgment.verdict,
+                    "confidence": judgment.confidence,
+                    "trail": [],
+                }), provenance="ai-generated")
+        except Exception:
+            pass  # waypoint creation is best-effort
+
     lines = [
         f"EVALUATE CLAIM",
         f"  Claim:    {claim}",
@@ -3332,6 +3349,25 @@ def score_stub(assessor: "Assessor", args: dict) -> str:
 
     question = "how central is implementing this stub to making the system runnable and unblocking its callers?"
     judgment = evaluate(claim, evidence, question)
+
+    # Auto-waypoint: pin high-value stubs so they surface in the Pins tab
+    if judgment.verdict not in {"UNRELATED", "UNCERTAIN"}:
+        try:
+            import json as _json
+            from determined.intent.knowledge_artifact import add_artifact as _add_artifact
+            k_conn = assessor._knowledge_conn
+            if k_conn is not None:
+                _add_artifact(k_conn, subject=symbol, kind="waypoint", content=_json.dumps({
+                    "name": symbol,
+                    "view_origin": "score_stub",
+                    "note": f"{judgment.verdict} ({int(judgment.confidence*100)}%) — {judgment.reasoning}",
+                    "verdict": judgment.verdict,
+                    "confidence": judgment.confidence,
+                    "callers": caller_count,
+                    "trail": [],
+                }), provenance="ai-generated")
+        except Exception:
+            pass  # waypoint creation is best-effort
 
     return (
         f"score_stub: '{symbol}'\n"

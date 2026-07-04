@@ -32,6 +32,10 @@ VALID_KINDS = {
     "stub",
     # compressed one-sentence distillations (derived from semantic_summaries / file_purpose)
     "distilled",
+    # user-pinned discoveries; content is JSON {name, view_origin, note, verdict, confidence, trail}
+    "waypoint",
+    # reasoning chains produced by the decompose/synthesize pipeline
+    "reasoning_chain",
 }
 
 VALID_PROVENANCES = {

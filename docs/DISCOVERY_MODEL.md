@@ -87,9 +87,9 @@ the direct-call shape. Each topology has its own frontier type.
   or missing. These are implementations written ahead of their interfaces.
   Disposition: `→ not explored`
 
-- [ ] **F4** — Chain-of-stubs detection: find stubs that call other stubs. The chain length is a
+- [x] **F4** — Chain-of-stubs detection: find stubs that call other stubs. The chain length is a
   measure of how far a subsystem is from being runnable.
-  Disposition: `→ finding: trivially derived from frontier query — change f_caller.is_stub=0 to f_caller.is_stub=1. One-line change produces stub->stub edges. Add as a toolbar toggle on the Frontier tab ('Direct' / 'Chain' / 'All'). Tier 1 connection.`
+  Disposition: `→ implemented: session 68. _frontier_rows(conn, mode) in ui_server.py — 'chain' passes caller_stub=1 to the WHERE clause, 'all' unions both. Frontier tab toolbar has Direct/Chain/All/ABC dropdown; fgMode drives the socket event. Verified in browser (dj2 corpus).`
 
 - [ ] **F5** — Composite frontier signal: a function appearing in multiple frontier types
   simultaneously is high priority. Build a query that scores stubs by how many shape-frontiers
@@ -132,25 +132,25 @@ evidence is a direct, concrete use of the existing kernel for planning purposes.
   purely in-degree?
   Disposition: `→ finding: depends on F4 (chain detection) being built first. In-degree alone (Q1) is already meaningful and available. Full unblocking value needs chain depth added to in-degree — defer until F4 exists.`
 
-- [ ] **Q3** — Wire `evaluate()` to score a stub for implementation priority. Prompt shape:
+- [x] **Q3** — Wire `evaluate()` to score a stub for implementation priority. Prompt shape:
   subject = stub function, evidence = its callers + its docstring + its stub body, question =
   "what becomes possible if this is implemented, and how central is it to the system?"
-  Disposition: `→ finding: backbone fully exists. stub_projector.gather_context() already collects callers + contracts + sibling callees. evaluate_claim() takes claim + question + searches knowledge_artifacts for evidence. A new agent tool that sequences gather_context() -> evaluate_claim() is ~30 lines. No new infrastructure needed.`
+  Disposition: `→ implemented: score_stub() in agent_tools.py:3285. Chains gather_context() -> collect_symbol_context() -> retrieve_evidence() -> evaluate(). Returns structural rank (caller count), semantic verdict + confidence %, reasoning, callee list, file location. Wired into TOOLS (line 3472) and tool_registry.py. Falls back to structural-only when no design_note evidence available.`
 
 - [ ] **Q4** — Tree search over the frontier: given the current stub set, what is the optimal
   implementation sequence to make the largest runnable subset of the program available soonest?
   This is MCTS on the implementation graph. Expensive but worth profiling on dj2's 47 stubs.
   Disposition: `→ deferred: blocked on Q3 (evaluate() scoring per stub) and F4 (chain detection). Do after those prove out. The evaluate() kernel split (build_eval_request / execute_eval_request) from session 60 already makes this composable when ready. See REASONING_MODEL.md — R1/R2/R3 (Decomposer/Router/Synthesizer) is the concrete design for Q4's evaluator node. RM9 is the explicit connection item.`
 
-- [ ] **Q5** — UI: a sortable queue table. Columns: stub name, file, caller count, chain depth,
+- [x] **Q5** — UI: a sortable queue table. Columns: stub name, file, caller count, chain depth,
   evaluate() score (on demand), disposition (not started / in progress / done). This is the
   primary game-work planning view once the tool is mature enough.
-  Disposition: `→ finding: backbone exists. prioritize_work() + workflow_items + store_workflow_item() is a full planning system. Missing link: frontier ranking -> workflow_items. One new function (~20 lines) runs list_stubs() and calls store_workflow_item() for each result ranked by caller count. Then prioritize_work() sees the frontier automatically. UI: a new tab reading workflow_items WHERE kind='next_up', rendered as a table instead of text.`
+  Disposition: `→ implemented (bridge): session 68. frontier_to_queue socket event (ui_server.py:1161) calls list_stubs() then store_workflow_item() for each result ranked by caller count. "→ Queue" button in Frontier toolbar fires it. prioritize_work() now sees frontier data automatically. Full sortable queue tab (Tier 3 UI item 6) still outstanding.`
 
 - [x] **Q6** — Implementation scaffold: given a stub + its callers as context, generate a partial
   implementation (parameter handling, return type, likely logic sketch) using the quality-tier
   LLM. Not a full implementation — a starting skeleton. Saves the jump-start cost.
-  Disposition: `→ finding: fully built. stub_projector.py is a complete module: gather_context() collects callers/contracts/sibling callees, _build_prompt() constructs the prompt, project_stub() runs it end-to-end. project_all_stubs() batches all stubs. Exposed as project_stub tool in agent_tools.py. NOT yet wired into frontier UI — clicking a red stub node should offer a 'Project' button. Tier 1 connection needed.`
+  Disposition: `→ implemented: session 68. stub_projector.py (gather_context + _build_prompt + project_stub) wired into Frontier tab via project_stub_request socket event (ui_server.py:1059). Selecting a red stub node reveals "Project ↵" button; result renders in fg-projection panel below the graph. Verified in browser (dj2 corpus).`
 
 ---
 
@@ -237,21 +237,21 @@ support both: single click = navigate to destination, expand = reveal journey.
 
 **Exploration checklist:**
 
-- [ ] **W1** — Define waypoint schema formally. Where do waypoints live? Options: (a) corpus DB
+- [x] **W1** — Define waypoint schema formally. Where do waypoints live? Options: (a) corpus DB
   as a new `waypoints` table, (b) knowledge_artifacts with kind='waypoint', (c) a separate
   user-state file outside the DB. The right answer depends on whether waypoints are
   corpus-specific or user-global.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 69. knowledge_artifacts with kind='waypoint'. Content is JSON {name, view_origin, note, verdict, confidence, trail}. Added 'waypoint' to VALID_KINDS in knowledge_artifact.py. Corpus-scoped (lives in corpus DB alongside other artifacts). Survives re-ingest since knowledge_artifacts is not rebuilt by re-ingest.`
 
-- [ ] **W2** — Persistence model: should waypoints survive a re-ingest? Probably yes, since they
+- [x] **W2** — Persistence model: should waypoints survive a re-ingest? Probably yes, since they
   represent analytical conclusions, not structural facts. This argues for knowledge_artifacts
   or a separate user-state store, not a corpus-derived table.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented (by W1 decision): knowledge_artifacts is not touched by reingest_file() or ingest pass — only structural tables (symbols, graph_edges, etc.) are rebuilt. Waypoints survive re-ingest automatically.`
 
-- [ ] **W3** — UI: waypoint panel. A collapsible sidebar section or a dedicated tab showing all
+- [x] **W3** — UI: waypoint panel. A collapsible sidebar section or a dedicated tab showing all
   pinned waypoints, grouped by session or by view_origin. Each entry: symbol name + view badge
   + trail depth indicator.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: Pins tab in console.html (panel-waypoints). get_waypoints socket event (ui_server.py:1799) queries kind='waypoint'. Cards show name, view badge, note, trail, provenance, timestamp. sym-link click opens spotlight. Already wired as tab button data-tab='waypoints'.`
 
 - [ ] **W4** — Trail rendering: a collapsed waypoint shows `[frontier] → validate_action`. Expanded:
   full chain of how we got here. Consider a breadcrumb strip rather than a nested tree.
@@ -263,10 +263,10 @@ support both: single click = navigate to destination, expand = reveal journey.
   collaboration or session handoff.
   Disposition: `→ not explored`
 
-- [ ] **W6** — Auto-waypoint: should the tool automatically create a waypoint when a finding is
+- [x] **W6** — Auto-waypoint: should the tool automatically create a waypoint when a finding is
   confirmed via check_design_violations or evaluate()? The finding already has a subject and
   context — a waypoint is nearly free to generate alongside it.
-  Disposition: `→ finding: knowledge_artifacts + store_finding() is the exact infrastructure needed. A waypoint is kind='waypoint' with content = {name, view_origin, context_data, trail} serialized as JSON. Auto-creation hook: store_finding() called inside evaluate_claim() when verdict != UNRELATED. Low effort, high value for session continuity.`
+  Disposition: `→ implemented: session 69. Auto-waypoint wired into evaluate_claim() (agent_tools.py) and score_stub(). When verdict not in {UNRELATED, UNCERTAIN}, adds kind='waypoint' artifact to knowledge DB with view_origin, note=reasoning, verdict, confidence. Best-effort (exception-swallowed) so it never breaks the primary tool. Surfaces automatically in Pins tab on next refresh.`
 
 ---
 
@@ -343,19 +343,17 @@ What exists, what connects to what, and how much new code each tier needs.
 | `knowledge_artifacts` + `store_finding()` | Generic artifact store | W6 backbone; kind='waypoint' is all that's needed |
 | `symbol_context()` | Everything known about a symbol in one call | A4 backbone; render as inline popover, no new backend |
 
-### Tier 1 — connect existing pieces (~15-20 lines each)
+### Tier 1 — connect existing pieces [ALL DONE, session 68]
 
-1. **Frontier + project_stub**: new `project_stub_request` socket event; "Project ↵" button
-   appears in Frontier tab when a red stub node is selected. Calls `project_stub(db, stub_name)`,
-   emits result into a result panel below the graph.
+1. **[DONE] Frontier + project_stub**: `project_stub_request` socket event (ui_server.py:1059);
+   "Project ↵" button appears on red stub node selection. Result renders in `fg-projection` panel.
 
-2. **F4 chain toggle**: add `mode` param to `handle_get_frontier_graph` — `direct` (current,
-   functional->stub), `chain` (stub->stub), `all` (both). Toolbar toggle in Frontier tab.
-   One conditional in the SQL WHERE clause.
+2. **[DONE] F4 chain toggle**: `_frontier_rows(conn, mode)` (ui_server.py:922) parameterizes
+   the WHERE clause; toolbar dropdown has Direct/Chain/All/ABC options. fgMode drives the emit.
 
-3. **Frontier -> build queue**: new `frontier_to_queue` socket event that calls `list_stubs()`,
-   then `store_workflow_item()` for each result with rank=caller_count and kind='next_up'.
-   "Add to queue" button in Frontier toolbar. After this, `prioritize_work()` sees frontier data.
+3. **[DONE] Frontier -> build queue**: `frontier_to_queue` socket event (ui_server.py:1161);
+   "→ Queue" button in toolbar. Calls `list_stubs()` -> `store_workflow_item()` per stub ranked
+   by caller count. `prioritize_work()` now sees frontier data automatically.
 
 ### Tier 2 — new prompt on existing kernel (~30 lines)
 
@@ -389,10 +387,10 @@ What exists, what connects to what, and how much new code each tier needs.
 Updated after composability audit (session 61). Earlier ranking assumed everything needed
 building from scratch — composability audit shows most pieces exist and need connecting, not building.
 
-**Tier 1 — connect existing pieces (do now):**
-1. Frontier + project_stub UI connection (Q6 surface)
-2. F4 chain toggle in Frontier tab
-3. Frontier -> build queue bridge (Q5 backbone connection)
+**Tier 1 — connect existing pieces [DONE session 68]:**
+1. ~~Frontier + project_stub UI connection (Q6 surface)~~ — done
+2. ~~F4 chain toggle in Frontier tab~~ — done
+3. ~~Frontier -> build queue bridge (Q5 backbone connection)~~ — done
 
 **Tier 2 — new prompt on existing kernel:**
 4. **Q3** — Stub scorer tool (gather_context -> evaluate_claim)
