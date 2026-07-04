@@ -96,9 +96,9 @@ the direct-call shape. Each topology has its own frontier type.
   they appear in.
   Disposition: `→ implemented: session 69. frontier_priority() in agent_tools.py. Score = caller count (direct-call weight) + shape bonus (chain=+2, abc-interface=+3). Returns ranked table showing score, callers, active shapes, stub name. Wired into TOOLS + REGISTRY. Multi-shape stubs sort above single-shape stubs with same caller count.`
 
-- [ ] **F6** — Frontier coverage metric: what percentage of the corpus is "behind the frontier"
+- [x] **F6** — Frontier coverage metric: what percentage of the corpus is "behind the frontier"
   (reachable only through at least one unimplemented stub)? Useful as a project health indicator.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 71. frontier_coverage() in agent_tools.py. Reports: total implemented, stub-gated count (1-hop: implemented fns whose only callers are stubs), reachable count, orphaned count, pressure signal (HIGH/MODERATE/LOW). Wired into TOOLS + REGISTRY. feeds: detect_topology, frontier_priority, find_orphaned_impls.`
 
 - [ ] **F7** — UI: the current Frontier tab shows one graph per load. Should it support switching
   between frontier types (a toolbar selector: Direct / ABC / Orphan / Chain)?
@@ -127,10 +127,10 @@ evidence is a direct, concrete use of the existing kernel for planning purposes.
   frontier results (validate_action=5, get_player_by_session=4 are the predicted top two).
   Disposition: `→ finding: list_stubs() in agent_tools.py already does this — suffix-match JOIN on callee column, ranks by caller count. validate_action and get_player_by_session confirmed as top two. NOTE: list_stubs uses 'callee' column; frontier query uses 'target_id'. These are parallel implementations of the same lookup — should converge into one canonical function (see A1 notes).`
 
-- [ ] **Q2** — Define "unblocking value": implementing stub X removes N frontier edges. If X also
+- [x] **Q2** — Define "unblocking value": implementing stub X removes N frontier edges. If X also
   calls stubs Y and Z, those must be counted too. Is this the right metric, or should it be
   purely in-degree?
-  Disposition: `→ finding: depends on F4 (chain detection) being built first. In-degree alone (Q1) is already meaningful and available. Full unblocking value needs chain depth added to in-degree — defer until F4 exists.`
+  Disposition: `→ implemented: session 71. list_stubs() extended with chain depth via recursive CTE (max depth 20, cycle-safe). depth=0 shown as "tail" (chain-tail, implement first); depth>0 shows hop count below. Unblocking value = caller count (in-degree) + chain depth signal. Both are now surfaced per stub in list_stubs output.`
 
 - [x] **Q3** — Wire `evaluate()` to score a stub for implementation priority. Prompt shape:
   subject = stub function, evidence = its callers + its docstring + its stub body, question =

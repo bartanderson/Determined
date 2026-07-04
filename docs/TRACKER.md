@@ -4,8 +4,8 @@ tools/analysis - TRACKER (consolidated)
 This file is the canonical open-items list and at-a-glance status for the
 Determined analysis tool. Active open items only. For closed items, phase
 plans, tier status, UI vision, branch methodology, and environment defects,
-see docs/archive/TRACKER_history.md. For architecture/intent (the why
-behind the design), see DESIGN.md.
+see docs/archive/TRACKER_history.md. For historical context, use git log.
+For architecture/intent (the why behind the design), see DESIGN.md.
 
 Per CLAUDE.md's working agreement: update this file in place as part of
 finishing work (checkboxes, dated notes) so Bart can see what changed via
@@ -16,7 +16,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-04, session 67):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
+**Last session (2026-07-04, session 70):** DISCOVERY_MODEL topology work. T1+T3: detect_topology() updated with chain-head/middle/tail positions, entry-point shape (routes/handlers/cli) separated from truly-disconnected, action queues section added. find_conditional_stubs() new tool (non-stub fns with NIE inside a branch). find_orphaned_impls() labels anticipatory vs possibly-stranded. frontier_priority() bonuses differentiated: chain-tail=+5, middle=+2, head=+1, ABC=+3; orphaned-impls excluded. 414 tests pass. W1-W3+W6: waypoint/reasoning_chain kinds, auto-waypoint in evaluate_claim()/score_stub(). F3+F5 first versions (superseded by T1/T3 improvements this session).
+
+**Session 67 (2026-07-04):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
 
 **Session 60 (2026-07-03):** Item 27 executed (self-review). Item 28 filed.
 infer_behavior refactored to delegate to _infer_behavior_for_symbol (70 lines removed).

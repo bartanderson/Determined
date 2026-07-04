@@ -947,6 +947,21 @@ def _frontier_rows(conn, mode: str):
     return _run(caller_stub=0, callee_stub=1)  # default: direct
 
 
+@socketio.on("get_topology")
+def handle_get_topology():
+    """Return detect_topology() + frontier_coverage() as combined text."""
+    if _oracle is None:
+        emit("topology_result", {"error": "No corpus loaded."})
+        return
+    try:
+        from determined.agent.agent_tools import dispatch
+        topo = dispatch("detect_topology", {}, _oracle, _assessor)
+        coverage = dispatch("frontier_coverage", {}, _oracle, _assessor)
+        emit("topology_result", {"text": topo + "\n\n" + coverage})
+    except Exception as exc:
+        emit("topology_result", {"error": str(exc)})
+
+
 @socketio.on("get_frontier_graph")
 def handle_get_frontier_graph(data):
     """

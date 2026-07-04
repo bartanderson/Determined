@@ -183,6 +183,7 @@
       <button class="tab tab-nodot" data-tab="knowledge">Knowledge</button>
       <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
       <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
+      <button class="tab tab-nodot" data-tab="topology">Topology</button>
     </div>
 
     <!-- tab panels -->
@@ -357,6 +358,18 @@
         </div>
         <div id="wp-list" style="display:flex;flex-direction:column;gap:8px"></div>
         <div id="wp-empty" style="color:var(--text3);padding:1rem;display:none">No pins yet. Use store_finding(kind='waypoint') or evaluate_claim to auto-create waypoints.</div>
+      </div>
+
+      <!-- ── topology tab ── -->
+      <div class="tab-panel" id="panel-topology" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
+          <strong style="font-size:.95em">Corpus Topology</strong>
+          <span style="font-size:.8em;color:var(--text3)">incompleteness shapes + frontier coverage</span>
+          <button id="topo-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+          <span id="topo-status" style="font-size:.78em;color:var(--text3)"></span>
+        </div>
+        <pre id="topo-content" style="font-size:.82em;line-height:1.7;white-space:pre-wrap;margin:0"></pre>
+        <div id="topo-empty" style="color:var(--text3);padding:1rem;display:none">No corpus loaded.</div>
       </div>
 
       <!-- ── doc health tab ── -->
@@ -2705,6 +2718,33 @@ socket.on("waypoints_result", data => {
 document.getElementById("wp-refresh").addEventListener("click", wpLoad);
 document.querySelectorAll(".tab[data-tab='waypoints']").forEach(t => {
   t.addEventListener("click", wpLoad);
+});
+
+// ── topology tab ──────────────────────────────────────────
+const topoContent = document.getElementById("topo-content");
+const topoStatus  = document.getElementById("topo-status");
+const topoEmpty   = document.getElementById("topo-empty");
+
+function topoLoad() {
+  topoStatus.textContent = "Loading…";
+  topoContent.textContent = "";
+  topoEmpty.style.display = "none";
+  socket.emit("get_topology");
+}
+
+socket.on("topology_result", data => {
+  topoStatus.textContent = "";
+  if (data.error) {
+    topoEmpty.textContent = data.error;
+    topoEmpty.style.display = "";
+  } else {
+    topoContent.textContent = data.text;
+  }
+});
+
+document.getElementById("topo-refresh").addEventListener("click", topoLoad);
+document.querySelectorAll(".tab[data-tab='topology']").forEach(t => {
+  t.addEventListener("click", topoLoad);
 });
 </script>
 

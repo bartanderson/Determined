@@ -426,8 +426,16 @@ REGISTRY: dict[str, dict] = {
         "purpose": "Inventory the incompleteness shapes present in the corpus: direct-call stubs, ABC-interface gaps, stub chains, orphaned implementations, and disconnected stubs. Returns counts per shape and identifies the dominant pattern.",
         "args": {},
         "output": "CORPUS TOPOLOGY table with shape counts and dominant shape label",
-        "feeds": ["list_stubs", "find_abc_gaps", "score_stub"],
+        "feeds": ["list_stubs", "find_abc_gaps", "score_stub", "frontier_coverage"],
         "use_when": "You want an overview of how this codebase is incomplete — orientation step before deciding which frontier work to prioritize.",
+        "category": "knowledge",
+    },
+    "frontier_coverage": {
+        "purpose": "Measure what fraction of the implemented corpus is stub-gated: implemented functions whose only callers are stubs. Answers 'how much working code is currently blocked by unimplemented scaffolding?'",
+        "args": {},
+        "output": "FRONTIER COVERAGE block: total implemented, stub-gated count and %, reachable count, orphaned count, pressure signal",
+        "feeds": ["detect_topology", "frontier_priority", "find_orphaned_impls"],
+        "use_when": "You want a single number summarizing how blocked the corpus is — run after detect_topology for full orientation.",
         "category": "knowledge",
     },
     "score_stub": {

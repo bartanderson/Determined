@@ -877,9 +877,13 @@ def graph_clusters(oracle: "DBOracle", args: dict) -> str:
 def list_stubs(oracle: "DBOracle", args: dict) -> str:
     """
     list_stubs(limit?) - stub functions ranked by caller count (highest priority first).
+    Includes chain depth: how many stub-to-stub hops below this stub before reaching
+    a non-stub or dead end. depth=0 means a chain-tail (implement first).
     """
     limit = int(args.get("limit", 20))
-    rows = oracle.conn.execute(
+    conn = oracle.conn
+
+    rows = conn.execute(
         """
         SELECT f.name, f.file_path, COUNT(ge.caller) AS callers
         FROM functions f
@@ -893,11 +897,36 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     ).fetchall()
     if not rows:
         return "No stub functions found in corpus."
+
+    # Compute chain depth for each stub via recursive CTE (max depth 20 to avoid cycles)
+    def _chain_depth(stub_name: str) -> int:
+        try:
+            result = conn.execute(
+                """
+                WITH RECURSIVE chain(node, depth) AS (
+                    SELECT ?, 0
+                    UNION ALL
+                    SELECT ge.callee, chain.depth + 1
+                    FROM chain
+                    JOIN graph_edges ge ON ge.caller = chain.node
+                    JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name)
+                    WHERE f.is_stub = 1 AND chain.depth < 20
+                )
+                SELECT MAX(depth) FROM chain
+                """,
+                (stub_name,),
+            ).fetchone()
+            return result[0] or 0
+        except Exception:
+            return 0
+
     lines = [f"Stub functions ({len(rows)} shown, ranked by caller count):"]
     for r in rows:
         fp = (r[1] or "").replace("\\", "/").split("/")[-1]
         callers = r[2] or 0
-        lines.append(f"  {r[0]} in {fp}  ({callers} callers)")
+        depth = _chain_depth(r[0])
+        depth_tag = f"depth={depth}" if depth > 0 else "tail"
+        lines.append(f"  {r[0]} in {fp}  ({callers} callers, {depth_tag})")
     return "\n".join(lines)
 
 
@@ -1150,6 +1179,110 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         f"    Write callers:  orphaned-impl ({orphaned_impl})",
         f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})",
     ]
+    return "\n".join(lines)
+
+
+def frontier_coverage(oracle: "DBOracle", args: dict) -> str:
+    """
+    frontier_coverage() - what fraction of the implemented corpus is blocked behind stubs?
+
+    A function is "stub-gated" if every path that could call it passes through at least
+    one stub. Computed as: implemented functions whose only callers are stubs (direct edge
+    only — one-hop approximation, fast and conservative).
+
+    Returns: total implemented, stub-gated count, coverage %, and per-shape context.
+    """
+    conn = oracle.conn
+
+    total_impl = conn.execute(
+        "SELECT COUNT(*) FROM functions WHERE is_stub = 0"
+    ).fetchone()[0]
+
+    if total_impl == 0:
+        return "No implemented functions in corpus."
+
+    total_stubs = conn.execute(
+        "SELECT COUNT(*) FROM functions WHERE is_stub = 1"
+    ).fetchone()[0]
+
+    # Implemented functions that have at least one caller that is a stub
+    has_stub_caller = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 0 AND caller_fn.is_stub = 1
+        """
+    ).fetchone()[0]
+
+    # Implemented functions that have at least one caller that is also implemented
+    has_impl_caller = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 0 AND caller_fn.is_stub = 0
+        """
+    ).fetchone()[0]
+
+    # Stub-gated: has a stub caller but no implemented caller (one-hop)
+    stub_gated = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        WHERE f.is_stub = 0
+          AND EXISTS (
+            SELECT 1 FROM graph_edges ge
+            JOIN functions caller_fn ON caller_fn.name = ge.caller
+            WHERE (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+              AND caller_fn.is_stub = 1
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM graph_edges ge
+            JOIN functions caller_fn ON caller_fn.name = ge.caller
+            WHERE (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+              AND caller_fn.is_stub = 0
+          )
+        """
+    ).fetchone()[0]
+
+    pct = (stub_gated / total_impl * 100) if total_impl else 0.0
+
+    # Unreachable implemented: no callers at all (orphaned-impl overlap)
+    no_callers = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        WHERE f.is_stub = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM graph_edges ge
+            WHERE ge.callee = f.name OR ge.callee LIKE '%.' || f.name
+          )
+        """
+    ).fetchone()[0]
+
+    lines = [
+        "FRONTIER COVERAGE",
+        f"  Implemented functions : {total_impl}",
+        f"  Stubs in corpus       : {total_stubs}",
+        "",
+        f"  Stub-gated (1-hop)    : {stub_gated}  ({pct:.1f}% of implemented corpus)",
+        f"  Has impl caller       : {has_impl_caller}  (reachable through functional code)",
+        f"  Has stub caller only  : {stub_gated}  (blocked until stub(s) above are implemented)",
+        f"  No callers at all     : {no_callers}  (orphaned — see find_orphaned_impls)",
+        "",
+    ]
+
+    if pct >= 40:
+        lines.append("  Signal: HIGH stub pressure — large fraction of implemented work is blocked.")
+    elif pct >= 20:
+        lines.append("  Signal: MODERATE stub pressure — meaningful implemented code waiting on stubs.")
+    else:
+        lines.append("  Signal: LOW stub pressure — most implemented code is reachable.")
+
+    lines.append("  Note: 1-hop approximation. Multi-hop chains reported by detect_topology.")
     return "\n".join(lines)
 
 
@@ -3930,6 +4063,7 @@ TOOLS = {
     "list_stubs":           (list_stubs,            "oracle"),
     "find_abc_gaps":        (find_abc_gaps,         "oracle"),
     "detect_topology":      (detect_topology,       "oracle"),
+    "frontier_coverage":    (frontier_coverage,     "oracle"),
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
     "frontier_priority":        (frontier_priority,         "oracle"),
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),
