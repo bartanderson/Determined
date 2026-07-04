@@ -400,7 +400,7 @@
     <span id="conn-dot" class="status-dot offline"></span>
     <span id="conn-label">connecting…</span>
     <span class="sep">·</span>
-    <span>{{ db_name }}</span>
+    <span id="status-db-name">{{ db_name }}</span>
     <span class="spacer"></span>
     <span id="elapsed" class="elapsed"></span>
   </div>
@@ -485,6 +485,26 @@ let _startupFiredFor = null;
 // server sends this immediately on connect if a corpus is already loaded
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
+  document.getElementById("status-db-name").textContent = data.db_name;
+  // Clear stale graphs — nodes belong to the old corpus and must not carry over
+  if (_cy)    { _cy.destroy();    _cy    = null; }
+  if (_igCy)  { _igCy.destroy(); _igCy  = null; }
+  if (_fgCy)  { _fgCy.destroy(); _fgCy  = null; }
+  _fgSelected    = null;
+  _fgResultMode  = null;
+  _gxLoaded      = false;
+  // Clear Frontier side-panel and reasoning log
+  fgProject.style.display    = "none";
+  fgReason.style.display     = "none";
+  fgReason.textContent       = "Reason ↵";
+  fgReason.disabled          = false;
+  fgProjection.style.display = "none";
+  fgProjection.textContent   = "";
+  fgProgressBar.style.display = "none";
+  fgProgressLog.textContent  = "";
+  fgStatus.textContent       = "";
+  igStatus.textContent       = "";
+  gxStatus.textContent       = "";
   sendBtn.disabled = false;
   setCorpusLoaded(true);
 
