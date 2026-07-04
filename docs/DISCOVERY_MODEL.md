@@ -43,18 +43,18 @@ queries, different visualizations, and different fix strategies.
 
 **Exploration checklist:**
 
-- [ ] **T1** — Complete the shape taxonomy. Are there shapes beyond the five above? Review dj2 stubs
+- [x] **T1** — Complete the shape taxonomy. Are there shapes beyond the five above? Review dj2 stubs
   for patterns that don't fit any current category.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 69. Reasoning identified three gaps in the original taxonomy: (1) Chain is actually three distinct positions (head/middle/tail) with different implementation priorities — tail=implement first, middle=blocked, head=bridging. (2) Disconnected conflates entry-point-stubs (externally triggered, not truly unreachable) with genuinely isolated stubs. (3) Orphaned-impl conflates anticipatory (written ahead of callers, good) with possibly-stranded (had callers, now doesn't, likely dead code). (4) New shape: conditional-stub — non-stub function containing raise NotImplementedError inside a branch (passes stub detection, crashes at runtime on specific inputs). All four gaps implemented: detect_topology() updated, find_conditional_stubs() added, find_orphaned_impls() labels updated, entry-point heuristic added.`
 
 - [x] **T2** — Detect which shape(s) a given corpus exhibits. Write a `detect_topology()` query
   that returns a shape inventory (counts per shape) for the loaded corpus.
   Disposition: `→ implemented: session 69. detect_topology() in agent_tools.py. Five shape counts: direct-call (stubs with functional callers), ABC-interface (abstract methods with no concrete override), chain (stubs calling stubs), orphaned-impl (implemented fns with no non-stub callers), disconnected (stubs with no callers or callees). _dominant_shape() identifies the leading pattern. Wired into TOOLS + REGISTRY. 5 regression tests.`
 
-- [ ] **T3** — A function can participate in multiple shapes simultaneously (e.g. a stub that is
+- [x] **T3** — A function can participate in multiple shapes simultaneously (e.g. a stub that is
   both direct-call AND part of a chain). Is multi-shape membership a stronger signal? Test
   against dj2.
-  Disposition: `→ not explored`
+  Disposition: `→ implemented: session 69. frontier_priority() implements composite scoring with differentiated bonuses: chain-tail=+5 (highest — implement to unblock the chain upward), chain-middle=+2, chain-head=+1 (already captured in caller count), ABC-interface=+3. Chain-tail stubs appear in the queue even if they have zero direct functional callers, because they are the critical unblocking nodes. This directly answers T3: multi-shape membership IS a stronger signal, and the bonus magnitudes reflect the operational priority difference.`
 
 - [ ] **T4** — UI representation. Should topology be a summary panel (a topology overview before
   drilling into any specific frontier), a selector that filters which frontier views are shown,

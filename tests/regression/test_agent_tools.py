@@ -518,6 +518,7 @@ def test_dispatch_all_tools_registered():
         "detect_topology",
         "find_orphaned_impls",
         "frontier_priority",
+        "find_conditional_stubs",
     }
     assert set(TOOLS.keys()) == expected
 

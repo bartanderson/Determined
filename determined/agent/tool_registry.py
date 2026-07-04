@@ -392,6 +392,16 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to understand the side-effect profile of a function and its callees — e.g. before refactoring, or to find where state mutations happen in a call chain.",
         "category": "knowledge",
     },
+    "find_conditional_stubs": {
+        "purpose": "Find implemented (non-stub) functions that contain 'raise NotImplementedError' inside a conditional branch. These pass stub detection but will crash on specific inputs at runtime.",
+        "args": {
+            "limit": "(optional) max results, default 30",
+        },
+        "output": "Per-file list of function names with line numbers for the def and the raise",
+        "feeds": ["symbol_context", "risk_profile"],
+        "use_when": "You want to find partial implementations that are hidden from stub detection — functions that look complete but fail on certain inputs.",
+        "category": "knowledge",
+    },
     "frontier_priority": {
         "purpose": "Rank stubs by composite frontier score: caller count + shape-membership bonus (chain=+2, abc-interface=+3). Multi-shape stubs block more of the system and score higher.",
         "args": {

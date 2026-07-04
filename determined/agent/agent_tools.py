@@ -971,34 +971,35 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
-def detect_topology(oracle: "DBOracle", args: dict) -> str:
-    """
-    detect_topology() - inventory the incompleteness shapes present in the corpus.
-    Returns counts for each known topology: direct-call, ABC-interface, chain,
-    orphaned-impl, and disconnected stubs. High counts in a shape tell you which
-    kind of frontier work dominates this corpus.
-    """
-    conn = oracle.conn
+_ENTRY_POINT_PATH_HINTS = {
+    "route", "routes", "view", "views", "handler", "handlers",
+    "endpoint", "endpoints", "cli", "commands", "command",
+    "webhook", "webhooks", "task", "tasks", "signal", "signals",
+    "middleware", "main",
+}
+_ENTRY_POINT_NAME_PREFIXES = ("handle_", "on_", "route_", "cmd_", "do_")
 
-    # Shape 1: Direct-call — stubs with at least one functional (non-stub) caller
-    direct_call = conn.execute(
-        """
-        SELECT COUNT(DISTINCT f.name)
-        FROM functions f
-        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
-        JOIN functions caller_fn ON caller_fn.name = ge.caller
-        WHERE f.is_stub = 1 AND caller_fn.is_stub = 0
-        """
-    ).fetchone()[0]
 
-    # Shape 2: ABC-interface — stub methods on ABC-derived classes with no non-stub override
+def _is_entry_point_hint(file_path: str, fn_name: str) -> bool:
+    """Heuristic: is this function likely an externally-triggered entry point?"""
+    parts = set((file_path or "").replace("\\", "/").lower().replace(".", "/").split("/"))
+    if parts & _ENTRY_POINT_PATH_HINTS:
+        return True
+    lname = fn_name.lower()
+    if any(lname.startswith(p) for p in _ENTRY_POINT_NAME_PREFIXES):
+        return True
+    return False
+
+
+def _get_abc_gap_set(conn) -> set:
+    """Return set of stub method names on ABC classes with no concrete override."""
     import json as _json
     abc_classes = conn.execute(
         "SELECT name, methods_json, file_path FROM classes "
         "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
     ).fetchall()
-    abc_gap_count = 0
-    for cls_name, methods_json, file_path in abc_classes:
+    gaps: set[str] = set()
+    for _cls_name, methods_json, file_path in abc_classes:
         try:
             methods = _json.loads(methods_json or "[]")
         except Exception:
@@ -1015,20 +1016,91 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
                 (method, file_path),
             ).fetchone()
             if not override:
-                abc_gap_count += 1
+                gaps.add(method)
+    return gaps
 
-    # Shape 3: Chain — stubs that call other stubs (both ends are stubs)
-    chain_stubs = conn.execute(
+
+def _get_chain_positions(conn) -> tuple[set, set, set]:
+    """
+    Classify each stub into chain-tail, chain-middle, or chain-head.
+
+    chain-tail   — stub with stub callers but NO stub callees (implement first)
+    chain-middle — stub with stub callers AND stub callees (blocked above and below)
+    chain-head   — stub with functional callers AND stub callees (bridges real code into chain)
+
+    Returns (tail_set, middle_set, head_set).  A stub may appear in only one set.
+    """
+    # Stubs that have at least one stub callee
+    has_stub_callee = {r[0] for r in conn.execute(
         """
-        SELECT COUNT(DISTINCT f.name)
-        FROM functions f
-        JOIN graph_edges ge ON (ge.caller = f.name)
+        SELECT DISTINCT f.name FROM functions f
+        JOIN graph_edges ge ON ge.caller = f.name
         JOIN functions callee_fn ON (callee_fn.name = ge.callee OR ge.callee LIKE '%.' || callee_fn.name)
         WHERE f.is_stub = 1 AND callee_fn.is_stub = 1
         """
+    ).fetchall()}
+
+    # Stubs that have at least one functional (non-stub) caller
+    has_functional_caller = {r[0] for r in conn.execute(
+        """
+        SELECT DISTINCT f.name FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 1 AND caller_fn.is_stub = 0
+        """
+    ).fetchall()}
+
+    # Stubs that have at least one stub caller
+    has_stub_caller = {r[0] for r in conn.execute(
+        """
+        SELECT DISTINCT f.name FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 1 AND caller_fn.is_stub = 1
+        """
+    ).fetchall()}
+
+    head_set   = has_functional_caller & has_stub_callee
+    # middle: stub callers, stub callees, but no functional callers
+    middle_set = (has_stub_caller & has_stub_callee) - has_functional_caller
+    # tail: stub callers, no stub callees (leaf of the chain)
+    tail_set   = has_stub_caller - has_stub_callee
+
+    return tail_set, middle_set, head_set
+
+
+def detect_topology(oracle: "DBOracle", args: dict) -> str:
+    """
+    detect_topology() - inventory the incompleteness shapes present in the corpus.
+    Returns counts for each known topology shape. Chain is broken into three
+    positions (head/middle/tail) and entry-point stubs are separated from
+    truly-disconnected stubs. Use before frontier_priority or find_orphaned_impls
+    to understand which shapes dominate this corpus.
+    """
+    conn = oracle.conn
+
+    # Shape 1: Direct-call — stubs with at least one functional (non-stub) caller
+    direct_call = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        WHERE f.is_stub = 1 AND caller_fn.is_stub = 0
+        """
     ).fetchone()[0]
 
-    # Shape 4: Orphaned-impl — non-stub functions with no callers OR all callers are stubs
+    # Shape 2: ABC-interface gaps
+    abc_gap_set = _get_abc_gap_set(conn)
+    abc_gap_count = len(abc_gap_set)
+
+    # Shape 3: Chain positions
+    tail_set, middle_set, head_set = _get_chain_positions(conn)
+    chain_tail   = len(tail_set)
+    chain_middle = len(middle_set)
+    chain_head   = len(head_set)
+
+    # Shape 4: Orphaned-impl
     total_non_stub = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 0").fetchone()[0]
     orphaned_impl = conn.execute(
         """
@@ -1044,16 +1116,17 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         """
     ).fetchone()[0]
 
-    # Shape 5: Disconnected — stubs with no callers AND no callees
-    disconnected = conn.execute(
+    # Shape 5a: Entry-point stubs — disconnected by graph but likely externally triggered
+    all_disconnected = conn.execute(
         """
-        SELECT COUNT(DISTINCT f.name)
-        FROM functions f
+        SELECT f.name, f.file_path FROM functions f
         WHERE f.is_stub = 1
           AND NOT EXISTS (SELECT 1 FROM graph_edges ge WHERE ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
           AND NOT EXISTS (SELECT 1 FROM graph_edges ge WHERE ge.caller = f.name)
         """
-    ).fetchone()[0]
+    ).fetchall()
+    entry_point_stubs = sum(1 for name, fp in all_disconnected if _is_entry_point_hint(fp, name))
+    disconnected = len(all_disconnected) - entry_point_stubs
 
     total_stubs = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 1").fetchone()[0]
 
@@ -1061,15 +1134,21 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         "CORPUS TOPOLOGY",
         f"  Total stubs: {total_stubs}  |  Total implemented: {total_non_stub}",
         "",
-        "  Shape                 Count  Description",
-        "  ─────────────────────────────────────────────────────────────",
-        f"  Direct-call           {direct_call:>5}  stubs called by functional code",
-        f"  ABC-interface         {abc_gap_count:>5}  abstract methods with no concrete override",
-        f"  Chain                 {chain_stubs:>5}  stubs that call other stubs",
-        f"  Orphaned-impl         {orphaned_impl:>5}  implemented fns with no non-stub callers",
-        f"  Disconnected          {disconnected:>5}  stubs with no callers and no callees",
+        "  Shape                  Count  Description",
+        "  ──────────────────────────────────────────────────────────────",
+        f"  Direct-call            {direct_call:>5}  stubs called by functional code",
+        f"  ABC-interface          {abc_gap_count:>5}  abstract methods with no concrete override",
+        f"  Chain-head             {chain_head:>5}  stubs: functional callers + stub callees [bridge]",
+        f"  Chain-middle           {chain_middle:>5}  stubs: stub callers + stub callees [blocked]",
+        f"  Chain-tail             {chain_tail:>5}  stubs: stub callers only [implement first]",
+        f"  Orphaned-impl          {orphaned_impl:>5}  implementations with no functional callers",
+        f"  Entry-point            {entry_point_stubs:>5}  stubs in route/handler/cli files [external trigger]",
+        f"  Disconnected           {disconnected:>5}  stubs with no graph connections",
         "",
-        "  Dominant shape: " + _dominant_shape(direct_call, abc_gap_count, chain_stubs, disconnected),
+        "  Action queues:",
+        f"    Implement now:  chain-tail ({chain_tail}) > direct-call ({direct_call}) > abc-interface ({abc_gap_count}) > chain-head ({chain_head})",
+        f"    Write callers:  orphaned-impl ({orphaned_impl})",
+        f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})",
     ]
     return "\n".join(lines)
 
@@ -1089,104 +1168,105 @@ def _dominant_shape(direct: int, abc: int, chain: int, disconnected: int) -> str
 def frontier_priority(oracle: "DBOracle", args: dict) -> str:
     """
     frontier_priority(limit?) - rank stubs by composite frontier score.
-    Score = direct-call weight (caller count) + shape-membership bonus.
-    A stub appearing in multiple topology shapes (direct-call AND chain, or
-    direct-call AND abc-interface) scores higher than single-shape stubs.
-    Returned list is the multi-shape work queue: highest-value stubs first.
+
+    Score = functional caller count + chain-position bonus + ABC-interface bonus.
+    Chain bonuses:
+      tail   = +5  (leaf node: implement to start unblocking the chain upward)
+      middle = +2  (blocked above and below; implement after tails)
+      head   = +1  (already captured in caller count; bonus is marginal)
+    ABC bonus = +3 (gates subclassing, not just a call)
+
+    Orphaned-impls are explicitly excluded — they need callers written, not
+    implementations; use find_orphaned_impls() for those.
     """
-    import json as _json
     limit = int(args.get("limit", 20))
     conn = oracle.conn
 
-    # 1. All stubs with direct-call caller count
+    # All stubs with at least one functional caller (direct-call shape only)
     stubs = conn.execute(
         """
-        SELECT f.name, f.file_path, COUNT(ge.caller) AS callers
+        SELECT f.name, f.file_path, COUNT(DISTINCT ge.caller) AS callers
         FROM functions f
-        LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
         JOIN functions caller_fn ON caller_fn.name = ge.caller AND caller_fn.is_stub = 0
         WHERE f.is_stub = 1
         GROUP BY f.name, f.file_path
         """,
     ).fetchall()
 
-    if not stubs:
-        return "No stubs with functional callers found. Use list_stubs() for all stubs."
+    # Chain-tail stubs (no functional callers but reachable via stub chain from functional code)
+    # Include them even though they have 0 direct functional callers — they're highest priority
+    tail_set, middle_set, head_set = _get_chain_positions(conn)
 
-    # 2. Chain-stub set: stubs that also call other stubs
-    chain_set = {r[0] for r in conn.execute(
-        """
-        SELECT DISTINCT f.name FROM functions f
-        JOIN graph_edges ge ON ge.caller = f.name
-        JOIN functions callee_fn ON (callee_fn.name = ge.callee OR ge.callee LIKE '%.' || callee_fn.name)
-        WHERE f.is_stub = 1 AND callee_fn.is_stub = 1
-        """
-    ).fetchall()}
+    # Collect all stubs in any queue-A shape
+    stub_map: dict[str, tuple[str, int]] = {}  # name -> (file_path, caller_count)
+    for name, fp, callers in stubs:
+        stub_map[name] = (fp, callers)
 
-    # 3. ABC-gap set: stubs on ABC classes with no override
-    abc_classes = conn.execute(
-        "SELECT name, methods_json, file_path FROM classes "
-        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
-    ).fetchall()
-    abc_gap_set: set[str] = set()
-    for cls_name, methods_json, file_path in abc_classes:
-        try:
-            methods = _json.loads(methods_json or "[]")
-        except Exception:
-            continue
-        for method in methods:
-            row = conn.execute(
-                "SELECT is_stub FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
-                (method, file_path),
-            ).fetchone()
-            if not (row and row[0]):
-                continue
-            override = conn.execute(
-                "SELECT 1 FROM functions WHERE name = ? AND file_path != ? AND is_stub = 0 LIMIT 1",
-                (method, file_path),
-            ).fetchone()
-            if not override:
-                abc_gap_set.add(method)
+    # Add chain-tail/middle stubs even if they have no direct functional callers
+    for name_set in (tail_set, middle_set):
+        for name in name_set:
+            if name not in stub_map:
+                row = conn.execute(
+                    "SELECT file_path FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1", (name,)
+                ).fetchone()
+                if row:
+                    stub_map[name] = (row[0], 0)
 
-    # 4. Score and rank
+    abc_gap_set = _get_abc_gap_set(conn)
+
     scored = []
-    for name, file_path, callers in stubs:
-        shapes = ["direct-call"]
+    for name, (file_path, callers) in stub_map.items():
+        shapes = []
         bonus = 0
-        if name in chain_set:
-            shapes.append("chain")
+        if callers > 0:
+            shapes.append("direct-call")
+        if name in tail_set:
+            shapes.append("chain-tail")
+            bonus += 5
+        elif name in middle_set:
+            shapes.append("chain-mid")
             bonus += 2
+        elif name in head_set:
+            shapes.append("chain-head")
+            bonus += 1
         if name in abc_gap_set:
             shapes.append("abc")
             bonus += 3
         score = callers + bonus
         scored.append((score, callers, name, file_path, shapes))
 
+    if not scored:
+        return "No implementable stubs found. Use list_stubs() to see all stubs."
+
     scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
     scored = scored[:limit]
 
     lines = [
-        f"Frontier priority (composite score = caller count + shape bonus):",
-        f"  Shapes: direct-call=base, chain=+2, abc-interface=+3",
+        "Frontier priority  (score = caller count + bonuses: chain-tail=+5, chain-mid=+2, chain-head=+1, abc=+3)",
+        "Orphaned-impls excluded — use find_orphaned_impls() for those.",
         "",
-        f"  Score  Callers  Shapes          Name",
-        f"  ──────────────────────────────────────────────────────────",
+        "  Score  Callers  Shapes           Name",
+        "  ──────────────────────────────────────────────────────────────",
     ]
     for score, callers, name, file_path, shapes in scored:
         fp = (file_path or "").replace("\\", "/").split("/")[-1]
-        shape_str = "+".join(shapes)
-        lines.append(f"  {score:>5}  {callers:>7}  {shape_str:<15}  {name}  ({fp})")
+        shape_str = "+".join(shapes) if shapes else "chain-only"
+        lines.append(f"  {score:>5}  {callers:>7}  {shape_str:<16}  {name}  ({fp})")
     return "\n".join(lines)
 
 
 def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
     """
     find_orphaned_impls(limit?) - find implemented functions that are never called
-    by other implemented functions. These are implementations written ahead of their
-    interfaces, or dead code that slipped past stub detection.
+    by other implemented functions.
 
-    An orphaned-impl is a non-stub function where every caller in graph_edges is
-    either a stub or non-existent in the corpus.
+    Labels each result:
+      anticipatory — no callers at all in graph (written ahead of its interface)
+      possibly-stranded — has stub callers only (was connected, stubs were never implemented)
+
+    These require opposite responses: anticipatory = write the caller that uses it;
+    possibly-stranded = verify it's still needed before investing more work nearby.
     """
     limit = int(args.get("limit", 30))
     conn = oracle.conn
@@ -1195,14 +1275,15 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
         """
         SELECT f.name, f.file_path, f.line_number,
                COUNT(ge.caller) AS total_callers,
-               SUM(CASE WHEN caller_fn.is_stub = 1 OR caller_fn.name IS NULL THEN 1 ELSE 0 END) AS stub_or_missing_callers
+               SUM(CASE WHEN caller_fn.is_stub = 1 THEN 1 ELSE 0 END) AS stub_callers,
+               SUM(CASE WHEN caller_fn.name IS NULL THEN 1 ELSE 0 END) AS missing_callers
         FROM functions f
         LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
         LEFT JOIN functions caller_fn ON caller_fn.name = ge.caller
         WHERE f.is_stub = 0
         GROUP BY f.name, f.file_path, f.line_number
         HAVING total_callers = 0
-            OR total_callers = stub_or_missing_callers
+            OR (stub_callers + missing_callers) = total_callers
         ORDER BY f.file_path, f.line_number
         LIMIT ?
         """,
@@ -1213,18 +1294,104 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
         return "No orphaned implementations found."
 
     lines = [
-        f"Orphaned implementations ({len(rows)} shown) — non-stub functions with no functional callers:",
+        f"Orphaned implementations ({len(rows)} shown)",
+        "  anticipatory = no callers (written ahead of interface — write the caller)",
+        "  possibly-stranded = only stub callers (verify still needed before investing nearby)",
         "",
     ]
     prev_file = None
-    for name, file_path, line_no, total_callers, stub_callers in rows:
+    for name, file_path, line_no, total_callers, stub_callers, missing_callers in rows:
         fp = (file_path or "").replace("\\", "/")
         fp_short = fp.split("/")[-1]
         if fp_short != prev_file:
             lines.append(f"  {fp_short}")
             prev_file = fp_short
-        reason = "no callers" if total_callers == 0 else f"all {int(stub_callers)} callers are stubs"
-        lines.append(f"    {name}  (line {line_no})  [{reason}]")
+        if total_callers == 0:
+            label = "anticipatory"
+        else:
+            label = f"possibly-stranded ({int(stub_callers)} stub callers)"
+        lines.append(f"    {name}  line {line_no}  [{label}]")
+    return "\n".join(lines)
+
+
+def find_conditional_stubs(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_conditional_stubs(limit?) - find implemented functions that contain
+    'raise NotImplementedError' inside a conditional branch (if/elif/else).
+    These pass stub detection (the function has real logic) but will crash
+    at runtime on specific inputs.
+
+    Scans source files for functions marked is_stub=0 that contain the pattern.
+    """
+    import re as _re
+    limit = int(args.get("limit", 30))
+    conn = oracle.conn
+
+    # Get all non-stub functions with their source file paths
+    fn_rows = conn.execute(
+        "SELECT name, file_path, line_number FROM functions WHERE is_stub = 0 ORDER BY file_path, line_number"
+    ).fetchall()
+    if not fn_rows:
+        return "No implemented functions found."
+
+    # Read each unique file once, scan for conditional NotImplementedError
+    from pathlib import Path as _Path
+    file_lines: dict[str, list[str]] = {}
+    results: list[tuple[str, str, int, int]] = []  # (name, file_path, fn_line, hit_line)
+
+    # Pattern: raise NotImplementedError inside an if/elif/else block
+    # We approximate by finding functions where the raise appears but is indented
+    # more than the function's base indent (meaning it's inside a conditional)
+    _nie_pat = _re.compile(r"raise\s+NotImplementedError")
+    _if_pat  = _re.compile(r"^\s*(if |elif |else:)")
+
+    for name, file_path, fn_line in fn_rows:
+        if not file_path or not _Path(file_path).exists():
+            continue
+        if file_path not in file_lines:
+            try:
+                file_lines[file_path] = _Path(file_path).read_text(encoding="utf-8", errors="replace").splitlines()
+            except Exception:
+                file_lines[file_path] = []
+        lines_src = file_lines[file_path]
+        if not lines_src or fn_line < 1 or fn_line > len(lines_src):
+            continue
+
+        # Scan from fn_line forward to the next function at same/lower indent
+        fn_indent = len(lines_src[fn_line - 1]) - len(lines_src[fn_line - 1].lstrip())
+        found_if = False
+        for i in range(fn_line, min(fn_line + 80, len(lines_src))):
+            src_line = lines_src[i]
+            if not src_line.strip():
+                continue
+            cur_indent = len(src_line) - len(src_line.lstrip())
+            # Stop at next top-level definition
+            if cur_indent <= fn_indent and i > fn_line and src_line.lstrip().startswith(("def ", "class ", "async def ")):
+                break
+            if _if_pat.match(src_line):
+                found_if = True
+            if found_if and _nie_pat.search(src_line):
+                results.append((name, file_path, fn_line, i + 1))
+                break
+
+        if len(results) >= limit:
+            break
+
+    if not results:
+        return "No conditional stubs found (no non-stub functions with conditional NotImplementedError)."
+
+    lines = [
+        f"Conditional stubs ({len(results)} found) — implemented functions with raise NotImplementedError in a branch:",
+        "(These pass stub detection but will crash on specific inputs)",
+        "",
+    ]
+    prev_file = None
+    for name, file_path, fn_line, hit_line in results:
+        fp_short = (file_path or "").replace("\\", "/").split("/")[-1]
+        if fp_short != prev_file:
+            lines.append(f"  {fp_short}")
+            prev_file = fp_short
+        lines.append(f"    {name}  (def line {fn_line}, raise line {hit_line})")
     return "\n".join(lines)
 
 
@@ -3763,8 +3930,9 @@ TOOLS = {
     "list_stubs":           (list_stubs,            "oracle"),
     "find_abc_gaps":        (find_abc_gaps,         "oracle"),
     "detect_topology":      (detect_topology,       "oracle"),
-    "find_orphaned_impls":  (find_orphaned_impls,   "oracle"),
-    "frontier_priority":    (frontier_priority,     "oracle"),
+    "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
+    "frontier_priority":        (frontier_priority,         "oracle"),
+    "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),
     "project_stub":         (project_stub,          "oracle"),
     "score_stub":           (score_stub,            "assessor"),
     # Doc tools
