@@ -951,13 +951,77 @@ def _frontier_rows(conn, mode: str):
 def handle_get_frontier_graph(data):
     """
     Return the implementation frontier.
-    mode: 'direct' (functional->stub), 'chain' (stub->stub), 'all' (both).
-    Nodes: red=stub, amber=frontier-caller, gray=stub-caller (chain mode).
+    mode: 'direct' (functional->stub), 'chain' (stub->stub), 'all' (both), 'abc' (ABC interface gaps).
+    Nodes: red=stub, amber=frontier-caller, gray=stub-caller (chain), purple=abc-interface (abc mode).
     """
     if _oracle is None:
         emit("frontier_graph_result", {"error": "no corpus loaded"})
         return
     mode = (data or {}).get("mode", "direct")
+
+    if mode == "abc":
+        # ABC mode: show abstract-interface stubs grouped by class, edges from class->method
+        try:
+            from determined.agent.agent_tools import find_abc_gaps as _find_abc
+            import json as _json
+            conn = _oracle.conn
+
+            abc_rows = conn.execute(
+                "SELECT name, methods_json, file_path FROM classes "
+                "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+            ).fetchall()
+
+            nodes: dict[str, dict] = {}
+            edges: list[dict] = []
+
+            def _short(path):
+                return (path or "").replace("\\", "/").split("/")[-1]
+
+            for cls_name, methods_json, cls_file in abc_rows:
+                methods = _json.loads(methods_json or "[]")
+                has_gap = False
+                for method in methods:
+                    row = conn.execute(
+                        "SELECT file_path, line_number, is_stub FROM functions "
+                        "WHERE name=? AND file_path=? LIMIT 1", (method, cls_file)
+                    ).fetchone()
+                    if not row or not row[2]:
+                        continue
+                    # Check for non-stub override
+                    override = conn.execute(
+                        "SELECT COUNT(*) FROM functions WHERE name=? AND is_stub=0 AND file_path!=?",
+                        (method, cls_file)
+                    ).fetchone()[0]
+                    if override > 0:
+                        continue
+                    # Unimplemented abstract method — add stub node + edge from class
+                    has_gap = True
+                    if method not in nodes:
+                        nodes[method] = {
+                            "id": method, "label": method, "role": "stub",
+                            "file": _short(row[0]), "line": row[1] or 0,
+                        }
+                    edges.append({"source": cls_name, "target": method})
+
+                if has_gap and cls_name not in nodes:
+                    nodes[cls_name] = {
+                        "id": cls_name, "label": cls_name, "role": "abc",
+                        "file": _short(cls_file), "line": 0,
+                    }
+
+            emit("frontier_graph_result", {
+                "nodes": list(nodes.values()),
+                "edges": edges,
+                "mode": mode,
+                "stub_count": sum(1 for n in nodes.values() if n["role"] == "stub"),
+                "frontier_count": 0,
+                "chain_count": 0,
+                "abc_count": sum(1 for n in nodes.values() if n["role"] == "abc"),
+            })
+        except Exception as exc:
+            emit("frontier_graph_result", {"error": str(exc)})
+        return
+
     try:
         rows = _frontier_rows(_oracle.conn, mode)
 

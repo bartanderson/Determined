@@ -902,6 +902,76 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_abc_gaps() - find abstract-interface methods (defined on ABC subclasses as stubs)
+    that have no concrete non-stub override anywhere in the corpus.
+    These are the unimplemented interface frontier — different from direct caller->stub edges
+    because nothing calls them yet; they block any subclass from being instantiated.
+    """
+    import json as _json
+
+    conn = oracle.conn
+
+    # 1. Collect all classes that inherit from ABC (or Abstract bases)
+    abc_classes = conn.execute(
+        "SELECT name, methods_json, file_path FROM classes "
+        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+    ).fetchall()
+
+    if not abc_classes:
+        return "No ABC/Abstract base classes found in corpus."
+
+    # 2. For each ABC class, collect stub methods
+    abstract_stubs: list[tuple[str, str, str]] = []  # (method_name, class_name, file_path)
+    for cls_name, methods_json, file_path in abc_classes:
+        try:
+            methods = _json.loads(methods_json or "[]")
+        except Exception:
+            continue
+        for method in methods:
+            row = conn.execute(
+                "SELECT is_stub FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if row and row[0]:
+                abstract_stubs.append((method, cls_name, file_path))
+
+    if not abstract_stubs:
+        return "No stub methods found on ABC classes."
+
+    # 3. For each abstract stub, check if a non-stub implementation exists anywhere
+    unimplemented: list[tuple[str, str, str]] = []
+    for method, cls_name, file_path in abstract_stubs:
+        non_stub = conn.execute(
+            "SELECT COUNT(*) FROM functions WHERE name = ? AND is_stub = 0 AND file_path != ?",
+            (method, file_path),
+        ).fetchone()[0]
+        if non_stub == 0:
+            unimplemented.append((method, cls_name, file_path))
+
+    if not unimplemented:
+        return "All ABC stub methods have at least one non-stub override in the corpus."
+
+    # Group by class
+    from collections import defaultdict
+    by_class: dict = defaultdict(list)
+    for method, cls_name, _ in unimplemented:
+        by_class[cls_name].append(method)
+
+    lines = [
+        f"ABC interface gaps ({len(unimplemented)} unimplemented abstract methods across "
+        f"{len(by_class)} classes):",
+        "(stub methods on ABC classes with no non-stub override anywhere in corpus)",
+        "",
+    ]
+    for cls_name, methods in sorted(by_class.items()):
+        lines.append(f"  {cls_name}:")
+        for m in sorted(methods):
+            lines.append(f"    {m}")
+    return "\n".join(lines)
+
+
 def project_stub(oracle: "DBOracle", args: dict) -> str:
     """
     project_stub(symbol) - generate a concrete implementation for a stub function
@@ -3398,6 +3468,7 @@ TOOLS = {
     "bag_report":           (bag_report,            "assessor"),
     # Stub tools
     "list_stubs":           (list_stubs,            "oracle"),
+    "find_abc_gaps":        (find_abc_gaps,         "oracle"),
     "project_stub":         (project_stub,          "oracle"),
     "score_stub":           (score_stub,            "assessor"),
     # Doc tools

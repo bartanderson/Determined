@@ -208,9 +208,17 @@ REGISTRY: dict[str, dict] = {
         "purpose": "List stub functions ranked by caller count (highest priority first).",
         "args": {"limit": "(optional) max results, default 20"},
         "output": "stub name, file, caller count",
-        "feeds": ["project_stub", "risk_profile"],
+        "feeds": ["project_stub", "risk_profile", "find_abc_gaps"],
         "use_when": "Finding which stubs are blocking the most callers; deciding what to implement next.",
         "category": "discovery",
+    },
+    "find_abc_gaps": {
+        "purpose": "Find abstract-interface methods (stubs on ABC classes) that have no non-stub override anywhere in the corpus — the unimplemented interface frontier.",
+        "args": {},
+        "output": "ABC classes grouped with their unimplemented abstract methods",
+        "feeds": ["project_stub", "list_stubs", "goal_intake"],
+        "use_when": "You want to find what abstract interfaces need to be implemented — different from call-graph stubs, these are contract requirements.",
+        "category": "understanding",
     },
     "project_stub": {
         "purpose": "Generate a concrete implementation for a stub function using call-graph context.",

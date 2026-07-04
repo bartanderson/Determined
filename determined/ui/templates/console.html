@@ -234,6 +234,7 @@
             <option value="direct">Direct (caller→stub)</option>
             <option value="chain">Chain (stub→stub)</option>
             <option value="all">All</option>
+            <option value="abc">ABC (interface gaps)</option>
           </select>
           <button class="send-btn" id="fg-load">Load ↵</button>
           <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
@@ -1810,6 +1811,10 @@ const FG_STYLE = [
     style: { "background-color": "#e67e22", "label": "data(label)",
              "font-size": 10, color: "#fff", "text-valign": "bottom",
              "text-margin-y": 4, width: 22, height: 22 }},
+  { selector: "node[role='abc']",
+    style: { "background-color": "#8e44ad", "label": "data(label)",
+             "font-size": 10, color: "#fff", "text-valign": "bottom",
+             "text-margin-y": 4, width: 26, height: 26, shape: "diamond" }},
   { selector: "node[role='chain']",
     style: { "background-color": "#7f8c8d", "label": "data(label)",
              "font-size": 10, color: "#fff", "text-valign": "bottom",
@@ -1845,8 +1850,10 @@ socket.on("frontier_graph_result", data => {
   const edges = data.edges.map(e => ({
     data: { id: `${e.source}__${e.target}`, source: e.source, target: e.target }
   }));
-  const modeLabel = { direct: "Direct", chain: "Chain", all: "All" }[data.mode] || data.mode;
-  const summary = () => `[${modeLabel}] ${data.frontier_count || 0} callers · ${data.stub_count} stubs · ${data.chain_count || 0} chain · ${edges.length} edges`;
+  const modeLabel = { direct: "Direct", chain: "Chain", all: "All", abc: "ABC interfaces" }[data.mode] || data.mode;
+  const summary = () => data.mode === "abc"
+    ? `[${modeLabel}] ${data.abc_count || 0} abstract classes · ${data.stub_count || 0} unimplemented methods`
+    : `[${modeLabel}] ${data.frontier_count || 0} callers · ${data.stub_count} stubs · ${data.chain_count || 0} chain · ${edges.length} edges`;
   fgStatus.textContent = summary();
 
   _fgCy = cytoscape({

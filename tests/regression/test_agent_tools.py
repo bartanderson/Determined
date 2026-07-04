@@ -514,6 +514,7 @@ def test_dispatch_all_tools_registered():
         "trace_data_flow",
         "reason_about",
         "score_stub",
+        "find_abc_gaps",
     }
     assert set(TOOLS.keys()) == expected
 

@@ -16,7 +16,10 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-03, session 60):** Item 27 executed (self-review). Item 28 filed.
+**Last session (2026-07-03, session 66):** Items 29, RM5, RM8 done. Stub detection extended
+(trivial returns + STUB: docstring). find_abc_gaps tool + ABC mode in Frontier graph. 399 tests pass.
+
+**Session 60 (2026-07-03):** Item 27 executed (self-review). Item 28 filed.
 infer_behavior refactored to delegate to _infer_behavior_for_symbol (70 lines removed).
 classify_references crash on --reingest-file fixed (project_symbols via ctx not analysis).
 Determined corpus DB migrated (param_types_json column added); 9 files reingested.
@@ -154,7 +157,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-29. **[FUTURE] Frontier graph: ABC/unimplemented-interface shape**
+29. **[DONE 2026-07-03] Frontier graph: ABC/unimplemented-interface shape**
 
    The current frontier graph query (functional caller -> stub callee, suffix-match join)
    finds direct call edges to unimplemented functions. It does NOT detect the ABC pattern:
@@ -174,9 +177,14 @@ each step result. 293/293 tests passing.
    - For each abstract method, check whether any subclass overrides it.
    - Surface: abstract methods with zero overrides = true unimplemented frontier.
 
-   **Why deferred:** requires class hierarchy data that isn't currently in the DB schema.
-   May also need to handle multi-level inheritance. File when class hierarchy tracking
-   is added (or add it then).
+   **Implementation (session 66):** `find_abc_gaps()` in agent_tools.py — queries classes
+   with base_classes_json containing 'ABC'/'Abstract', joins to functions to find stub methods,
+   checks for non-stub overrides elsewhere. No new schema needed: existing `classes.base_classes_json`
+   + `functions.is_stub` + `functions.file_path` are sufficient. Proxy heuristic (stub on ABC class
+   = abstract) works well in practice. On dj2: 35 unimplemented abstract methods across 8 classes.
+   Wired as agent tool `find_abc_gaps`, registry entry, test file (5 tests). Frontier tab gains
+   "ABC (interface gaps)" mode — purple diamond nodes for abstract classes, red stubs for methods.
+   Multi-level inheritance not handled (deferred — not needed for current corpora).
 
 ---
 
