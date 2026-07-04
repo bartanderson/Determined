@@ -25,6 +25,22 @@ Clean state. All commits landed.
 
 426 tests passed, 1 skipped. Commit: 7041b0e.
 
+### Ollama/3B/27B/qwen cleanup (DONE)
+- All active "Ollama" references replaced with "LLM" throughout codebase.
+- Port 8080 -> 8081 everywhere active (not historical).
+- OLLAMA_MODEL/OLLAMA_URL/OLLAMA_TIMEOUT constants removed from
+  semantic_summary.py; model_version now writes "llm-client".
+- LLM_TIMEOUT import alias in local_agent.py cleaned up.
+- Error messages updated to reference llama-server/8081.
+- CLAUDE.md common mistakes updated.
+- docs/DESIGN.md model references generalized.
+- test function renames: no_ollama -> no_llm.
+- determined/cmd/tune.py deleted (two-tier 3B+27B allocator, dead).
+- Internal _call_ollama / _synthesize_with_ollama names preserved.
+- Historical mentions in TRACKER.md / bug-context test comments preserved.
+
+426 tests passed, 1 skipped. Commit: c641f15.
+
 ## NEXT SESSION -- start here
 
 **Continue RM13: UI redesign pass**
