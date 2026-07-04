@@ -430,6 +430,47 @@ each step result. 293/293 tests passing.
     trace-weighted ranking from expansion provenance. After real usage patterns
     are clear.
 
+---
+
+RM10. **[FUTURE] DeRe-CoT recomposition pass in goal_intake**
+
+   `goal_intake` currently decomposes a natural-language goal into sub-queries
+   and retrieves relevant symbols for each. It has no recomposition or coherence
+   verification step -- it cannot confirm that the sub-queries together actually
+   cover the original goal.
+
+   **Source:** "Automatic prompt generation via semantic decomposition-and-recomposition
+   for multi-hop question answering" (Seungyeon Lee & Dong-Gyu Lee, Engineering
+   Applications of Artificial Intelligence, Vol. 181, Part 3, October 2026).
+
+   **The DeRe-CoT mechanism:**
+   1. Decompose the goal into N candidate single-hop sub-questions (currently done)
+   2. Recompose pairs of candidates into new composite questions
+   3. Compute semantic similarity between each recomposed question and the original goal
+   4. Select the sub-question pair with highest alignment as the canonical decomposition
+   5. Proceed with that pair -- not the original arbitrary decomposition
+
+   **Why this matters for Determined:** goal_intake's decomposition is currently
+   unchecked. A goal like "find where the AI boundary is violated" could decompose
+   into sub-queries that individually make sense but miss the core constraint. The
+   recompose-then-select step verifies coherence before committing to a reasoning path.
+
+   **Related frameworks also shared by Bart (for context, not separate items):**
+   - 4-phase decomposition: Goal Formulation -> Semantic Factoring -> Sequential
+     Planning -> Unit Execution. Strategies: CoT, DECOMP, ToT.
+   - Deterministic + semantic decomposition: deterministic skeleton (constraint
+     satisfaction, idempotent subtasks) + semantic brain (meaning-based chunking,
+     hierarchical parsing).
+   - ACONIC: models tasks as constraint problems using formal complexity measures
+     (graph size, tree-width) to guide decomposition granularity.
+
+   **Prerequisite:** flat goal_intake must be proving insufficient in practice
+   before adding this complexity. Do not implement speculatively.
+
+   **Effort:** Medium. Recomposition is a second LLM pass (3B model, fast).
+   Semantic similarity uses the existing embedding infrastructure.
+   See [[project-analysis-workflow]] for full paper details.
+
 14. **[DONE 2026-07-01] Semantic speculative decoding** - once item 10 (structured output)
     is in place, explore using the 3B model as a reasoning-step predictor: 3B
     predicts which tools/symbols/docs are needed, Oracle fetches them, 8B reasons
