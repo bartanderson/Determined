@@ -1,91 +1,76 @@
-# SESSION STATE - session 84 handoff
+# SESSION STATE - session 85 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
-## Active branch: main (both repos)
+## Active branch: main
 Clean state. All commits landed.
 
-## What happened this session (session 84, 2026-07-05)
+## What happened this session (session 85, 2026-07-05)
 
-### corpus panel UX pass (RM15 prep)
-Bart flagged several issues with the corpus panel section: Roots/Core unlabeled,
-Gaps disconnected from stubs, distilled showing 101%, view stubs firing an LLM query.
+### Step-queue constraint system (new)
+Discussed behavioral constraint architecture. Agreed on a rolling 3-step micro-queue
+(PREVIOUS/CURRENT/NEXT) maintained in .claude/step_queue.md, enforced by a
+PreToolUse hook that fires before Edit/Write/preview_eval/preview_click/preview_fill/
+mcp__claude-in-chrome. Hook injects queue contents as additionalContext so Claude
+must verify its action serves CURRENT before proceeding. Blocks if file is missing.
 
-Changes (commit 1982667):
-- Roots / Core toggle: one section visible at a time, Roots default, hover tooltips
-  explain the distinction on each tab label
-- Gaps consolidated inside corpus-map-inner (renderCorpusMap now owns it), directly
-  below Roots/Core -- stubs count + coverage gaps grouped as "what's incomplete"
-- view stubs now calls activateTab('frontier') directly, no LLM needed, tooltip
-  explains what stubs are
-- distilled% capped at 100% (was showing 101%)
-- Removed standalone #gap-summary-section div from HTML
-- llm_client: _ensure_server() lazy-start wrapper added to generate() and chat()
-  so the LLM restarts on demand if it crashed after server launch
+Files added:
+- .claude/step_queue_hook.ps1 -- the hook script
+- .claude/step_queue.md -- the rolling queue (update each step)
+- .claude/settings.json -- PreToolUse hook wired in
 
-436 passed, 1 skipped.
-
-### Design principle articulated by Bart (internalize this)
-Everything surfaced in the UI earns its place by being explainable in one hover
-sentence. If it can't be explained that way, it belongs in the tutorial (the
-Commonplace guided journey). The move is always "find where it belongs and make
-the purpose legible" -- not cut. The tutorial is where each piece gets explained
-once, in context, as the user actually needs it. The journey + polish iterate
-together from real use.
-
-### Housekeeping NOT done
-ingest_design_docs for dj2 was attempted but failed -- llama-server was down
-(that's what surfaced the lazy-start gap). With lazy-start now in place, this
-should work next session once the server restarts.
+### RM15 journey fixes (from prior session, now committed)
+- CSS: .tab-content grid-row 4->5 (Frontier/Graph/Topology now render at full height)
+- ui_server: auto-reingest after save_file + emit corpus_ready (closes edit loop)
+- console.html toast: "re-ingesting..." not "re-analyze corpus"
+- extractor.py seed: extract_metadata stub implemented (stub count should drop to 1)
+- CLAUDE.md: UI testing constraint added (fresh load, no eval injection)
+- COMMONPLACE_JOURNEY.md: cumulative walk log, steps 1-5 verified
 
 ## NEXT SESSION -- start here
 
-**Active item: RM15 -- Commonplace guided journey**
-1. Start server (pointing at dj2 for housekeeping first, OR switch straight to seed)
-2. Run ingest_design_docs for dj2 (design notes were purged session 79; 268 deleted)
-3. Switch corpus to examples/commonplace/seed/
-4. Walk the journey steps from COMMONPLACE_VISION.md
-5. Fix Determined where the experience breaks
+**Step queue entry point** (.claude/step_queue.md already set):
+- CURRENT: Walk journey step 6 -- Editor save + reingest verification
 
-The lazy-start wrapper means ingest_design_docs should now work even if
-llama-server wasn't running when the server launched.
+**Concrete steps:**
+1. Read .claude/step_queue.md -- it tells you where you are
+2. Start server (preview_start "determined-ui")
+3. Switch corpus to C_Users_bartl_dev_Determined_examples_commonplace_seed.db
+   via the UI corpus switcher (fresh page load, not eval injection)
+4. Editor tab -> open extractor.py -> confirm extract_metadata has real implementation
+5. The reingest fix is already in -- corpus_ready should fire after any save
+6. Verify stub count drops (extractor.py save -> corpus panel shows 1 stub)
+7. Record result in docs/COMMONPLACE_JOURNEY.md
+
+**Step queue discipline:**
+Before every Edit/Write/UI action, the hook will inject PREVIOUS/CURRENT/NEXT.
+Update step_queue.md after each step completes. This is the new operating mode.
 
 **FUTURE items (not next):**
+- F1: Frontier mode default to Direct on tab open
+- F2: "0 design notes" Scan button in corpus panel
+- F3: REPL startup hint when coverage 0%
 - Item 27: Standards self-review
-- RM9: Connect to Q4 MCTS
-- RM10: DeRe-CoT recomposition pass in goal_intake
+- RM9/RM10: MCTS / DeRe-CoT
 
 ## Current Determined status
 
 ### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
-- RM15: Commonplace guided journey (ACTIVE)
+- RM15: Commonplace guided journey (ACTIVE -- step 6 next)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
-- RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
-
-### Commonplace status
-- Working skeleton: capture, browse, search, storage, utils all functional
-- 8 stubs across all topology shapes (direct-call, chain, ABC, conditional)
-- Seed state built and verified (examples/commonplace/seed/)
-- Complete app at examples/commonplace/
-- DESIGN.md has 6 authority rules + 4 open design tensions + stub roadmap
+- RM10: DeRe-CoT recomposition pass (FUTURE)
 
 ## Hardware facts
-- llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call)
-- Now also lazy-started on first generate()/chat() call if not running
-- Started by UI on launch (background thread), stopped on exit (atexit)
-- No NSSM service. Configure via LLM_SERVER_EXE / LLM_MODEL_PATH in llm_client.py.
-- SearXNG: user-run (Docker or standalone), default http://localhost:8888
+- llama-server: on-demand subprocess, port 8081, Qwen3-8B
+- Lazy-started on first generate()/chat() call if not running
+- Started by UI on launch, stopped on exit
+- SearXNG: user-run Docker, default http://localhost:8888
 
 ## Corpus state
-- dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)
-  - design_notes: PURGED (268 deleted). Re-run ingest_design_docs to repopulate.
-- Commonplace DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
-- Commonplace seed DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace_seed.db
-- Determined DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined.db
-
-## Two-terminal reminder
-Determined: C:\Users\bartl\dev\Determined, venv at .venv\Scripts\python.exe
-dj2: C:\Users\bartl\dev\dj2, use python
-Use PowerShell tool (not Bash). NEVER use python -c with inner quotes - write .py scripts.
+- Commonplace seed DB: C_Users_bartl_dev_Determined_examples_commonplace_seed.db
+  - 8 files, 2 stubs (extract_metadata NOW IMPLEMENTED -- reingest needed to confirm)
+- dj2 DB: C_Users_bartl_dev_dj2.db (design_notes purged session 79, not yet repopulated)
+- Commonplace full: C_Users_bartl_dev_Determined_examples_commonplace.db
+- Determined: C_Users_bartl_dev_Determined.db
