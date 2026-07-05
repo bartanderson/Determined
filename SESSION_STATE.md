@@ -1,36 +1,39 @@
-# SESSION STATE - session 79 handoff
+# SESSION STATE - session 80 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 79, 2026-07-05)
+## What happened this session (session 80, 2026-07-05)
 
-### RM13 #7 -- Context mode switching (DONE)
-- Three mode buttons in topbar: 📐 Design / 🔗 Trace / ✅ Review
-- Each switches to its primary tab (Knowledge / Call tree / Doc health)
-- Highlights related tabs with colored underline (blue/orange/green)
-- Shows a slim mode banner above the tab bar with colored label + hint text
-- Clicking the active mode button again clears the mode
-- CSS: `.mode-btn`, `.mode-banner`, per-mode tab `border-bottom` highlights, trail-bar glow in Trace mode
-- JS: `setMode()`, `clearMode()`, `_MODES` config object
-- style.css: added 4th `auto` row to `.main` grid-template-rows to accommodate banner
-- Verified in browser: all three modes switch tabs, colored labels correct, tab highlights visible
-- Also fixed: call tree double-expand race -- clicking ▶ twice before server responded
-  created two `.ct-children` divs; fold only hid the first. Guard added: `if (li._ctPending) return`
-- 426 tests passed, 1 skipped. Commit: f269117.
+### RM11 close-out (already done in prior session, just not tracked)
+- edit_file(assessor, args) was fully implemented: read_file, write_file, replace_in_file ops
+- Path-boundary guard against project root. TOOLS dict, tool_registry entry, 12 regression tests.
+- TRACKER updated to DONE.
+
+### RM12 -- SearXNG web search agent tool (DONE)
+- search_web(assessor, args) in agent_tools.py
+- Hits SearXNG /search?format=json, returns top-N results as title/URL/snippet text
+- SEARXNG_URL config in llm_client.py (default http://localhost:8888; None = disabled)
+- Graceful degradation when SearXNG is unreachable (returns message, does not raise)
+- Wired into TOOLS and tool_registry (category: external)
+- 10 new regression tests. 436 passed, 1 skipped. Commit: c34f65e.
+
+### Sidebar icon-nav concept (designed, not built)
+- Proposed: 4-icon vertical rail replaces the current 6-section sidebar
+- Icons: Corpus (database) / Navigate (compass) / Tools (tool) / Ask (message, pinned bottom)
+- Clicking active icon collapses panel to rail-only (max editor space)
+- CSS: .shell grid gets 3 columns (40px rail + panel + 1fr main)
+- Mockup shown in session. Ready to implement when Bart says go.
 
 ## NEXT SESSION -- start here
 
-**RM13 is now fully done** (#1+A3+A4+F7+W4+W5+#7 all landed).
-
 **Pending housekeeping:**
 - Run `ingest_design_docs` via the UI to re-extract clean design notes from dj2 docs.
-  (All 268 old notes purged last session; DB is empty for kind=design_note until re-extracted.)
+  (All 268 old notes purged session 79; DB is empty for kind=design_note until re-extracted.)
 
 **Next open items (from TRACKER.md):**
-- RM11: edit_file agent tool (LOW effort -- wiring only, write logic already exists)
-- RM12: SearXNG web search agent tool (MEDIUM)
+- Sidebar icon-nav (UI improvement, ~1.5h -- see mockup from this session)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
@@ -39,15 +42,13 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 
 ## Current Determined status
 
-### Test count: 426 passed, 1 skipped
+### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
-- RM11: edit_file agent tool (LOW -- wiring only)
-- RM12: SearXNG web search agent tool (MEDIUM)
-- RM13: UI redesign pass -- DONE (#1+A3+A4+F7+W4+W5+#7 all done)
+- Sidebar icon-nav: UI improvement (not filed in TRACKER yet -- file when starting)
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional
@@ -60,6 +61,8 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 - llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call)
 - Started by UI on launch (background thread), stopped on exit (atexit)
 - No NSSM service. Configure via LLM_SERVER_EXE / LLM_MODEL_PATH in llm_client.py.
+- SearXNG: user-run (Docker or standalone), default http://localhost:8888
+  Configure SEARXNG_URL in llm_client.py. search_web returns "not configured" if None.
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)
