@@ -1,45 +1,29 @@
-# SESSION STATE - session 76 handoff
+# SESSION STATE - session 77 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 76, 2026-07-04)
+## What happened this session (session 77, 2026-07-04)
 
-### RM13 progress: #1 verified, A3 done
+### Cleanup: llama3.2 misses from session 76
+- `determined/ui/preview.html` and `determined/ui/templates/console.html` had hardcoded
+  "Ollama llama3.2:3b" / "llama3.2:3b" labels — missed because cleanup only targeted .py files.
+- Added `LLM_DISPLAY_NAME = "Qwen3-8B"` to `llm_client.py` as single source of truth.
+- `console.html` now uses `{{ model_name }}` injected from `render_template`.
+- `preview.html` (static mock) updated to Qwen3-8B with sync comment.
+- `tests/item14_phase2_instructions.md` marked HISTORICAL with correct backend info.
+- Commits: 146ed09, 146ed09 (display name fix)
 
-**#1 -- Chat/ask bar hidden by default (VERIFIED, no change needed)**
-- `style="display:none"` is set in HTML at page load.
-- `setCorpusLoaded()` does not touch the query bar.
-- Ask toggle correctly reveals/hides it. Already correct.
-
-**A3 -- Collapse duplicate Cytoscape edges (DONE, verified in browser)**
-- Added `dedupeEdges(rawEdges)` helper near graph section.
-- Groups same source->target edges into one element with `count` field.
-- Used in both `graph_result` (gx) and `frontier_graph` (fg) handlers.
-- Status bar appends "(N raw)" when duplicates were collapsed.
-- GX_STYLE and FG_STYLE both have `edge[count > 1]` selector showing
-  count as a small label on the edge (font-size 8, auto-rotated).
-- Verified with synthetic data: 3 duplicate a->b edges collapse to one
-  with count=3. Live graph renders cleanly with no regression.
-
-426 tests passed, 1 skipped. Commit: 7041b0e.
-
-### Ollama/3B/27B/qwen cleanup (DONE)
-- All active "Ollama" references replaced with "LLM" throughout codebase.
-- Port 8080 -> 8081 everywhere active (not historical).
-- OLLAMA_MODEL/OLLAMA_URL/OLLAMA_TIMEOUT constants removed from
-  semantic_summary.py; model_version now writes "llm-client".
-- LLM_TIMEOUT import alias in local_agent.py cleaned up.
-- Error messages updated to reference llama-server/8081.
-- CLAUDE.md common mistakes updated.
-- docs/DESIGN.md model references generalized.
-- test function renames: no_ollama -> no_llm.
-- determined/cmd/tune.py deleted (two-tier 3B+27B allocator, dead).
-- Internal _call_ollama / _synthesize_with_ollama names preserved.
-- Historical mentions in TRACKER.md / bug-context test comments preserved.
-
-426 tests passed, 1 skipped. Commit: c641f15.
+### On-demand LLM launch — NSSM service removed
+- `llm_client.py`: added `LLM_SERVER_EXE`, `LLM_MODEL_PATH`, `LLM_SERVER_ARGS` constants;
+  `start_server()` spawns subprocess if not running; `stop_server()` terminates it.
+- `ui_server.py`: `run_server()` calls `start_server()` in background thread on UI launch;
+  `stop_server()` registered via `atexit`. Old `_check_llm()` / `_warmup_llm()` removed.
+- `local_agent.py`: error message updated (no more nssm reference).
+- NSSM service `llama-server-8b` deleted from Windows.
+- `CLAUDE.md` common mistakes updated.
+- 426 tests passed, 1 skipped. Commits: a6321e8, 53d306f.
 
 ## NEXT SESSION -- start here
 
@@ -72,7 +56,9 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 - Missing: journey step validation (deferred), guided UI highlighting (deferred)
 
 ## Hardware facts
-- llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call); started by UI on launch, stopped on exit
+- llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call)
+- Started by UI on launch (background thread), stopped on exit (atexit)
+- No NSSM service. Configure via LLM_SERVER_EXE / LLM_MODEL_PATH in llm_client.py.
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)
