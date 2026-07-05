@@ -112,90 +112,103 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <span class="queue-badge" id="queue-badge" style="display:none" title="Pending next_up items"></span>
   </div>
 
-  <!-- ── sidebar ── -->
-  <div class="sidebar">
-    <button class="panel-fold" id="sidebar-fold" title="Collapse sidebar">‹</button>
-    <div class="sidebar-section">
-      <div class="sidebar-label">Analyze</div>
-      <div class="sidebar-ingest">
-        <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
-        <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
-        <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;display:none;background:var(--surface2)">Switch corpus</button>
+  <!-- ── icon rail ── -->
+  <div class="icon-rail" id="icon-rail">
+    <button class="rail-icon active" data-section="corpus" title="Corpus — analyze / switch">🗄</button>
+    <button class="rail-icon" data-section="navigate" title="Navigate — start here, corpus map">🧭</button>
+    <button class="rail-icon" data-section="tools" title="Tools — query shortcuts">🔧</button>
+    <div class="rail-spacer"></div>
+    <button class="rail-icon" id="ask-rail-icon" data-section="ask" title="Ask / chat">💬</button>
+  </div>
+
+  <!-- ── sidebar panel ── -->
+  <div class="sidebar-panel" id="sidebar-panel">
+
+    <!-- Corpus section -->
+    <div class="sb-section" id="sb-corpus">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Analyze</div>
+        <div class="sidebar-ingest">
+          <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
+          <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
+          <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;display:none;background:var(--surface2)">Switch corpus</button>
+        </div>
+      </div>
+      <div class="sidebar-section" id="corpus-map" style="display:none">
+        <div id="corpus-map-inner"></div>
+      </div>
+      <div class="sidebar-section" id="gap-summary-section" style="display:none">
+        <div class="sidebar-label">Gaps at a glance</div>
+        <div id="gap-summary-inner" style="font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7"></div>
       </div>
     </div>
 
-    <div class="sidebar-section">
-      <div class="sidebar-label">Start here</div>
-      <div class="sidebar-item" data-submit="what should I work on">
-        <span class="icon">☑</span>work queue
-      </div>
-      <div class="sidebar-item" data-submit="find dead code">
-        <span class="icon">∅</span>dead code
-      </div>
-      <div class="sidebar-item" data-submit="what haven't you explored">
-        <span class="icon">○</span>unexplored
-      </div>
-      <div class="sidebar-item" data-submit="discover more">
-        <span class="icon">◎</span>discover
-      </div>
-      <div class="sidebar-item" data-submit="what functions are missing docstrings">
-        <span class="icon">⚠</span>docstrings
-      </div>
-      <div class="sidebar-item" data-submit="find todos">
-        <span class="icon">✓</span>todos
+    <!-- Navigate section -->
+    <div class="sb-section" id="sb-navigate" style="display:none">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Start here</div>
+        <div class="sidebar-item" data-submit="what should I work on">
+          <span class="icon">☑</span>work queue
+        </div>
+        <div class="sidebar-item" data-submit="find dead code">
+          <span class="icon">∅</span>dead code
+        </div>
+        <div class="sidebar-item" data-submit="what haven't you explored">
+          <span class="icon">○</span>unexplored
+        </div>
+        <div class="sidebar-item" data-submit="discover more">
+          <span class="icon">◎</span>discover
+        </div>
+        <div class="sidebar-item" data-submit="what functions are missing docstrings">
+          <span class="icon">⚠</span>docstrings
+        </div>
+        <div class="sidebar-item" data-submit="find todos">
+          <span class="icon">✓</span>todos
+        </div>
       </div>
     </div>
 
-    <div class="sidebar-section" id="corpus-map" style="display:none">
-      <div id="corpus-map-inner"></div>
-    </div>
-
-    <div class="sidebar-section" id="gap-summary-section" style="display:none">
-      <div class="sidebar-label">Gaps at a glance</div>
-      <div id="gap-summary-inner" style="font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7"></div>
-    </div>
-
-    <div class="sidebar-section">
-      <button id="ask-toggle-btn" class="send-btn" style="width:100%;justify-content:center;background:var(--surface2)">Ask ▾</button>
-    </div>
-
-    <div class="sidebar-section" id="tool-picker-section">
-      <div class="sidebar-label" id="tool-picker-toggle" style="cursor:pointer;user-select:none">Tools ▾</div>
-      <div id="tool-picker-body">
-        <div class="tp-group-label">Navigate</div>
-        <div class="tp-row">
-          <span class="tp-name">Open file</span>
-          <input class="tp-input" id="tp-open-file" placeholder="path/to/file.py" autocomplete="off">
-          <button class="tp-btn" id="tp-open-file-btn">Go</button>
-        </div>
-        <div class="tp-row">
-          <span class="tp-name">Inspect symbol</span>
-          <input class="tp-input" id="tp-inspect-sym" placeholder="SymbolName" autocomplete="off">
-          <button class="tp-btn" id="tp-inspect-sym-btn">Go</button>
-        </div>
-        <div class="tp-group-label" style="margin-top:6px">Query</div>
-        <div class="tp-row">
-          <span class="tp-name">Callers of</span>
-          <input class="tp-input" id="tp-callers" placeholder="function_name" autocomplete="off">
-          <button class="tp-btn" id="tp-callers-btn">Run</button>
-        </div>
-        <div class="tp-row">
-          <span class="tp-name">Explain</span>
-          <input class="tp-input" id="tp-explain" placeholder="function_name" autocomplete="off">
-          <button class="tp-btn" id="tp-explain-btn">Run</button>
-        </div>
-        <div class="tp-row">
-          <span class="tp-name">Findings for</span>
-          <input class="tp-input" id="tp-findings" placeholder="symbol or file" autocomplete="off">
-          <button class="tp-btn" id="tp-findings-btn">Run</button>
-        </div>
-        <div class="tp-row">
-          <span class="tp-name">Files matching</span>
-          <input class="tp-input" id="tp-files" placeholder="pattern" autocomplete="off">
-          <button class="tp-btn" id="tp-files-btn">Run</button>
+    <!-- Tools section -->
+    <div class="sb-section" id="sb-tools" style="display:none">
+      <div class="sidebar-section" id="tool-picker-section">
+        <div class="sidebar-label">Tools</div>
+        <div id="tool-picker-body" class="sb-tools-body">
+          <div class="tp-group-label">Navigate</div>
+          <div class="tp-row">
+            <span class="tp-name">Open file</span>
+            <input class="tp-input" id="tp-open-file" placeholder="path/to/file.py" autocomplete="off">
+            <button class="tp-btn" id="tp-open-file-btn">Go</button>
+          </div>
+          <div class="tp-row">
+            <span class="tp-name">Inspect symbol</span>
+            <input class="tp-input" id="tp-inspect-sym" placeholder="SymbolName" autocomplete="off">
+            <button class="tp-btn" id="tp-inspect-sym-btn">Go</button>
+          </div>
+          <div class="tp-group-label" style="margin-top:6px">Query</div>
+          <div class="tp-row">
+            <span class="tp-name">Callers of</span>
+            <input class="tp-input" id="tp-callers" placeholder="function_name" autocomplete="off">
+            <button class="tp-btn" id="tp-callers-btn">Run</button>
+          </div>
+          <div class="tp-row">
+            <span class="tp-name">Explain</span>
+            <input class="tp-input" id="tp-explain" placeholder="function_name" autocomplete="off">
+            <button class="tp-btn" id="tp-explain-btn">Run</button>
+          </div>
+          <div class="tp-row">
+            <span class="tp-name">Findings for</span>
+            <input class="tp-input" id="tp-findings" placeholder="symbol or file" autocomplete="off">
+            <button class="tp-btn" id="tp-findings-btn">Run</button>
+          </div>
+          <div class="tp-row">
+            <span class="tp-name">Files matching</span>
+            <input class="tp-input" id="tp-files" placeholder="pattern" autocomplete="off">
+            <button class="tp-btn" id="tp-files-btn">Run</button>
+          </div>
         </div>
       </div>
     </div>
+
   </div>
 
   <!-- ── main ── -->
@@ -500,29 +513,19 @@ const input     = document.getElementById("q-input");
 const sendBtn   = document.getElementById("send-btn");
 const results   = document.getElementById("results");
 const queryBar  = document.getElementById("query-bar");
-const askToggle = document.getElementById("ask-toggle-btn");
 
-askToggle.addEventListener("click", () => {
-  const visible = queryBar.style.display !== "none";
-  queryBar.style.display = visible ? "none" : "";
-  askToggle.textContent = visible ? "Ask ▾" : "Ask ▴";
-  if (!visible) input.focus();
-});
-
-// ── tool picker ───────────────────────────────────────────
-const toolPickerToggle = document.getElementById("tool-picker-toggle");
-const toolPickerBody   = document.getElementById("tool-picker-body");
-let _tpOpen = true;
-toolPickerToggle.addEventListener("click", () => {
-  _tpOpen = !_tpOpen;
-  toolPickerBody.style.display = _tpOpen ? "" : "none";
-  toolPickerToggle.textContent = _tpOpen ? "Tools ▾" : "Tools ▸";
-});
+function showQueryBar() {
+  queryBar.style.display = "";
+  input.focus();
+  document.getElementById("ask-rail-icon").classList.add("active");
+}
+function hideQueryBar() {
+  queryBar.style.display = "none";
+  document.getElementById("ask-rail-icon").classList.remove("active");
+}
 
 function tpQuery(q) {
-  // show query bar, fill it, and submit
-  queryBar.style.display = "";
-  askToggle.textContent = "Ask ▴";
+  showQueryBar();
   input.value = q;
   sendBtn.click();
 }
@@ -2720,12 +2723,36 @@ edPopoutBtn.addEventListener("click", () => {
   }
 });
 
-// ── sidebar fold ─────────────────────────────────────────
-const sidebarFold = document.getElementById("sidebar-fold");
-sidebarFold.addEventListener("click", () => {
-  const collapsed = shell.classList.toggle("sidebar-collapsed");
-  sidebarFold.textContent = collapsed ? "›" : "‹";
-  sidebarFold.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+// ── icon rail ─────────────────────────────────────────────
+let _railSection = "corpus";
+let _panelOpen   = true;
+
+function railShowSection(section) {
+  ["corpus","navigate","tools"].forEach(s => {
+    document.getElementById("sb-" + s).style.display = (s === section) ? "" : "none";
+  });
+}
+
+document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const section = btn.dataset.section;
+    if (section === "ask") {
+      const visible = queryBar.style.display !== "none";
+      visible ? hideQueryBar() : showQueryBar();
+      return;
+    }
+    if (section === _railSection && _panelOpen) {
+      _panelOpen = false;
+      shell.classList.add("panel-collapsed");
+    } else {
+      _railSection = section;
+      _panelOpen   = true;
+      shell.classList.remove("panel-collapsed");
+      railShowSection(section);
+    }
+    document.querySelectorAll(".rail-icon:not([data-section='ask'])").forEach(b =>
+      b.classList.toggle("active", b.dataset.section === _railSection && _panelOpen));
+  });
 });
 
 // wire bag file items: clicking a file path opens it in editor

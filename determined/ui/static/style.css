@@ -72,37 +72,46 @@ body {
 /* ── shell ─────────────────────────────────────────────── */
 .shell {
   display: grid;
-  grid-template-columns: 210px 1fr;
+  grid-template-columns: 40px 210px 1fr;
   grid-template-rows: 36px 1fr 36px;
   height: 100vh;
   overflow: hidden;
   transition: grid-template-columns .18s ease;
 }
-.shell.sidebar-collapsed {
-  grid-template-columns: 32px 1fr;
+.shell.panel-collapsed {
+  grid-template-columns: 40px 0 1fr;
 }
 
-/* ── panel fold buttons ──────────────────────────────────── */
-.panel-fold {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 40px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 0 4px 4px 0;
-  cursor: pointer;
+/* ── icon rail ───────────────────────────────────────────── */
+.icon-rail {
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.rail-spacer { flex: 1; }
+.rail-icon {
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text3);
-  z-index: 50;
-  transition: color .1s, background .1s;
-  right: -16px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background .1s, color .1s, border-color .1s;
+  flex-shrink: 0;
 }
-.panel-fold:hover { color: var(--text); background: var(--border); }
+.rail-icon:hover { background: var(--bg3); color: var(--text2); }
+.rail-icon.active { background: var(--bg3); color: var(--text); border-color: var(--border2); }
 
 /* ── topbar ─────────────────────────────────────────────── */
 .topbar {
@@ -129,22 +138,30 @@ body {
 .topbar .spacer { flex: 1; }
 .model-label { color: var(--text3); font-size: 11px; }
 
-/* ── sidebar ─────────────────────────────────────────────── */
-.sidebar {
+/* ── sidebar panel ───────────────────────────────────────── */
+.sidebar-panel {
+  grid-row: 2;
   border-right: 1px solid var(--border);
   background: var(--bg2);
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  position: relative;
   transition: width .18s ease;
+  min-width: 0;
 }
-.sidebar-collapsed .sidebar > *:not(.panel-fold) {
-  display: none;
+.shell.panel-collapsed .sidebar-panel {
+  overflow: hidden;
+  width: 0;
 }
-.sidebar-collapsed .sidebar .panel-fold {
-  border-radius: 0 4px 4px 0;
+.sb-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
+.sb-tools-body { padding: 0 8px 8px; }
 .sidebar-section { padding: 6px 0; }
 .sidebar-label {
   font-size: 10px;
@@ -453,9 +470,8 @@ body {
 }
 
 /* ── spotlight panel ─────────────────────────────────────── */
-.shell { transition: grid-template-columns .2s ease; }
 .shell.spotlight-open {
-  grid-template-columns: 210px 1fr 340px;
+  grid-template-columns: 40px 210px 1fr 340px;
 }
 
 .spotlight {

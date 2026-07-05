@@ -16,7 +16,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-04, session 70):** DISCOVERY_MODEL topology work. T1+T3: detect_topology() updated with chain-head/middle/tail positions, entry-point shape (routes/handlers/cli) separated from truly-disconnected, action queues section added. find_conditional_stubs() new tool (non-stub fns with NIE inside a branch). find_orphaned_impls() labels anticipatory vs possibly-stranded. frontier_priority() bonuses differentiated: chain-tail=+5, middle=+2, head=+1, ABC=+3; orphaned-impls excluded. 414 tests pass. W1-W3+W6: waypoint/reasoning_chain kinds, auto-waypoint in evaluate_claim()/score_stub(). F3+F5 first versions (superseded by T1/T3 improvements this session).
+**Last session (2026-07-05, session 80):** RM11 close-out (edit_file tool, 12 tests). RM12: search_web SearXNG agent tool, graceful degradation, 10 tests. 436 passed, 1 skipped. RM13 fully done (all sub-items shipped sessions 75-79, TRACKER updated). Sidebar icon-nav designed (mockup), not yet built. Next: sidebar icon-nav.
 
 **Session 67 (2026-07-04):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
 
@@ -158,49 +158,16 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM13. **[HIGH] UI redesign pass: close remaining delta, fold DISCOVERY_MODEL**
+RM13. **[DONE 2026-07-05] UI redesign pass: close remaining delta, fold DISCOVERY_MODEL**
 
-   Coherent redesign pass against the GOT model in UI_VISION.md.
-   Do NOT patch individual items piecemeal — implement as one pass.
-
-   **Requirements (from UI_VISION.md open items #1 and #7):**
-   - #1: Chat/ask bar hidden by default; revealed only when natural navigation
-     doesn't answer the question. The sidebar's Ask toggle handles this.
-   - #7: DONE (2026-07-05). Three mode buttons in topbar: Design / Trace / Review.
-     Each switches to its primary tab (Knowledge / Call tree / Doc health), highlights
-     related tabs with a colored underline, and shows a labeled mode banner.
-     Also fixed call tree double-expand race (two ct-children on rapid click). Commit f269117.
-
-   **Requirements (from DISCOVERY_MODEL, UI items only):**
-   - F7: Frontier tab type selector — add Orphan/Disconnected mode to the
-     existing dropdown alongside Direct-call and ABC modes.
-   - A3: Collapse duplicate graph edges in Cytoscape display (same caller →
-     same callee via multiple paths should show as one edge with a count badge).
-   - A4: Universal sub-menu popover — symbol_context rendered as an inline
-     popover on any symbol reference anywhere in the UI (chat results, editor,
-     call tree rows), not just in the spotlight. Replaces need to open spotlight
-     to get quick risk/caller/callee info.
-   - W4-W5: Trail rendering and export polish — trail breadcrumb shows file
-     context alongside symbol name; export trail as a session summary
-     (symbol path + risk scores + any findings gathered).
-
-   **Non-UI DISCOVERY_MODEL items (handled separately, not in this pass):**
-   - F1 (false positive audit): backend accuracy work, file separately if needed.
-   - A1 (resolved flag + is_project_call): backend schema; fold into item 20
-     territory on next call-graph accuracy pass.
-   - A2 (access_paths query): new agent tool; file separately when needed.
-   - A5 (multi-hop type trace): new agent tool; file separately when needed.
-   - Q4 (MCTS): already RM9, FUTURE.
-   - T5 (topology drift): FUTURE, post-production.
-
-   **Prerequisite:** DISCOVERY_MODEL is closed as a tracking category after
-   this item is filed. Items above are the reconciled requirements list.
-
-   **Effort:** Medium (2-3 sessions). Start with A4 (highest leverage for
-   the GOT gear model) and F7 (mechanical, low risk), then #1 and #7
-   (requires layout decisions). W4-W5 and A3 are polish, can trail.
-
-   **Verify rule:** each sub-item must be clicked in browser before marking done.
+   All sub-items completed across sessions 75-79:
+   - A4: Universal symbol context popover (session 75)
+   - F7: Frontier tab orphan/disconnected mode selector (session 75)
+   - #1: Chat/ask bar hidden by default (session 76)
+   - A3: Collapse duplicate Cytoscape edges with count badge (session 76)
+   - W4-W5: Trail breadcrumb + export as session summary (session 78)
+   - #7: Context mode switching (Design/Trace/Review) + call tree race fix (session 79)
+   DISCOVERY_MODEL closed as tracking category.
 
 ---
 
