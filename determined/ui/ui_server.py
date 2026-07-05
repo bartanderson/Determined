@@ -713,12 +713,6 @@ def handle_project_stub(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def _check_llm() -> str:
-    """Return 'ok' or an error message."""
-    from determined.agent.llm_client import is_available
-    return "ok" if is_available() else "llama-server unreachable at localhost:8081"
-
-
 _REQUIRED_TABLES = {"files", "functions", "graph_edges"}
 
 def _is_valid_corpus(path: str) -> bool:
