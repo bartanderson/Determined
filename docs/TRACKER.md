@@ -16,7 +16,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-05, session 80):** RM11 close-out (edit_file tool, 12 tests). RM12: search_web SearXNG agent tool, graceful degradation, 10 tests. 436 passed, 1 skipped. RM13 fully done (all sub-items shipped sessions 75-79, TRACKER updated). Sidebar icon-nav designed (mockup), not yet built. Next: sidebar icon-nav.
+**Last session (2026-07-05, session 81):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
 **Session 67 (2026-07-04):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
 
@@ -155,6 +155,17 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
+
+---
+
+RM14. **[DONE 2026-07-05] Sidebar icon-nav**
+
+   4-icon vertical rail (🗄 Corpus / 🧭 Navigate / 🔧 Tools / 💬 Ask) replaces
+   the flat 6-section sidebar. Corpus panel: analyze/switch + corpus map + gaps
+   at a glance. Navigate panel: 6 start-here shortcuts only. Tools panel: query
+   shortcuts. Ask icon toggles query bar independently. Clicking active icon
+   collapses panel to 40px rail-only for max editor space. Shell grid updated
+   to 40px + 210px + 1fr (was 210px + 1fr). Commit: 380814c.
 
 ---
 
