@@ -59,8 +59,15 @@ def _no_think(messages: list[dict]) -> list[dict]:
     return msgs
 
 
+def _ensure_server() -> None:
+    """Start llama-server if it's not reachable. No-op if already running."""
+    if not is_available():
+        start_server()
+
+
 def generate(prompt: str, timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
     """Single-prompt completion via /v1/completions."""
+    _ensure_server()
     try:
         resp = requests.post(
             f"{LLM_BASE_URL}/v1/completions",
@@ -76,6 +83,7 @@ def generate(prompt: str, timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_
 
 def chat(messages: list[dict], timeout: int = LLM_TIMEOUT, max_tokens: int = LLM_MAX_TOKENS) -> str | None:
     """Chat completion via /v1/chat/completions."""
+    _ensure_server()
     try:
         resp = requests.post(
             f"{LLM_BASE_URL}/v1/chat/completions",

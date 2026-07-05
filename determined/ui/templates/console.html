@@ -137,10 +137,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <div class="sidebar-section" id="corpus-map" style="display:none">
         <div id="corpus-map-inner"></div>
       </div>
-      <div class="sidebar-section" id="gap-summary-section" style="display:none">
-        <div class="sidebar-label">Gaps at a glance</div>
-        <div id="gap-summary-inner" style="font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7"></div>
-      </div>
     </div>
 
     <!-- Navigate section -->
@@ -601,22 +597,7 @@ socket.on("corpus_ready", data => {
     document.getElementById("gx-input").placeholder = "click a symbol or type name…";
   }
 
-  // gap summary sidebar
-  if (data.gap_summary && Object.keys(data.gap_summary).length) {
-    const gs = data.gap_summary;
-    const docPct = gs.total_fns > 0 ? Math.round(100 * gs.documented_fns / gs.total_fns) : 0;
-    const distPct = gs.total_files > 0 ? Math.round(100 * gs.distilled_files / gs.total_files) : 0;
-    const cls = v => v >= 80 ? "gs-ok" : "gs-warn";
-    let html = `<div><span class="${cls(docPct)}">docs ${docPct}%</span> &nbsp; <span class="${cls(distPct)}">distilled ${distPct}%</span> &nbsp; <span style="color:var(--text2)">${gs.design_note_count} design notes</span></div>`;
-    if (gs.modules && gs.modules.length) {
-      html += gs.modules.map(m => {
-        const pct = m.total > 0 ? Math.round(100 * (m.total - m.missing) / m.total) : 100;
-        return `<div><span class="gs-mod">${escHtml(m.module)}</span> <span class="${cls(pct)}">${pct}%</span> <span style="color:var(--text3)">(${m.missing} missing)</span></div>`;
-      }).join("");
-    }
-    document.getElementById("gap-summary-inner").innerHTML = html;
-    document.getElementById("gap-summary-section").style.display = "";
-  }
+  // gap summary is now rendered inside renderCorpusMap via data.gap_summary
 
   // queue badge
   if (data.queue_count > 0) {
@@ -669,20 +650,93 @@ function renderCorpusMap(data) {
   const hots = data.hot_symbols  || [];
   corpusMapInner.innerHTML = "";
 
-  // compact stats line
+  // ── stats line ──────────────────────────────────────────
   const stats = document.createElement("div");
-  stats.style.cssText = "font-size:.75em;color:var(--text3);padding:2px 2px 6px";
-  stats.innerHTML = `${data.files} files · ${data.hot} hot · ${data.stubs} stubs`
-    + (data.stubs > 0 ? ` · <span id="map-stubs-link" style="cursor:pointer;color:var(--blue)">view stubs</span>` : "");
+  stats.style.cssText = "font-size:.75em;color:var(--text3);padding:2px 2px 4px";
+  const stubsHint = data.stubs > 0
+    ? ` · <span id="map-stubs-link" style="cursor:pointer;color:var(--blue)"
+          title="Stubs are functions whose body is not yet implemented (pass, TODO, raise NotImplementedError). Click to open the Frontier tab showing all stubs and their position in the call graph."
+        >view stubs</span>`
+    : "";
+  stats.innerHTML = `${data.files} files · ${data.hot} hot · ${data.stubs} stubs${stubsHint}`;
   corpusMapInner.appendChild(stats);
 
-  if (eps.length)  corpusMapInner.appendChild(_mapSection("Roots", eps.map(e => ({ name: e.name, count: e.out_degree, countIcon: "↗", risk: e.risk, badge: e.badge }))));
-  if (hots.length) corpusMapInner.appendChild(_mapSection("Core",  hots.map(h => ({ name: h.name, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }))));
+  // ── Roots / Core toggle ─────────────────────────────────
+  if (eps.length || hots.length) {
+    const ROOTS_TIP = "Roots: entry points and orchestrators — symbols that call many others. Start here to understand how the program flows.";
+    const CORE_TIP  = "Core: widely depended-upon symbols — called by many others. Changes here have the broadest blast radius.";
+
+    const tabBar = document.createElement("div");
+    tabBar.style.cssText = "display:flex;gap:4px;margin-bottom:2px";
+
+    const mkTab = (label, tip, active) => {
+      const t = document.createElement("span");
+      t.textContent = label;
+      t.title = tip;
+      t.style.cssText = `cursor:pointer;font-size:.72em;padding:1px 6px;border-radius:3px;`
+        + (active ? "background:var(--surface2);color:var(--text1)" : "color:var(--text3)");
+      return t;
+    };
+
+    const rootsTab = mkTab("Roots", ROOTS_TIP, true);
+    const coreTab  = mkTab("Core",  CORE_TIP,  false);
+    tabBar.appendChild(rootsTab);
+    tabBar.appendChild(coreTab);
+    corpusMapInner.appendChild(tabBar);
+
+    const rootsSec = eps.length  ? _mapSection("", eps.map(e  => ({ name: e.name, count: e.out_degree,   countIcon: "↗", risk: e.risk, badge: e.badge }))) : null;
+    const coreSec  = hots.length ? _mapSection("", hots.map(h => ({ name: h.name, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }))) : null;
+
+    if (rootsSec) corpusMapInner.appendChild(rootsSec);
+    if (coreSec)  { coreSec.style.display = "none"; corpusMapInner.appendChild(coreSec); }
+
+    const activate = (showRoots) => {
+      rootsTab.style.background = showRoots ? "var(--surface2)" : "";
+      rootsTab.style.color      = showRoots ? "var(--text1)"    : "var(--text3)";
+      coreTab.style.background  = showRoots ? ""                : "var(--surface2)";
+      coreTab.style.color       = showRoots ? "var(--text3)"    : "var(--text1)";
+      if (rootsSec) rootsSec.style.display = showRoots ? "" : "none";
+      if (coreSec)  coreSec.style.display  = showRoots ? "none" : "";
+    };
+    rootsTab.addEventListener("click", () => activate(true));
+    coreTab.addEventListener ("click", () => activate(false));
+  }
+
+  // ── Gaps (coverage) ─────────────────────────────────────
+  const gs = data.gap_summary;
+  if (gs && Object.keys(gs).length) {
+    const docPct  = gs.total_fns   > 0 ? Math.round(100 * gs.documented_fns  / gs.total_fns)   : 0;
+    const distPct = gs.total_files > 0 ? Math.min(100, Math.round(100 * gs.distilled_files / gs.total_files)) : 0;
+    const cls = v => v >= 80 ? "gs-ok" : "gs-warn";
+
+    const gapHdr = document.createElement("div");
+    gapHdr.className = "sidebar-label";
+    gapHdr.style.marginTop = ".4rem";
+    gapHdr.title = "Coverage gaps: how much of the codebase has been documented and summarised. Low numbers mean Determined has less context to work with.";
+    gapHdr.textContent = "Gaps";
+    corpusMapInner.appendChild(gapHdr);
+
+    const gapBody = document.createElement("div");
+    gapBody.style.cssText = "font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7";
+    let html = `<div>
+      <span class="${cls(docPct)}"   title="Percentage of functions that have docstrings">docs ${docPct}%</span> &nbsp;
+      <span class="${cls(distPct)}"  title="Percentage of files that have been distilled into summaries">distilled ${distPct}%</span> &nbsp;
+      <span style="color:var(--text2)" title="Design rules extracted from docs via ingest_design_docs">${gs.design_note_count} design notes</span>
+    </div>`;
+    if (gs.modules && gs.modules.length) {
+      html += gs.modules.map(m => {
+        const pct = m.total > 0 ? Math.round(100 * (m.total - m.missing) / m.total) : 100;
+        return `<div><span class="gs-mod">${escHtml(m.module)}</span> <span class="${cls(pct)}">${pct}%</span> <span style="color:var(--text3)">(${m.missing} missing)</span></div>`;
+      }).join("");
+    }
+    gapBody.innerHTML = html;
+    corpusMapInner.appendChild(gapBody);
+  }
 
   corpusMapEl.style.display = (eps.length || hots.length || data.files) ? "" : "none";
 
   const stubsLink = document.getElementById("map-stubs-link");
-  if (stubsLink) stubsLink.addEventListener("click", () => { input.value = "find stubs"; sendQuery(); });
+  if (stubsLink) stubsLink.addEventListener("click", () => activateTab("frontier"));
 
   attachSymbolHandlers(corpusMapInner);
 }
