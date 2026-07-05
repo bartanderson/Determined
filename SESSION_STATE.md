@@ -1,37 +1,53 @@
-# SESSION STATE - session 82 handoff
+# SESSION STATE - session 84 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 82, 2026-07-05)
+## What happened this session (session 84, 2026-07-05)
 
-### Commonplace work arc clarified and recorded
-- Realized RM15 (Commonplace guided journey) was the missing next item -- it was in
-  COMMONPLACE_VISION.md but not connected to active work tracking.
-- COMMONPLACE_VISION.md updated: added "The actual work arc" section at the top with
-  clear framing of the two paths and the iterative approach.
-- TRACKER.md: RM15 filed as ACTIVE next item. Dashboard updated.
+### corpus panel UX pass (RM15 prep)
+Bart flagged several issues with the corpus panel section: Roots/Core unlabeled,
+Gaps disconnected from stubs, distilled showing 101%, view stubs firing an LLM query.
 
-### The work arc (important -- read this)
-Two paths through the Commonplace journey:
-- **Easy path**: start from seed skeleton, use Determined to understand and fill it out
-- **Hardcore path**: build seed from scratch with Determined open, ingest as you go
+Changes (commit 1982667):
+- Roots / Core toggle: one section visible at a time, Roots default, hover tooltips
+  explain the distinction on each tab label
+- Gaps consolidated inside corpus-map-inner (renderCorpusMap now owns it), directly
+  below Roots/Core -- stubs count + coverage gaps grouped as "what's incomplete"
+- view stubs now calls activateTab('frontier') directly, no LLM needed, tooltip
+  explains what stubs are
+- distilled% capped at 100% (was showing 101%)
+- Removed standalone #gap-summary-section div from HTML
+- llm_client: _ensure_server() lazy-start wrapper added to generate() and chat()
+  so the LLM restarts on demand if it crashed after server launch
 
-Both converge at seed → complete → enhance (tagger, semantic search, connections).
+436 passed, 1 skipped.
 
-This is iterative work: start server, point at seed (or blank dir), walk journey steps,
-fix Determined when something breaks, continue. Not a one-shot audit.
+### Design principle articulated by Bart (internalize this)
+Everything surfaced in the UI earns its place by being explainable in one hover
+sentence. If it can't be explained that way, it belongs in the tutorial (the
+Commonplace guided journey). The move is always "find where it belongs and make
+the purpose legible" -- not cut. The tutorial is where each piece gets explained
+once, in context, as the user actually needs it. The journey + polish iterate
+together from real use.
+
+### Housekeeping NOT done
+ingest_design_docs for dj2 was attempted but failed -- llama-server was down
+(that's what surfaced the lazy-start gap). With lazy-start now in place, this
+should work next session once the server restarts.
 
 ## NEXT SESSION -- start here
 
 **Active item: RM15 -- Commonplace guided journey**
-Start the Determined server, point it at examples/commonplace/seed/, and walk the
-journey steps from COMMONPLACE_VISION.md. Fix the tool where the experience breaks.
+1. Start server (pointing at dj2 for housekeeping first, OR switch straight to seed)
+2. Run ingest_design_docs for dj2 (design notes were purged session 79; 268 deleted)
+3. Switch corpus to examples/commonplace/seed/
+4. Walk the journey steps from COMMONPLACE_VISION.md
+5. Fix Determined where the experience breaks
 
-**Pending housekeeping (do first):**
-- Run `ingest_design_docs` via the UI to re-extract clean design notes from dj2 docs.
-  (All 268 old notes purged session 79; DB is empty for kind=design_note until re-extracted.)
+The lazy-start wrapper means ingest_design_docs should now work even if
+llama-server wasn't running when the server launched.
 
 **FUTURE items (not next):**
 - Item 27: Standards self-review
@@ -54,14 +70,13 @@ journey steps from COMMONPLACE_VISION.md. Fix the tool where the experience brea
 - Seed state built and verified (examples/commonplace/seed/)
 - Complete app at examples/commonplace/
 - DESIGN.md has 6 authority rules + 4 open design tensions + stub roadmap
-- Guided UI highlighting: deferred (Phase 4) -- not needed to run the journey
 
 ## Hardware facts
 - llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call)
+- Now also lazy-started on first generate()/chat() call if not running
 - Started by UI on launch (background thread), stopped on exit (atexit)
 - No NSSM service. Configure via LLM_SERVER_EXE / LLM_MODEL_PATH in llm_client.py.
 - SearXNG: user-run (Docker or standalone), default http://localhost:8888
-  Configure SEARXNG_URL in llm_client.py. search_web returns "not configured" if None.
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)

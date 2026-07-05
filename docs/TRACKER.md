@@ -152,7 +152,7 @@ Final synthesis correctly identified the key symbols. Pattern executor works. It
 tools when a named pattern matches - executor drives the sequence, model only interprets
 each step result. 293/293 tests passing.
 
-**Full history:** HISTORY.md.
+**Full history:** `git log` (HISTORY.md is a decision log, not a session diary).
 
 ---
 
@@ -895,5 +895,5 @@ the right context for each step, let the model connect it.
 
 ## Chronological session log
 
-Moved to HISTORY.md (section B) as part of the 2026-06-18 TRACKER/HISTORY
-split - full dated session-by-session record, verbatim, nothing dropped.
+See `git log` for full session history. HISTORY.md (docs/HISTORY.md) is a curated
+decision log -- non-obvious choices, failed approaches, surprises still live.
