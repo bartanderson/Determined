@@ -48,6 +48,45 @@
 .sp-propose-box{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:8px;display:flex;flex-direction:column;gap:6px}
 .sp-propose-box textarea{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text1);font-family:var(--font-mono);font-size:.8em;padding:6px;resize:vertical;min-height:60px}
 .sp-propose-box .sp-propose-actions{display:flex;gap:6px}
+
+/* ── context mode buttons ── */
+.mode-btns{display:flex;gap:4px;align-items:center;margin-right:10px}
+.mode-btn{font-size:.73em;padding:3px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s,border-color .12s}
+.mode-btn:hover{background:var(--bg3);color:var(--text1)}
+.mode-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+/* ── mode banner ── */
+.mode-banner{display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:.78em;color:var(--text2)}
+.mode-banner-icon{font-size:1em}
+.mode-banner-label{font-weight:600}
+body.mode-design .mode-banner-label{color:var(--blue)}
+body.mode-trace  .mode-banner-label{color:var(--orange)}
+body.mode-review .mode-banner-label{color:var(--green)}
+.mode-banner-hint{color:var(--text3);flex:1}
+.mode-banner-clear{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.9em;padding:0 2px;line-height:1}
+.mode-banner-clear:hover{color:var(--text1)}
+
+/* ── tab highlights per mode ── */
+/* tabs lit up for Design mode */
+body.mode-design .tab[data-tab="knowledge"],
+body.mode-design .tab[data-tab="editor"],
+body.mode-design .tab[data-tab="dochealth"],
+body.mode-design .tab[data-tab="build_queue"] { border-bottom:2px solid var(--blue); }
+
+/* tabs lit up for Trace mode */
+body.mode-trace .tab[data-tab="call_tree"],
+body.mode-trace .tab[data-tab="graph"],
+body.mode-trace .tab[data-tab="frontier"],
+body.mode-trace .tab[data-tab="bag"] { border-bottom:2px solid var(--orange); }
+
+/* tabs lit up for Review mode */
+body.mode-review .tab[data-tab="dochealth"],
+body.mode-review .tab[data-tab="build_queue"],
+body.mode-review .tab[data-tab="knowledge"],
+body.mode-review .tab[data-tab="frontier"] { border-bottom:2px solid var(--green); }
+
+/* trail bar glow in Trace mode */
+body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,0,.07); }
 </style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
@@ -64,6 +103,11 @@
     <span class="sep">·</span>
     <span class="db-badge" id="db-badge">{{ db_name }}</span>
     <span class="spacer"></span>
+    <div class="mode-btns" id="mode-btns">
+      <button class="mode-btn" data-mode="design" title="Module design — explore design notes, violations, knowledge artifacts">📐 Design</button>
+      <button class="mode-btn" data-mode="trace"  title="Call trace — follow call chains, graph, frontier stubs">🔗 Trace</button>
+      <button class="mode-btn" data-mode="review" title="Gap review — docstring health, proposals, workflow queue">✅ Review</button>
+    </div>
     <span class="model-label">{{ model_name }}</span>
     <span class="queue-badge" id="queue-badge" style="display:none" title="Pending next_up items"></span>
   </div>
@@ -169,6 +213,14 @@
       <input id="q-input" class="query-input" type="text"
              placeholder="Ask about the codebase…" autocomplete="off">
       <button id="send-btn" class="send-btn">Ask ↵</button>
+    </div>
+
+    <!-- mode banner -->
+    <div class="mode-banner" id="mode-banner" style="display:none">
+      <span class="mode-banner-icon" id="mode-banner-icon"></span>
+      <span class="mode-banner-label" id="mode-banner-label"></span>
+      <span class="mode-banner-hint" id="mode-banner-hint"></span>
+      <button class="mode-banner-clear" id="mode-banner-clear" title="Clear mode">✕</button>
     </div>
 
     <!-- tab bar -->
@@ -667,6 +719,65 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
   });
 });
 
+// ── context modes ─────────────────────────────────────────
+const _MODES = {
+  design: {
+    icon: "📐", label: "Module design",
+    hint: "Exploring design intent, violations, knowledge artifacts",
+    primary: "knowledge",
+    color: "blue"
+  },
+  trace: {
+    icon: "🔗", label: "Call trace",
+    hint: "Following call chains — use call tree, graph, frontier",
+    primary: "call_tree",
+    color: "orange"
+  },
+  review: {
+    icon: "✅", label: "Gap review",
+    hint: "Reviewing what's missing — proposals, docstrings, workflow queue",
+    primary: "dochealth",
+    color: "green"
+  }
+};
+
+let _currentMode = null;
+
+function setMode(name) {
+  // toggle off if clicking the active mode again
+  if (_currentMode === name) { clearMode(); return; }
+  _currentMode = name;
+
+  // body class
+  document.body.classList.remove("mode-design", "mode-trace", "mode-review");
+  document.body.classList.add("mode-" + name);
+
+  // button active states
+  document.querySelectorAll(".mode-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.mode === name));
+
+  // banner
+  const cfg = _MODES[name];
+  document.getElementById("mode-banner-icon").textContent  = cfg.icon;
+  document.getElementById("mode-banner-label").textContent = cfg.label;
+  document.getElementById("mode-banner-hint").textContent  = cfg.hint;
+  document.getElementById("mode-banner").style.display = "flex";
+
+  // switch to primary tab
+  activateTab(cfg.primary);
+}
+
+function clearMode() {
+  _currentMode = null;
+  document.body.classList.remove("mode-design", "mode-trace", "mode-review");
+  document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("mode-banner").style.display = "none";
+}
+
+document.querySelectorAll(".mode-btn").forEach(b =>
+  b.addEventListener("click", () => setMode(b.dataset.mode)));
+document.getElementById("mode-banner-clear").addEventListener("click", clearMode);
+
 // ── tabs ──────────────────────────────────────────────────
 function activateTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
@@ -725,6 +836,7 @@ function ctMakeNode(symbol, dir, depth) {
   });
   li.querySelector(".ct-toggle").addEventListener("click", e => {
     e.stopPropagation();
+    if (li._ctPending) return;
     const wrap = li.querySelector(".ct-children");
     if (!wrap) { ctExpand(li, symbol, dir); return; }
     const open = wrap.style.display !== "none";
