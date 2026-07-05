@@ -1,30 +1,28 @@
-# SESSION STATE - session 80 handoff
+# SESSION STATE - session 81 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 80, 2026-07-05)
+## What happened this session (session 81, 2026-07-05)
 
-### RM11 close-out (already done in prior session, just not tracked)
-- edit_file(assessor, args) was fully implemented: read_file, write_file, replace_in_file ops
-- Path-boundary guard against project root. TOOLS dict, tool_registry entry, 12 regression tests.
-- TRACKER updated to DONE.
+### TRACKER housekeeping
+- RM13 marked DONE (was still open; git log showed all sub-items landed sessions 75-79)
+- Dashboard blurb updated to reflect session 80 state
 
-### RM12 -- SearXNG web search agent tool (DONE)
-- search_web(assessor, args) in agent_tools.py
-- Hits SearXNG /search?format=json, returns top-N results as title/URL/snippet text
-- SEARXNG_URL config in llm_client.py (default http://localhost:8888; None = disabled)
-- Graceful degradation when SearXNG is unreachable (returns message, does not raise)
-- Wired into TOOLS and tool_registry (category: external)
-- 10 new regression tests. 436 passed, 1 skipped. Commit: c34f65e.
-
-### Sidebar icon-nav concept (designed, not built)
-- Proposed: 4-icon vertical rail replaces the current 6-section sidebar
-- Icons: Corpus (database) / Navigate (compass) / Tools (tool) / Ask (message, pinned bottom)
-- Clicking active icon collapses panel to rail-only (max editor space)
-- CSS: .shell grid gets 3 columns (40px rail + panel + 1fr main)
-- Mockup shown in session. Ready to implement when Bart says go.
+### Sidebar icon-nav (DONE)
+- 4-icon vertical rail replaces the old flat sidebar
+- Icons: 🗄 Corpus / 🧭 Navigate / 🔧 Tools / 💬 Ask (pinned bottom)
+- Corpus panel: Analyze/switch + corpus map (Roots/Core) + Gaps at a glance
+- Navigate panel: Start here (6 quick-start shortcuts only, clean/uncluttered)
+- Tools panel: query shortcuts (open file, inspect symbol, callers, explain, findings, files)
+- Ask icon: toggles query bar independently of panel state
+- Clicking active icon collapses panel to rail-only (40px) for max editor space
+- Shell grid: 40px rail + 210px panel + 1fr main (was 210px + 1fr)
+- panel-collapsed class replaces sidebar-collapsed
+- Spotlight updated to 4-col grid when open
+- Inline padding moved to .sb-tools-body CSS class (per design token rules)
+- 436 tests pass. Commit: 380814c.
 
 ## NEXT SESSION -- start here
 
@@ -33,12 +31,11 @@ Clean state. All commits landed.
   (All 268 old notes purged session 79; DB is empty for kind=design_note until re-extracted.)
 
 **Next open items (from TRACKER.md):**
-- Sidebar icon-nav (UI improvement, ~1.5h -- see mockup from this session)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
 
-Do NOT batch multiple items. Verify each in browser before moving to next.
+No immediate next item filed. Ask Bart what's next.
 
 ## Current Determined status
 
@@ -48,7 +45,6 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
-- Sidebar icon-nav: UI improvement (not filed in TRACKER yet -- file when starting)
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional
