@@ -622,6 +622,16 @@ body {
 .trail-chip:hover { border-color: var(--blue); color: var(--blue); }
 .trail-chip.current { border-color: var(--blue); color: var(--blue); background: #1e3a4a; }
 .trail-arrow { color: var(--text3); font-size: 11px; }
+.trail-file { font-size: 9px; color: var(--text3); margin-left: 4px; font-family: var(--font-mono); }
+.trail-chip-hot  { border-color: #c0392b44; }
+.trail-chip-warm { border-color: #e67e2244; }
+.trail-chip-hot.current  { border-color: #c0392b; color: #e74c3c; background: #2a1a1a; }
+.trail-chip-warm.current { border-color: #e67e22; color: #e67e22; background: #2a1e10; }
+.trail-export {
+  background: transparent; border: 1px solid var(--border); color: var(--text3);
+  cursor: pointer; font-size: 10px; padding: 2px 7px; border-radius: 3px; white-space: nowrap;
+}
+.trail-export:hover { color: var(--text); border-color: var(--blue); }
 .trail-clear {
   background: transparent; border: none; color: var(--text3);
   cursor: pointer; font-size: 12px; padding: 2px 4px;

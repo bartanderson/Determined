@@ -161,6 +161,7 @@
     <div class="trail-bar" id="trail-bar" style="display:none">
       <span class="trail-label">Trail:</span>
       <div class="trail-chips" id="trail-chips"></div>
+      <button class="trail-export" id="trail-export" title="Export trail as session summary">Export</button>
       <button class="trail-clear" id="trail-clear" title="Clear trail">✕</button>
     </div>
 
@@ -1296,6 +1297,7 @@ socket.on("symbol_quick_result", data => {
   if (!data.error && data.symbol) {
     _sqCache.set(data.symbol, data);
     if (typeof _renderPopover === "function") _renderPopover(data);
+    _trailEnrichFromCache();
   }
   // Ambient badge: tint every sym-link for HOT/WARM symbols regardless of hover state
   if (!data.error && data.symbol && data.risk) {
@@ -1759,21 +1761,24 @@ socket.on("stub_projection", data => {
 });
 
 // ── trail / breadcrumbs ───────────────────────────────────
-const trailBar   = document.getElementById("trail-bar");
-const trailChips = document.getElementById("trail-chips");
-const trailClear = document.getElementById("trail-clear");
+const trailBar    = document.getElementById("trail-bar");
+const trailChips  = document.getElementById("trail-chips");
+const trailClear  = document.getElementById("trail-clear");
+const trailExport = document.getElementById("trail-export");
+// Each entry: { sym, file, risk }
 let _trail = [];
 
 function trailAdd(sym) {
-  if (_trail[_trail.length - 1] === sym) return;
-  _trail.push(sym);
+  if (_trail.length && _trail[_trail.length - 1].sym === sym) return;
+  const cached = _sqCache.get(sym);
+  _trail.push({ sym, file: cached?.file || null, risk: cached?.risk || null });
   renderTrail();
 }
 
 function renderTrail() {
   trailBar.style.display = _trail.length ? "flex" : "none";
   trailChips.innerHTML = "";
-  _trail.forEach((sym, i) => {
+  _trail.forEach((entry, i) => {
     if (i > 0) {
       const arr = document.createElement("span");
       arr.className = "trail-arrow";
@@ -1781,17 +1786,53 @@ function renderTrail() {
       trailChips.appendChild(arr);
     }
     const chip = document.createElement("span");
-    chip.className = "trail-chip" + (i === _trail.length - 1 ? " current" : "");
-    chip.textContent = sym;
-    chip.addEventListener("click", () => openSpotlight(sym));
+    const riskCls = entry.risk === "HOT" ? " trail-chip-hot" : entry.risk === "WARM" ? " trail-chip-warm" : "";
+    chip.className = "trail-chip" + riskCls + (i === _trail.length - 1 ? " current" : "");
+    chip.innerHTML = escHtml(entry.sym) +
+      (entry.file ? `<span class="trail-file">${escHtml(entry.file)}</span>` : "");
+    chip.addEventListener("click", () => openSpotlight(entry.sym));
     trailChips.appendChild(chip);
   });
+}
+
+// Enrich trail entries when quick data arrives (called from symbol_quick_result handler)
+function _trailEnrichFromCache() {
+  let changed = false;
+  _trail.forEach(entry => {
+    if (!entry.file || !entry.risk) {
+      const cached = _sqCache.get(entry.sym);
+      if (cached) {
+        if (cached.file) { entry.file = cached.file; changed = true; }
+        if (cached.risk) { entry.risk = cached.risk; changed = true; }
+      }
+    }
+  });
+  if (changed) renderTrail();
 }
 
 trailClear.addEventListener("click", () => {
   _trail = [];
   renderTrail();
   closeSpotlight();
+});
+
+trailExport.addEventListener("click", () => {
+  if (!_trail.length) return;
+  const lines = ["# Session Trail\n"];
+  _trail.forEach((entry, i) => {
+    const risk = entry.risk ? ` [${entry.risk}]` : "";
+    const file = entry.file ? ` (${entry.file})` : "";
+    lines.push(`${i + 1}. **${entry.sym}**${file}${risk}`);
+  });
+  const text = lines.join("\n");
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      trailExport.textContent = "Copied!";
+      setTimeout(() => { trailExport.textContent = "Export"; }, 1500);
+    });
+  } else {
+    prompt("Copy trail summary:", text);
+  }
 });
 
 // ── answer analysis ───────────────────────────────────────
