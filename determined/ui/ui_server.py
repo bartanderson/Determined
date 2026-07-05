@@ -1881,18 +1881,21 @@ def handle_get_waypoints(_data=None):
         emit("waypoints_result", {"error": str(exc)})
 
 
-def _warmup_llm() -> None:
-    """Send a trivial prompt to load the model into memory."""
-    from determined.agent.llm_client import generate as _llm_generate
-    try:
-        print("llama-server: warming up model...")
-        _llm_generate("hi", timeout=120)
-        print("llama-server: model ready")
-    except Exception as exc:
-        print(f"llama-server: warmup failed: {exc}")
+def _start_llm_server() -> None:
+    """Launch llama-server subprocess and warm up the model. Runs in background thread."""
+    from determined.agent.llm_client import start_server, LLM_DISPLAY_NAME
+    print(f"LLM: starting {LLM_DISPLAY_NAME}...")
+    ready = start_server(wait_seconds=120)
+    if ready:
+        print(f"LLM: {LLM_DISPLAY_NAME} ready")
+    else:
+        print(f"LLM: WARNING — could not start {LLM_DISPLAY_NAME} (check LLM_SERVER_EXE / LLM_MODEL_PATH in llm_client.py)")
 
 
 def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 5050) -> None:
+    import atexit
+    from determined.agent.llm_client import stop_server
+
     # Use explicit db_path, or fall back to last session, or start with no corpus
     if db_path:
         init(db_path)
@@ -1902,17 +1905,15 @@ def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 
             print(f"Resuming last session: {saved}")
             init(saved)
 
-    llm_status = _check_llm()
+    atexit.register(stop_server)
+
     print(f"\nDev console: http://{host}:{port}")
     if _db_path:
         s = _corpus_status()
         print(f"Corpus:       {_db_path}  ({s.get('files',0)} files, {s.get('hot',0)} hot, {s.get('artifacts',0)} artifacts)")
     else:
         print(f"Corpus:       none — use Ingest panel to load one")
-    if llm_status == "ok":
-        threading.Thread(target=_warmup_llm, daemon=True).start()
-    else:
-        print(f"llama-server: WARNING — {llm_status}")
+    threading.Thread(target=_start_llm_server, daemon=True).start()
     print(f"Press Ctrl+C to stop.\n")
     socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
 

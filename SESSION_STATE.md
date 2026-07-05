@@ -72,7 +72,7 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 - Missing: journey step validation (deferred), guided UI highlighting (deferred)
 
 ## Hardware facts
-- llama-server-8b: NSSM auto service, port 8081 (8B on GPU, ~3s/call)
+- llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call); started by UI on launch, stopped on exit
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)

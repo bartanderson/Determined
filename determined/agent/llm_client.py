@@ -3,18 +3,22 @@
 # Thin LLM backend shim. All inference calls go through here.
 # Backend: llama-server (llama.cpp built-in OpenAI-compatible server).
 #
-# Model: Qwen3-8B (Q4_K_M) on GPU, port 8081, NSSM auto-start service (llama-server-8b).
-# 3B service removed.
+# Model: Qwen3-8B (Q4_K_M) on GPU, port 8081, launched on demand by ui_server.py.
+# No always-on service required. start_server() / stop_server() manage the subprocess.
 #
 # Public API:
 #   generate(prompt)   -> str | None   -- single prompt, text completion
 #   chat(messages)     -> str | None   -- message list, chat completion
 #   generate_quality() / chat_quality() -- aliases, kept for call-site compatibility
+#   start_server()     -> bool          -- launch llama-server if not already running
+#   stop_server()                       -- terminate the subprocess we launched
 
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 
 import requests
 
@@ -25,6 +29,13 @@ LLM_DISPLAY_NAME = "Qwen3-8B"
 LLM_TIMEOUT      = 600
 LLM_COLD_TIMEOUT = 10
 LLM_MAX_TOKENS   = 400
+
+# Server launch config — used by start_server() / stop_server()
+LLM_SERVER_EXE  = r"C:\Users\bartl\models\llama-server\llama-server.exe"
+LLM_MODEL_PATH  = r"C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf"
+LLM_SERVER_ARGS = ["--port", "8081", "--host", "127.0.0.1", "--ctx-size", "4096", "-ngl", "99"]
+
+_server_proc: subprocess.Popen | None = None
 
 # Legacy alias — same server, kept so existing call sites don't break
 LLM_QUALITY_BASE_URL = LLM_BASE_URL
@@ -109,3 +120,38 @@ def warmup(wait_seconds: int = 30, probe_timeout: int = LLM_COLD_TIMEOUT) -> boo
             time.sleep(min(2, deadline - time.monotonic()))
     logger.warning("llm_client.warmup: not ready within %ds", wait_seconds)
     return False
+
+
+def start_server(wait_seconds: int = 90) -> bool:
+    """Launch llama-server as a subprocess if not already running.
+
+    Returns True when the server is ready to accept requests.
+    No-op (returns True) if the server is already reachable.
+    Returns False if the exe is missing or the server fails to start.
+    """
+    global _server_proc
+    if is_available():
+        return True
+    if not Path(LLM_SERVER_EXE).exists():
+        logger.warning("llm_client.start_server: exe not found at %s", LLM_SERVER_EXE)
+        return False
+    if not Path(LLM_MODEL_PATH).exists():
+        logger.warning("llm_client.start_server: model not found at %s", LLM_MODEL_PATH)
+        return False
+    _server_proc = subprocess.Popen(
+        [LLM_SERVER_EXE, "-m", LLM_MODEL_PATH] + LLM_SERVER_ARGS,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    logger.info("llm_client.start_server: launched pid %d", _server_proc.pid)
+    return warmup(wait_seconds=wait_seconds)
+
+
+def stop_server() -> None:
+    """Terminate the subprocess started by start_server(). No-op if we didn't launch it."""
+    global _server_proc
+    if _server_proc and _server_proc.poll() is None:
+        logger.info("llm_client.stop_server: terminating pid %d", _server_proc.pid)
+        _server_proc.terminate()
+    _server_proc = None

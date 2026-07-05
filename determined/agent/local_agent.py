@@ -322,7 +322,7 @@ def _postprocess_answer(answer: str, facts: list[dict]) -> str:
 # ------------------------------------------------------------------
 
 def _call_ollama(messages: list[dict], verbose: bool = False, label: str = "") -> str:
-    text = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "ERROR: llama-server is not running. Check service: nssm status llama-server-8b"
+    text = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "ERROR: llama-server is not running. Start the UI to launch it automatically, or run llama-server manually on port 8081."
     if verbose and label:
         print(f"\n[{label}]\n{text}\n[/{label}]", flush=True)
     return text
