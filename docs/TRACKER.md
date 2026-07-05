@@ -16,7 +16,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-05, session 81):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
+**Last session (2026-07-05, session 82):** Clarified Commonplace work arc. COMMONPLACE_VISION.md updated with clear framing. RM15 filed as next active item.
+
+**Session 81 (2026-07-05):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
 **Session 67 (2026-07-04):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
 
@@ -155,6 +157,29 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
+
+---
+
+RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined iteratively**
+
+   The next active work arc. Full description in docs/COMMONPLACE_VISION.md.
+
+   **Two entry paths:**
+   - Easy path: start from the seed skeleton, use Determined to fill it out
+   - Hardcore path: build the seed from scratch with Determined open, ingest
+     as you go, write-reingest-read-frontier loop IS the workflow
+
+   Both paths converge at seed, then continue to complete, then enhance
+   (wire tagger to llama-server, add semantic search, connection inference).
+
+   **How to work this item:**
+   Start the server. Point Determined at seed (or blank dir). Walk the
+   COMMONPLACE_VISION.md journey steps. When something breaks or feels rough,
+   fix Determined. Continue. Iterative -- not a one-shot audit.
+
+   **Pending housekeeping before starting:**
+   - Run ingest_design_docs via the UI to repopulate dj2 design notes
+     (all 268 purged session 79; DB empty for kind=design_note until re-run)
 
 ---
 

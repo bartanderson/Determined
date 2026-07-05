@@ -6,6 +6,39 @@ and its role in the Determined guided-journey UI._
 
 ---
 
+## The actual work arc (read this first)
+
+This is the next active development work for Determined. The goal is to run
+the journey for real -- use Determined to build and navigate Commonplace --
+and fix the tool iteratively wherever the experience breaks down. Commonplace
+and Determined improve together through actually doing the thing.
+
+**Two entry paths, same destination:**
+
+- **Easy path (intro):** Start with the seed skeleton already in hand. Use
+  Determined to understand it, fill out the stubs, and navigate to complete.
+  Good for getting familiar with the tool quickly.
+
+- **Hardcore path (full):** Build the seed from scratch, file by file, with
+  Determined open. Ingest as you go. The write-reingest-read-frontier loop
+  IS the development workflow. This is the real introduction to the tool.
+
+Both paths converge at the seed, then continue: seed -> complete -> enhance.
+
+**How to do this work:**
+Start the server. Point Determined at the seed (or a blank directory for the
+hardcore path). Walk the journey steps. When something breaks or feels rough,
+fix Determined. Continue. This is not a one-shot audit -- it is iterative.
+The journey writes itself from what the tool actually does.
+
+**What "enhance" means:**
+After reaching complete, add one or two features (tagger wired to llama-server,
+semantic search, connection inference) using Determined to navigate a codebase
+the user now understands. This demonstrates Determined's value on an actively
+evolving project, not just a static corpus.
+
+---
+
 ## Purpose
 
 Commonplace is not a test fixture. It is the vehicle for demonstrating and

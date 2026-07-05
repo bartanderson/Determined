@@ -1,57 +1,60 @@
-# SESSION STATE - session 81 handoff
+# SESSION STATE - session 82 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 81, 2026-07-05)
+## What happened this session (session 82, 2026-07-05)
 
-### TRACKER housekeeping
-- RM13 marked DONE (was still open; git log showed all sub-items landed sessions 75-79)
-- Dashboard blurb updated to reflect session 80 state
+### Commonplace work arc clarified and recorded
+- Realized RM15 (Commonplace guided journey) was the missing next item -- it was in
+  COMMONPLACE_VISION.md but not connected to active work tracking.
+- COMMONPLACE_VISION.md updated: added "The actual work arc" section at the top with
+  clear framing of the two paths and the iterative approach.
+- TRACKER.md: RM15 filed as ACTIVE next item. Dashboard updated.
 
-### Sidebar icon-nav (DONE)
-- 4-icon vertical rail replaces the old flat sidebar
-- Icons: 🗄 Corpus / 🧭 Navigate / 🔧 Tools / 💬 Ask (pinned bottom)
-- Corpus panel: Analyze/switch + corpus map (Roots/Core) + Gaps at a glance
-- Navigate panel: Start here (6 quick-start shortcuts only, clean/uncluttered)
-- Tools panel: query shortcuts (open file, inspect symbol, callers, explain, findings, files)
-- Ask icon: toggles query bar independently of panel state
-- Clicking active icon collapses panel to rail-only (40px) for max editor space
-- Shell grid: 40px rail + 210px panel + 1fr main (was 210px + 1fr)
-- panel-collapsed class replaces sidebar-collapsed
-- Spotlight updated to 4-col grid when open
-- Inline padding moved to .sb-tools-body CSS class (per design token rules)
-- 436 tests pass. Commit: 380814c.
+### The work arc (important -- read this)
+Two paths through the Commonplace journey:
+- **Easy path**: start from seed skeleton, use Determined to understand and fill it out
+- **Hardcore path**: build seed from scratch with Determined open, ingest as you go
+
+Both converge at seed → complete → enhance (tagger, semantic search, connections).
+
+This is iterative work: start server, point at seed (or blank dir), walk journey steps,
+fix Determined when something breaks, continue. Not a one-shot audit.
 
 ## NEXT SESSION -- start here
 
-**Pending housekeeping:**
+**Active item: RM15 -- Commonplace guided journey**
+Start the Determined server, point it at examples/commonplace/seed/, and walk the
+journey steps from COMMONPLACE_VISION.md. Fix the tool where the experience breaks.
+
+**Pending housekeeping (do first):**
 - Run `ingest_design_docs` via the UI to re-extract clean design notes from dj2 docs.
   (All 268 old notes purged session 79; DB is empty for kind=design_note until re-extracted.)
 
-**Next open items (from TRACKER.md):**
-- Item 27: Standards self-review (FUTURE)
-- RM9: Connect to Q4 MCTS (FUTURE)
-- RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
-
-No immediate next item filed. Ask Bart what's next.
+**FUTURE items (not next):**
+- Item 27: Standards self-review
+- RM9: Connect to Q4 MCTS
+- RM10: DeRe-CoT recomposition pass in goal_intake
 
 ## Current Determined status
 
 ### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
+- RM15: Commonplace guided journey (ACTIVE)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional
-- 8 stubs total across all topology shapes (all verified in corpus)
+- 8 stubs across all topology shapes (direct-call, chain, ABC, conditional)
 - Seed state built and verified (examples/commonplace/seed/)
-- DESIGN.md ingested -- 10 rules live in Commonplace DB
-- Missing: journey step validation (deferred), guided UI highlighting (deferred)
+- Complete app at examples/commonplace/
+- DESIGN.md has 6 authority rules + 4 open design tensions + stub roadmap
+- Guided UI highlighting: deferred (Phase 4) -- not needed to run the journey
 
 ## Hardware facts
 - llama-server: on-demand subprocess, port 8081, Qwen3-8B on GPU (~3s/call)
