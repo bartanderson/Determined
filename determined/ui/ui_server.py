@@ -1529,7 +1529,16 @@ def handle_save_file(data):
             except ValueError:
                 emit("save_result", {"error": "path outside project root"}); return
         fp.write_text(content, encoding="utf-8")
-        emit("save_result", {"path": str(fp).replace("\\", "/")})
+        saved_path = str(fp).replace("\\", "/")
+        emit("save_result", {"path": saved_path})
+        # Auto-reingest the saved file so the corpus stays in sync
+        if _assessor is not None:
+            try:
+                from determined.ingestion.reingest_file import reingest_file
+                reingest_file(_assessor.oracle, str(fp))
+                _emit_corpus_ready()
+            except Exception:
+                pass  # reingest failure is non-fatal; user can re-analyze manually
     except Exception as exc:
         emit("save_result", {"error": str(exc)})
 

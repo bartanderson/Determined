@@ -2571,7 +2571,7 @@ socket.on("save_result", data => {
     if (_edActive >= 0 && _edFiles[_edActive])
       socket.emit("open_file", { path: _edFiles[_edActive].path });
     toast.style.background = "var(--green)";
-    toast.textContent = "Saved — re-analyze corpus to update graph";
+    toast.textContent = "Saved — re-ingesting…";
     edPanel.appendChild(toast);
   }
   setTimeout(() => toast.remove(), 4000);

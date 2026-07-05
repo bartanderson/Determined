@@ -283,7 +283,7 @@ body {
 
 /* ── tab content ─────────────────────────────────────────── */
 .tab-content {
-  grid-row: 4;
+  grid-row: 5;
   min-height: 0;
   overflow: visible;
   position: relative;

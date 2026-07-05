@@ -17,6 +17,12 @@ Check that the MEMORY.md auto-index has loaded via system context. If Bart
 asks about prior decisions, preferences, or constraints, check memory entries
 before answering.
 
+**Step 4 -- Skim HISTORY.md**
+Read `docs/HISTORY.md` for recent non-obvious decisions, failed approaches, and
+surprises that are still live. These are things that don't belong in memory files
+yet (too recent or specific) but that a fresh session would otherwise re-derive
+the hard way.
+
 ---
 
 ## Environment
@@ -97,6 +103,12 @@ Common mistakes:
 - All 298+ tests must pass. A commit that breaks tests is not done.
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
   in full with current status and next steps. This is mandatory.
+- At session end (or when Bart says "ready for new session"): scan HISTORY.md,
+  add any non-obvious decisions or lessons from this session, prune stale entries.
+  Do this BEFORE writing SESSION_STATE.md so the history is current.
+- Proactive context flagging: when a session is running long (10+ tool calls,
+  extended multi-step work), flag it -- "Session is getting long, want to wrap
+  and hand off?" Let Bart switch sessions before compaction hits.
 
 ## UI verify rule (standing rule, added session 47)
 
@@ -104,6 +116,16 @@ No UI feature is done until clicked in browser. "DONE (unverified)" is not done.
 Before committing any UI change: start the server, load a corpus, exercise the
 changed interaction, confirm it works. Use /verify or the chrome MCP tools.
 5 minutes of real use exposed multiple broken interactions that passed code review.
+
+**UI testing constraint (standing rule)**: Never use JS eval to inject or manipulate
+browser state as a test setup step. The only valid test sequence is:
+1. Reload the page fresh
+2. Switch corpus via the UI corpus switcher
+3. Wait for corpus_ready
+4. Then test the feature
+
+Injecting state via eval produces false results and bypasses the actual user path.
+This was explicitly corrected and still violated in the same session -- it belongs here.
 
 ## Design reference: The Shape of the System
 

@@ -11,11 +11,26 @@ DESIGN.md rules are ingested.
 
 
 def extract_metadata(url):
-    """
-    STUB: Fetch URL and return dict with title, description, raw_html.
-    Frontier: implement with urllib.request and an HTML parser.
-    """
-    return {"title": url, "description": "", "raw_html": ""}
+    """Fetch URL and return dict with title, description, raw_html."""
+    import urllib.request, html.parser
+
+    class _P(html.parser.HTMLParser):
+        def __init__(self):
+            super().__init__(); self.title = ""; self._in = False
+        def handle_starttag(self, t, a):
+            if t == "title": self._in = True
+        def handle_endtag(self, t):
+            if t == "title": self._in = False
+        def handle_data(self, d):
+            if self._in: self.title += d
+
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            raw_html = r.read().decode("utf-8", errors="replace")
+        p = _P(); p.feed(raw_html)
+        return {"title": p.title.strip(), "description": "", "raw_html": raw_html}
+    except Exception:
+        return {"title": "", "description": "", "raw_html": ""}
 
 
 def extract_full_content(url):

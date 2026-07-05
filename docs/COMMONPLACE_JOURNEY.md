@@ -1,0 +1,114 @@
+Commonplace Guided Journey - Working Log
+=========================================
+
+Live document. Each walk adds to what's known. Only restart from scratch
+when a fundamental break requires it. Look ahead 2-3 steps before walking.
+
+---
+
+## WHAT WORKS (verified, don't re-test)
+
+- CSS fix: .tab-content grid-row 4->5 (commit pending). Frontier, Graph,
+  Topology tabs now render at full height.
+- Seed corpus loads correctly: 8 files, 0 hot, 2 stubs, Roots: capture/index
+- Frontier Direct mode: shows extract_metadata + extract_full_content as red
+  stubs, extract as orange caller. Correct.
+- Topology tab: renders correctly, shows Total stubs:2, direct-call shape,
+  action queue points at stubs. Correct.
+- symbol_context on extract_metadata: correct output via UI spotlight trigger
+  (declaration, docstring, SAFE risk, 1 caller). Spotlight code is correct;
+  preview pane too narrow to show it (556px < 590px needed). Not a bug.
+
+---
+
+## KNOWN ISSUES / BLOCKERS
+
+1. Spotlight panel invisible in preview pane (viewport too narrow). Works in
+   real browser. Not fixing -- preview limitation.
+
+2. "0 design notes" has no call-to-action. User sees it but can't act on it
+   from the corpus panel. Needs a "Scan for design docs" button.
+   Status: FILED, not yet fixed.
+
+3. seed/ has no DESIGN.md. ingest_design_docs finds nothing. Intentional --
+   user writes design doc as they build. But the UI needs to explain this,
+   not just show 0.
+
+4. CLI (local_agent REPL): no named pattern for topology/frontier queries.
+   User types natural language, LLM answers from what's been explored.
+   With 0% coverage the answer is always empty. Not a bug -- coverage 0
+   means explore first. But REPL startup should say "run 'orient' to start."
+
+---
+
+## WALK 1 - First complete attempt
+
+### Setup
+- Corpus: C_Users_bartl_dev_Determined_examples_commonplace_seed.db
+- Interface: web UI at localhost:5050
+- Approach: user perspective, click-by-click
+
+### Look ahead (steps 1-7 before walking)
+1. Load corpus -> corpus panel shows shape. WORKS.
+2. Frontier -> 2 stubs. WORKS. (need to set Direct mode, it may remember Orphan)
+3. Click stub node -> spotlight. WORKS in real browser, invisible in preview.
+4. Topology tab -> structure summary. WORKS.
+5. Editor tab -> open extractor.py -> NOT YET VERIFIED.
+6. Reingest after edit -> NOT YET VERIFIED.
+7. Design notes -> 0, no action. KNOWN ISSUE #2.
+
+### Steps walked
+
+[Step 1] Switch corpus to seed.
+  Result: 8 files · 0 hot · 2 stubs. Roots: capture, index. PASS.
+
+[Step 2] Frontier tab -> set Direct mode -> Load.
+  Result: extract_metadata, extract_full_content (red), extract (orange). PASS.
+  Note: mode dropdown remembers last selection -- may be on Orphan after prior session.
+  Fix needed: default to Direct on tab open, or remember per-corpus.
+
+[Step 3] Click extract_metadata in graph.
+  Result: spotlight fires (trail shows entry), panel invisible in preview.
+  In real browser: declaration + STUB docstring + SAFE risk + 1 caller. PASS (real browser).
+
+[Step 4] Topology tab -> Refresh.
+  Result: Total stubs:2, Direct-call:2, action queue: implement direct-call stubs. PASS.
+
+[Step 5] Editor tab -> type 'extractor.py' -> Open.
+  Result: file loads, symbols panel shows extract_metadata/extract_full_content/extract,
+  code visible with STUB docstrings. Edit button present. PASS.
+
+[Step 6] Reingest -- TO WALK NEXT.
+
+[Step 7] Design notes -- KNOWN ISSUE, skip for now.
+
+---
+
+## NEXT WALK - Steps 5-6 (Editor + Reingest)
+
+Look ahead:
+- Editor tab: user opens extractor.py, sees the stub, edits it, saves.
+  Does the Editor tab load the file correctly for seed corpus?
+  Does Save write to disk?
+  Does Analyze/reingest update the stub count?
+- After reingest: corpus panel should show 1 stub (not 2).
+  Frontier should reload and show only extract_full_content.
+
+Known risk: Editor tab path resolution -- seed corpus files are under
+examples/commonplace/seed/. Does the editor resolve that correctly?
+
+---
+
+## FINDINGS TO FIX (in order of journey impact)
+
+F1. Frontier mode resets to Direct on tab open (or remembers per-corpus).
+    Impact: user lands on Orphan from prior session, confused by Flask handlers.
+    Fix: reset fg-mode select to 'direct' in frontierLoad().
+
+F2. "0 design notes" needs a Scan button.
+    Impact: Step 7 is a dead end with no actionable next step.
+    Fix: add button next to design notes count in corpus panel.
+
+F3. REPL startup: suggest 'orient' when coverage is 0%.
+    Impact: CLI user gets empty answers, doesn't know why.
+    Fix: append hint to startup message when coverage < 10%.
