@@ -40,6 +40,20 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|mcp__Claude_Preview__preview_eval|mcp__Claude_Preview__preview_click|mcp__Claude_Preview__preview_fill|mcp__claude-in-chrome",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -File .claude/step_queue_hook.ps1",
+            "shell": "powershell",
+            "statusMessage": "Checking step queue...",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
