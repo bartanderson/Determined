@@ -1,39 +1,41 @@
-# SESSION STATE - session 77 handoff
+# SESSION STATE - session 78 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 77, 2026-07-04)
+## What happened this session (session 78, 2026-07-05)
 
-### Cleanup: llama3.2 misses from session 76
-- `determined/ui/preview.html` and `determined/ui/templates/console.html` had hardcoded
-  "Ollama llama3.2:3b" / "llama3.2:3b" labels — missed because cleanup only targeted .py files.
-- Added `LLM_DISPLAY_NAME = "Qwen3-8B"` to `llm_client.py` as single source of truth.
-- `console.html` now uses `{{ model_name }}` injected from `render_template`.
-- `preview.html` (static mock) updated to Qwen3-8B with sync comment.
-- `tests/item14_phase2_instructions.md` marked HISTORICAL with correct backend info.
-- Commits: 146ed09, 146ed09 (display name fix)
+### W4-W5 -- Trail polish (RM13)
+- Trail chips now show file context alongside symbol name (e.g. `dm_response world_app.py`).
+- Risk-colored borders on chips: WARM=orange tint, HOT=red tint.
+- File/risk data pulled from `symbol_quick_result` cache; enriched retroactively
+  via `_trailEnrichFromCache()` when quick data arrives after the chip is created.
+- "Export" button added to trail bar: copies markdown session summary to clipboard.
+  Format: `# Session Trail\n1. **symbol** (file.py) [RISK]`
+- CSS additions: `.trail-file`, `.trail-chip-hot`, `.trail-chip-warm`, `.trail-export`
+- Verified in browser: two symbols, correct file labels, correct risk colors, export output confirmed.
+- 426 tests passed, 1 skipped. Commit: 9ac1f4d.
 
-### On-demand LLM launch — NSSM service removed
-- `llm_client.py`: added `LLM_SERVER_EXE`, `LLM_MODEL_PATH`, `LLM_SERVER_ARGS` constants;
-  `start_server()` spawns subprocess if not running; `stop_server()` terminates it.
-- `ui_server.py`: `run_server()` calls `start_server()` in background thread on UI launch;
-  `stop_server()` registered via `atexit`. Old `_check_llm()` / `_warmup_llm()` removed.
-- `local_agent.py`: error message updated (no more nssm reference).
-- NSSM service `llama-server-8b` deleted from Windows.
-- `CLAUDE.md` common mistakes updated.
-- 426 tests passed, 1 skipped. Commits: a6321e8, 53d306f.
+### Stale design_note cleanup
+- Spotlight panel for `process_message` surfaced a design_note with stale NSSM/llama3.2-3b info.
+- Source: `dj2/SESSION_STATE.md` and usage docs still referenced NSSM/llama3.2-3b.
+- Fixed: updated `dj2/SESSION_STATE.md` hardware facts, removed Ollama pipe examples
+  from `dj2/ai_context/USAGE.md` and `dj2/Scripts/README_CONTEXT_SYSTEM.md`.
+- Purged all 268 design_notes from dj2 corpus DB (re-extract clean on next ingest_design_docs run).
+- dj2 commit: b173d68.
 
 ## NEXT SESSION -- start here
 
 **Continue RM13: UI redesign pass**
 
-Remaining items in recommended order:
-1. **W4-W5 -- Trail polish**: Breadcrumb shows file context alongside symbol name.
-   Export trail as session summary (symbol path + risk scores + findings).
-2. **#7 -- Context mode switching**: module-design / call-trace / gap-review modes
-   as distinct contexts. Highest effort item; do last.
+Remaining item:
+1. **#7 -- Context mode switching**: module-design / call-trace / gap-review modes
+   as distinct contexts that each surface the right panels. Highest effort item.
+
+Also pending:
+- Run `ingest_design_docs` via the UI agent to re-extract clean design notes from dj2 docs.
+  (All 268 old notes purged; DB is empty for kind=design_note until re-extracted.)
 
 Do NOT batch multiple items. Verify each in browser before moving to next.
 
@@ -46,7 +48,7 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
 - RM12: SearXNG web search agent tool (MEDIUM -- lower priority than UI redesign)
-- RM13: UI redesign pass (HIGH -- in progress, #1+A3+A4+F7 done)
+- RM13: UI redesign pass (HIGH -- in progress, #1+A3+A4+F7+W4+W5 done, #7 remains)
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional
@@ -62,6 +64,7 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 
 ## Corpus state
 - dj2 DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db (47 stubs, 35 ABC gaps)
+  - design_notes: PURGED (268 deleted). Re-run ingest_design_docs to repopulate.
 - Commonplace DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
 - Commonplace seed DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace_seed.db
 - Determined DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined.db
