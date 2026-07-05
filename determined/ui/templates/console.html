@@ -626,7 +626,11 @@ socket.on("corpus_ready", data => {
     badge.onclick = () => activateTab("knowledge");
   }
 
-  // auto-loads once on corpus load
+  // Corpus switch: reload the page so all tab state starts clean.
+  // handle_connect fires corpus_ready again after reload with the new DB already active.
+  if (data.switched) { window.location.reload(); return; }
+
+  // Same-corpus refresh (ingest complete, corpus_status ping): do lightweight updates.
   if (_startupFiredFor !== data.db_path) {
     _startupFiredFor = data.db_path;
     bagFetch();

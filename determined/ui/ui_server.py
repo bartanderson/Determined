@@ -226,11 +226,12 @@ def _queue_count() -> int:
         return 0
 
 
-def _emit_corpus_ready():
+def _emit_corpus_ready(switched=False):
     if _oracle:
         s = _corpus_status()
         m = _corpus_map_data()
         emit("corpus_ready", {
+            "switched": switched,
             "db_name": Path(_db_path).name,
             "db_path": _db_path,
             "files": s.get("files", 0),
@@ -1359,7 +1360,7 @@ def handle_load_db(data):
         emit("error", {"message": f"Not a valid Determined corpus: {path}"}); return
     try:
         init(path)
-        _emit_corpus_ready()
+        _emit_corpus_ready(switched=True)
         # Auto-orient on corpus load
         import threading
         sid = request.sid
