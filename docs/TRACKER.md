@@ -478,72 +478,24 @@ RM13. **[HIGH] UI redesign pass: close remaining delta, fold DISCOVERY_MODEL**
 
 ---
 
-RM11. **[MEDIUM] edit_file agent tool: close the read→reason→write loop**
+RM11. **[DONE 2026-07-05] edit_file agent tool: close the read→reason→write loop**
 
-   Determined can read files (file content display, `describe_file`), reason about
-   them (evaluate_claim, score_stub, check_design_violations), and propose changes
-   (docstring proposals, workflow queue items). It cannot apply those changes via
-   the agent reasoning loop -- only through UI socket events.
-
-   **What exists:** `ui_server.py` has `handle_save_file` (full overwrite, with
-   path-validation guard against project root) and `handle_apply_docstring`
-   (targeted line-range write-back). Both work correctly. They are socket events,
-   not agent tools.
-
-   **What's needed:** a thin `edit_file(assessor, args)` agent tool in
-   `agent_tools.py` that exposes at minimum:
-   - `read_file(file_path)` -- return file content as string (already in UI, needs
-     agent-tool wrapper)
-   - `write_file(file_path, content)` -- full overwrite with root-boundary guard
-   - `replace_in_file(file_path, old, new)` -- targeted string replacement, safer
-     than full overwrite for single-symbol edits
-
-   The path-validation logic from `handle_save_file` can be extracted to a shared
-   helper and reused by both the socket handler and the agent tool.
-
-   **Why this matters:** once edit_file exists, the full agentic loop closes:
-   goal_intake → score_stub → evaluate_claim → propose change → edit_file →
-   reingest_file → check_design_violations. No manual copy-paste step.
-
-   **Effort:** Low. The write logic already exists and works. This is wiring.
+   `edit_file(assessor, args)` in `agent_tools.py`. Three ops: `read_file`,
+   `write_file`, `replace_in_file`. Path-boundary guard against project root.
+   Wired into TOOLS dict and tool_registry.py. 12 regression tests pass.
+   Full agentic loop now closed: goal_intake → evaluate → propose → edit_file →
+   reingest_file → check_design_violations.
 
 ---
 
-RM12. **[MEDIUM] Web search: SearXNG integration**
+RM12. **[DONE 2026-07-05] Web search: SearXNG integration**
 
-   As Determined approaches full agentic capability (decompose → gather context →
-   reason → propose → apply), the one missing input channel is external lookup.
-   The agent can reason about what it has in the corpus but cannot look something up
-   when the answer is not in the codebase.
-
-   **Why SearXNG:** self-hosted, no API key, privacy-preserving, returns structured
-   JSON results. Consistent with the no-external-dependencies, local-first philosophy
-   already established for LLM (llama-server) and embeddings (all-MiniLM-L6-v2).
-
-   **What to build:**
-   - `search_web(assessor, args)` agent tool: takes a query string, hits a
-     configurable SearXNG endpoint (default `http://localhost:8888`), returns
-     top N result titles + URLs + snippets as formatted text
-   - Config key in `config.py` or corpus DB: `SEARXNG_URL` (None = disabled,
-     tool returns "web search not configured")
-   - Graceful degradation: if SearXNG is unreachable, return empty result with
-     a note, do not raise
-
-   **Use cases within Determined's reasoning loop:**
-   - Stub scorer: "what library implements X?" when the stub's docstring names
-     an unrecognized dependency
-   - check_design_violations: look up a design pattern by name to retrieve its
-     constraints before comparing against code
-   - goal_intake: when the goal mentions an unfamiliar framework or API, fetch
-     its documentation structure before decomposing
-
-   **SearXNG setup note:** runs as a Docker container or standalone Python service.
-   User is responsible for running it; Determined just consumes the JSON API.
-   Document the expected endpoint and the JSON result schema in a config comment.
-
-   **Effort:** Low-medium. The HTTP call is trivial. The interesting work is
-   deciding when the agent should reach for web search vs. reason from corpus alone.
-   Wire as an agent tool + registry entry first; routing heuristics come later.
+   `search_web(assessor, args)` in `agent_tools.py`. Hits SearXNG `/search?format=json`,
+   returns top-N results as formatted title/URL/snippet text (snippet truncated at 200 chars).
+   `SEARXNG_URL` config in `llm_client.py` (default `http://localhost:8888`; None = disabled).
+   Graceful degradation on unreachable server. Wired into TOOLS and tool_registry.py
+   (category: external). 10 regression tests pass. SearXNG is user-run (Docker or standalone);
+   Determined just consumes the JSON API.
 
 ---
 

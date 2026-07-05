@@ -37,6 +37,13 @@ LLM_SERVER_ARGS = ["--port", "8081", "--host", "127.0.0.1", "--ctx-size", "4096"
 
 _server_proc: subprocess.Popen | None = None
 
+# SearXNG web search config (RM12)
+# Set SEARXNG_URL to the base URL of a running SearXNG instance.
+# None = web search disabled; search_web tool returns a "not configured" message.
+SEARXNG_URL: str | None = "http://localhost:8888"
+SEARXNG_TIMEOUT = 10
+SEARXNG_MAX_RESULTS = 5
+
 # Legacy alias — same server, kept so existing call sites don't break
 LLM_QUALITY_BASE_URL = LLM_BASE_URL
 LLM_QUALITY_TIMEOUT  = LLM_TIMEOUT

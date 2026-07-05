@@ -4017,6 +4017,58 @@ def distill_corpus(assessor: "Assessor", args: dict) -> str:
     return f"distill_corpus: {stored} distilled (all refreshed)"
 
 
+def search_web(assessor: "Assessor", args: dict) -> str:
+    """
+    Search the web via a local SearXNG instance.
+
+    args:
+      query  -- search query string (required)
+      n      -- max results to return (default 5, max 10)
+
+    Returns formatted text with titles, URLs, and snippets.
+    Returns a "not configured" message if SEARXNG_URL is None or SearXNG is unreachable.
+    """
+    import determined.agent.llm_client as _llm_cfg
+    import requests as _req
+
+    base_url = _llm_cfg.SEARXNG_URL
+    if not base_url:
+        return "web search not configured (set SEARXNG_URL in llm_client.py)"
+
+    query = (args.get("query") or "").strip()
+    if not query:
+        return "ERROR: search_web requires query"
+
+    n = min(int(args.get("n", _llm_cfg.SEARXNG_MAX_RESULTS)), 10)
+
+    try:
+        resp = _req.get(
+            f"{base_url.rstrip('/')}/search",
+            params={"q": query, "format": "json", "categories": "general"},
+            timeout=_llm_cfg.SEARXNG_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        return f"web search unavailable: {exc}"
+
+    results = data.get("results", [])[:n]
+    if not results:
+        return f"search_web: no results for '{query}'"
+
+    lines = [f"WEB SEARCH: {query}\n"]
+    for i, r in enumerate(results, 1):
+        title   = r.get("title", "").strip()
+        url     = r.get("url", "").strip()
+        snippet = r.get("content", "").strip()
+        lines.append(f"{i}. {title}")
+        lines.append(f"   {url}")
+        if snippet:
+            lines.append(f"   {snippet[:200]}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def edit_file(assessor: "Assessor", args: dict) -> str:
     """
     Read, write, or patch a file within the project root.
@@ -4157,6 +4209,8 @@ TOOLS = {
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
     # Reasoning pipeline (REASONING_MODEL.md R4)
     "reason_about":            (reason_about,            "assessor"),
+    # Web search (RM12)
+    "search_web":              (search_web,              "assessor"),
     # File editing (RM11)
     "edit_file":               (edit_file,               "assessor"),
 }

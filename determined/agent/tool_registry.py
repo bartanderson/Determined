@@ -653,6 +653,19 @@ REGISTRY: dict[str, dict] = {
         "category": "bag",
     },
 
+    # ── WEB SEARCH (RM12) ─────────────────────────────────────────
+    "search_web": {
+        "purpose": "Search the web via a local SearXNG instance. Returns titles, URLs, and snippets for the top N results.",
+        "args": {
+            "query": "search query string",
+            "n": "(optional) max results to return, default 5, max 10",
+        },
+        "output": "Numbered list of results: title, URL, and snippet (up to 200 chars each). Returns 'not configured' if SearXNG_URL is unset.",
+        "feeds": ["evaluate_claim", "check_design_violations", "goal_intake"],
+        "use_when": "When the goal or stub names an unfamiliar library, framework, or design pattern and the corpus has no context for it. Not a substitute for corpus tools when the answer is likely in the codebase.",
+        "category": "external",
+    },
+
     # ── FILE EDITING (RM11) ────────────────────────────────────────
     "edit_file": {
         "purpose": "Read, overwrite, or patch a file within the project root. Closes the read-reason-write loop.",

@@ -521,6 +521,7 @@ def test_dispatch_all_tools_registered():
         "find_conditional_stubs",
         "frontier_coverage",
         "edit_file",
+        "search_web",
     }
     assert set(TOOLS.keys()) == expected
 
