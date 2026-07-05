@@ -1,41 +1,39 @@
-# SESSION STATE - session 78 handoff
+# SESSION STATE - session 79 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main (both repos)
 Clean state. All commits landed.
 
-## What happened this session (session 78, 2026-07-05)
+## What happened this session (session 79, 2026-07-05)
 
-### W4-W5 -- Trail polish (RM13)
-- Trail chips now show file context alongside symbol name (e.g. `dm_response world_app.py`).
-- Risk-colored borders on chips: WARM=orange tint, HOT=red tint.
-- File/risk data pulled from `symbol_quick_result` cache; enriched retroactively
-  via `_trailEnrichFromCache()` when quick data arrives after the chip is created.
-- "Export" button added to trail bar: copies markdown session summary to clipboard.
-  Format: `# Session Trail\n1. **symbol** (file.py) [RISK]`
-- CSS additions: `.trail-file`, `.trail-chip-hot`, `.trail-chip-warm`, `.trail-export`
-- Verified in browser: two symbols, correct file labels, correct risk colors, export output confirmed.
-- 426 tests passed, 1 skipped. Commit: 9ac1f4d.
-
-### Stale design_note cleanup
-- Spotlight panel for `process_message` surfaced a design_note with stale NSSM/llama3.2-3b info.
-- Source: `dj2/SESSION_STATE.md` and usage docs still referenced NSSM/llama3.2-3b.
-- Fixed: updated `dj2/SESSION_STATE.md` hardware facts, removed Ollama pipe examples
-  from `dj2/ai_context/USAGE.md` and `dj2/Scripts/README_CONTEXT_SYSTEM.md`.
-- Purged all 268 design_notes from dj2 corpus DB (re-extract clean on next ingest_design_docs run).
-- dj2 commit: b173d68.
+### RM13 #7 -- Context mode switching (DONE)
+- Three mode buttons in topbar: 📐 Design / 🔗 Trace / ✅ Review
+- Each switches to its primary tab (Knowledge / Call tree / Doc health)
+- Highlights related tabs with colored underline (blue/orange/green)
+- Shows a slim mode banner above the tab bar with colored label + hint text
+- Clicking the active mode button again clears the mode
+- CSS: `.mode-btn`, `.mode-banner`, per-mode tab `border-bottom` highlights, trail-bar glow in Trace mode
+- JS: `setMode()`, `clearMode()`, `_MODES` config object
+- style.css: added 4th `auto` row to `.main` grid-template-rows to accommodate banner
+- Verified in browser: all three modes switch tabs, colored labels correct, tab highlights visible
+- Also fixed: call tree double-expand race -- clicking ▶ twice before server responded
+  created two `.ct-children` divs; fold only hid the first. Guard added: `if (li._ctPending) return`
+- 426 tests passed, 1 skipped. Commit: f269117.
 
 ## NEXT SESSION -- start here
 
-**Continue RM13: UI redesign pass**
+**RM13 is now fully done** (#1+A3+A4+F7+W4+W5+#7 all landed).
 
-Remaining item:
-1. **#7 -- Context mode switching**: module-design / call-trace / gap-review modes
-   as distinct contexts that each surface the right panels. Highest effort item.
+**Pending housekeeping:**
+- Run `ingest_design_docs` via the UI to re-extract clean design notes from dj2 docs.
+  (All 268 old notes purged last session; DB is empty for kind=design_note until re-extracted.)
 
-Also pending:
-- Run `ingest_design_docs` via the UI agent to re-extract clean design notes from dj2 docs.
-  (All 268 old notes purged; DB is empty for kind=design_note until re-extracted.)
+**Next open items (from TRACKER.md):**
+- RM11: edit_file agent tool (LOW effort -- wiring only, write logic already exists)
+- RM12: SearXNG web search agent tool (MEDIUM)
+- Item 27: Standards self-review (FUTURE)
+- RM9: Connect to Q4 MCTS (FUTURE)
+- RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
 
 Do NOT batch multiple items. Verify each in browser before moving to next.
 
@@ -47,8 +45,9 @@ Do NOT batch multiple items. Verify each in browser before moving to next.
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass in goal_intake (FUTURE)
-- RM12: SearXNG web search agent tool (MEDIUM -- lower priority than UI redesign)
-- RM13: UI redesign pass (HIGH -- in progress, #1+A3+A4+F7+W4+W5 done, #7 remains)
+- RM11: edit_file agent tool (LOW -- wiring only)
+- RM12: SearXNG web search agent tool (MEDIUM)
+- RM13: UI redesign pass -- DONE (#1+A3+A4+F7+W4+W5+#7 all done)
 
 ### Commonplace status
 - Working skeleton: capture, browse, search, storage, utils all functional

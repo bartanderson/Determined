@@ -166,8 +166,10 @@ RM13. **[HIGH] UI redesign pass: close remaining delta, fold DISCOVERY_MODEL**
    **Requirements (from UI_VISION.md open items #1 and #7):**
    - #1: Chat/ask bar hidden by default; revealed only when natural navigation
      doesn't answer the question. The sidebar's Ask toggle handles this.
-   - #7: Context mode switching — module-design mode, call-trace mode,
-     gap-review mode as distinct contexts that each surface the right panels.
+   - #7: DONE (2026-07-05). Three mode buttons in topbar: Design / Trace / Review.
+     Each switches to its primary tab (Knowledge / Call tree / Doc health), highlights
+     related tabs with a colored underline, and shows a labeled mode banner.
+     Also fixed call tree double-expand race (two ct-children on rapid click). Commit f269117.
 
    **Requirements (from DISCOVERY_MODEL, UI items only):**
    - F7: Frontier tab type selector — add Orphan/Disconnected mode to the
