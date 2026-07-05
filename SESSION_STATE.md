@@ -1,63 +1,41 @@
-# SESSION STATE - session 85 handoff
+# SESSION STATE - session 87 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main
-Clean state. All commits landed.
+Uncommitted changes from session 86 still pending. Regression tests not yet run.
 
-## What happened this session (session 85, 2026-07-05)
+## What happened this session (session 87, 2026-07-05)
 
-### Step-queue constraint system (new)
-Discussed behavioral constraint architecture. Agreed on a rolling 3-step micro-queue
-(PREVIOUS/CURRENT/NEXT) maintained in .claude/step_queue.md, enforced by a
-PreToolUse hook that fires before Edit/Write/preview_eval/preview_click/preview_fill/
-mcp__claude-in-chrome. Hook injects queue contents as additionalContext so Claude
-must verify its action serves CURRENT before proceeding. Blocks if file is missing.
-
-Files added:
-- .claude/step_queue_hook.ps1 -- the hook script
-- .claude/step_queue.md -- the rolling queue (update each step)
-- .claude/settings.json -- PreToolUse hook wired in
-
-### RM15 journey fixes (from prior session, now committed)
-- CSS: .tab-content grid-row 4->5 (Frontier/Graph/Topology now render at full height)
-- ui_server: auto-reingest after save_file + emit corpus_ready (closes edit loop)
-- console.html toast: "re-ingesting..." not "re-analyze corpus"
-- extractor.py seed: extract_metadata stub implemented (stub count should drop to 1)
-- CLAUDE.md: UI testing constraint added (fresh load, no eval injection)
-- COMMONPLACE_JOURNEY.md: cumulative walk log, steps 1-5 verified
+No Determined code work done this session. Spent session investigating Claude Code
+remote control setup -- trying to find a way to initiate a remote control session
+from the CLI so Bart can continue on phone. Dead end: CLI requires API key (not
+subscription), and Claude Code desktop can join but not initiate remote control
+(known open issue with Anthropic). Created a desktop shortcut "Remote Control Claude"
+that runs `claude --remote-control` for when/if the auth situation changes.
 
 ## NEXT SESSION -- start here
 
-**Step queue entry point** (.claude/step_queue.md already set):
-- CURRENT: Walk journey step 6 -- Editor save + reingest verification
+**Exact same next steps as session 86:**
 
-**Concrete steps:**
-1. Read .claude/step_queue.md -- it tells you where you are
-2. Start server (preview_start "determined-ui")
-3. Switch corpus to C_Users_bartl_dev_Determined_examples_commonplace_seed.db
-   via the UI corpus switcher (fresh page load, not eval injection)
-4. Editor tab -> open extractor.py -> confirm extract_metadata has real implementation
-5. The reingest fix is already in -- corpus_ready should fire after any save
-6. Verify stub count drops (extractor.py save -> corpus panel shows 1 stub)
-7. Record result in docs/COMMONPLACE_JOURNEY.md
+1. Read .claude/step_queue.md
+2. Run `pytest tests/regression/ -q` -- all tests must pass before commit
+3. Commit: ui_server.py fix + COMMONPLACE_JOURNEY.md + SESSION_STATE.md
+4. Walk journey step 7: Corpus panel -> 0 design notes -> needs Scan button (F2)
+   F2 fix: add "Scan for design docs" button next to design notes count in corpus panel
 
-**Step queue discipline:**
-Before every Edit/Write/UI action, the hook will inject PREVIOUS/CURRENT/NEXT.
-Update step_queue.md after each step completes. This is the new operating mode.
+## Changes uncommitted (carried over from session 86)
 
-**FUTURE items (not next):**
-- F1: Frontier mode default to Direct on tab open
-- F2: "0 design notes" Scan button in corpus panel
-- F3: REPL startup hint when coverage 0%
-- Item 27: Standards self-review
-- RM9/RM10: MCTS / DeRe-CoT
+- `determined/ui/ui_server.py` -- reingest_file call fixed (_db_path not oracle)
+- `docs/COMMONPLACE_JOURNEY.md` -- step 6 result recorded
 
 ## Current Determined status
 
-### Test count: 436 passed, 1 skipped
+### Test count: 436 passed, 1 skipped (as of session 85 -- not re-run)
 
 ### Open TRACKER items
-- RM15: Commonplace guided journey (ACTIVE -- step 6 next)
+- RM15: Commonplace guided journey (ACTIVE -- step 7 next)
+  - Step 6 DONE: reingest bug fixed, loop verified
+  - Step 7: design notes scan button (F2)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass (FUTURE)
@@ -65,12 +43,12 @@ Update step_queue.md after each step completes. This is the new operating mode.
 ## Hardware facts
 - llama-server: on-demand subprocess, port 8081, Qwen3-8B
 - Lazy-started on first generate()/chat() call if not running
-- Started by UI on launch, stopped on exit
 - SearXNG: user-run Docker, default http://localhost:8888
+- UI server: process on port 5050, started manually
 
 ## Corpus state
 - Commonplace seed DB: C_Users_bartl_dev_Determined_examples_commonplace_seed.db
-  - 8 files, 2 stubs (extract_metadata NOW IMPLEMENTED -- reingest needed to confirm)
-- dj2 DB: C_Users_bartl_dev_dj2.db (design_notes purged session 79, not yet repopulated)
+  - 8 files, 0 hot, 1 stub (extract_full_content only)
+- dj2 DB: C_Users_bartl_dev_dj2.db
 - Commonplace full: C_Users_bartl_dev_Determined_examples_commonplace.db
 - Determined: C_Users_bartl_dev_Determined.db

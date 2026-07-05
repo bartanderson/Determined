@@ -78,7 +78,16 @@ when a fundamental break requires it. Look ahead 2-3 steps before walking.
   Result: file loads, symbols panel shows extract_metadata/extract_full_content/extract,
   code visible with STUB docstrings. Edit button present. PASS.
 
-[Step 6] Reingest -- TO WALK NEXT.
+[Step 6] Editor save + reingest verification (session 86).
+  Opened extractor.py in Editor tab. extract_metadata already had real
+  implementation (urllib/HTMLParser). Clicked Edit -> Save.
+  Found bug: ui_server line 1538 called reingest_file(_assessor.oracle, fp)
+  but reingest_file signature is (db_path: str, file_path: str). Oracle object
+  was silently swallowed by bare `except Exception: pass`.
+  Fix: changed to reingest_file(_db_path, str(fp)), also improved error to
+  emit toast instead of silent pass.
+  After fix + server restart + save: sidebar updated live from 2 stubs -> 1 stub
+  without page reload. corpus_ready fires correctly after reingest. PASS.
 
 [Step 7] Design notes -- KNOWN ISSUE, skip for now.
 

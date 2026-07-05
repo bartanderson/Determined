@@ -1532,13 +1532,13 @@ def handle_save_file(data):
         saved_path = str(fp).replace("\\", "/")
         emit("save_result", {"path": saved_path})
         # Auto-reingest the saved file so the corpus stays in sync
-        if _assessor is not None:
+        if _assessor is not None and _db_path:
             try:
                 from determined.ingestion.reingest_file import reingest_file
-                reingest_file(_assessor.oracle, str(fp))
+                reingest_file(_db_path, str(fp))
                 _emit_corpus_ready()
-            except Exception:
-                pass  # reingest failure is non-fatal; user can re-analyze manually
+            except Exception as e:
+                emit("toast", {"message": f"Re-ingest failed: {e}", "kind": "warn"})
     except Exception as exc:
         emit("save_result", {"error": str(exc)})
 
