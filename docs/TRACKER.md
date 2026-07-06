@@ -160,6 +160,40 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM16. **[FILED] UI concept documentation: explain what each panel/mode/concept is and when to use it**
+
+   Every panel, mode, and concept in Determined should have a one-line explanation
+   visible in the UI at all times -- not triggered by emptiness or error, just
+   always present as context. The goal is that a user who lands on any state
+   (empty or populated, correct mode or wrong mode) still understands what they
+   are looking at and why it exists.
+
+   **The failure mode this addresses:**
+   Reactive fixes (empty-state hints, error messages) unstick the user but don't
+   build understanding. A user who hits Frontier in Direct mode with results never
+   learns what Orphan mode is or when they'd want it. They got lucky, not informed.
+
+   **What this means concretely:**
+   - Frontier tab: one sentence on what Direct vs Orphan vs ABC means and when
+     each applies. Not in a help doc -- in the tab itself, near the mode selector.
+   - Corpus panel: one sentence on what "hot", "stubs", "design notes" mean.
+   - Topology tab: one sentence on what the action queue is telling you.
+   - REPL: startup message explains coverage and why low coverage = empty answers.
+   - Each tool in the Tools panel: one line on what it does and when to reach for it.
+
+   **Scope:** apply systematically across all journey steps in COMMONPLACE_JOURNEY.md.
+   Walk each step, identify what a new user would not understand without prior
+   knowledge, add the minimum text that closes that gap.
+
+   **What this is not:** a tutorial, a help system, or a walkthrough. One sentence
+   per concept, always visible, never modal. Experienced users ignore it; new users
+   learn from it without having to ask.
+
+   **When to work this:** after F1 and F3 are fixed. Walk the journey again with
+   fresh eyes and file the missing explanations as a single pass.
+
+---
+
 RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined iteratively**
 
    The next active work arc. Full description in docs/COMMONPLACE_VISION.md.
