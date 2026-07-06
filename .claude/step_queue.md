@@ -1,3 +1,3 @@
-PREVIOUS: F2 done + session 88 handoff committed (f243cf7), RM16 filed
-CURRENT:  Run regression tests + commit F1/F3 fixes
-NEXT:     Update COMMONPLACE_JOURNEY.md F1/F3 resolved, update SESSION_STATE.md
+PREVIOUS: F1/F2/F3 done, session 88 committed (c30f14e)
+CURRENT:  RM16 walk — re-walk Commonplace journey, add concept text inline
+NEXT:     Run regression tests, commit RM16 changes, update SESSION_STATE.md

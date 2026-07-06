@@ -132,6 +132,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
           <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
           <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;display:none;background:var(--surface2)">Switch corpus</button>
+          <div id="ingest-hint" style="font-size:.73em;color:var(--text3);padding:4px 2px 0;line-height:1.5">Point at any Python project folder. Determined reads the source, builds a call graph, and stores everything in a local DB for instant querying.</div>
         </div>
       </div>
       <div class="sidebar-section" id="corpus-map" style="display:none">
@@ -171,33 +172,33 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
         <div id="tool-picker-body" class="sb-tools-body">
           <div class="tp-group-label">Navigate</div>
           <div class="tp-row">
-            <span class="tp-name">Open file</span>
+            <span class="tp-name" title="Open a source file in the Editor tab by path">Open file</span>
             <input class="tp-input" id="tp-open-file" placeholder="path/to/file.py" autocomplete="off">
             <button class="tp-btn" id="tp-open-file-btn">Go</button>
           </div>
           <div class="tp-row">
-            <span class="tp-name">Inspect symbol</span>
+            <span class="tp-name" title="Show everything known about a symbol: declaration, risk, callers, design frame">Inspect symbol</span>
             <input class="tp-input" id="tp-inspect-sym" placeholder="SymbolName" autocomplete="off">
             <button class="tp-btn" id="tp-inspect-sym-btn">Go</button>
           </div>
           <div class="tp-group-label" style="margin-top:6px">Query</div>
           <div class="tp-row">
-            <span class="tp-name">Callers of</span>
+            <span class="tp-name" title="List every function that calls this one — blast radius before you change it">Callers of</span>
             <input class="tp-input" id="tp-callers" placeholder="function_name" autocomplete="off">
             <button class="tp-btn" id="tp-callers-btn">Run</button>
           </div>
           <div class="tp-row">
-            <span class="tp-name">Explain</span>
+            <span class="tp-name" title="Plain-language summary of what a function does and why it exists">Explain</span>
             <input class="tp-input" id="tp-explain" placeholder="function_name" autocomplete="off">
             <button class="tp-btn" id="tp-explain-btn">Run</button>
           </div>
           <div class="tp-row">
-            <span class="tp-name">Findings for</span>
+            <span class="tp-name" title="Stored findings: violations, design notes, and query results attached to a symbol or file">Findings for</span>
             <input class="tp-input" id="tp-findings" placeholder="symbol or file" autocomplete="off">
             <button class="tp-btn" id="tp-findings-btn">Run</button>
           </div>
           <div class="tp-row">
-            <span class="tp-name">Files matching</span>
+            <span class="tp-name" title="Find source files by path fragment or role (e.g. 'extractor', 'test', 'config')">Files matching</span>
             <input class="tp-input" id="tp-files" placeholder="pattern" autocomplete="off">
             <button class="tp-btn" id="tp-files-btn">Run</button>
           </div>
@@ -305,6 +306,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <button class="send-btn" id="fg-reason" style="background:var(--bg3);display:none" title="AI architectural reasoning for selected stub (uses 8B model, ~60s)">Reason ↵</button>
           <button class="send-btn" id="fg-to-queue" style="background:var(--bg3);margin-left:auto" title="Add all stubs to build queue ranked by caller count">→ Queue</button>
         </div>
+        <div id="fg-mode-hint" style="padding:.15rem .6rem .1rem;font-size:.75em;color:var(--text3);flex-shrink:0;font-style:italic"></div>
         <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
         <div id="fg-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
         <!-- reasoning progress log — collapsible -->
@@ -427,7 +429,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <div class="tab-panel" id="panel-topology" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
           <strong style="font-size:.95em">Corpus Topology</strong>
-          <span style="font-size:.8em;color:var(--text3)">incompleteness shapes + frontier coverage</span>
+          <span style="font-size:.8em;color:var(--text3)" title="Classifies which implementation shapes are incomplete (direct stubs, chains, orphans, ABC gaps) and shows how much of the call graph has been explored">incompleteness shapes — stubs, orphans, ABC gaps — and exploration depth</span>
           <button id="topo-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
           <span id="topo-status" style="font-size:.78em;color:var(--text3)"></span>
         </div>
@@ -658,7 +660,7 @@ function renderCorpusMap(data) {
           title="Stubs are functions whose body is not yet implemented (pass, TODO, raise NotImplementedError). Click to open the Frontier tab showing all stubs and their position in the call graph."
         >view stubs</span>`
     : "";
-  stats.innerHTML = `${data.files} files · ${data.hot} hot · ${data.stubs} stubs${stubsHint}`;
+  stats.innerHTML = `${data.files} files · <span title="Hot: frequently called or recently changed — highest blast radius when modified">${data.hot} hot</span> · ${data.stubs} stubs${stubsHint}`;
   corpusMapInner.appendChild(stats);
 
   // ── Roots / Core toggle ─────────────────────────────────
@@ -1089,6 +1091,8 @@ function setCorpusLoaded(loaded) {
   ingestBtn.style.display  = loaded ? "none" : "";
   ingestPath.style.display = loaded ? "none" : "";
   resumeBtn.style.display  = loaded ? "" : "none";
+  const hint = document.getElementById("ingest-hint");
+  if (hint) hint.style.display = loaded ? "none" : "";
 }
 
 resumeBtn.addEventListener("click", () => {
@@ -1804,6 +1808,7 @@ socket.on("spotlight_section", data => {
       const cls = { HOT: "risk-hot", WARM: "risk-warm", SAFE: "risk-safe" }[lvl] || "";
       spBadge.textContent = lvl;
       spBadge.className = `spotlight-badge ${cls}`;
+      spBadge.title = { HOT: "HOT: frequently called or high-churn — edit with care, changes propagate widely", WARM: "WARM: moderately connected — review callers before changing", SAFE: "SAFE: few callers, low blast radius — safe to modify" }[lvl] || "";
     }
   }
 
@@ -2389,11 +2394,21 @@ socket.on("frontier_to_queue_result", data => {
   fgStatus.textContent = data.error ? `Queue error: ${data.error}` : data.message;
 });
 
-fgMode.addEventListener("change", fgLoad_);
+const FG_MODE_HINTS = {
+  direct: "Direct: shows stubs that are called by real code — the most actionable frontier. Start here.",
+  chain:  "Chain: stubs that call other stubs — scaffolding chains not yet anchored to real code.",
+  all:    "All: every unimplemented function in the corpus, regardless of call graph position.",
+  abc:    "ABC: abstract methods on base classes with no concrete override anywhere in the project.",
+  orphan: "Orphan: stubs with no callers and no callees — disconnected from the rest of the code.",
+};
+const fgModeHint = document.getElementById("fg-mode-hint");
+function fgUpdateHint() { if (fgModeHint) fgModeHint.textContent = FG_MODE_HINTS[fgMode.value] || ""; }
+fgMode.addEventListener("change", () => { fgUpdateHint(); fgLoad_(); });
 fgLoad.addEventListener("click", fgLoad_);
 document.querySelectorAll(".tab[data-tab='frontier']").forEach(t => {
-  t.addEventListener("click", () => { fgMode.value = "direct"; if (!_fgCy) fgLoad_(); });
+  t.addEventListener("click", () => { fgMode.value = "direct"; fgUpdateHint(); if (!_fgCy) fgLoad_(); });
 });
+fgUpdateHint();
 
 // ── bag tab ───────────────────────────────────────────────
 const bagSelect  = document.getElementById("bag-select");
