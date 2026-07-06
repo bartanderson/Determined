@@ -3140,11 +3140,14 @@ _ROLE_PATTERNS = [
     {
         "subject": "pattern::coordinator",
         "content": (
-            "COORDINATOR (Wirfs-Brock): delegates work across collaborators without owning "
-            "business logic itself. Profile: many distinct callees across different modules, "
-            "few callers; does not transform data directly; params include context, session, "
-            "or manager objects. File stem contains coordinator, orchestrator, controller, "
-            "manager, handler, or dispatcher. Sequences calls but does not compute results."
+            "COORDINATOR (Wirfs-Brock): orchestrates a complete use-case or workflow by "
+            "sequencing calls to multiple collaborators. Profile: 4+ distinct callees across "
+            "different modules; few or no callers; sequences steps (validate → process → store "
+            "→ respond) without owning the business logic itself; returns a terminal result "
+            "(response, redirect, summary) after all steps complete. Examples: HTTP route "
+            "handlers that validate then call services then return a response; use-case "
+            "orchestrators; pipeline entry points. Distinct from INTERFACER: COORDINATOR "
+            "sequences multiple steps; INTERFACER is a thin 1-to-1 translator."
         ),
     },
     {
@@ -3160,12 +3163,12 @@ _ROLE_PATTERNS = [
     {
         "subject": "pattern::interfacer",
         "content": (
-            "INTERFACER (Wirfs-Brock): transforms information or requests as they cross a "
-            "system boundary. Profile: sits between two layers or subsystems; translates "
-            "formats, validates inputs, or enforces contracts; params include raw external "
-            "input (request, command, event); rejects or normalizes before passing inward. "
-            "File stem contains boundary, adapter, gateway, bridge, facade, proxy, or interface. "
-            "Authoritative gatekeeper at a layer seam."
+            "INTERFACER (Wirfs-Brock): thin adapter that translates a single request across "
+            "a system boundary. Profile: 1 primary inbound source, 1 primary outbound target; "
+            "translates format, validates, or enforces a contract; typically 1-3 callees total; "
+            "does NOT sequence multiple workflow steps. File stem contains boundary, adapter, "
+            "gateway, bridge, facade, proxy, or interface. If a function sequences 4+ service "
+            "calls or orchestrates a complete use-case, it is COORDINATOR not INTERFACER."
         ),
     },
 ]
@@ -3173,15 +3176,16 @@ _ROLE_PATTERNS = [
 
 def _ensure_pattern_library(conn) -> int:
     """
-    Seed role patterns into knowledge_artifacts as kind='pattern' if not present.
-    Idempotent: skips subjects already in DB. Returns number of patterns inserted.
+    Seed role patterns into knowledge_artifacts as kind='pattern'.
+    Upserts content so updated descriptions take effect in existing DBs.
+    Returns number of patterns inserted or updated.
     """
     existing = {
-        r[0] for r in conn.execute(
-            "SELECT subject FROM knowledge_artifacts WHERE kind='pattern'"
+        r[0]: r[1] for r in conn.execute(
+            "SELECT subject, content FROM knowledge_artifacts WHERE kind='pattern'"
         ).fetchall()
     }
-    inserted = 0
+    changed = 0
     for p in _ROLE_PATTERNS:
         if p["subject"] not in existing:
             conn.execute(
@@ -3189,10 +3193,17 @@ def _ensure_pattern_library(conn) -> int:
                 "VALUES (?, 'pattern', ?, 'human-confirmed', datetime('now'))",
                 (p["subject"], p["content"]),
             )
-            inserted += 1
-    if inserted:
+            changed += 1
+        elif existing[p["subject"]] != p["content"]:
+            conn.execute(
+                "UPDATE knowledge_artifacts SET content=? "
+                "WHERE subject=? AND kind='pattern'",
+                (p["content"], p["subject"]),
+            )
+            changed += 1
+    if changed:
         conn.commit()
-    return inserted
+    return changed
 
 
 def infer_behavior(assessor: "Assessor", args: dict) -> str:
