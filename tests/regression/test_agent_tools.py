@@ -724,6 +724,66 @@ def test_check_design_violations_with_notes():
     assert "generate_encounter" in result
 
 
+def test_import_layer_violations_detected():
+    """_check_import_layer_violations returns confirmed violation when routes/ imports storage."""
+    from determined.agent.agent_tools import _check_import_layer_violations
+    oracle = _make_fixture()
+
+    # Insert a CONSTRAINT layer rule for routes/
+    oracle.conn.execute(
+        "INSERT INTO knowledge_artifacts "
+        "(subject, kind, content, provenance, created_at, needs_review) "
+        "VALUES (?, ?, ?, ?, datetime('now'), 0)",
+        (
+            "routes",
+            "design_note",
+            "[CONSTRAINT|high|DESIGN.md] [routes/] Routes must not import from `storage/`.",
+            "llm-extracted",
+        ),
+    )
+    # Insert a route file that imports storage
+    oracle.conn.execute(
+        "INSERT INTO imports (file_path, module, import_type, line_number) VALUES (?, ?, ?, ?)",
+        (f"{PROJECT_ROOT}/routes/capture.py", "storage", "from_import", 5),
+    )
+    oracle.conn.commit()
+
+    violations = _check_import_layer_violations(oracle.conn, f"{PROJECT_ROOT}/routes/capture.py")
+
+    assert len(violations) == 1
+    assert violations[0]["layer"] == "routes"
+    assert violations[0]["forbidden_import"] == "storage"
+    assert violations[0]["line_number"] == 5
+
+
+def test_import_layer_violations_none_when_clean():
+    """_check_import_layer_violations returns empty list when no forbidden imports exist."""
+    from determined.agent.agent_tools import _check_import_layer_violations
+    oracle = _make_fixture()
+
+    oracle.conn.execute(
+        "INSERT INTO knowledge_artifacts "
+        "(subject, kind, content, provenance, created_at, needs_review) "
+        "VALUES (?, ?, ?, ?, datetime('now'), 0)",
+        (
+            "routes",
+            "design_note",
+            "[CONSTRAINT|high|DESIGN.md] [routes/] Routes must not import from `storage/`.",
+            "llm-extracted",
+        ),
+    )
+    # Route file that only imports flask (allowed)
+    oracle.conn.execute(
+        "INSERT INTO imports (file_path, module, import_type, line_number) VALUES (?, ?, ?, ?)",
+        (f"{PROJECT_ROOT}/routes/search.py", "flask", "from_import", 1),
+    )
+    oracle.conn.commit()
+
+    violations = _check_import_layer_violations(oracle.conn, f"{PROJECT_ROOT}/routes/search.py")
+
+    assert violations == []
+
+
 def test_string_tools_derive_from_raw():
     """list_callers and list_callees string output matches raw helper data."""
     from determined.agent.agent_tools import _list_callers_raw, _list_callees_raw

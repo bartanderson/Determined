@@ -570,6 +570,48 @@ _CONSTRAINT_PATTERNS = (
 )
 
 
+def _check_import_layer_violations(conn, file_path: str) -> list[dict]:
+    """
+    Deterministic layer-import check: query the imports table against CONSTRAINT
+    design_notes. Returns confirmed violations (no cosine similarity, no false positives).
+    Each result: {layer, forbidden_import, line_number, rule}.
+    """
+    import re
+
+    if not file_path:
+        return []
+
+    norm = file_path.replace("\\", "/")
+    path_parts = set(norm.split("/"))
+
+    rows = conn.execute(
+        "SELECT subject, content FROM knowledge_artifacts "
+        "WHERE kind='design_note' AND content LIKE '[CONSTRAINT%'"
+    ).fetchall()
+
+    violations = []
+    for subject, content in rows:
+        if subject not in path_parts:
+            continue
+        # Extract backtick-quoted layer names like `storage/` from constraint text
+        forbidden_layers = re.findall(r"`([^`/]+)/`", content)
+        for prefix in forbidden_layers:
+            hits = conn.execute(
+                "SELECT module, line_number FROM imports "
+                "WHERE file_path = ? AND (module = ? OR module LIKE ?)",
+                (file_path, prefix, f"{prefix}.%"),
+            ).fetchall()
+            for module, line_no in hits:
+                violations.append({
+                    "layer": subject,
+                    "forbidden_import": module,
+                    "line_number": line_no,
+                    "rule": content[:300],
+                })
+
+    return violations
+
+
 def _check_design_violations_core(
     assessor: "Assessor", symbol: str, file_path: str
 ) -> list[dict]:
@@ -616,22 +658,35 @@ def check_design_violations(assessor: "Assessor", args: dict) -> str:
     ).fetchone()
     file_path = row[0] if row else ""
 
+    import_violations = _check_import_layer_violations(assessor.oracle.conn, file_path)
     hits = _check_design_violations_core(assessor, symbol, file_path)
 
-    if not hits:
+    if not import_violations and not hits:
         from determined.data.sots_loader import load_tenets
         return (
             f"No design violations detected for '{symbol}' "
             f"(checked {len(load_tenets())} SOTS tenets, none matched above threshold)."
         )
 
-    lines = [f"Potential design violations for '{symbol}':"]
-    for h in hits:
-        label = h["subject"] or "general"
-        lines.append(f"  [{label}] (score={h['score']:.2f})")
-        lines.append(f"    {h['content'][:200]}")
-    lines.append("")
-    lines.append("Review these constraints manually - this is a similarity match, not a confirmed violation.")
+    lines = [f"Design violation check for '{symbol}':"]
+
+    if import_violations:
+        lines.append("")
+        lines.append("  CONFIRMED layer-import violations (deterministic):")
+        for v in import_violations:
+            lines.append(
+                f"    [VIOLATION] {v['layer']}/ imports `{v['forbidden_import']}` "
+                f"(line {v['line_number']}) -- layer boundary breach"
+            )
+
+    if hits:
+        lines.append("")
+        lines.append("  Potential violations (similarity match -- review manually):")
+        for h in hits:
+            label = h["subject"] or "general"
+            lines.append(f"    [{label}] (score={h['score']:.2f})")
+            lines.append(f"      {h['content'][:200]}")
+
     return "\n".join(lines)
 
 
