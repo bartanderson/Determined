@@ -1,55 +1,58 @@
-Written at commit: 9c6163a
-# SESSION STATE - session 100 handoff
+Written at commit: 8314e60
+# SESSION STATE - session 101 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 100, 2026-07-06)
+## What happened this session (session 101, 2026-07-06)
 
-**RM15 started [V]:** Guided journey begun. Loaded seed corpus and walked Step 1 (Orient).
+**Step queue updated [V]:**
+- Updated `.claude/step_queue.md` to reflect session 101 state:
+  PREVIOUS = "session 100 wrap committed"
+  CURRENT  = "RM15 step 2 -- implement extract_metadata stub, reingest, watch frontier drop"
+  NEXT     = "RM15 step 3 -- add storage queries, watch orphaned-impl drop"
 
-**Bug fixed -- nested class symbol leak (9c6163a) [V]:**
-- `parse_ast._extract_functions` used `ast.walk(tree)` which traverses entire AST
-- Inner class methods defined inside functions (e.g. `_P.handle_starttag` inside
-  `extract_metadata`) leaked into symbol table and appeared as corpus roots
-- Fix: replaced `ast.walk` with `_iter_top_level_functions` generator that only
-  visits module-level and class-level defs, skipping function bodies
-- Result: seed corpus Roots now correctly show only `capture` and `index`
+**RM15 Step 2 -- extract_metadata implemented (uncommitted) [V]:**
+- `examples/commonplace/seed/services/extractor.py` -- extract_metadata is now real code
+- Uses `urllib.request.urlopen` to fetch URL, `html.parser.HTMLParser` subclass
+  `_TitleParser` (inner class inside function body) to extract `<title>` tag
+- Returns `{"title": ..., "description": "", "raw_html": ...}`
+- `extract_full_content` is still a stub (returns "")
+- `_TitleParser` inner class methods (`handle_starttag`, `handle_endtag`,
+  `handle_data`) are defined inside the function body -- `_iter_top_level_functions`
+  (fixed last session) skips these, so they will NOT appear as corpus roots
 
-**Seed fix -- extract_metadata made a stub (9c6163a) [V]:**
-- `extract_metadata` in `seed/services/extractor.py` was fully implemented
-  (with inner HTMLParser class) -- didn't match COMMONPLACE_VISION.md spec
-- Made it a proper STUB returning empty dict
-- Frontier now shows 2 direct-call stubs as designed:
-  `extract_metadata > extract_full_content`, both called by `extract`
-
-**Seed corpus state after ingest [V]:**
-- 8 files · 0 hot · 2 stubs
-- Roots: capture (↗11), index (↗2)
-- Frontier Direct: 1 callers · 2 stubs · 0 chain · 2 edges
-- `extract` → `extract_metadata` (stub) + `extract_full_content` (stub)
-- GAPS: docs 63%, distilled 63%, 2 design notes, C: 63% (3 missing)
-
-**DB lock issue observed [?]:**
-- Re-analyzing the currently-loaded seed corpus triggered WinError 32 (file locked)
-- Server's close-oracle-before-unlink logic (ui_server.py ~line 500) should handle this
-- Workaround used: kill server, delete DB manually, restart server
-- Root cause unclear -- may be `discover_run` background thread holding a second
-  connection when Re-analyze fires. Not yet investigated fully.
-
-**Test count: 440 passed, 1 skipped [V]** (run before commit)
+**NOT YET DONE:**
+- No reingest run -- server was not started this session
+- No commit for the extractor.py change
 
 ## NEXT SESSION -- start here
 
-1. **RM15 Step 2 -- Implement first stub:**
-   frontier_priority points at `extract_metadata`. Run symbol_context on it in UI,
-   implement it (urllib.request fetch + html.parser title extraction), reingest,
-   watch Direct frontier drop from 2 stubs to 1.
-   Seed corpus: `C:\Users\bartl\dev\Determined\examples\commonplace\seed`
-   Server: restart with `start-server` or launch.json (`determined-ui`)
+1. **Commit the extractor.py change:**
+   `git add examples/commonplace/seed/services/extractor.py`
+   `git commit -m "RM15 step 2: implement extract_metadata (urllib + html.parser)"`
 
-2. **DB lock bug (low priority):** investigate `discover_run` holding a second
-   sqlite3 connection during Re-analyze; may need to join the thread before unlink.
+2. **Start the server** (launch.json `determined-ui` or `.venv\Scripts\python.exe determined/ui/ui_server.py`)
 
-3. **dj2 design notes still missing [?]:** 268 purged session 79; still empty for
-   kind=design_note. Run ingest_design_docs via UI when dj2 corpus is loaded.
+3. **Load seed corpus** (`examples/commonplace/seed`) and reingest
+
+4. **Verify Frontier Direct drops from 2 stubs to 1:**
+   - `extract_metadata` should become a normal implemented symbol (no longer red)
+   - `extract_full_content` should remain the only stub
+   - Roots should still show only `capture` and `index` (no inner class leakage)
+
+5. **RM15 Step 3** (after step 2 verified): add storage queries to seed
+   (`storage/db.py` has `init_db` implemented; step 3 likely means adding
+   query functions that are stubs -- check COMMONPLACE_VISION.md Step 3 spec)
+
+## Known issues
+
+**DB lock on Re-analyze [?]:** discover_run background thread holds a second
+sqlite3 connection; close-oracle logic in ui_server.py ~line 500 doesn't close it.
+Workaround: kill server, delete seed.db, restart. Low priority.
+
+**dj2 design notes [?]:** 268 purged session 79, still empty for kind=design_note.
+Run ingest_design_docs via UI when dj2 corpus is loaded.
+
+**Test count: 440 passed, 1 skipped [V]** (from session 100 run; no .py engine
+changes this session so still valid)
