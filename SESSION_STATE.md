@@ -1,41 +1,56 @@
-Written at commit: d482f27
-# SESSION STATE - session 93 handoff
+Written at commit: 437679f
+# SESSION STATE - session 94 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 93, 2026-07-06)
+## What happened this session (session 94, 2026-07-06)
 
-1. Reviewed claude-code-handoff-skill repo (ostikwhy-blip on GitHub). Assessed
-   what was worth stealing for Determined's session handoff workflow. [V]
+1. Session start checklist completed. Drift check: handoff SHA d482f27, HEAD 437679f.
+   One commit of drift (session 93 wrap only, no .py changes). [V]
 
-2. Implemented handoff skill improvements into CLAUDE.md and .gitignore: [V]
-   - SESSION START: added Step 1a drift check -- compare SESSION_STATE SHA vs
-     current HEAD, report drift explicitly.
-   - Working agreement: added degradation detection one-liner rule.
-   - New SESSION END PROTOCOL section: archive step (.handoffs/), anti-hallucination
-     verify protocol, [V]/[?] tagging requirement, length budget, quality gate
-     for next steps, rationalizations list.
-   - .gitignore: added .handoffs/
+2. Gap 2 investigation: [V]
+   - decorator capture (decorators_json column) and UI-side orphan filter ALREADY shipped
+     in commit 3f61ab9 (RM18 session prior).
+   - find_orphaned_impls() and detect_topology() in agent_tools.py do NOT use
+     decorators_json yet -- they still report Flask route handlers as orphans.
+   - Started adding _has_framework_decorator() helper to agent_tools.py, but wrap
+     signal came before wiring the two callers. Reverted partial change -- left repo clean.
 
-3. First session to use the new protocol for its own wrap. [V]
+3. No .py files committed this session. [V]
 
-## What was NOT stolen (and why) [V]
+## Gap 2 status (PARTIAL -- not done)
 
-- Separate HANDOFF.md file -- SESSION_STATE.md already serves this role
-- Full template structure -- existing format works
-- Skill trigger text -- CLAUDE.md checklist enforces structurally
+UI orphan view: done (3f61ab9). [V]
+agent_tools.py (find_orphaned_impls, detect_topology): NOT done. [V]
 
-## NEXT SESSION -- start here (RM18 continued)
+## NEXT SESSION -- start here
 
-1. Gap 1 re-check: run check_design_violations on `capture` and browse.py routes.
-   25 design notes are populated. Zero code -- just a query via the Ask bar:
-   "check design violations for capture" OR use the Design button (top right). [?]
+**Gap 2 completion (agent_tools.py side):**
 
-2. Gap 3: _call_llm ranked #2 root but is dead code. Need "ready but blocked" vs
-   true orphan distinction. New node role in orphan view. [?]
+Add to agent_tools.py near _is_entry_point_hint (~line 1021):
 
-3. Gap 4: capture role = INTERFACER (wrong). Should be COORDINATOR/CONTROLLER.
-   Fix in infer_behavior Wirfs-Brock role patterns. [?]
+```python
+_STRUCTURAL_DECORATORS = {"property", "staticmethod", "classmethod"}
 
-## Test count: 436 passed, 1 skipped [V - last committed run, no .py changes this session]
+def _has_framework_decorator(decorators_json):
+    if not decorators_json:
+        return False
+    import json as _json
+    try:
+        decs = _json.loads(decorators_json)
+    except Exception:
+        return False
+    return any(d.split("(")[0].split(".")[-1] not in _STRUCTURAL_DECORATORS for d in decs)
+```
+
+Then:
+- find_orphaned_impls(): add `f.decorators_json` to SELECT, post-filter rows with
+  `if not _has_framework_decorator(row[decorators_idx])`.
+- detect_topology(): orphaned_impl COUNT query can't easily be post-filtered in SQL.
+  Change to fetch rows (name, file_path, decorators_json), subtract framework-decorated.
+
+**After Gap 2:** Gap 1 re-check (check_design_violations on capture/browse.py routes),
+then Gap 3 (_call_llm dead-code distinction), then Gap 4 (capture role fix).
+
+## Test count: 436 passed, 1 skipped [V - verified this session end run]
