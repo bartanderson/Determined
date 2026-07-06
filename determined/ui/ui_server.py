@@ -532,6 +532,12 @@ def handle_ingest(data):
                         break
             except Exception as disc_exc:
                 socketio.emit("ingest_status", {"message": f"Discovery skipped: {disc_exc}"}, to=sid)
+            try:
+                from determined.agent.agent_tools import ingest_design_docs
+                socketio.emit("ingest_status", {"message": "Scanning for design docs…"}, to=sid)
+                ingest_design_docs(_assessor, {})
+            except Exception as design_exc:
+                socketio.emit("ingest_status", {"message": f"Design doc scan skipped: {design_exc}"}, to=sid)
             socketio.emit("ingest_done", {
                 "db_name": Path(db_path).name,
                 "db_path": db_path,
