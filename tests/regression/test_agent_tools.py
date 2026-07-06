@@ -784,6 +784,47 @@ def test_import_layer_violations_none_when_clean():
     assert violations == []
 
 
+def test_orphaned_impls_ready_but_blocked():
+    """find_orphaned_impls labels a non-stub 0-caller function as ready-but-blocked when same file has a stub."""
+    from determined.agent.agent_tools import find_orphaned_impls
+    oracle = _make_fixture()
+
+    # Add a stub and a non-stub impl in the same file with no callers
+    oracle.conn.execute(
+        "INSERT INTO functions (file_path, name, line_number, is_stub, docstring, param_types_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (f"{PROJECT_ROOT}/world/engine.py", "suggest_tags", 20, 1, "STUB: tag suggestions", "{}"),
+    )
+    oracle.conn.execute(
+        "INSERT INTO functions (file_path, name, line_number, is_stub, docstring, param_types_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (f"{PROJECT_ROOT}/world/engine.py", "_call_llm", 30, 0, "Send prompt to LLM.", "{}"),
+    )
+    oracle.conn.commit()
+
+    result = find_orphaned_impls(oracle, {})
+    assert "ready-but-blocked" in result
+    assert "_call_llm" in result
+
+
+def test_orphaned_impls_anticipatory_when_no_stubs():
+    """find_orphaned_impls labels a non-stub 0-caller function as anticipatory when no stubs in same file."""
+    from determined.agent.agent_tools import find_orphaned_impls
+    oracle = _make_fixture()
+
+    # Add a non-stub impl with no callers and no stubs nearby
+    oracle.conn.execute(
+        "INSERT INTO functions (file_path, name, line_number, is_stub, docstring, param_types_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (f"{PROJECT_ROOT}/world/handler.py", "unused_helper", 40, 0, "Helper nobody calls.", "{}"),
+    )
+    oracle.conn.commit()
+
+    result = find_orphaned_impls(oracle, {})
+    assert "anticipatory" in result
+    assert "unused_helper" in result
+
+
 def test_string_tools_derive_from_raw():
     """list_callers and list_callees string output matches raw helper data."""
     from determined.agent.agent_tools import _list_callers_raw, _list_callees_raw

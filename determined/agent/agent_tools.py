@@ -1465,11 +1465,12 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
     by other implemented functions.
 
     Labels each result:
-      anticipatory — no callers at all in graph (written ahead of its interface)
+      ready-but-blocked — no callers, same file has stubs (implementation waiting for its stub to be wired)
+      anticipatory — no callers, no stubs nearby (written ahead of its interface)
       possibly-stranded — has stub callers only (was connected, stubs were never implemented)
 
-    These require opposite responses: anticipatory = write the caller that uses it;
-    possibly-stranded = verify it's still needed before investing more work nearby.
+    ready-but-blocked is the highest-signal case: the implementation exists and works,
+    but the stub that should call it has not been wired up yet.
     """
     limit = int(args.get("limit", 30))
     conn = oracle.conn
@@ -1499,9 +1500,17 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
     if not rows:
         return "No orphaned implementations found."
 
+    files_with_stubs = {
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT file_path FROM functions WHERE is_stub = 1"
+        ).fetchall()
+    }
+
     lines = [
         f"Orphaned implementations ({len(rows)} shown)",
-        "  anticipatory = no callers (written ahead of interface — write the caller)",
+        "  ready-but-blocked = no callers, same file has stubs (wire the stub to call this)",
+        "  anticipatory = no callers, no stubs nearby (write the caller)",
         "  possibly-stranded = only stub callers (verify still needed before investing nearby)",
         "",
     ]
@@ -1513,7 +1522,7 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
             lines.append(f"  {fp_short}")
             prev_file = fp_short
         if total_callers == 0:
-            label = "anticipatory"
+            label = "ready-but-blocked" if file_path in files_with_stubs else "anticipatory"
         else:
             label = f"possibly-stranded ({int(stub_callers)} stub callers)"
         lines.append(f"    {name}  line {line_no}  [{label}]")
