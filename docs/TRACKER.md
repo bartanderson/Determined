@@ -160,7 +160,22 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM17. **[ACTIVE] Two-pass cold analysis of Commonplace: find tool blind spots**
+RM17. **[DONE 2026-07-05] Two-pass cold analysis of Commonplace: find tool blind spots**
+
+   Findings filed in `docs/RM17_findings.md`. 10 gaps ranked. Top findings:
+   - Gap 1 (HIGH): Layer-import violations invisible without design doc ingest + structured layer rules
+   - Gap 2 (HIGH): Flask route handlers = 17 of 18 "orphans" are false positives; @route decorator = entry point
+   - Gap 3 (MEDIUM): `_call_llm` ranked #2 root but is dead code; "ready but blocked" vs orphan distinction missing
+   - Gap 4 (MEDIUM): `capture` role = INTERFACER (wrong, 95% confidence); should be COORDINATOR/CONTROLLER
+   - Gap 10 (MEDIUM): DESIGN.md auto-discovery -- corpus has design constraints written for Determined, but no prompt to ingest them
+
+   Root causes: (1) no auto-discovery/ingest of design docs; (2) Flask decorator pattern invisible to static analysis.
+
+   **Next:** RM18 -- act on gaps. Priority order: Gap 2 (Flask entry-point heuristic, easy) → Gap 10 (auto-discover design docs on corpus load) → Gap 1 (structured layer-rule violations).
+
+---
+
+RM17_archive. **[ACTIVE text below, archived]** Two-pass cold analysis of Commonplace: find tool blind spots
 
    Two-pass examination of the Commonplace corpus to find what Determined gets
    right, wrong, and can't see at all. Output is a ranked list of gaps.

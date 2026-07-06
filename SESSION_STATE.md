@@ -1,80 +1,69 @@
-# SESSION STATE - session 89 handoff
+# SESSION STATE - session 90 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main
-All changes committed. Tests passing at 436/1 skip.
+All changes committed (pending this session's commit). Tests passing at 436/1 skip.
 
-## What happened this session (session 89, 2026-07-05)
+## What happened this session (session 90, 2026-07-05)
 
-1. Updated step_queue.md (was stale -- F1/F3 already done last session).
-2. RM16 executed: UI concept documentation pass (commit 8e1a3cf).
-   - Frontier tab: mode hint line (one sentence per mode, updates on select change)
-   - Corpus stats: title= on 'hot' count explaining blast radius
-   - Corpus panel: empty-state hint under Analyze button for new users
-   - Topology tab: expanded subtitle explaining incompleteness shapes
-   - Tools panel: title= on each tool name explaining what it does
-   - Spotlight: risk badge tooltip (HOT/WARM/SAFE meaning)
-3. COMMONPLACE_JOURNEY.md updated: RM16 marked DONE.
-4. RM17 filed: two-pass cold analysis of Commonplace.
-5. Regression tests: 436 passed, 1 skipped.
+1. RM17 executed: two-pass cold analysis of Commonplace full corpus.
+   - Pass 1: loaded full corpus via JS socket.emit workaround (corpus picker bug discovered),
+     walked orient → frontier (Direct + ABC mode) → topology → knowledge → spotlight on
+     capture and _call_llm. All tool output recorded to scratchpad BEFORE reading source.
+   - Pass 2: read actual source files (routes/capture.py, services/processor.py, pipeline.py,
+     tagger.py, linker.py, searcher.py, extractor.py, models/, docs/DESIGN.md, app.py, browse.py).
+   - Gap analysis: 10 gaps ranked, filed as docs/RM17_findings.md.
 
-## NEXT SESSION -- start here (RM17)
+2. TRACKER.md updated: RM17 marked DONE with summary. RM18 filed as next.
 
-**This is a structured two-pass session. Follow the order strictly.**
+3. HISTORY.md updated: 3 non-obvious findings added.
 
-**Pass 1 -- cold read (do this first, write it all down before touching source):**
-1. Start UI server. Load Commonplace full corpus
-   (C_Users_bartl_dev_Determined_examples_commonplace.db).
-2. Walk: orient → discover → frontier (Direct mode) → topology → spotlight on
-   a few symbols → knowledge tab.
-3. Write down in a scratchpad what Determined says about the codebase:
-   - What is this project (per the tool)?
-   - What are the hot/entry-point symbols?
-   - What stubs exist and who calls them?
-   - What design notes were extracted?
-   - What does the topology say about incompleteness?
-4. STOP. Do not read source yet.
+## Key RM17 findings (top 3)
 
-**Pass 2 -- adversarial read (only after Pass 1 is written down):**
-5. Read the actual Commonplace source files directly
-   (examples/commonplace/ or wherever the full corpus lives).
-6. Form an independent picture: what does this codebase actually do,
-   what are its key symbols, what's implemented vs stubbed, what patterns exist.
-7. Compare against Pass 1 output:
-   - False positives: tool said X, X isn't real or important
-   - False negatives: code clearly does Y, tool never said it
-   - Blind spots: whole categories the tool can't see
+**Gap 2 (HIGH, easy fix):** Flask @route decorator = entry point, not orphan.
+17 of 18 "orphaned-impl" are route handlers. Fix: detect @*.route() at ingest time,
+classify as entry_point role.
 
-**Output:** ranked gap list filed as findings. Each gap: what's missing,
-why the tool can't see it, how fixable (schema/query/LLM/structural).
+**Gap 1 (HIGH, medium):** Layer-import violations invisible without design doc ingest
++ structured layer rules. 4+ planted violations (routes calling storage directly) went
+completely undetected. Root: Knowledge tab = 0 artifacts. Even with ingest, cosine-
+similarity isn't enough -- need explicit import-path rule type.
 
-## Changes uncommitted
-None -- all committed.
+**Gap 10 (MEDIUM, easy):** DESIGN.md auto-discovery. Corpus was built FOR Determined's
+violation detection; DESIGN.md says "Ingest with ingest_design_docs." But the tool
+never prompts. Auto-run discover_docs on corpus load and surface the result.
 
-## Commits this session
-- 8e1a3cf: RM16 UI concept documentation pass
-- (next commit): RM17 filed + session state
+## NEXT SESSION -- start here (RM18)
 
-## Current Determined status
+**Act on RM17 gaps. Priority order:**
 
-### Test count: 436 passed, 1 skipped
+1. **Gap 2: Flask entry-point heuristic (easy, high value)**
+   - In `parse_ast.py` `_classify_role()` or `_extract_functions`:
+     detect functions decorated with `@<name>.route(...)` and set role="entry_point"
+   - Verify: re-ingest Commonplace, check capture(), index(), entry_detail() no longer
+     appear as orphaned-impl in topology
+   - Expected: orphaned count drops from 18 to ~2-3
 
-### Open TRACKER items
-- RM17: Two-pass cold analysis of Commonplace (ACTIVE -- next session)
-- RM15: Commonplace guided journey (journey + RM16 both done)
-- Item 27: Standards self-review (FUTURE)
-- RM9: Connect to Q4 MCTS (FUTURE)
-- RM10: DeRe-CoT recomposition pass (FUTURE)
+2. **Gap 10: Auto-discover design docs on corpus load (easy, high value)**
+   - In ui_server.py after corpus load: call discover_docs, if markdown with constraint
+     density found, emit a notice ("Found design docs -- run ingest_design_docs")
+   - Or: surface discover_docs result in corpus map gap section
 
-## Hardware facts
-- llama-server: on-demand subprocess, port 8081, Qwen3-8B
-- Lazy-started on first generate()/chat() call if not running
-- SearXNG: user-run Docker, default http://localhost:8888
-- UI server: process on port 5050, started manually
+3. **Gap 1: Structured layer-rule violations (medium, after 1+2)**
+   - New knowledge_artifact kind=layer_rule with from_layer/to_layer/forbidden fields
+   - Query: for each symbol in routes/, find imports from storage/ -- flag as violation
+   - Requires design docs ingested first
 
-## Corpus state
-- Commonplace seed DB: C_Users_bartl_dev_Determined_examples_commonplace_seed.db
-  - 8 files, 0 hot, 1 stub (extract_full_content only after step 6 reingest)
-- dj2 DB: C_Users_bartl_dev_dj2.db
-- Commonplace full: C_Users_bartl_dev_Determined_examples_commonplace.db
-- Determined: C_Users_bartl_dev_Determined.db
+## Changes uncommitted this session
+- docs/RM17_findings.md (new)
+- docs/TRACKER.md (RM17 DONE, RM18 filed)
+- docs/HISTORY.md (3 entries)
+- .claude/step_queue.md (updated)
+- SESSION_STATE.md (this file)
+
+## Corpus switch bug discovered
+The "Switch corpus" picker rows didn't respond to clicks reliably (CDP timeout during
+screenshot). Workaround: socket.emit('load_db', {path: full_absolute_path}).
+Root cause unclear -- low priority, not filed.
+
+## Test count: 436 passed, 1 skipped
