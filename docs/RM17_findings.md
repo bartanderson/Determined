@@ -19,20 +19,26 @@ _Two-pass examination. Pass 1: tool output only (no source). Pass 2: adversarial
 
 ### Gap 1 — Layer-import violation detection (HIGH)
 
-**What's missing:** The planted route-calls-storage violations are completely invisible.
-`browse.py` and `capture.py` both call `storage.queries` directly, violating the
-4-layer architecture rule ("routes must not import from storage/"). Determined found
-0 design violations on any of these routes.
+**Note on test validity:** The cold-read constraint meant `ingest_design_docs` was
+never run. In real usage a developer would run it before asking about violations.
+So the complaint "violations invisible" is partly a test artifact — the tool's
+violation detection is deliberately rule-driven and requires design docs as input.
+The genuine gaps are two: (a) nothing tells the user to run ingest_design_docs when
+a DESIGN.md is present (see Gap 10), and (b) even with docs ingested, the detection
+mechanism has a structural limit.
 
-**Why the tool can't see it:** No design docs ingested (Knowledge tab = 0 artifacts).
-The layer rule exists only in `DESIGN.md`. Even with docs ingested, cosine-similarity
-matching of "routes must not call storage" against a `from storage import queries`
-call site is unreliable — it needs a structured import-path rule type.
+**What's still missing after ingest:** `browse.py` and `capture.py` both import
+`storage.queries` directly, violating the 4-layer rule ("routes must not import from
+storage/"). After running `ingest_design_docs`, the rule is stored as a design_note.
+But `check_design_violations` uses cosine-similarity to match the rule text against
+symbol context. "Routes must not call storage directly" does not reliably match against
+a symbol whose context is "function in browse.py calls list_entries" — the semantic
+signal is too weak without knowing that `queries` is in the storage layer.
 
-**How fixable:** Schema + query (medium). The import graph is already tracked.
-Need: (a) `ingest_design_docs` run, (b) a new knowledge_artifact kind=`layer_rule`
-with structured fields (from_layer, to_layer, direction=forbidden), (c) a query
-that checks `symbol_references` against these layer rules.
+**How fixable:** Medium. Need a structured import-path rule type in knowledge_artifacts
+(from_layer, to_layer, direction=forbidden) rather than free-text design notes.
+The import graph is already tracked — a direct query against it would work once rules
+have structured layer fields to query against.
 
 ---
 
