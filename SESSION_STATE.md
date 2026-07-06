@@ -1,47 +1,46 @@
-# SESSION STATE - session 88 handoff
+# SESSION STATE - session 89 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main
 All changes committed. Tests passing at 436/1 skip.
 
-## What happened this session (session 88, 2026-07-05)
+## What happened this session (session 89, 2026-07-05)
 
-1. Ran regression tests (436 passed, 1 skipped) -- all green.
-2. Committed session 86 carry-over: ui_server.py reingest fix + step 6 journey result.
-3. F2: wired ingest_design_docs into post-ingest pass (commit a7dc167).
-4. F1: Frontier tab resets to Direct mode on every open (commit 5c396b3).
-5. F3: REPL startup hints "run orient or discover" when coverage < 10% (commit 5c396b3).
-6. RM16 filed: UI concept documentation pass -- explain every panel/mode/concept
-   in one line, always visible. Walk-driven, to be done after F1/F3.
-7. COMMONPLACE_JOURNEY.md updated: F1/F2/F3 all marked DONE.
+1. Updated step_queue.md (was stale -- F1/F3 already done last session).
+2. RM16 executed: UI concept documentation pass (commit 8e1a3cf).
+   - Frontier tab: mode hint line (one sentence per mode, updates on select change)
+   - Corpus stats: title= on 'hot' count explaining blast radius
+   - Corpus panel: empty-state hint under Analyze button for new users
+   - Topology tab: expanded subtitle explaining incompleteness shapes
+   - Tools panel: title= on each tool name explaining what it does
+   - Spotlight: risk badge tooltip (HOT/WARM/SAFE meaning)
+3. COMMONPLACE_JOURNEY.md updated: RM16 marked DONE.
+4. Regression tests: 436 passed, 1 skipped.
 
 ## NEXT SESSION -- start here
 
 1. Read .claude/step_queue.md
-2. Re-walk the Commonplace journey from step 1 with RM16 as the lens:
-   - Walk each step as a new user would
-   - Wherever the walk stalls or leaves something unexplained, add the concept
-     documentation right there (tooltip, empty-state text, section label)
-   - Fix any new gaps or regressions found along the way
-   RM16 is not a separate pass -- it happens inline as the walk surfaces the need.
+2. Check TRACKER.md for open items.
+3. RM15 (Commonplace guided journey) and RM16 are both now done.
+   Remaining open items: Item 27 (standards self-review, FUTURE),
+   RM9 (Q4 MCTS, FUTURE), RM10 (DeRe-CoT, FUTURE).
+4. Consider: is there a next active journey item to file, or is the
+   Commonplace arc complete? Check docs/COMMONPLACE_VISION.md for remaining
+   seed->complete->enhance phases before starting new work.
 
 ## Changes uncommitted
 None -- all committed.
 
 ## Commits this session
-- 42ef9e5: session 86 carry-over (reingest fix + journey step 6)
-- a7dc167: F2 fix (ingest_design_docs in post-ingest pass)
-- f243cf7: session 88 handoff + COMMONPLACE_JOURNEY step 7
-- 1f07f40: RM16 filed
-- 5c396b3: F1/F3 fixes
+- 8e1a3cf: RM16 UI concept documentation pass
 
 ## Current Determined status
 
 ### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
-- RM15: Commonplace guided journey (ACTIVE -- re-walk or start RM16)
-- RM16: UI concept documentation pass (FILED -- next after re-walk)
+- RM15: Commonplace guided journey (ACTIVE -- journey + RM16 both done)
+- RM16: UI concept documentation pass (DONE -- commit 8e1a3cf)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass (FUTURE)

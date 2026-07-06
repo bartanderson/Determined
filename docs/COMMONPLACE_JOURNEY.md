@@ -126,5 +126,8 @@ F2. [DONE] ingest_design_docs wired into post-ingest pass.
 F3. [DONE] REPL startup hints when coverage < 10%.
     Fix: prints "run orient or discover" hint at startup (commit 5c396b3).
 
-RM16. [FILED] UI concept documentation pass -- explain every panel/mode/concept
+RM16. [DONE] UI concept documentation pass -- explain every panel/mode/concept
     in one line, always visible. Walk-driven, after F1/F3 resolved.
+    Fix: Frontier mode hint line (one sentence per mode), hot-count tooltip,
+    empty-state Analyze hint, Topology subtitle expanded, Tools panel title=
+    attributes, spotlight risk badge tooltip. Commit 8e1a3cf.
