@@ -1190,6 +1190,7 @@ socket.on("ingest_done", data => {
 
 socket.on("ingest_error", data => {
   ingestBtn.disabled = false;
+
   clearStatusMsgs();
   addErrorBlock(data.message);
 });
@@ -2391,7 +2392,7 @@ socket.on("frontier_to_queue_result", data => {
 fgMode.addEventListener("change", fgLoad_);
 fgLoad.addEventListener("click", fgLoad_);
 document.querySelectorAll(".tab[data-tab='frontier']").forEach(t => {
-  t.addEventListener("click", () => { if (!_fgCy) fgLoad_(); });
+  t.addEventListener("click", () => { fgMode.value = "direct"; if (!_fgCy) fgLoad_(); });
 });
 
 // ── bag tab ───────────────────────────────────────────────

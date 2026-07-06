@@ -448,7 +448,13 @@ def run(db_path: str, verbose: bool = False) -> None:
     root = oracle.get_project_root() or db_path
     print(f"Project root:   {root}")
     print(f"Model:          llama-server (port 8081)")
+    from determined.agent.knowledge_status import coverage_report
+    cov = coverage_report(oracle, assessor)
+    pct = int(100 * cov["known_files"] / cov["total_files"]) if cov["total_files"] else 0
     print(f"\n{coverage_summary(oracle, assessor)}")
+    if pct < 10:
+        print(f"  Coverage is low — answers will be sparse until the corpus is explored.")
+        print(f"  Run 'orient' to survey the codebase, or 'discover' to expand coverage.")
     print(f"\nType your question. 'clear' to reset. 'quit' to exit.")
     print(f"Special: 'what do you know?' | 'what haven't you explored?' | 'discover'")
     print(f"Workflow: 'what's next' | 'reprioritize' | 'add to backlog: <item>' | 'reorder as 3,1,2'\n")
