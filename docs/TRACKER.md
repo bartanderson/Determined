@@ -160,7 +160,39 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM16. **[FILED] UI concept documentation: explain what each panel/mode/concept is and when to use it**
+RM17. **[ACTIVE] Two-pass cold analysis of Commonplace: find tool blind spots**
+
+   Two-pass examination of the Commonplace corpus to find what Determined gets
+   right, wrong, and can't see at all. Output is a ranked list of gaps.
+
+   **Pass 1 — cold read (tool output only):**
+   Load Commonplace full corpus. Walk orient → frontier → topology → spotlight
+   queries → knowledge. Write down exactly what Determined says the codebase is.
+   No looking at source. Pure tool output.
+
+   **Pass 2 — adversarial read (source truth):**
+   Read the actual Commonplace source files directly. Independently form a picture
+   of what the codebase is and does. Do not reference Pass 1 output while reading.
+
+   **Compare — rub them together:**
+   - False positives: tool reported X, X isn't real or isn't important
+   - False negatives: code clearly does Y, tool never surfaced it
+   - Blind spots: whole categories the tool has no way to see (design-level gaps)
+
+   Blind spots are the highest-value output -- they point to missing tool
+   capabilities, not just missed instances.
+
+   **Rule:** complete Pass 1 and write it down before starting Pass 2.
+   Once source is read, independence is lost.
+
+   **Output:** ranked gap list. Each gap: what's missing, why the tool can't
+   see it, how fixable it is (schema/query/LLM/structural limit).
+
+   **Corpus:** Commonplace full (not seed) -- more signal.
+
+---
+
+RM16. **[DONE 2026-07-05] UI concept documentation: explain what each panel/mode/concept is and when to use it**
 
    Every panel, mode, and concept in Determined should have a one-line explanation
    visible in the UI at all times -- not triggered by emptiness or error, just

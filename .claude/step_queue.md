@@ -1,3 +1,3 @@
-PREVIOUS: F1/F2/F3 done, session 88 committed (c30f14e)
-CURRENT:  RM16 walk — re-walk Commonplace journey, add concept text inline
-NEXT:     Run regression tests, commit RM16 changes, update SESSION_STATE.md
+PREVIOUS: RM16 done (8e1a3cf), RM17 filed
+CURRENT:  RM17 Pass 1 -- cold read of Commonplace full corpus (tool output only, no source)
+NEXT:     RM17 Pass 2 -- adversarial read of source, compare, file gap list

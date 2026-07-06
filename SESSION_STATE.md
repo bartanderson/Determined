@@ -15,32 +15,53 @@ All changes committed. Tests passing at 436/1 skip.
    - Tools panel: title= on each tool name explaining what it does
    - Spotlight: risk badge tooltip (HOT/WARM/SAFE meaning)
 3. COMMONPLACE_JOURNEY.md updated: RM16 marked DONE.
-4. Regression tests: 436 passed, 1 skipped.
+4. RM17 filed: two-pass cold analysis of Commonplace.
+5. Regression tests: 436 passed, 1 skipped.
 
-## NEXT SESSION -- start here
+## NEXT SESSION -- start here (RM17)
 
-1. Read .claude/step_queue.md
-2. Check TRACKER.md for open items.
-3. RM15 (Commonplace guided journey) and RM16 are both now done.
-   Remaining open items: Item 27 (standards self-review, FUTURE),
-   RM9 (Q4 MCTS, FUTURE), RM10 (DeRe-CoT, FUTURE).
-4. Consider: is there a next active journey item to file, or is the
-   Commonplace arc complete? Check docs/COMMONPLACE_VISION.md for remaining
-   seed->complete->enhance phases before starting new work.
+**This is a structured two-pass session. Follow the order strictly.**
+
+**Pass 1 -- cold read (do this first, write it all down before touching source):**
+1. Start UI server. Load Commonplace full corpus
+   (C_Users_bartl_dev_Determined_examples_commonplace.db).
+2. Walk: orient → discover → frontier (Direct mode) → topology → spotlight on
+   a few symbols → knowledge tab.
+3. Write down in a scratchpad what Determined says about the codebase:
+   - What is this project (per the tool)?
+   - What are the hot/entry-point symbols?
+   - What stubs exist and who calls them?
+   - What design notes were extracted?
+   - What does the topology say about incompleteness?
+4. STOP. Do not read source yet.
+
+**Pass 2 -- adversarial read (only after Pass 1 is written down):**
+5. Read the actual Commonplace source files directly
+   (examples/commonplace/ or wherever the full corpus lives).
+6. Form an independent picture: what does this codebase actually do,
+   what are its key symbols, what's implemented vs stubbed, what patterns exist.
+7. Compare against Pass 1 output:
+   - False positives: tool said X, X isn't real or important
+   - False negatives: code clearly does Y, tool never said it
+   - Blind spots: whole categories the tool can't see
+
+**Output:** ranked gap list filed as findings. Each gap: what's missing,
+why the tool can't see it, how fixable (schema/query/LLM/structural).
 
 ## Changes uncommitted
 None -- all committed.
 
 ## Commits this session
 - 8e1a3cf: RM16 UI concept documentation pass
+- (next commit): RM17 filed + session state
 
 ## Current Determined status
 
 ### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
-- RM15: Commonplace guided journey (ACTIVE -- journey + RM16 both done)
-- RM16: UI concept documentation pass (DONE -- commit 8e1a3cf)
+- RM17: Two-pass cold analysis of Commonplace (ACTIVE -- next session)
+- RM15: Commonplace guided journey (journey + RM16 both done)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass (FUTURE)
