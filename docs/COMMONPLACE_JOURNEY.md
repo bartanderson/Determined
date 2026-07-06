@@ -89,7 +89,14 @@ when a fundamental break requires it. Look ahead 2-3 steps before walking.
   After fix + server restart + save: sidebar updated live from 2 stubs -> 1 stub
   without page reload. corpus_ready fires correctly after reingest. PASS.
 
-[Step 7] Design notes -- KNOWN ISSUE, skip for now.
+[Step 7] Design notes -- 0 design notes, no action available.
+  Root cause: ingest_design_docs was not in the post-ingest flow.
+  Fix: wired ingest_design_docs into post-ingest pass (after discovery,
+  before ingest_done), same pattern as distillation. Silently skips corpora
+  with no design docs. seed/ has no design docs intentionally -- user writes
+  them as they build. On re-ingest of a corpus with docs, count will populate.
+  KNOWN ISSUE #2 resolved. KNOWN ISSUE #3 (seed has no docs, UI doesn't explain)
+  remains -- low priority, tooltip or empty-state text could address it later.
 
 ---
 

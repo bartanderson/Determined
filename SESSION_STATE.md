@@ -1,41 +1,43 @@
-# SESSION STATE - session 87 handoff
+# SESSION STATE - session 88 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main
-Uncommitted changes from session 86 still pending. Regression tests not yet run.
+All changes committed. Tests passing at 436/1 skip.
 
-## What happened this session (session 87, 2026-07-05)
+## What happened this session (session 88, 2026-07-05)
 
-No Determined code work done this session. Spent session investigating Claude Code
-remote control setup -- trying to find a way to initiate a remote control session
-from the CLI so Bart can continue on phone. Dead end: CLI requires API key (not
-subscription), and Claude Code desktop can join but not initiate remote control
-(known open issue with Anthropic). Created a desktop shortcut "Remote Control Claude"
-that runs `claude --remote-control` for when/if the auth situation changes.
+1. Ran regression tests (436 passed, 1 skipped) -- all green.
+2. Committed session 86 carry-over: ui_server.py reingest fix + COMMONPLACE_JOURNEY.md step 6 result.
+3. F2 fix: wired ingest_design_docs into post-ingest pass (after discovery, before ingest_done).
+   - Rejected button approach -- scan belongs in normal ingest flow, same as distillation.
+   - 6-line addition to ui_server.py handle_ingest(). No HTML changes.
+   - Committed a7dc167. Tests still 436/1 skip.
+4. Recorded step 7 result in COMMONPLACE_JOURNEY.md (KNOWN ISSUE #2 resolved).
 
 ## NEXT SESSION -- start here
 
-**Exact same next steps as session 86:**
-
 1. Read .claude/step_queue.md
-2. Run `pytest tests/regression/ -q` -- all tests must pass before commit
-3. Commit: ui_server.py fix + COMMONPLACE_JOURNEY.md + SESSION_STATE.md
-4. Walk journey step 7: Corpus panel -> 0 design notes -> needs Scan button (F2)
-   F2 fix: add "Scan for design docs" button next to design notes count in corpus panel
+2. Walk journey step 8: next unresolved item from COMMONPLACE_JOURNEY.md FINDINGS TO FIX
+   - F1: Frontier mode resets to Direct on tab open (remembers Orphan from prior session)
+   - F3: REPL startup hint when coverage is 0%
+   - Or continue the walk from step 8 onward if F1/F3 are lower priority
 
-## Changes uncommitted (carried over from session 86)
+## Changes uncommitted
+None -- all committed.
 
-- `determined/ui/ui_server.py` -- reingest_file call fixed (_db_path not oracle)
-- `docs/COMMONPLACE_JOURNEY.md` -- step 6 result recorded
+## Commits this session
+- 42ef9e5: session 86 carry-over (reingest fix + journey step 6)
+- a7dc167: F2 fix (ingest_design_docs in post-ingest pass)
 
 ## Current Determined status
 
-### Test count: 436 passed, 1 skipped (as of session 85 -- not re-run)
+### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
-- RM15: Commonplace guided journey (ACTIVE -- step 7 next)
-  - Step 6 DONE: reingest bug fixed, loop verified
-  - Step 7: design notes scan button (F2)
+- RM15: Commonplace guided journey (ACTIVE -- step 8 next, F1/F3 fixes pending)
+  - Step 7 DONE: design doc scan wired into ingest flow
+  - F1: Frontier mode default (minor)
+  - F3: REPL startup hint (minor)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass (FUTURE)
@@ -48,7 +50,7 @@ that runs `claude --remote-control` for when/if the auth situation changes.
 
 ## Corpus state
 - Commonplace seed DB: C_Users_bartl_dev_Determined_examples_commonplace_seed.db
-  - 8 files, 0 hot, 1 stub (extract_full_content only)
+  - 8 files, 0 hot, 1 stub (extract_full_content only after step 6 reingest)
 - dj2 DB: C_Users_bartl_dev_dj2.db
 - Commonplace full: C_Users_bartl_dev_Determined_examples_commonplace.db
 - Determined: C_Users_bartl_dev_Determined.db
