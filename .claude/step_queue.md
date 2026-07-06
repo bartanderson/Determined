@@ -1,3 +1,3 @@
-PREVIOUS: Gap 2 done -- decorators_json, orphan filter, 0 orphans confirmed
+PREVIOUS: Gap 4 done -- COORDINATOR/INTERFACER pattern upsert (38a6586)
 CURRENT:  session wrap -- commit SESSION_STATE
-NEXT:     RM18 continued -- Gap 1 re-check: check_design_violations on capture/browse
+NEXT:     verify capture() role with live Qwen3-8B; Gap 10 auto-discovery

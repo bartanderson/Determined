@@ -1,37 +1,60 @@
-Written at commit: 7857bdf
-# SESSION STATE - session 97 handoff
+Written at commit: 38a6586
+# SESSION STATE - session 98 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 97, 2026-07-06)
+## What happened this session (session 98, 2026-07-06)
 
-No substantive work. Start checklist ran; step queue (CURRENT = session wrap) correctly
-halted premature Gap 1 work again. SESSION_STATE updated only.
+RM18 Gap work: acted on three of the four top RM17 findings.
 
-## Gap 2 status: DONE [V] (committed f879f1c, session 95)
+**Gap 1 [V] DONE (2031f90):** Deterministic layer-import violation detection.
+- Added `_check_import_layer_violations(conn, file_path)` in agent_tools.py
+- Queries `imports` table against CONSTRAINT design_notes (already in DB from ingest_design_docs)
+- Extracts forbidden layer prefixes from backtick-quoted paths in constraint text
+- `check_design_violations` now shows CONFIRMED violations first, cosine suggestions second
+- Tested: routes/capture.py and routes/browse.py both surface confirmed storage violations
+- 2 new regression tests
 
-UI orphan view: done (3f61ab9). [V]
-agent_tools.py (find_orphaned_impls, detect_topology): done (f879f1c). [V]
-436 passed, 1 skipped. [V]
+**Gap 3 [V] DONE (1e90d7f):** ready-but-blocked distinction in find_orphaned_impls.
+- Non-stub, 0-caller functions in files that also contain stubs → labeled "ready-but-blocked"
+- Previously labeled "anticipatory" (indistinguishable from dead code)
+- _call_llm in tagger.py now correctly surfaces as ready-but-blocked (suggest_tags is stub)
+- 2 new regression tests
+
+**Gap 4 [V] DONE (38a6586):** COORDINATOR/INTERFACER pattern description update.
+- COORDINATOR: now explicitly covers use-case orchestrators and HTTP route handlers (4+ callees)
+- INTERFACER: narrowed to thin 1-to-1 adapters (1-3 callees), with explicit rule "4+ steps = COORDINATOR"
+- _ensure_pattern_library changed from insert-only to upsert (propagates to existing DBs)
+- NOTE: actual capture() reclassification [?] -- requires Qwen3-8B live to verify; no 3B model
+  exists; spot-check via UI with live server after Commonplace reingest
+
+## Test count: 440 passed, 1 skipped [V] (run at end of session)
+
+## Gaps NOT addressed this session
+
+**Gap 2** was already done in session 95 (decorator filter). [V]
+
+**Gap 10** (design doc auto-discovery on corpus load) -- filed in RM17, not yet acted on.
+Commonplace has a DESIGN.md that ingest_design_docs should auto-discover. Currently user
+must know to run it manually.
+
+## Commonplace DB state
+
+Commonplace DB (`C_Users_bartl_dev_Determined_examples_commonplace.db`) is STALE:
+- Missing `decorators_json` column on functions table (added in Gap 2, session 95)
+- design_notes from ingest_design_docs were written this session (27 DESIGN.md rules)
+- Needs full reingest via UI to pick up all schema changes
 
 ## NEXT SESSION -- start here
 
-**Gap 1 re-check:** run `check_design_violations` on Commonplace capture/browse.py routes.
-These are Flask route handlers RM17 flagged as potential layer-import violations.
-Gap 2 decorator filter is done; orphan noise is gone; violations should be signal only.
+1. **Verify Gap 4 (capture role):** Start UI server, load Commonplace corpus (reingest),
+   run `infer_behavior` on `capture`. Expect COORDINATOR. If still INTERFACER, LLM is
+   not responding to the pattern text changes -- escalate to structural signal in context assembly.
 
-Steps:
-1. Check design notes in `C_Users_bartl_dev_Determined_examples_commonplace.db`:
-   Write a .py script to scratchpad (not python -c): `SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'`
-2. If 0: run `ingest_design_docs` with project_root pointing at `examples/commonplace`
-3. Run `check_design_violations` on `capture` and `browse` symbols (Python script or UI).
-4. Compare findings against docs/RM17_findings.md Gap 1 description.
-5. Outcome: working = file as confirmed; not working = fix detection or log new item.
+2. **Gap 10 (auto-discovery):** After reingest confirmed working, implement auto-discover
+   of DESIGN.md on corpus load. `discover_docs` already exists; wire it to fire on ingest
+   completion and surface "found X markdown files -- run ingest_design_docs?" in corpus panel.
 
-**Note:** `python -c` with SQL strings fails in PowerShell (asterisk in SELECT confuses PS).
-Always write multi-line Python to a scratchpad .py file and run that instead.
-
-**After Gap 1:** Gap 3 (_call_llm dead-code distinction), then Gap 4 (capture role fix).
-
-## Test count: 436 passed, 1 skipped [?] (session 95, not re-run this session)
+3. **RM15 (Commonplace guided journey):** Once Gap 10 is in, the full RM15 arc is unblocked
+   (journey works end-to-end with design docs auto-discovered).
