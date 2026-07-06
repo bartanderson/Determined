@@ -46,6 +46,7 @@ class FunctionRepresentation:
     return_type: Optional[str] = None
     docstring: Optional[str] = None
     is_stub: bool = False
+    decorators: List[str] = field(default_factory=list)
 
 
 @dataclass

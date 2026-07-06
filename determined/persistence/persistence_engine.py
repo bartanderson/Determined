@@ -21,7 +21,10 @@ def _migrate(connection):
     existing = {row[1] for row in cursor.execute("PRAGMA table_info(graph_edges)").fetchall()}
     if "resolved" not in existing:
         cursor.execute("ALTER TABLE graph_edges ADD COLUMN resolved INTEGER DEFAULT 0")
-        connection.commit()
+    fn_existing = {row[1] for row in cursor.execute("PRAGMA table_info(functions)").fetchall()}
+    if "decorators_json" not in fn_existing:
+        cursor.execute("ALTER TABLE functions ADD COLUMN decorators_json TEXT")
+    connection.commit()
 
 def set_project_root(connection: sqlite3.Connection, project_root) -> None:
     """
@@ -98,7 +101,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         arguments_json TEXT,
         docstring TEXT,
         is_stub INTEGER DEFAULT 0,
-        param_types_json TEXT
+        param_types_json TEXT,
+        decorators_json TEXT
     )
     """)
 
@@ -398,9 +402,10 @@ def persist_file_analysis(
             arguments_json,
             param_types_json,
             docstring,
-            is_stub
+            is_stub,
+            decorators_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             analysis.file_path,
             _canonical_symbol(function.name),
@@ -410,6 +415,7 @@ def persist_file_analysis(
             json.dumps(getattr(function, "param_types", {})) or None,
             function.docstring,
             1 if getattr(function, "is_stub", False) else 0,
+            json.dumps(getattr(function, "decorators", [])) or None,
         ))
 
         # CLAUDE-EDIT 2026-06-17: was gated on

@@ -587,7 +587,7 @@ socket.on("corpus_ready", data => {
   igStatus.textContent       = "";
   gxStatus.textContent       = "";
   sendBtn.disabled = false;
-  setCorpusLoaded(true);
+  setCorpusLoaded(true, data.source_path || "");
 
   // populate pinned corpus map panel
   renderCorpusMap(data);
@@ -1087,10 +1087,12 @@ function hideModal() {
 modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) hideModal(); });
 
 // ── analyze ───────────────────────────────────────────────
-function setCorpusLoaded(loaded) {
-  ingestBtn.style.display  = loaded ? "none" : "";
-  ingestPath.style.display = loaded ? "none" : "";
+function setCorpusLoaded(loaded, sourcePath) {
+  ingestBtn.textContent = loaded ? "Re-analyze ↵" : "Analyze ↵";
+  ingestBtn.style.display  = "";
+  ingestPath.style.display = "";
   resumeBtn.style.display  = loaded ? "" : "none";
+  if (loaded && sourcePath) ingestPath.value = sourcePath;
   const hint = document.getElementById("ingest-hint");
   if (hint) hint.style.display = loaded ? "none" : "";
 }

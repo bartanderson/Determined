@@ -33,6 +33,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 _oracle: DBOracle | None = None
 _assessor: Assessor | None = None
 _db_path: str = ""
+_source_path: str = ""
 _history: list[dict] = []
 _lock = threading.Lock()
 
@@ -234,6 +235,7 @@ def _emit_corpus_ready(switched=False):
             "switched": switched,
             "db_name": Path(_db_path).name,
             "db_path": _db_path,
+            "source_path": _source_path,
             "files": s.get("files", 0),
             "hot": s.get("hot", 0),
             "stubs": s.get("stubs", 0),
@@ -503,6 +505,8 @@ def handle_ingest(data):
                         _oracle = None
                         _assessor = None
                 Path(db_path).unlink()
+                global _source_path
+            _source_path = str(target)
             socketio.emit("ingest_status", {"message": f"Analyzing {target.name}…"}, to=sid)
 
             corpus = type("Corpus", (), {"root_path": str(target)})()
@@ -981,11 +985,17 @@ def handle_get_frontier_graph(data):
         try:
             conn = _oracle.conn
 
+            # Decorated functions are assumed framework-registered (e.g. @app.route,
+            # @celery.task, @socketio.on); exclude to avoid false orphans. Pure
+            # structural decorators (@property, @staticmethod, @classmethod) don't
+            # register anything externally so they still qualify as orphans.
+            _STRUCTURAL = {"property", "staticmethod", "classmethod"}
             rows = conn.execute(
                 """
                 SELECT f.name, f.file_path, f.line_number,
                        COUNT(ge.caller) AS total_callers,
-                       SUM(CASE WHEN cf.is_stub = 1 THEN 1 ELSE 0 END) AS stub_callers
+                       SUM(CASE WHEN cf.is_stub = 1 THEN 1 ELSE 0 END) AS stub_callers,
+                       f.decorators_json
                 FROM functions f
                 LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
                 LEFT JOIN functions cf ON cf.name = ge.caller
@@ -997,12 +1007,19 @@ def handle_get_frontier_graph(data):
                 LIMIT 80
                 """
             ).fetchall()
+            import json as _json
+            def _has_framework_decorator(decorators_json):
+                if not decorators_json:
+                    return False
+                decs = _json.loads(decorators_json)
+                return any(d.split("(")[0].split(".")[-1] not in _STRUCTURAL for d in decs)
+            rows = [r for r in rows if not _has_framework_decorator(r[5])]
 
             def _short(path):
                 return (path or "").replace("\\", "/").split("/")[-1]
 
             nodes: dict[str, dict] = {}
-            for name, file_path, line_no, total_callers, stub_callers in rows:
+            for name, file_path, line_no, total_callers, stub_callers, _decs in rows:
                 role = "stranded" if (total_callers or 0) > 0 else "anticipatory"
                 nodes[name] = {
                     "id": name, "label": name, "role": role,

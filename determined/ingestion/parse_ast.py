@@ -155,6 +155,12 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
 
             docstring = ast.get_docstring(node)
             stub_by_doc = bool(docstring and docstring.strip().upper().startswith("STUB:"))
+            decorators = []
+            for dec in node.decorator_list:
+                try:
+                    decorators.append(ast.unparse(dec))
+                except Exception:
+                    pass
             results.append(
                 FunctionRepresentation(
                     name=node.name,
@@ -164,6 +170,7 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                     return_type=ast.unparse(node.returns) if getattr(node, "returns", None) else None,
                     docstring=docstring,
                     is_stub=_is_stub(node) or stub_by_doc,
+                    decorators=decorators,
                 )
             )
 
