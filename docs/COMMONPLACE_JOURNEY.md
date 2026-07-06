@@ -117,14 +117,14 @@ examples/commonplace/seed/. Does the editor resolve that correctly?
 
 ## FINDINGS TO FIX (in order of journey impact)
 
-F1. Frontier mode resets to Direct on tab open (or remembers per-corpus).
-    Impact: user lands on Orphan from prior session, confused by Flask handlers.
-    Fix: reset fg-mode select to 'direct' in frontierLoad().
+F1. [DONE] Frontier mode resets to Direct on tab open.
+    Fix: reset fg-mode select to 'direct' on every tab click (commit 5c396b3).
 
-F2. "0 design notes" needs a Scan button.
-    Impact: Step 7 is a dead end with no actionable next step.
-    Fix: add button next to design notes count in corpus panel.
+F2. [DONE] ingest_design_docs wired into post-ingest pass.
+    Fix: runs automatically after discovery, before ingest_done (commit a7dc167).
 
-F3. REPL startup: suggest 'orient' when coverage is 0%.
-    Impact: CLI user gets empty answers, doesn't know why.
-    Fix: append hint to startup message when coverage < 10%.
+F3. [DONE] REPL startup hints when coverage < 10%.
+    Fix: prints "run orient or discover" hint at startup (commit 5c396b3).
+
+RM16. [FILED] UI concept documentation pass -- explain every panel/mode/concept
+    in one line, always visible. Walk-driven, after F1/F3 resolved.

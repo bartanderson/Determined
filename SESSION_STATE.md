@@ -7,20 +7,20 @@ All changes committed. Tests passing at 436/1 skip.
 ## What happened this session (session 88, 2026-07-05)
 
 1. Ran regression tests (436 passed, 1 skipped) -- all green.
-2. Committed session 86 carry-over: ui_server.py reingest fix + COMMONPLACE_JOURNEY.md step 6 result.
-3. F2 fix: wired ingest_design_docs into post-ingest pass (after discovery, before ingest_done).
-   - Rejected button approach -- scan belongs in normal ingest flow, same as distillation.
-   - 6-line addition to ui_server.py handle_ingest(). No HTML changes.
-   - Committed a7dc167. Tests still 436/1 skip.
-4. Recorded step 7 result in COMMONPLACE_JOURNEY.md (KNOWN ISSUE #2 resolved).
+2. Committed session 86 carry-over: ui_server.py reingest fix + step 6 journey result.
+3. F2: wired ingest_design_docs into post-ingest pass (commit a7dc167).
+4. F1: Frontier tab resets to Direct mode on every open (commit 5c396b3).
+5. F3: REPL startup hints "run orient or discover" when coverage < 10% (commit 5c396b3).
+6. RM16 filed: UI concept documentation pass -- explain every panel/mode/concept
+   in one line, always visible. Walk-driven, to be done after F1/F3.
+7. COMMONPLACE_JOURNEY.md updated: F1/F2/F3 all marked DONE.
 
 ## NEXT SESSION -- start here
 
 1. Read .claude/step_queue.md
-2. Walk journey step 8: next unresolved item from COMMONPLACE_JOURNEY.md FINDINGS TO FIX
-   - F1: Frontier mode resets to Direct on tab open (remembers Orphan from prior session)
-   - F3: REPL startup hint when coverage is 0%
-   - Or continue the walk from step 8 onward if F1/F3 are lower priority
+2. Continue the Commonplace journey walk -- all known findings (F1/F2/F3) resolved.
+   Next step: walk the journey fresh from step 1 with fixed tool, look for new gaps.
+   OR: start RM16 (UI concept documentation pass) -- one sentence per panel/mode.
 
 ## Changes uncommitted
 None -- all committed.
@@ -28,16 +28,17 @@ None -- all committed.
 ## Commits this session
 - 42ef9e5: session 86 carry-over (reingest fix + journey step 6)
 - a7dc167: F2 fix (ingest_design_docs in post-ingest pass)
+- f243cf7: session 88 handoff + COMMONPLACE_JOURNEY step 7
+- 1f07f40: RM16 filed
+- 5c396b3: F1/F3 fixes
 
 ## Current Determined status
 
 ### Test count: 436 passed, 1 skipped
 
 ### Open TRACKER items
-- RM15: Commonplace guided journey (ACTIVE -- step 8 next, F1/F3 fixes pending)
-  - Step 7 DONE: design doc scan wired into ingest flow
-  - F1: Frontier mode default (minor)
-  - F3: REPL startup hint (minor)
+- RM15: Commonplace guided journey (ACTIVE -- re-walk or start RM16)
+- RM16: UI concept documentation pass (FILED -- next after re-walk)
 - Item 27: Standards self-review (FUTURE)
 - RM9: Connect to Q4 MCTS (FUTURE)
 - RM10: DeRe-CoT recomposition pass (FUTURE)

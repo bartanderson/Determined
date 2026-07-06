@@ -1,3 +1,3 @@
-PREVIOUS: Regression tests passed (436/1 skip), F2 committed (a7dc167)
-CURRENT:  Record step 7 result in COMMONPLACE_JOURNEY.md, update SESSION_STATE.md
-NEXT:     Walk journey step 8 (next unresolved item in COMMONPLACE_JOURNEY.md)
+PREVIOUS: F2 done + session 88 handoff committed (f243cf7), RM16 filed
+CURRENT:  Run regression tests + commit F1/F3 fixes
+NEXT:     Update COMMONPLACE_JOURNEY.md F1/F3 resolved, update SESSION_STATE.md
