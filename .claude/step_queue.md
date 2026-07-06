@@ -1,3 +1,3 @@
-PREVIOUS: Re-analyze button done -- always visible, pre-fills path on re-ingest
-CURRENT:  RM18 Gap 2 -- decorators_json on functions, filter orphan query
-NEXT:     RM18 continued -- check design notes after re-ingest completes
+PREVIOUS: Gap 2 done -- decorators_json, orphan filter, 0 orphans confirmed
+CURRENT:  session wrap -- commit SESSION_STATE
+NEXT:     RM18 continued -- Gap 1 re-check: check_design_violations on capture/browse

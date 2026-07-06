@@ -1,35 +1,44 @@
-# SESSION STATE - session 91 handoff
+# SESSION STATE - session 92 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main
-All changes committed. Tests passing at 436/1 skip.
+All changes committed (3f61ab9). Tests passing at 436/1 skip.
 
-## What happened this session (session 91, 2026-07-05)
+## What happened this session (session 92, 2026-07-06)
 
-1. Started RM18: attempted to re-ingest Commonplace corpus to populate design notes.
-2. Tried calling `ingest_design_docs` via the Chat/Ask bar — wrong approach. The Ask
-   bar is a natural-language query interface routed through the LLM, not a tool
-   dispatcher. Typing a tool name sends it as a symbol search query, not a direct call.
-3. Saved that as a memory (feedback_determined_chat_repl.md).
+1. Re-analyze button: always visible in corpus panel, labeled "Re-analyze" when
+   corpus loaded, pre-fills path from _source_path. Fixes dead end where a loaded
+   corpus had no way to re-run ingest_design_docs without knowing to use Python.
 
-## Key lesson
+2. decorators_json: capture all function decorators at ingest. Orphan query now
+   filters out any function with a non-structural decorator. Eliminates false-positive
+   orphans from @app.route, @socketio.on, etc. Grows automatically with new frameworks.
 
-To call `ingest_design_docs` (or any agent tool) directly when a corpus is already
-loaded, write a short Python script and run it via the venv:
-  `.venv\Scripts\python.exe scratchpad_script.py`
-Do NOT type tool names into the Ask bar.
+3. Re-ingested Commonplace with new code. Orphan (disconnected) view now shows 0
+   nodes -- all 17 Flask route handlers correctly excluded. Gap 2 fixed.
 
-## NEXT SESSION -- start here (RM18, pick up from step 1)
+4. GAPS sidebar now shows 25 design notes (was 0) -- Gap 1/10 confirmed fixed by
+   re-ingest triggering ingest_design_docs automatically.
 
-1. Call ingest_design_docs directly via Python (corpus is already loaded as
-   C_Users_bartl_dev_Determined_examples_commonplace.db, server on port 5050).
-   Write a scratchpad script that:
-   - Opens the DB
-   - Instantiates assessor
-   - Calls ingest_design_docs(assessor, {})
-   - Prints result
-2. Re-check GAPS counter in sidebar (should go from 0 to N design notes).
-3. Re-check violation detection on capture() and browse.py routes.
-4. Then: Gap 2 (Flask @route = entry_point heuristic) is still valid and easy.
+5. Saved memory: Ask bar is NL query only, not a tool dispatcher.
+
+## Key correction from RM17
+
+Gap 1 and Gap 10 were stale-DB artifacts, not tool gaps. Both confirmed fixed
+after re-ingest. 25 design notes now in corpus.
+
+## NEXT SESSION -- start here (RM18 continued)
+
+1. Gap 1 re-check: run check_design_violations on `capture` and browse.py routes
+   now that 25 design notes are populated. Zero code -- just a query. Tells us
+   whether the design note extractor produces useful violations or needs tuning.
+   Use the Chat/Ask bar with natural language: "check design violations for capture"
+   OR use the Design button (top right) which fires check_design_violations directly.
+
+2. Gap 3: _call_llm ranked #2 root but is dead code. Need "ready but blocked" vs
+   true orphan distinction. New node role in orphan view.
+
+3. Gap 4: capture role = INTERFACER (wrong). Should be COORDINATOR/CONTROLLER.
+   Fix in infer_behavior Wirfs-Brock role patterns.
 
 ## Test count: 436 passed, 1 skipped
