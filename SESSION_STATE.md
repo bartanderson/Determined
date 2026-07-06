@@ -18,9 +18,12 @@ All changes committed. Tests passing at 436/1 skip.
 ## NEXT SESSION -- start here
 
 1. Read .claude/step_queue.md
-2. Continue the Commonplace journey walk -- all known findings (F1/F2/F3) resolved.
-   Next step: walk the journey fresh from step 1 with fixed tool, look for new gaps.
-   OR: start RM16 (UI concept documentation pass) -- one sentence per panel/mode.
+2. Re-walk the Commonplace journey from step 1 with RM16 as the lens:
+   - Walk each step as a new user would
+   - Wherever the walk stalls or leaves something unexplained, add the concept
+     documentation right there (tooltip, empty-state text, section label)
+   - Fix any new gaps or regressions found along the way
+   RM16 is not a separate pass -- it happens inline as the walk surfaces the need.
 
 ## Changes uncommitted
 None -- all committed.
