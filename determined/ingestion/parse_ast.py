@@ -137,10 +137,25 @@ def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return True
 
 
-def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
-    results: List[FunctionRepresentation] = []
+def _iter_top_level_functions(tree: ast.AST):
+    """Yield FunctionDef/AsyncFunctionDef at module or class scope only.
+    Skips functions nested inside other functions (inner classes, closures).
+    """
+    def _visit(stmts):
+        for node in stmts:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                yield node
+                # do NOT recurse into function bodies — skip nested defs
+            elif isinstance(node, ast.ClassDef):
+                yield from _visit(node.body)
 
-    for node in ast.walk(tree):
+    yield from _visit(ast.iter_child_nodes(tree))
+
+
+def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
+    results: List[FunctionRepresentation]= []
+
+    for node in _iter_top_level_functions(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             args = [
                 arg.arg
