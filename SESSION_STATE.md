@@ -1,33 +1,35 @@
-# SESSION STATE - session 90 handoff
+# SESSION STATE - session 91 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main
 All changes committed. Tests passing at 436/1 skip.
 
-## What happened this session (session 90, 2026-07-05)
+## What happened this session (session 91, 2026-07-05)
 
-1. RM17 executed: two-pass cold analysis of Commonplace full corpus.
-2. 10 gaps ranked, filed as docs/RM17_findings.md.
-3. Late correction: Gap 1 and Gap 10 are largely test artifacts.
+1. Started RM18: attempted to re-ingest Commonplace corpus to populate design notes.
+2. Tried calling `ingest_design_docs` via the Chat/Ask bar — wrong approach. The Ask
+   bar is a natural-language query interface routed through the LLM, not a tool
+   dispatcher. Typing a tool name sends it as a symbol search query, not a direct call.
+3. Saved that as a memory (feedback_determined_chat_repl.md).
 
-## Key correction (end of session)
+## Key lesson
 
-The full Commonplace DB was ingested BEFORE commit a7dc167 ("F2: wire
-ingest_design_docs into post-ingest pass"). So the DB has 0 design notes
-not because the tool can't do it, but because the DB is stale.
+To call `ingest_design_docs` (or any agent tool) directly when a corpus is already
+loaded, write a short Python script and run it via the venv:
+  `.venv\Scripts\python.exe scratchpad_script.py`
+Do NOT type tool names into the Ask bar.
 
-ingest_design_docs DOES run automatically during the analyze flow (ui_server.py
-line 538). It does NOT run on load_db (switching to an already-built corpus).
+## NEXT SESSION -- start here (RM18, pick up from step 1)
 
-Gap 1 finding ("violations invisible") and Gap 10 ("no auto-discovery") are
-both overstated. The tool already auto-ingests design docs on analyze.
-
-## NEXT SESSION -- start here (RM18)
-
-1. Re-ingest the full Commonplace corpus (Analyze button in UI) so
-   ingest_design_docs runs and populates the knowledge tab.
-2. Re-check violation detection on capture() and browse.py routes.
-3. See what actually surfaces before building new features.
+1. Call ingest_design_docs directly via Python (corpus is already loaded as
+   C_Users_bartl_dev_Determined_examples_commonplace.db, server on port 5050).
+   Write a scratchpad script that:
+   - Opens the DB
+   - Instantiates assessor
+   - Calls ingest_design_docs(assessor, {})
+   - Prints result
+2. Re-check GAPS counter in sidebar (should go from 0 to N design notes).
+3. Re-check violation detection on capture() and browse.py routes.
 4. Then: Gap 2 (Flask @route = entry_point heuristic) is still valid and easy.
 
 ## Test count: 436 passed, 1 skipped
