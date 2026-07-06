@@ -1020,6 +1020,20 @@ def _is_entry_point_hint(file_path: str, fn_name: str) -> bool:
     return False
 
 
+_STRUCTURAL_DECORATORS = {"property", "staticmethod", "classmethod"}
+
+
+def _has_framework_decorator(decorators_json) -> bool:
+    if not decorators_json:
+        return False
+    import json as _json
+    try:
+        decs = _json.loads(decorators_json)
+    except Exception:
+        return False
+    return any(d.split("(")[0].split(".")[-1] not in _STRUCTURAL_DECORATORS for d in decs)
+
+
 def _get_abc_gap_set(conn) -> set:
     """Return set of stub method names on ABC classes with no concrete override."""
     import json as _json
@@ -1129,11 +1143,11 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
     chain_middle = len(middle_set)
     chain_head   = len(head_set)
 
-    # Shape 4: Orphaned-impl
+    # Shape 4: Orphaned-impl (exclude framework-decorated entry points)
     total_non_stub = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 0").fetchone()[0]
-    orphaned_impl = conn.execute(
+    orphaned_rows = conn.execute(
         """
-        SELECT COUNT(DISTINCT f.name)
+        SELECT DISTINCT f.name, f.file_path, f.decorators_json
         FROM functions f
         WHERE f.is_stub = 0
           AND NOT EXISTS (
@@ -1143,7 +1157,8 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
               AND caller_fn.is_stub = 0
           )
         """
-    ).fetchone()[0]
+    ).fetchall()
+    orphaned_impl = sum(1 for _, _, dj in orphaned_rows if not _has_framework_decorator(dj))
 
     # Shape 5a: Entry-point stubs — disconnected by graph but likely externally triggered
     all_disconnected = conn.execute(
@@ -1404,12 +1419,13 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
     limit = int(args.get("limit", 30))
     conn = oracle.conn
 
-    rows = conn.execute(
+    raw_rows = conn.execute(
         """
         SELECT f.name, f.file_path, f.line_number,
                COUNT(ge.caller) AS total_callers,
                SUM(CASE WHEN caller_fn.is_stub = 1 THEN 1 ELSE 0 END) AS stub_callers,
-               SUM(CASE WHEN caller_fn.name IS NULL THEN 1 ELSE 0 END) AS missing_callers
+               SUM(CASE WHEN caller_fn.name IS NULL THEN 1 ELSE 0 END) AS missing_callers,
+               f.decorators_json
         FROM functions f
         LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
         LEFT JOIN functions caller_fn ON caller_fn.name = ge.caller
@@ -1423,6 +1439,8 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
         (limit,),
     ).fetchall()
 
+    rows = [r for r in raw_rows if not _has_framework_decorator(r[6])]
+
     if not rows:
         return "No orphaned implementations found."
 
@@ -1433,7 +1451,7 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
         "",
     ]
     prev_file = None
-    for name, file_path, line_no, total_callers, stub_callers, missing_callers in rows:
+    for name, file_path, line_no, total_callers, stub_callers, missing_callers, _decs in rows:
         fp = (file_path or "").replace("\\", "/")
         fp_short = fp.split("/")[-1]
         if fp_short != prev_file:
