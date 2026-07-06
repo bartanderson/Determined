@@ -7,6 +7,13 @@ Read `SESSION_STATE.md` at the repo root. It is the handoff artifact from the
 prior session: what was done, what is next, what is pinned. Do not answer
 "what's next" or make any plan until you have read it.
 
+**Step 1a -- Drift check (RESUME verification)**
+After reading SESSION_STATE.md, run `git log --oneline -3` and compare the
+"Written at commit" SHA in the header against current HEAD. If they differ,
+run `git diff <handoff-SHA>..HEAD --stat` and report drift explicitly:
+"Handoff said X, repo now shows Y." Resolve [?]-tagged claims if cheap.
+If SESSION_STATE.md has no SHA (older format), skip this step.
+
 **Step 2 -- Read TRACKER.md**
 Read `docs/TRACKER.md` for the current open items and dashboard status.
 Do not conflate with SESSION_STATE.md -- TRACKER.md is the authoritative
@@ -102,13 +109,64 @@ Common mistakes:
 - Run regression tests before committing: `pytest tests/regression/`
 - All 298+ tests must pass. A commit that breaks tests is not done.
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
-  in full with current status and next steps. This is mandatory.
+  in full with current status and next steps. This is mandatory. Follow the
+  SESSION END PROTOCOL below.
 - At session end (or when Bart says "ready for new session"): scan HISTORY.md,
   add any non-obvious decisions or lessons from this session, prune stale entries.
   Do this BEFORE writing SESSION_STATE.md so the history is current.
 - Proactive context flagging: when a session is running long (10+ tool calls,
   extended multi-step work), flag it -- "Session is getting long, want to wrap
   and hand off?" Let Bart switch sessions before compaction hits.
+- Degradation detection: if you notice you contradicted an earlier decision,
+  re-derived something already settled, or misremembered a file, say ONE sentence:
+  "This session may be degrading (<specific symptom>). Want to wrap and hand off?"
+  Then stop. Never write SESSION_STATE.md without confirmation.
+
+## SESSION END PROTOCOL
+
+Run this before writing SESSION_STATE.md. This runs when memory is least
+reliable -- nothing goes in the file from memory alone.
+
+**Step 1 -- Archive the old handoff**
+If SESSION_STATE.md exists: move it to `.handoffs/<YYYYMMDD-HHMMSS>-session-state.md`
+(create `.handoffs/` if needed). Carry forward any still-relevant failed
+approaches or traps -- re-tagged [?] unless re-verified in Step 2.
+
+**Step 2 -- Verify before writing (anti-hallucination protocol)**
+A claim may be tagged [V] only if confirmed by a command or file read during
+THIS session end run. What you merely remember is [?].
+
+- Run `git log --oneline -5` and `git diff --stat HEAD~1` to reconstruct
+  what actually changed vs. what you believe changed.
+- Re-read any file the handoff will mention by name or line number. A quoted
+  line must come from a fresh read, not recall. File not where memory says?
+  Caught hallucination -- correct it.
+- If `.py` files changed this session: re-run `pytest tests/regression/` and
+  write "tests pass" only from output produced in this run. Otherwise tag [?].
+- Can't verify it and don't clearly remember it? Omit it. Honest gap beats
+  confident fiction.
+- If many claims end up [?], add at the top: "Low-confidence handoff -- verify aggressively."
+
+**Step 3 -- Write SESSION_STATE.md**
+First line of the file must be:
+`Written at commit: <SHA from git log>`
+
+Tag every factual claim [V] (verified this run) or [?] (recalled from memory).
+Length: target <=150 lines; hard ceiling 250 lines. Over budget: drop narrative
+prose first, compress decisions to one line each. Never cut: failed approaches,
+known traps, verified state, or next steps.
+
+Quality gate for Next Steps entries: "Would a fresh session know exactly what
+to run first without asking?" If not, add the file, the command, or the reason.
+
+**Rationalizations -- these mean STOP and tag [?] instead:**
+- "I remember the session clearly, no need to re-verify" -- verify or tag [?]
+- "Tests were passing earlier" -- earlier is not now; re-run or tag [?]
+- "Context is nearly full, skip verification" -- cut prose instead; verification is non-negotiable
+- "The old SESSION_STATE is outdated, just delete it" -- archive it; its traps may be the only record
+- "I'll pad thin sections so the file looks complete" -- write "not started, no design chosen" honestly
+
+---
 
 ## UI verify rule (standing rule, added session 47)
 

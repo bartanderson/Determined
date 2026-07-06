@@ -13,3 +13,4 @@ build/
 .env
 .determined_session.json
 .recall/
+.handoffs/
