@@ -539,7 +539,9 @@ def handle_ingest(data):
             try:
                 from determined.agent.agent_tools import ingest_design_docs
                 socketio.emit("ingest_status", {"message": "Scanning for design docs…"}, to=sid)
-                ingest_design_docs(_assessor, {})
+                design_result = ingest_design_docs(_assessor, {})
+                summary = design_result.splitlines()[0] if design_result else "Design docs: nothing found"
+                socketio.emit("ingest_status", {"message": summary}, to=sid)
             except Exception as design_exc:
                 socketio.emit("ingest_status", {"message": f"Design doc scan skipped: {design_exc}"}, to=sid)
             socketio.emit("ingest_done", {
