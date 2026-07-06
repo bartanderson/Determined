@@ -342,11 +342,19 @@ def collect_symbol_context(conn: sqlite3.Connection, symbol: str) -> str:
         except Exception:
             pass
 
-    callers = [r[0].rsplit(".", 1)[-1] for r in conn.execute(
+    _NOISE_PREFIXES = ("flask.", "builtins.", "os.", "sys.", "re.", "json.", "typing.")
+
+    def _format_edge(name: str) -> str:
+        # Keep module prefix for project-local symbols; strip for external noise.
+        if any(name.startswith(p) for p in _NOISE_PREFIXES):
+            return name.rsplit(".", 1)[-1]
+        return name
+
+    callers = [_format_edge(r[0]) for r in conn.execute(
         "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? LIMIT 8", (symbol,)
     ).fetchall()]
-    callees = [r[0].rsplit(".", 1)[-1] for r in conn.execute(
-        "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? LIMIT 8", (symbol,)
+    callees = [_format_edge(r[0]) for r in conn.execute(
+        "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? LIMIT 16", (symbol,)
     ).fetchall()]
 
     parts = [f"function: {symbol}"]
