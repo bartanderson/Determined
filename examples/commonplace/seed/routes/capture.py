@@ -9,6 +9,7 @@ direct-call frontier Determined shows on first ingest of this project.
 """
 from flask import Blueprint, request, jsonify, render_template_string
 from services import extractor
+from storage import queries
 
 capture_bp = Blueprint("capture", __name__)
 
@@ -41,5 +42,5 @@ def capture():
     except Exception as exc:
         return render_template_string(_FORM, error=str(exc)), 400
 
-    # Storage not wired yet -- next step is adding queries.insert_entry.
+    queries.insert_entry(entry)
     return render_template_string(_FORM, entry=entry)

@@ -229,13 +229,11 @@ def apply_file_delta(
     2. Run persist_file_analysis -- DELETE-then-INSERT for files/functions/
        classes/imports/behavioral_contracts/mutations/symbol_references.
     3. Delete stale old symbol rows.
-    4. Rebuild outbound graph edges via _persist_graph_edges (scoped delete).
+    4. Rebuild outbound graph edges (scoped delete + insert).
     """
-    from determined.persistence.persistence_engine import (
-        persist_file_analysis,
-        _persist_graph_edges,
-    )
+    from determined.persistence.persistence_engine import persist_file_analysis
     from determined.graph.graph_builder import GraphBuilder
+    from determined.identity.edge_identity import edge_identity
 
     # 1. New symbol rows coexist with old (within this transaction)
     _insert_new_symbols(conn, delta)
@@ -246,7 +244,14 @@ def apply_file_delta(
     # 3. Now safe to remove superseded symbol rows
     _delete_stale_symbols(conn, delta)
 
-    # 4. Rebuild outbound graph edges for this file
+    # 4. Rebuild outbound graph edges for this file.
+    # Always do a scoped delete by file_path before inserting new edges, so that
+    # files with zero outgoing calls (stubs) don't accidentally trigger the
+    # legacy full-delete fallback in _persist_graph_edges.
+    conn.execute(
+        "DELETE FROM graph_edges WHERE caller_file = ?",
+        (delta.file_path,),
+    )
     builder = GraphBuilder()
     for ref in getattr(new_analysis, "symbol_references", []):
         builder.add_reference(
@@ -258,7 +263,17 @@ def apply_file_delta(
             resolved=getattr(ref, "resolved", False),
         )
     graph = builder.build()
-    _persist_graph_edges(conn, graph)
+    # Pass a sentinel-file graph so _persist_graph_edges skips its own delete.
+    # We already deleted; just insert whatever edges the builder produced.
+    for edge in graph.edges:
+        source_id, target_id = edge_identity(edge.caller, edge.callee)
+        conn.execute("""
+        INSERT INTO graph_edges (source_id, target_id, caller, callee,
+                                 line_number, caller_file, resolved)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (source_id, target_id, edge.caller, edge.callee,
+              getattr(edge, "line_number", None), edge.caller_file,
+              1 if getattr(edge, "resolved", False) else 0))
 
     conn.commit()
 
