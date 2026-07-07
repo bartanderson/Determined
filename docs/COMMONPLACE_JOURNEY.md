@@ -184,6 +184,62 @@ should drop to 0.
 
 ---
 
+## WALK 2 - Step 2: Implement EnrichmentProcessor, close ABC gap
+
+### Action taken (2026-07-07, session 110)
+
+Implemented `can_handle` and `process` on `EnrichmentProcessor` in
+`examples/commonplace/seed/services/processor.py`.
+
+- `can_handle`: returns True only when `self.llm_endpoint` is set and entry has content.
+  Correct guard -- enrichment requires both a working endpoint and something to enrich.
+- `process`: POSTs entry content/title to `self.llm_endpoint`, expects `{"tags": [...],
+  "related": [...]}` response. Graceful fallback: on any exception (endpoint down, timeout,
+  bad JSON) sets tags/related to empty lists. No crash path -- enrichment is best-effort.
+
+Re-ingested via `reingest_file` directly from Python CLI (UI Re-analyze does not use
+reingest_file -- uses background thread instead, known limitation from SESSION_STATE).
+
+### Output after reingest
+
+```
+detect_topology:
+  Total stubs: 0  |  Total implemented: 29
+
+  ABC-interface:   0  (was 2 -- EnrichmentProcessor gap closed)
+  Orphaned-impl:   2  (semantic_search, init_db -- unchanged, expected)
+  All others:      0
+
+  Action queues:
+    Implement now:  (nothing)
+    Write callers:  orphaned-impl (2)
+
+find_abc_gaps:
+  All ABC stub methods have at least one non-stub override in the corpus.
+```
+
+### Reasoning
+
+**Why ABC-interface dropped to 0?**
+`EnrichmentProcessor.can_handle` and `EnrichmentProcessor.process` are now concrete
+overrides. `find_abc_gaps` checks per-subclass via `methods_json` -- both methods now
+appear in EnrichmentProcessor's method list as non-stubs. The gap is closed.
+
+**Why implemented count went from 27 → 29?**
+The two new methods (`can_handle`, `process`) are concrete implementations. They add
+to the implemented count. Correct arithmetic.
+
+**Why orphaned-impl stays at 2?**
+`semantic_search` and `init_db` still have no callers in the corpus. This is the
+next frontier: Step 3 wires callers for these two symbols.
+
+**What to do next (Step 3):**
+Wire `init_db` into `create_app` in `app.py` and add a search route that calls
+`semantic_search` in the routes file. Re-ingest both files. Orphaned-impl count
+should drop toward 0.
+
+---
+
 ## FINDINGS TO FIX (in order of journey impact)
 
 F1. [DONE] Frontier mode resets to Direct on tab open.

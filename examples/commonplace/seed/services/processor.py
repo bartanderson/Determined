@@ -60,6 +60,35 @@ class EnrichmentProcessor(EntryProcessor):
         self.llm_endpoint = llm_endpoint
         self.all_entries = all_entries or []
 
+    def can_handle(self, entry: dict) -> bool:
+        """Only enrich entries that have content and a configured LLM endpoint."""
+        return bool(self.llm_endpoint and entry.get("content"))
+
+    def process(self, entry: dict) -> dict:
+        """Attach suggested tags and related entry IDs via LLM call (stubbed HTTP)."""
+        import urllib.request
+        import json
+        entry = dict(entry)
+        payload = json.dumps({
+            "content": entry.get("content", ""),
+            "title": entry.get("title", ""),
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                self.llm_endpoint,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.loads(resp.read())
+            entry["tags"] = result.get("tags", [])
+            entry["related"] = result.get("related", [])
+        except Exception:
+            entry.setdefault("tags", [])
+            entry.setdefault("related", [])
+        return entry
+
 
 def run_processors(entry: dict, processors=None) -> dict:
     """Run entry through all applicable processors in order."""
