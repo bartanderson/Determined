@@ -115,6 +115,75 @@ examples/commonplace/seed/. Does the editor resolve that correctly?
 
 ---
 
+---
+
+## WALK 2 - Corrected seed, Step 1: Orient
+
+### State at walk start (2026-07-07, session 109)
+
+Seed corpus was corrected back to its intended state:
+- `EnrichmentProcessor.process` and `EnrichmentProcessor.can_handle` removed
+  (they had been added, making it a false-complete; restored as true ABC gap)
+- Two Determined bugs fixed before this walk produced clean output:
+  1. `_is_stub` was marking `@abstractmethod` declarations as stubs -- fixed to
+     exclude them (they are interface definitions, not actionable gaps)
+  2. `find_abc_gaps` / `_get_abc_gap_set` checked globally for any non-stub with
+     the same name -- fixed to check per-subclass via `methods_json`
+
+### Expected output at seed state (verified)
+
+```
+CORPUS TOPOLOGY
+  Total stubs: 0  |  Total implemented: 27
+
+  Direct-call:     0  (no stubs called by functional code)
+  ABC-interface:   2  (EnrichmentProcessor missing can_handle + process)
+  Orphaned-impl:   2  (semantic_search, init_db -- no callers yet)
+  All others:      0
+
+  Action queues:
+    Implement now:  abc-interface (2)
+    Write callers:  orphaned-impl (2)
+```
+
+```
+find_abc_gaps:
+  EnrichmentProcessor  (inherits EntryProcessor)
+    can_handle  [not overridden]
+    process  [not overridden]
+```
+
+### Reasoning (what the output teaches)
+
+**Why 0 direct-call stubs?**
+The extractor layer (`extract_metadata`, `extract_full_content`) and storage layer
+(`insert_entry`, `get_entries`) are already implemented. The seed is past the
+minimal stub state described in the spec -- the extractor was filled in. This
+is correct: the journey picks up from where the code actually is.
+
+**Why ABC-interface: 2?**
+`EnrichmentProcessor` inherits `EntryProcessor` (an ABC) but provides no
+`process()` or `can_handle()` override. This is the designed gap -- the LLM
+enrichment pass that wires to llama-server. Determined surfaces this as the
+primary frontier: implement `EnrichmentProcessor` to close it.
+
+**Why orphaned-impl: 2?**
+`semantic_search` (searcher.py) and `init_db` (db.py) are implemented but have
+no callers in the corpus. `init_db` is called by `create_app` implicitly via
+Flask wiring (external caller, invisible to static analysis). `semantic_search`
+is a future feature -- not yet wired to any route. Both are anticipatory: the
+code exists waiting for callers to be written.
+
+**What to do next (Step 2):**
+`find_abc_gaps` points at `EnrichmentProcessor`. Run `symbol_context` on
+`EnrichmentProcessor` to understand its interface. Then implement `can_handle`
+and `process` -- `process` calls `tagger.suggest_tags` (already stub-tolerant,
+returns [] when endpoint=None) and `linker.find_connections` (already
+implemented with keyword overlap). Re-ingest processor.py. ABC-interface count
+should drop to 0.
+
+---
+
 ## FINDINGS TO FIX (in order of journey impact)
 
 F1. [DONE] Frontier mode resets to Direct on tab open.
