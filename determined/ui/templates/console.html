@@ -110,6 +110,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     </div>
     <span class="model-label">{{ model_name }}</span>
     <span class="queue-badge" id="queue-badge" style="display:none" title="Pending next_up items"></span>
+    <div id="design-doc-notice" style="display:none;font-size:11px;color:var(--orange);padding:2px 8px;max-width:320px" title="Run ingest_design_docs to extract rules from these files"><span id="design-doc-notice-msg"></span> <button onclick="this.parentElement.style.display='none'" style="border:none;background:none;cursor:pointer;color:var(--text2);font-size:10px">✕</button></div>
   </div>
 
   <!-- ── icon rail ── -->
@@ -618,6 +619,13 @@ socket.on("corpus_ready", data => {
     _startupFiredFor = data.db_path;
     bagFetch();
     if (data.top_entry) ctTrace(data.top_entry);
+    if (data.design_doc_hint) {
+      const h = data.design_doc_hint;
+      const notice = document.getElementById("design-doc-notice");
+      const msg = document.getElementById("design-doc-notice-msg");
+      msg.textContent = `${h.count} design doc${h.count > 1 ? "s" : ""} found but not ingested: ${h.paths.join(", ")}. Run ingest_design_docs to extract rules.`;
+      notice.style.display = "";
+    }
   }
 });
 

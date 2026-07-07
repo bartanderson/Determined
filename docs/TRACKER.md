@@ -160,6 +160,79 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM19. **[FILED 2026-07-07] Semantic Reconciliation Arc: duplicate detection, intent differencing, primitive discovery**
+
+   Determined has shifted from static analyzer toward semantic maintenance system. This arc
+   adds three reconciliation passes grounded in the call graph and embedding infrastructure
+   that already exists.
+
+   **Core design constraint:** every finding carries a reason classification, not just a
+   similarity score. Goal is "explained differences" not "eliminated differences." The ideal
+   output is not "these were merged" but "these differ by 7% due to platform-specific
+   requirements -- divergence is intentional and documented."
+
+   **Pass 1 -- Duplicate Detection (easy, do first)**
+   Embed all function docstrings + names via existing all-MiniLM-L6-v2 infrastructure.
+   Cluster by cosine similarity above threshold (0.85+). Surface groups of near-identical
+   symbols. Output: candidate pairs with similarity score. No LLM needed.
+
+   **Pass 2 -- Intent Differencing (medium, depends on Pass 1)**
+   For each candidate pair from Pass 1: feed both docstrings + call graphs + file context
+   to Qwen3-8B. Classify divergence reason from a fixed taxonomy:
+   - accidental copy
+   - historical evolution
+   - performance optimization
+   - platform-specific behavior
+   - security reason
+   - genuinely different abstraction
+   Store classification as knowledge_artifact (kind=reconciliation_finding).
+
+   **Pass 3 -- Primitive Discovery (novel, highest value)**
+   Mine the call graph for repeated compositions: sequences A→B→C→D that appear across
+   multiple independent call chains. A composition appearing N times is evidence that a
+   missing abstraction exists. Surface: "this 4-step pattern appears 12 times -- no shared
+   primitive exists." Store as gap proposal in workflow_items.
+
+   **Pass 4 -- Canonicalization (defer)**
+   Propose structural consolidation (BaseParser hierarchy etc.). Downstream of 1+2+3
+   being proven useful. High noise risk if run before evidence is established.
+
+   **Pass 5 -- Architectural Drift (needs infrastructure)**
+   Compare current dependency graph against a point-in-time snapshot to detect drift
+   from intended architecture. Requires DB snapshot mechanism -- file as separate item
+   when 1-3 are shipped.
+
+   **Tractability order:** Pass 1 (one session) → Pass 2 (one session) → Pass 3 (two sessions).
+   Passes 4 and 5 get their own items after the first three prove out.
+
+   **What to build on:** `determined/oracle/embedding_model.py` (embed_text, cosine_similarity),
+   `graph_edges` table, `knowledge_artifacts` (kind=reconciliation_finding),
+   `workflow_items` (kind=backlog, provenance=llm-proposed).
+
+---
+
+RM18. **[ACTIVE] Act on RM17 gaps**
+
+   Priority order from RM17 findings: Gap 2 → Gap 10 → Gap 1.
+
+   **Gap 2 [DONE 2026-07-07]:** Flask @route decorator = entry point heuristic.
+   `parse_ast._classify_role` now detects `@<name>.route(` pattern, classifies
+   file as `entry_point`. Note: orphan count/list filtering via `_has_framework_decorator`
+   was already in place. 9 regression tests added. Committed 0d9e0cc.
+
+   **Gap 10 [DONE 2026-07-07]:** Auto-discover design docs on corpus load.
+   `_check_design_doc_hint()` runs on `load_db`, scans for markdown with
+   constraint_score >= 0.3 not yet ingested as design_notes, writes count+paths
+   to `project_meta`. `_design_doc_hint()` reads it; `_emit_corpus_ready` includes
+   it in payload. Frontend shows orange notice in header with dismiss button.
+
+   **Gap 1 [LATER]:** Structured layer-rule violation detection.
+   Needs a structured import-path rule type in knowledge_artifacts
+   (from_layer, to_layer, direction=forbidden). The import graph is already tracked --
+   a direct query works once rules have structured fields. Medium effort.
+
+---
+
 RM17. **[DONE 2026-07-05] Two-pass cold analysis of Commonplace: find tool blind spots**
 
    Findings filed in `docs/RM17_findings.md`. 10 gaps ranked. Top findings:

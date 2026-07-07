@@ -227,6 +227,59 @@ def _queue_count() -> int:
         return 0
 
 
+def _check_design_doc_hint():
+    """Scan for markdown docs with constraint density not yet ingested; write count to project_meta."""
+    if not _oracle:
+        return
+    try:
+        import json
+        from determined.agent.doc_extractor import discover_docs
+        root = _oracle.get_project_root()
+        if not root:
+            return
+        docs = [d for d in discover_docs(root) if d.constraint_score >= 0.3]
+        if not docs:
+            _oracle.conn.execute("DELETE FROM project_meta WHERE key='design_doc_hint'")
+            _oracle.conn.commit()
+            return
+        # Count how many are already ingested (have any design_note artifacts for their path)
+        uningested = []
+        for d in docs:
+            row = _oracle.conn.execute(
+                "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note' AND subject LIKE ?",
+                (f"%{d.rel_path}%",)
+            ).fetchone()
+            if row[0] == 0:
+                uningested.append(d.rel_path)
+        if uningested:
+            hint = json.dumps({"count": len(uningested), "paths": uningested[:5]})
+        else:
+            hint = None
+        if hint:
+            _oracle.conn.execute(
+                "INSERT OR REPLACE INTO project_meta (key, value) VALUES ('design_doc_hint', ?)", (hint,)
+            )
+        else:
+            _oracle.conn.execute("DELETE FROM project_meta WHERE key='design_doc_hint'")
+        _oracle.conn.commit()
+    except Exception:
+        pass
+
+
+def _design_doc_hint():
+    """Read stored design_doc_hint from project_meta; return parsed dict or None."""
+    if not _oracle:
+        return None
+    try:
+        import json
+        row = _oracle.conn.execute(
+            "SELECT value FROM project_meta WHERE key='design_doc_hint'"
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+    except Exception:
+        return None
+
+
 def _emit_corpus_ready(switched=False):
     if _oracle:
         s = _corpus_status()
@@ -246,6 +299,7 @@ def _emit_corpus_ready(switched=False):
             "stubs_list": m.get("stubs", []),
             "gap_summary": _gap_summary_data(),
             "queue_count": _queue_count(),
+            "design_doc_hint": _design_doc_hint(),
         })
 
 
@@ -1385,6 +1439,7 @@ def handle_load_db(data):
         emit("error", {"message": f"Not a valid Determined corpus: {path}"}); return
     try:
         init(path)
+        _check_design_doc_hint()
         _emit_corpus_ready(switched=True)
         # Auto-orient on corpus load
         import threading
