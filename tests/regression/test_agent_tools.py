@@ -526,7 +526,9 @@ def test_dispatch_all_tools_registered():
         "find_duplicates",
         "list_reconciliation_findings",
         "classify_duplicates",
+        "find_primitive_gaps",
     }
+
     assert set(TOOLS.keys()) == expected
 
 

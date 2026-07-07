@@ -701,6 +701,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "After find_duplicates has stored candidate pairs and you want to understand WHY each pair differs — not just that they are similar.",
         "category": "knowledge",
     },
+    "find_primitive_gaps": {
+        "purpose": "Mine the call graph for callee co-occurrence patterns: pairs of functions called together by multiple independent callers. A pair (A, B) appearing in N callers with no shared primitive wrapping both is evidence of a missing abstraction. No LLM required — pure call graph analysis.",
+        "args": {
+            "min_callers": "(optional) minimum distinct callers sharing the pair, default 3",
+            "limit":       "(optional) max patterns to surface, default 30",
+            "clear":       "(optional) bool, delete existing primitive_gap artifacts first",
+        },
+        "output": "ranked list of callee pairs with caller count and sample callers",
+        "feeds": ["symbol_context", "gap_analysis"],
+        "use_when": "Looking for missing abstractions — repeated compositions that appear across the codebase but have no shared helper encapsulating them.",
+        "category": "knowledge",
+    },
 
     # ── FILE EDITING (RM11) ────────────────────────────────────────
     "edit_file": {

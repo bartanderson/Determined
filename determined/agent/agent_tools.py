@@ -4639,6 +4639,116 @@ def classify_duplicates(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_primitive_gaps(assessor: "Assessor", args: dict) -> str:
+    """
+    find_primitive_gaps([min_callers][, limit][, clear]) - mine the call graph for
+    repeated callee co-occurrences: pairs of functions that are called together by
+    multiple independent callers. A pair (A, B) appearing in N callers with no shared
+    helper that wraps both is evidence of a missing primitive.
+
+    Args:
+        min_callers - minimum distinct callers sharing the pair (default 3)
+        limit       - max pairs to surface (default 30)
+        clear       - bool, delete existing primitive_gap artifacts first
+    """
+    import json as _json
+    import builtins as _bi
+    from determined.intent.knowledge_artifact import add_artifact, list_artifacts
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+    min_callers = int(args.get("min_callers", 3))
+    limit = int(args.get("limit", 30))
+    clear = args.get("clear", False)
+
+    if clear:
+        conn.execute("DELETE FROM knowledge_artifacts WHERE kind = 'primitive_gap'")
+        conn.commit()
+
+    builtin_names = set(dir(_bi))
+
+    # For each caller, collect its unique project callees (exclude builtins/externals)
+    rows = conn.execute(
+        """
+        SELECT DISTINCT caller, callee FROM graph_edges
+        WHERE callee NOT LIKE '%.%'
+        ORDER BY caller
+        """
+    ).fetchall()
+
+    # Group callees by caller
+    caller_to_callees: dict[str, list[str]] = {}
+    for caller, callee in rows:
+        if callee in builtin_names:
+            continue
+        caller_to_callees.setdefault(caller, []).append(callee)
+
+    # Count how many distinct callers share each (callee_a, callee_b) pair
+    pair_callers: dict[tuple[str, str], list[str]] = {}
+    for caller, callees in caller_to_callees.items():
+        uniq = sorted(set(callees))
+        for i in range(len(uniq)):
+            for j in range(i + 1, len(uniq)):
+                pair = (uniq[i], uniq[j])
+                pair_callers.setdefault(pair, []).append(caller)
+
+    # Filter to pairs meeting min_callers threshold
+    candidates = [
+        (len(callers), pair, callers)
+        for pair, callers in pair_callers.items()
+        if len(callers) >= min_callers
+    ]
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    candidates = candidates[:limit]
+
+    if not candidates:
+        return (
+            f"find_primitive_gaps: no callee pairs found with >= {min_callers} "
+            f"shared callers. Try lowering min_callers."
+        )
+
+    # Load existing subjects to skip already-stored pairs
+    existing: set[str] = set()
+    for art in list_artifacts(conn, kind="primitive_gap"):
+        existing.add(art["subject"])
+
+    stored = 0
+    skipped = 0
+    lines = [
+        f"find_primitive_gaps: {len(caller_to_callees)} callers scanned, "
+        f"min_callers={min_callers}",
+        f"  {len(candidates)} patterns surfaced",
+        "",
+        "Top callee co-occurrence patterns (potential missing primitives):",
+    ]
+
+    for count, (a, b), callers in candidates:
+        subject = f"primitive_gap::{a}::{b}"
+        caller_sample = callers[:5]
+        content = _json.dumps({
+            "callee_a": a,
+            "callee_b": b,
+            "caller_count": count,
+            "callers_sample": caller_sample,
+        })
+        if subject not in existing:
+            add_artifact(conn, subject, "primitive_gap", content, provenance="ai-generated")
+            existing.add(subject)
+            stored += 1
+        else:
+            skipped += 1
+
+        sample_str = ", ".join(caller_sample)
+        if len(callers) > 5:
+            sample_str += f" (+{len(callers) - 5} more)"
+        lines.append(f"  [{count} callers] {a}  +  {b}")
+        lines.append(f"    called together by: {sample_str}")
+
+    lines.append("")
+    lines.append(f"  {stored} new patterns stored, {skipped} already recorded")
+    return "\n".join(lines)
+
+
 def list_reconciliation_findings(assessor: "Assessor", args: dict) -> str:
     """
     list_reconciliation_findings([min_score][, limit]) - show stored duplicate pairs.
@@ -4775,6 +4885,7 @@ TOOLS = {
     "find_duplicates":                  (find_duplicates,                  "assessor"),
     "list_reconciliation_findings":     (list_reconciliation_findings,     "assessor"),
     "classify_duplicates":              (classify_duplicates,              "assessor"),
+    "find_primitive_gaps":              (find_primitive_gaps,              "assessor"),
 }
 
 

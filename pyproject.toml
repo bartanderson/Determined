@@ -41,3 +41,8 @@ include = ["determined*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not slow and not live_llm'"
+markers = [
+    "slow: calls real LLM or embedding model; skipped by default (run with -m slow)",
+    "live_llm: alias for slow; skipped by default",
+]
