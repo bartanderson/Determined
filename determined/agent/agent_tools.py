@@ -1040,7 +1040,7 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     if not abc_classes:
         return "No ABC/Abstract base classes found in corpus."
 
-    # 2. For each ABC class, collect stub methods
+    # 2. For each ABC class, collect abstract methods (via @abstractmethod decorator)
     abstract_stubs: list[tuple[str, str, str]] = []  # (method_name, class_name, file_path)
     for cls_name, methods_json, file_path in abc_classes:
         try:
@@ -1049,44 +1049,74 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
             continue
         for method in methods:
             row = conn.execute(
-                "SELECT is_stub FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                "SELECT decorators_json FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
                 (method, file_path),
             ).fetchone()
-            if row and row[0]:
-                abstract_stubs.append((method, cls_name, file_path))
+            if row:
+                try:
+                    decs = _json.loads(row[0] or "[]")
+                except Exception:
+                    decs = []
+                if any("abstractmethod" in d for d in decs):
+                    abstract_stubs.append((method, cls_name, file_path))
 
     if not abstract_stubs:
-        return "No stub methods found on ABC classes."
+        return "No abstract methods found on ABC classes."
 
-    # 3. For each abstract stub, check if a non-stub implementation exists anywhere
-    unimplemented: list[tuple[str, str, str]] = []
-    for method, cls_name, file_path in abstract_stubs:
-        non_stub = conn.execute(
-            "SELECT COUNT(*) FROM functions WHERE name = ? AND is_stub = 0",
-            (method,),
-        ).fetchone()[0]
-        if non_stub == 0:
-            unimplemented.append((method, cls_name, file_path))
+    # 3. Find concrete subclasses of each ABC class
+    #    and check which are missing overrides per-method.
+    from collections import defaultdict
 
-    if not unimplemented:
+    # Map abc class name -> set of abstract method names
+    abc_method_map: dict[str, set] = defaultdict(set)
+    for method, cls_name, _ in abstract_stubs:
+        abc_method_map[cls_name].add(method)
+
+    # Find all concrete subclasses (classes whose base_classes_json mentions an ABC class)
+    abc_names = list(abc_method_map.keys())
+    concrete_gaps: list[tuple[str, str, list[str]]] = []  # (subclass, abc_base, missing_methods)
+
+    all_classes = conn.execute(
+        "SELECT name, base_classes_json, file_path FROM classes"
+    ).fetchall()
+
+    for sub_name, bases_json, sub_file in all_classes:
+        try:
+            bases = _json.loads(bases_json or "[]")
+        except Exception:
+            bases = []
+        # Also fetch this subclass's own method list
+        sub_methods_row = conn.execute(
+            "SELECT methods_json FROM classes WHERE name = ? AND file_path = ? LIMIT 1",
+            (sub_name, sub_file),
+        ).fetchone()
+        try:
+            sub_methods = set(_json.loads(sub_methods_row[0] or "[]")) if sub_methods_row else set()
+        except Exception:
+            sub_methods = set()
+
+        for abc_name in abc_names:
+            if abc_name not in bases:
+                continue
+            # Check each abstract method against this subclass's own method list
+            missing = []
+            for method in sorted(abc_method_map[abc_name]):
+                if method not in sub_methods:
+                    missing.append(method)
+            if missing:
+                concrete_gaps.append((sub_name, abc_name, missing))
+
+    if not concrete_gaps:
         return "All ABC stub methods have at least one non-stub override in the corpus."
 
-    # Group by class
-    from collections import defaultdict
-    by_class: dict = defaultdict(list)
-    for method, cls_name, _ in unimplemented:
-        by_class[cls_name].append(method)
-
     lines = [
-        f"ABC interface gaps ({len(unimplemented)} unimplemented abstract methods across "
-        f"{len(by_class)} classes):",
-        "(stub methods on ABC classes with no non-stub override anywhere in corpus)",
+        f"ABC interface gaps ({len(concrete_gaps)} concrete subclass(es) with missing overrides):",
         "",
     ]
-    for cls_name, methods in sorted(by_class.items()):
-        lines.append(f"  {cls_name}:")
-        for m in sorted(methods):
-            lines.append(f"    {m}")
+    for sub_name, abc_name, missing in sorted(concrete_gaps):
+        lines.append(f"  {sub_name}  (inherits {abc_name})")
+        for m in missing:
+            lines.append(f"    {m}  [not overridden]")
     return "\n".join(lines)
 
 
@@ -1125,33 +1155,56 @@ def _has_framework_decorator(decorators_json) -> bool:
 
 
 def _get_abc_gap_set(conn) -> set:
-    """Return set of stub method names on ABC classes with no concrete override."""
+    """Return set of abstract method names that have at least one concrete subclass
+    missing an override. Uses per-subclass methods_json check, not global name search."""
     import json as _json
+
     abc_classes = conn.execute(
         "SELECT name, methods_json, file_path FROM classes "
         "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
     ).fetchall()
-    gaps: set[str] = set()
-    for _cls_name, methods_json, file_path in abc_classes:
+
+    # Build map of abc_name -> set of abstract method names (via @abstractmethod decorator)
+    abc_method_map: dict[str, set] = {}
+    for cls_name, methods_json, file_path in abc_classes:
         try:
             methods = _json.loads(methods_json or "[]")
         except Exception:
             continue
+        abstract = set()
         for method in methods:
             row = conn.execute(
-                "SELECT is_stub FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                "SELECT decorators_json FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
                 (method, file_path),
             ).fetchone()
-            if not (row and row[0]):
+            if row:
+                try:
+                    decs = _json.loads(row[0] or "[]")
+                except Exception:
+                    decs = []
+                if any("abstractmethod" in d for d in decs):
+                    abstract.add(method)
+        if abstract:
+            abc_method_map[cls_name] = abstract
+
+    if not abc_method_map:
+        return set()
+
+    # Find concrete subclasses and check per-subclass for missing overrides
+    gaps: set[str] = set()
+    all_classes = conn.execute("SELECT name, base_classes_json, methods_json, file_path FROM classes").fetchall()
+    for sub_name, bases_json, sub_methods_json, sub_file in all_classes:
+        try:
+            bases = _json.loads(bases_json or "[]")
+            sub_methods = set(_json.loads(sub_methods_json or "[]"))
+        except Exception:
+            continue
+        for abc_name, abstract_methods in abc_method_map.items():
+            if abc_name not in bases:
                 continue
-            # Check for any non-stub with same name -- including same-file subclasses.
-            # Exclude the abstract stub itself by requiring is_stub=0.
-            override = conn.execute(
-                "SELECT 1 FROM functions WHERE name = ? AND is_stub = 0 LIMIT 1",
-                (method,),
-            ).fetchone()
-            if not override:
-                gaps.add(method)
+            for method in abstract_methods:
+                if method not in sub_methods:
+                    gaps.add(method)
     return gaps
 
 

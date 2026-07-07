@@ -112,7 +112,12 @@ def _is_trivial_return(node: ast.Return) -> bool:
 
 
 def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True if the function body contains only stub-like statements."""
+    """True if the function body contains only stub-like statements.
+    Abstract method declarations are never stubs -- they are interface definitions."""
+    for dec in node.decorator_list:
+        dec_str = getattr(dec, "id", "") or getattr(dec, "attr", "")
+        if dec_str == "abstractmethod":
+            return False
     body = node.body
     # skip leading docstring
     start = 1 if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)) else 0
