@@ -1,3 +1,3 @@
-PREVIOUS: Mark slow tests (committed a5061ad)
-CURRENT:  Session wrap -- write SESSION_STATE.md
-NEXT:     New session
+PREVIOUS: RM15 Step 1 -- Orient documented (committed dc10511)
+CURRENT:  RM15 Step 2 -- Implement EnrichmentProcessor, re-ingest, watch ABC gap close
+NEXT:     RM15 Step 3 -- Wire orphaned-impl callers, re-ingest, watch orphan count drop
