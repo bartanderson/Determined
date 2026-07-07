@@ -13,10 +13,20 @@ import urllib.request
 
 def suggest_tags(content, endpoint=None):
     """
-    STUB: Ask LLM to suggest tags for the given content.
-    Returns list of tag strings. Returns [] if LLM unavailable or disabled.
+    Ask LLM to suggest tags for the given content.
+    Returns list of tag strings. Returns [] if LLM unavailable or endpoint is None.
     """
-    return []
+    if not endpoint:
+        return []
+    prompt = (
+        f"Suggest 3-5 short tags for this content. "
+        f"Reply with comma-separated tags only, no explanation.\n\nContent: {content[:500]}"
+    )
+    try:
+        response = _call_llm(prompt, endpoint)
+        return _parse_tags(response)
+    except Exception:
+        return []
 
 
 def _call_llm(prompt, endpoint):
