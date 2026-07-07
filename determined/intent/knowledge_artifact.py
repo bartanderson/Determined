@@ -38,6 +38,8 @@ VALID_KINDS = {
     "reasoning_chain",
     # structured import-layer constraint: content is JSON {from_layer, to_layer, direction}
     "layer_rule",
+    # near-duplicate symbol pair: content is JSON {symbol_a, file_a, symbol_b, file_b, score}
+    "reconciliation_finding",
 }
 
 VALID_PROVENANCES = {

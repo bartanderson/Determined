@@ -1,3 +1,3 @@
-PREVIOUS: RM18 Gap 10 -- auto-discover design docs on corpus load (committed bdef388)
-CURRENT:  RM18 Gap 1 -- structured layer-rule violation detection
-NEXT:     session wrap / SESSION_STATE.md update
+PREVIOUS: RM18 fully done (Gap 2, Gap 10, Gap 1 -- all committed session 106)
+CURRENT:  RM19 Pass 1 -- Duplicate Detection (find_duplicates tool)
+NEXT:     RM19 Pass 2 -- Intent Differencing via Qwen3-8B

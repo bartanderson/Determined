@@ -4297,6 +4297,177 @@ def edit_file(assessor: "Assessor", args: dict) -> str:
     return "ERROR: unknown op"
 
 
+# ------------------------------------------------------------------
+# RECONCILIATION TOOLS (RM19)
+# ------------------------------------------------------------------
+
+def find_duplicates(assessor: "Assessor", args: dict) -> str:
+    """
+    find_duplicates([threshold][, clear]) - find near-duplicate functions by
+    embedding similarity. Embeds "{name}: {docstring}" for every function that
+    has a docstring, computes pairwise cosine similarity, and surfaces pairs
+    above threshold (default 0.85). Stores each pair as a reconciliation_finding
+    artifact. Idempotent: skips pairs already stored.
+
+    Args:
+        threshold  - float 0-1, similarity cutoff (default 0.85)
+        clear      - bool, delete existing reconciliation_finding artifacts first
+        limit      - max functions to embed (default 2000)
+    """
+    import json as _json
+    from determined.intent.knowledge_artifact import add_artifact, list_artifacts
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    threshold = float(args.get("threshold", 0.85))
+    clear = args.get("clear", False)
+    limit = int(args.get("limit", 2000))
+
+    if clear:
+        conn.execute("DELETE FROM knowledge_artifacts WHERE kind = 'reconciliation_finding'")
+        conn.commit()
+
+    # Load all functions with non-null, non-empty docstrings
+    rows = conn.execute(
+        """
+        SELECT name, file_path, docstring
+        FROM functions
+        WHERE docstring IS NOT NULL AND trim(docstring) != ''
+        ORDER BY file_path, name
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    if len(rows) < 2:
+        return "find_duplicates: fewer than 2 functions with docstrings — nothing to compare"
+
+    names = [r[0] for r in rows]
+    files = [r[1] for r in rows]
+    texts = [f"{r[0]}: {r[2][:400]}" for r in rows]   # cap docstring at 400 chars
+
+    model = _get_embed_model()
+    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+    # normalized => cosine similarity = dot product
+    sim_matrix = embeddings @ embeddings.T
+
+    # Collect existing artifact subjects to skip duplicates
+    existing_subjects: set[str] = set()
+    for art in list_artifacts(conn, kind="reconciliation_finding"):
+        existing_subjects.add(art["subject"])
+
+    pairs: list[tuple[float, str, str, str, str]] = []   # (score, nameA, fileA, nameB, fileB)
+    stored = 0
+    skipped = 0
+    n = len(rows)
+    for i in range(n):
+        for j in range(i + 1, n):
+            score = float(sim_matrix[i, j])
+            if score < threshold:
+                continue
+            # Skip exact-same symbol in same file (a function compared to itself can't
+            # happen since i != j, but two entries with identical name+file can exist
+            # if the DB has duplicates -- guard anyway)
+            if names[i] == names[j] and files[i] == files[j]:
+                continue
+            # Canonical subject: alphabetically sorted pair so A::B and B::A collapse
+            key_a = f"{names[i]}@{files[i]}"
+            key_b = f"{names[j]}@{files[j]}"
+            if key_a > key_b:
+                key_a, key_b = key_b, key_a
+            subject = f"duplicate::{key_a}::{key_b}"
+            if subject in existing_subjects:
+                skipped += 1
+                continue
+            content = _json.dumps({
+                "symbol_a": names[i],
+                "file_a": files[i],
+                "symbol_b": names[j],
+                "file_b": files[j],
+                "score": round(score, 4),
+            })
+            add_artifact(conn, subject, "reconciliation_finding", content,
+                         provenance="ai-generated")
+            existing_subjects.add(subject)
+            stored += 1
+            pairs.append((score, names[i], files[i], names[j], files[j]))
+
+    if not pairs and skipped == 0:
+        return (
+            f"find_duplicates: no pairs above threshold {threshold:.2f} "
+            f"({n} functions scanned)"
+        )
+
+    # Sort by descending similarity for display
+    pairs.sort(key=lambda p: p[0], reverse=True)
+
+    lines = [
+        f"find_duplicates: {n} functions scanned, threshold={threshold:.2f}",
+        f"  {stored} new pairs stored, {skipped} already recorded",
+        "",
+    ]
+    if pairs:
+        lines.append(f"New candidate pairs ({len(pairs)}):")
+        for score, na, fa, nb, fb in pairs[:50]:   # cap display at 50
+            fa_short = fa.replace("\\", "/").split("/")[-1]
+            fb_short = fb.replace("\\", "/").split("/")[-1]
+            lines.append(f"  [{score:.3f}] {na} ({fa_short})  ~  {nb} ({fb_short})")
+        if len(pairs) > 50:
+            lines.append(f"  ... and {len(pairs) - 50} more (all stored as artifacts)")
+    elif skipped:
+        lines.append(f"All {skipped} pairs were already recorded. Use clear=True to rescan.")
+
+    return "\n".join(lines)
+
+
+def list_reconciliation_findings(assessor: "Assessor", args: dict) -> str:
+    """
+    list_reconciliation_findings([min_score][, limit]) - show stored duplicate pairs.
+    Args:
+        min_score - only show pairs with score >= this (default 0.0 = all)
+        limit     - max pairs to show (default 100)
+    """
+    import json as _json
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+    min_score = float(args.get("min_score", 0.0))
+    limit = int(args.get("limit", 100))
+
+    rows = conn.execute(
+        """
+        SELECT content FROM knowledge_artifacts
+        WHERE kind = 'reconciliation_finding'
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+
+    pairs = []
+    for (content,) in rows:
+        try:
+            d = _json.loads(content)
+            if d.get("score", 0.0) >= min_score:
+                pairs.append(d)
+        except Exception:
+            pass
+
+    if not pairs:
+        return "list_reconciliation_findings: no pairs recorded (run find_duplicates first)"
+
+    pairs.sort(key=lambda d: d.get("score", 0.0), reverse=True)
+    pairs = pairs[:limit]
+
+    lines = [f"Reconciliation findings ({len(pairs)} pairs, min_score={min_score:.2f}):"]
+    for d in pairs:
+        fa_short = d["file_a"].replace("\\", "/").split("/")[-1]
+        fb_short = d["file_b"].replace("\\", "/").split("/")[-1]
+        lines.append(
+            f"  [{d['score']:.3f}] {d['symbol_a']} ({fa_short})  ~  {d['symbol_b']} ({fb_short})"
+        )
+    return "\n".join(lines)
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -4382,6 +4553,9 @@ TOOLS = {
     "search_web":              (search_web,              "assessor"),
     # File editing (RM11)
     "edit_file":               (edit_file,               "assessor"),
+    # Reconciliation / duplicate detection (RM19)
+    "find_duplicates":                  (find_duplicates,                  "assessor"),
+    "list_reconciliation_findings":     (list_reconciliation_findings,     "assessor"),
 }
 
 

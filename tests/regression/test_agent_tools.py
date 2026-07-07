@@ -522,6 +522,9 @@ def test_dispatch_all_tools_registered():
         "frontier_coverage",
         "edit_file",
         "search_web",
+        # Reconciliation / duplicate detection (RM19)
+        "find_duplicates",
+        "list_reconciliation_findings",
     }
     assert set(TOOLS.keys()) == expected
 

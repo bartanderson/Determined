@@ -666,6 +666,31 @@ REGISTRY: dict[str, dict] = {
         "category": "external",
     },
 
+    # ── RECONCILIATION / DUPLICATE DETECTION (RM19) ───────────────
+    "find_duplicates": {
+        "purpose": "Find near-duplicate functions by embedding similarity. Embeds name+docstring, clusters by cosine similarity >= threshold, stores pairs as reconciliation_finding artifacts.",
+        "args": {
+            "threshold": "(optional) similarity cutoff, default 0.85",
+            "clear":     "(optional) bool, delete existing findings and rescan",
+            "limit":     "(optional) max functions to embed, default 2000",
+        },
+        "output": "candidate pairs with similarity score; count stored vs skipped",
+        "feeds": ["list_reconciliation_findings", "symbol_context"],
+        "use_when": "Finding likely-duplicated functions across the corpus — accidental copies, copy-paste variants, or near-identical helpers that should be consolidated.",
+        "category": "knowledge",
+    },
+    "list_reconciliation_findings": {
+        "purpose": "Show stored near-duplicate pairs from a previous find_duplicates run.",
+        "args": {
+            "min_score": "(optional) only show pairs with score >= this, default 0.0",
+            "limit":     "(optional) max pairs to display, default 100",
+        },
+        "output": "ranked list of near-duplicate pairs with similarity scores and file locations",
+        "feeds": ["symbol_context", "evaluate_claim"],
+        "use_when": "Reviewing stored duplicate candidates; deciding which pairs to investigate further.",
+        "category": "knowledge",
+    },
+
     # ── FILE EDITING (RM11) ────────────────────────────────────────
     "edit_file": {
         "purpose": "Read, overwrite, or patch a file within the project root. Closes the read-reason-write loop.",
