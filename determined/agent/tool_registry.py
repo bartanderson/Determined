@@ -686,8 +686,19 @@ REGISTRY: dict[str, dict] = {
             "limit":     "(optional) max pairs to display, default 100",
         },
         "output": "ranked list of near-duplicate pairs with similarity scores and file locations",
-        "feeds": ["symbol_context", "evaluate_claim"],
+        "feeds": ["symbol_context", "evaluate_claim", "classify_duplicates"],
         "use_when": "Reviewing stored duplicate candidates; deciding which pairs to investigate further.",
+        "category": "knowledge",
+    },
+    "classify_duplicates": {
+        "purpose": "For each stored duplicate pair (from find_duplicates), call Qwen3-8B to classify the divergence reason from a fixed taxonomy: accidental copy, historical evolution, performance optimization, platform-specific behavior, security reason, genuinely different abstraction. Stores classification as a reconciliation_finding artifact.",
+        "args": {
+            "subject": "(optional) classify only this specific 'duplicate::' subject",
+            "limit":   "(optional) max pairs to classify in one run, default 50",
+        },
+        "output": "per-pair classification: reason, confidence, one-sentence explanation",
+        "feeds": ["list_reconciliation_findings"],
+        "use_when": "After find_duplicates has stored candidate pairs and you want to understand WHY each pair differs — not just that they are similar.",
         "category": "knowledge",
     },
 

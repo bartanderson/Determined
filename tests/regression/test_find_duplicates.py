@@ -258,3 +258,223 @@ def test_list_reconciliation_findings_min_score_filter():
     result_high = list_reconciliation_findings(_FakeAssessor(conn), {"min_score": "0.90"})
     assert "foo" in result_all
     assert "run find_duplicates" in result_high or "foo" not in result_high
+
+
+# ---------------------------------------------------------------------------
+# classify_duplicates -- Pass 2 (RM19)
+# ---------------------------------------------------------------------------
+
+def _insert_duplicate_pair(conn, name_a, file_a, name_b, file_b, score=0.92):
+    """Insert a duplicate:: reconciliation_finding artifact directly."""
+    subj = f"duplicate::{name_a}@{file_a}::{name_b}@{file_b}"
+    content = json.dumps({"symbol_a": name_a, "file_a": file_a,
+                          "symbol_b": name_b, "file_b": file_b, "score": score})
+    conn.execute(
+        "INSERT INTO knowledge_artifacts (subject, kind, content, provenance, created_at) "
+        "VALUES (?, 'reconciliation_finding', ?, 'ai-generated', '2026-01-01T00:00:00+00:00')",
+        (subj, content),
+    )
+    conn.commit()
+    return subj
+
+
+def _make_db_with_graph(functions, edges=None):
+    """DB with functions, knowledge_artifacts, graph_edges, and symbol_references."""
+    conn = _make_db(functions)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS graph_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller TEXT NOT NULL,
+            callee TEXT NOT NULL,
+            caller_file TEXT,
+            line_number INTEGER DEFAULT 0,
+            resolved INTEGER DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS symbol_references (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller TEXT NOT NULL,
+            callee TEXT NOT NULL,
+            file_path TEXT,
+            line_number INTEGER DEFAULT 0
+        )
+    """)
+    for e in (edges or []):
+        conn.execute(
+            "INSERT INTO graph_edges (caller, callee, caller_file, line_number, resolved) VALUES (?,?,?,?,?)",
+            (e["caller"], e["callee"], e.get("file", "x.py"), e.get("line", 1), e.get("resolved", 0)),
+        )
+    conn.commit()
+    return conn
+
+
+def test_classify_duplicates_no_pairs():
+    """Returns early with helpful message when no duplicate pairs exist."""
+    conn = _make_db_with_graph([])
+    from determined.agent.agent_tools import classify_duplicates
+    result = classify_duplicates(_FakeAssessor(conn), {})
+    assert "run find_duplicates" in result or "all pairs already classified" in result
+
+
+def test_classify_duplicates_stores_classified_artifact(monkeypatch):
+    """A successful LLM response produces a classified:: artifact."""
+    conn = _make_db_with_graph([
+        {"name": "parse_csv",   "file_path": "a.py", "docstring": "Parse a CSV file and return rows."},
+        {"name": "read_csv",    "file_path": "b.py", "docstring": "Read a CSV file and return rows."},
+    ])
+    _insert_duplicate_pair(conn, "parse_csv", "a.py", "read_csv", "b.py", score=0.93)
+
+    fake_response = json.dumps({
+        "reason": "accidental copy",
+        "confidence": "high",
+        "explanation": "Both functions do the same thing; one is a copy of the other.",
+    })
+    import determined.agent.llm_client as lc
+    monkeypatch.setattr(lc, "chat", lambda msgs, **kw: fake_response)
+
+    from determined.agent.agent_tools import classify_duplicates
+    result = classify_duplicates(_FakeAssessor(conn), {})
+
+    assert "1 pairs classified" in result
+    rows = conn.execute(
+        "SELECT subject, content FROM knowledge_artifacts "
+        "WHERE kind='reconciliation_finding' AND subject LIKE 'classified::%'"
+    ).fetchall()
+    assert len(rows) == 1
+    subj, content = rows[0]
+    assert subj.startswith("classified::")
+    d = json.loads(content)
+    assert d["reason"] == "accidental copy"
+    assert d["confidence"] == "high"
+    assert "symbol_a" in d and "symbol_b" in d
+
+
+def test_classify_duplicates_idempotent(monkeypatch):
+    """Running classify_duplicates twice does not double-store classifications."""
+    conn = _make_db_with_graph([
+        {"name": "send_email",  "file_path": "a.py", "docstring": "Send an email to the user."},
+        {"name": "mail_user",   "file_path": "b.py", "docstring": "Mail a message to the user."},
+    ])
+    _insert_duplicate_pair(conn, "send_email", "a.py", "mail_user", "b.py", score=0.91)
+
+    fake_response = json.dumps({
+        "reason": "historical evolution",
+        "confidence": "medium",
+        "explanation": "Older API renamed over time.",
+    })
+    import determined.agent.llm_client as lc
+    monkeypatch.setattr(lc, "chat", lambda msgs, **kw: fake_response)
+
+    from determined.agent.agent_tools import classify_duplicates
+    classify_duplicates(_FakeAssessor(conn), {})
+    count_first = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'classified::%'"
+    ).fetchone()[0]
+
+    result2 = classify_duplicates(_FakeAssessor(conn), {})
+    count_second = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'classified::%'"
+    ).fetchone()[0]
+    assert count_first == count_second
+    assert "all pairs already classified" in result2
+
+
+def test_classify_duplicates_llm_unavailable(monkeypatch):
+    """When LLM returns None (server down) pairs are skipped, not crashed."""
+    conn = _make_db_with_graph([
+        {"name": "hash_password", "file_path": "a.py", "docstring": "Hash a password with bcrypt."},
+        {"name": "encrypt_pw",    "file_path": "b.py", "docstring": "Encrypt a password using bcrypt."},
+    ])
+    _insert_duplicate_pair(conn, "hash_password", "a.py", "encrypt_pw", "b.py", score=0.88)
+
+    import determined.agent.llm_client as lc
+    monkeypatch.setattr(lc, "chat", lambda msgs, **kw: None)
+
+    from determined.agent.agent_tools import classify_duplicates
+    result = classify_duplicates(_FakeAssessor(conn), {})
+    assert "skipped" in result
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'classified::%'"
+    ).fetchone()[0]
+    assert rows == 0
+
+
+def test_classify_duplicates_subject_filter(monkeypatch):
+    """subject= arg limits classification to that one pair."""
+    conn = _make_db_with_graph([
+        {"name": "fn_a", "file_path": "a.py", "docstring": "Do thing A."},
+        {"name": "fn_b", "file_path": "b.py", "docstring": "Do thing B."},
+        {"name": "fn_c", "file_path": "c.py", "docstring": "Do thing C."},
+        {"name": "fn_d", "file_path": "d.py", "docstring": "Do thing D."},
+    ])
+    subj1 = _insert_duplicate_pair(conn, "fn_a", "a.py", "fn_b", "b.py", score=0.90)
+    _insert_duplicate_pair(conn, "fn_c", "c.py", "fn_d", "d.py", score=0.90)
+
+    import determined.agent.llm_client as lc
+    monkeypatch.setattr(lc, "chat", lambda msgs, **kw: json.dumps({
+        "reason": "performance optimization",
+        "confidence": "low",
+        "explanation": "One is faster.",
+    }))
+
+    from determined.agent.agent_tools import classify_duplicates
+    classify_duplicates(_FakeAssessor(conn), {"subject": subj1})
+
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE subject LIKE 'classified::%'"
+    ).fetchone()[0]
+    assert rows == 1   # only subj1 classified
+
+
+def test_classify_duplicates_malformed_llm_json(monkeypatch):
+    """Malformed LLM JSON is handled gracefully; artifact still stored with fallback."""
+    conn = _make_db_with_graph([
+        {"name": "load_config",  "file_path": "a.py", "docstring": "Load YAML config from disk."},
+        {"name": "read_config",  "file_path": "b.py", "docstring": "Read YAML config from file."},
+    ])
+    _insert_duplicate_pair(conn, "load_config", "a.py", "read_config", "b.py", score=0.89)
+
+    import determined.agent.llm_client as lc
+    monkeypatch.setattr(lc, "chat", lambda msgs, **kw: "Sorry, I cannot classify this.")
+
+    from determined.agent.agent_tools import classify_duplicates
+    result = classify_duplicates(_FakeAssessor(conn), {})
+    # Should still store something (raw text as explanation, reason=unknown)
+    rows = conn.execute(
+        "SELECT content FROM knowledge_artifacts WHERE subject LIKE 'classified::%'"
+    ).fetchall()
+    assert len(rows) == 1
+    d = json.loads(rows[0][0])
+    assert d["reason"] == "unknown"
+
+
+def test_classify_duplicates_reason_in_result_output(monkeypatch):
+    """Result string includes reason and confidence for each pair."""
+    conn = _make_db_with_graph([
+        {"name": "fmt_date",  "file_path": "a.py", "docstring": "Format a date as ISO string."},
+        {"name": "date_str",  "file_path": "b.py", "docstring": "Convert date to ISO format string."},
+    ])
+    _insert_duplicate_pair(conn, "fmt_date", "a.py", "date_str", "b.py", score=0.94)
+
+    import determined.agent.llm_client as lc
+    monkeypatch.setattr(lc, "chat", lambda msgs, **kw: json.dumps({
+        "reason": "genuinely different abstraction",
+        "confidence": "medium",
+        "explanation": "One handles timezone-aware dates, the other is naive.",
+    }))
+
+    from determined.agent.agent_tools import classify_duplicates
+    result = classify_duplicates(_FakeAssessor(conn), {})
+    assert "genuinely different abstraction" in result
+    assert "medium" in result
+
+
+def test_classify_duplicates_registered_in_tools():
+    from determined.agent.agent_tools import TOOLS
+    assert "classify_duplicates" in TOOLS
+
+
+def test_classify_duplicates_registered_in_registry():
+    from determined.agent.tool_registry import REGISTRY
+    assert "classify_duplicates" in REGISTRY

@@ -4421,6 +4421,224 @@ def find_duplicates(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+_DIVERGENCE_TAXONOMY = [
+    "accidental copy",
+    "historical evolution",
+    "performance optimization",
+    "platform-specific behavior",
+    "security reason",
+    "genuinely different abstraction",
+]
+
+
+def _build_classify_prompt(
+    name_a: str, file_a: str, doc_a: str,
+    callers_a: list[str], callees_a: list[str],
+    name_b: str, file_b: str, doc_b: str,
+    callers_b: list[str], callees_b: list[str],
+    score: float,
+) -> list[dict]:
+    taxonomy_str = "\n".join(f"  {i+1}. {t}" for i, t in enumerate(_DIVERGENCE_TAXONOMY))
+    callers_a_str = ", ".join(callers_a[:8]) or "none"
+    callees_a_str = ", ".join(callees_a[:8]) or "none"
+    callers_b_str = ", ".join(callers_b[:8]) or "none"
+    callees_b_str = ", ".join(callees_b[:8]) or "none"
+    fa_short = file_a.replace("\\", "/").split("/")[-1]
+    fb_short = file_b.replace("\\", "/").split("/")[-1]
+
+    user_msg = f"""Two functions have a docstring similarity score of {score:.3f} (1.0 = identical).
+
+Function A: {name_a}  (file: {fa_short})
+Docstring: {doc_a[:600]}
+Called by: {callers_a_str}
+Calls:     {callees_a_str}
+
+Function B: {name_b}  (file: {fb_short})
+Docstring: {doc_b[:600]}
+Called by: {callers_b_str}
+Calls:     {callees_b_str}
+
+Taxonomy of divergence reasons:
+{taxonomy_str}
+
+Choose the single best reason from the taxonomy above that explains why these two functions \
+exist separately rather than being merged. Reply with ONLY a JSON object in this exact format:
+{{"reason": "<taxonomy label>", "confidence": "<high|medium|low>", "explanation": "<one sentence>"}}"""
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a code analysis assistant. "
+                "Your job is to classify why two similar functions diverged. "
+                "Reply only with the requested JSON object, no other text."
+            ),
+        },
+        {"role": "user", "content": user_msg},
+    ]
+
+
+def classify_duplicates(assessor: "Assessor", args: dict) -> str:
+    """
+    classify_duplicates([subject][, limit]) - for each stored reconciliation_finding
+    pair (from find_duplicates), feed both docstrings and call-graph context to
+    Qwen3-8B and classify the divergence reason from a fixed taxonomy:
+      - accidental copy
+      - historical evolution
+      - performance optimization
+      - platform-specific behavior
+      - security reason
+      - genuinely different abstraction
+    Stores each classification as a new reconciliation_finding artifact with
+    subject "classified::{key_a}::{key_b}". Skips pairs already classified.
+
+    Args:
+        subject - (optional) classify only this specific "duplicate::" subject
+        limit   - max pairs to classify in one run (default 50)
+    """
+    import json as _json
+    from determined.intent.knowledge_artifact import add_artifact, list_artifacts
+    from determined.agent import llm_client
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+    subject_filter = args.get("subject")
+    limit = int(args.get("limit", 50))
+
+    # Collect all classified subjects so we can skip
+    existing_classified: set[str] = set()
+    for art in list_artifacts(conn, kind="reconciliation_finding"):
+        if art["subject"].startswith("classified::"):
+            existing_classified.add(art["subject"])
+
+    # Load unclassified duplicate pairs
+    pairs_rows = conn.execute(
+        """
+        SELECT subject, content FROM knowledge_artifacts
+        WHERE kind = 'reconciliation_finding'
+          AND subject LIKE 'duplicate::%'
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+
+    to_classify = []
+    for (subj, content) in pairs_rows:
+        if subject_filter and subj != subject_filter:
+            continue
+        classified_key = "classified::" + subj[len("duplicate::"):]
+        if classified_key in existing_classified:
+            continue
+        try:
+            d = _json.loads(content)
+        except Exception:
+            continue
+        to_classify.append((subj, classified_key, d))
+        if len(to_classify) >= limit:
+            break
+
+    if not to_classify:
+        return "classify_duplicates: all pairs already classified (or no pairs found; run find_duplicates first)"
+
+    # Fetch docstrings for fast lookup
+    func_cache: dict[tuple[str, str], str] = {}
+
+    def _get_docstring(name: str, file_path: str) -> str:
+        key = (name, file_path)
+        if key not in func_cache:
+            row = conn.execute(
+                "SELECT docstring FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                (name, file_path),
+            ).fetchone()
+            func_cache[key] = (row[0] or "") if row else ""
+        return func_cache[key]
+
+    classified = 0
+    skipped_llm = 0
+    results: list[str] = []
+
+    for (orig_subject, classified_key, d) in to_classify:
+        name_a, file_a = d["symbol_a"], d["file_a"]
+        name_b, file_b = d["symbol_b"], d["file_b"]
+        score = d.get("score", 0.0)
+
+        doc_a = _get_docstring(name_a, file_a)
+        doc_b = _get_docstring(name_b, file_b)
+
+        callers_a = [r["caller"] for r in _list_callers_raw(oracle, name_a)]
+        callees_a = [r["callee"] for r in _list_callees_raw(oracle, name_a)]
+        callers_b = [r["caller"] for r in _list_callers_raw(oracle, name_b)]
+        callees_b = [r["callee"] for r in _list_callees_raw(oracle, name_b)]
+
+        messages = _build_classify_prompt(
+            name_a, file_a, doc_a, callers_a, callees_a,
+            name_b, file_b, doc_b, callers_b, callees_b,
+            score,
+        )
+
+        raw = llm_client.chat(messages, max_tokens=200)
+        if not raw:
+            skipped_llm += 1
+            continue
+
+        # Parse LLM response — extract JSON even if surrounded by prose
+        reason = "unknown"
+        confidence = "low"
+        explanation = raw.strip()
+        try:
+            start = raw.index("{")
+            end = raw.rindex("}") + 1
+            parsed = _json.loads(raw[start:end])
+            reason = parsed.get("reason", "unknown")
+            confidence = parsed.get("confidence", "low")
+            explanation = parsed.get("explanation", raw.strip())
+            # Canonicalize reason to taxonomy — also handle numeric responses like "6"
+            reason_lower = reason.strip().lower()
+            try:
+                idx = int(reason_lower) - 1
+                if 0 <= idx < len(_DIVERGENCE_TAXONOMY):
+                    reason = _DIVERGENCE_TAXONOMY[idx]
+            except (ValueError, TypeError):
+                for t in _DIVERGENCE_TAXONOMY:
+                    if t in reason_lower or reason_lower in t:
+                        reason = t
+                        break
+        except (ValueError, _json.JSONDecodeError):
+            pass
+
+        content_out = _json.dumps({
+            "symbol_a": name_a,
+            "file_a": file_a,
+            "symbol_b": name_b,
+            "file_b": file_b,
+            "score": score,
+            "reason": reason,
+            "confidence": confidence,
+            "explanation": explanation,
+        })
+        add_artifact(conn, classified_key, "reconciliation_finding", content_out,
+                     provenance="ai-generated")
+        existing_classified.add(classified_key)
+        classified += 1
+
+        fa_short = file_a.replace("\\", "/").split("/")[-1]
+        fb_short = file_b.replace("\\", "/").split("/")[-1]
+        results.append(
+            f"  [{score:.3f}] {name_a} ({fa_short})  ~  {name_b} ({fb_short})\n"
+            f"    reason={reason}  confidence={confidence}\n"
+            f"    {explanation}"
+        )
+
+    lines = [
+        f"classify_duplicates: {classified} pairs classified, "
+        f"{skipped_llm} skipped (LLM unavailable)",
+        "",
+    ]
+    if results:
+        lines.append("Classifications:")
+        lines.extend(results)
+    return "\n".join(lines)
+
+
 def list_reconciliation_findings(assessor: "Assessor", args: dict) -> str:
     """
     list_reconciliation_findings([min_score][, limit]) - show stored duplicate pairs.
@@ -4556,6 +4774,7 @@ TOOLS = {
     # Reconciliation / duplicate detection (RM19)
     "find_duplicates":                  (find_duplicates,                  "assessor"),
     "list_reconciliation_findings":     (list_reconciliation_findings,     "assessor"),
+    "classify_duplicates":              (classify_duplicates,              "assessor"),
 }
 
 

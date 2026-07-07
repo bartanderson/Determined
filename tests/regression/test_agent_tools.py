@@ -525,6 +525,7 @@ def test_dispatch_all_tools_registered():
         # Reconciliation / duplicate detection (RM19)
         "find_duplicates",
         "list_reconciliation_findings",
+        "classify_duplicates",
     }
     assert set(TOOLS.keys()) == expected
 
