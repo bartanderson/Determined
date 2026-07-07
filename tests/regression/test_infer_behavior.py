@@ -231,9 +231,9 @@ class TestInferBehaviorLive:
         should yield MATCHES_PATTERN or UNCERTAIN (not crash), with a Wirfs-Brock
         role name in the output.
         """
-        from determined.agent.llm_client import is_available
-        if not is_available(timeout=5):
-            pytest.skip("llama-server not reachable")
+        from determined.agent.llm_client import start_server
+        if not start_server():
+            pytest.skip("llama-server could not be started")
 
         oracle = _make_oracle()
         assessor = FakeAssessor(oracle)
