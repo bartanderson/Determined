@@ -10,6 +10,7 @@ direct-call frontier Determined shows on first ingest of this project.
 from flask import Blueprint, request, jsonify, render_template_string
 from services import extractor
 from services import pipeline
+from services.processor import run_processors
 from storage import queries
 
 capture_bp = Blueprint("capture", __name__)
@@ -43,6 +44,7 @@ def capture():
     except Exception as exc:
         return render_template_string(_FORM, error=str(exc)), 400
 
+    entry = run_processors(entry)
     entry = pipeline.enrich_entry(entry, all_entries=[])
     queries.insert_entry(entry)
     return render_template_string(_FORM, entry=entry)

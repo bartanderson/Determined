@@ -1027,8 +1027,8 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     unimplemented: list[tuple[str, str, str]] = []
     for method, cls_name, file_path in abstract_stubs:
         non_stub = conn.execute(
-            "SELECT COUNT(*) FROM functions WHERE name = ? AND is_stub = 0 AND file_path != ?",
-            (method, file_path),
+            "SELECT COUNT(*) FROM functions WHERE name = ? AND is_stub = 0",
+            (method,),
         ).fetchone()[0]
         if non_stub == 0:
             unimplemented.append((method, cls_name, file_path))
@@ -1109,9 +1109,11 @@ def _get_abc_gap_set(conn) -> set:
             ).fetchone()
             if not (row and row[0]):
                 continue
+            # Check for any non-stub with same name -- including same-file subclasses.
+            # Exclude the abstract stub itself by requiring is_stub=0.
             override = conn.execute(
-                "SELECT 1 FROM functions WHERE name = ? AND file_path != ? AND is_stub = 0 LIMIT 1",
-                (method, file_path),
+                "SELECT 1 FROM functions WHERE name = ? AND is_stub = 0 LIMIT 1",
+                (method,),
             ).fetchone()
             if not override:
                 gaps.add(method)
