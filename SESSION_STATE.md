@@ -1,40 +1,49 @@
-Written at commit: 7cce582
-# SESSION STATE - session 102 handoff
+Written at commit: 3a69ef5
+# SESSION STATE - session 103 handoff
 _Overwrite completely each session. Not authoritative - see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 102, 2026-07-06)
+## What happened this session (session 103, 2026-07-06)
 
-**RM15 Step 2 completed [V]:**
-- Committed `examples/commonplace/seed/services/extractor.py` (94ce9df)
-- `extract_metadata`: real implementation using `urllib.request.urlopen` + `html.parser.HTMLParser`
-- `_TitleParser` inner class nested inside function body (skipped by `_iter_top_level_functions`)
-- Frontier Direct: dropped from 2 stubs → 1 stub (`extract_full_content` only) [V via UI]
-- Roots still only `capture` and `index` -- no inner class leakage [V via UI]
+**RM15 Step 4 completed [V]:**
+- Root cause found: seed DB had 0 SOTS tenets, 2 noise design_notes -- check_design_violations
+  returned low-signal results until DESIGN.md was ingested
+- `examples/commonplace/docs/DESIGN.md` already existed (not a missing file)
+- Problem: `ingest_design_docs` uses `oracle.get_project_root()` which returns `seed/`,
+  not `examples/commonplace/` -- DESIGN.md was never discovered
+- Fix: direct `discover_docs` + `extract_rules` call on `examples/commonplace/`, inserted
+  10 design_notes into seed DB manually via script
+- After ingest: `check_design_violations("extract_metadata")` returns score=0.43 for
+  "extractor.py: one module or three?" -- highest signal, correct hit [V]
+- `reason_about`: "should extractor be split?" -> Keep unified, 95% confidence.
+  Reasoning: 1 caller, 5 callees, SOTS "avoid unnecessary indirection" fires [V]
 
-**Bug found and fixed: `reingest_file` graph_edges wipe [V]:**
-- Root cause: when reingesting a stub file (zero outgoing calls), `symbol_references` is empty
-  -> GraphBuilder produces no edges -> `files_in_run` = empty set -> `_persist_graph_edges`
-  falls through to `DELETE FROM graph_edges` (full reset, not scoped)
-- Fix in `determined/ingestion/reingest_file.py`: explicit `DELETE FROM graph_edges WHERE
-  caller_file = ?` before building graph, then INSERT edges directly (bypasses
-  `_persist_graph_edges` entirely for the reingest path)
-- 440 passed, 1 skipped after fix [V]
+**RM15 Step 5 completed [V]:**
+- Added 5 new service files to seed: tagger.py, linker.py, searcher.py, pipeline.py, processor.py
+- Added routes/search.py, search_entries stub to storage/queries.py
+- Wired capture.py to call `pipeline.enrich_entry`
+- Reingested all 8 files via reingest_file()
+- Topology after reingest [V via script output]:
+  - Stubs: 2 -> 10, Implemented: 6 -> 16
+  - Chain-head: 1 (enrich_entry -- called by capture, calls stub services)
+  - Chain-tail: 2 (find_connections, suggest_tags)
+  - ABC-interface: 2 (EntryProcessor.process, can_handle -- no override)
+  - Orphaned-impl: 6 (_call_llm, _parse_tags, _similarity_score, etc.)
+  - Disconnected: 1
+- find_abc_gaps correctly surfaces EntryProcessor gap [V]
+- Committed as 3a69ef5 [V]
+- 440 passed, 1 skipped [V]
 
-**RM15 Step 3 completed [V]:**
-- `examples/commonplace/seed/storage/queries.py` created -- `insert_entry` stub [V]
-- `examples/commonplace/seed/routes/capture.py` wired: `from storage import queries` +
-  `queries.insert_entry(entry)` call [V]
-- DB state: `insert_entry` in Direct frontier (caller: capture), not Orphan [V via SQL]
-- Stubs: `extract_full_content` + `insert_entry` = 2 total [V]
-
-**HISTORY.md updated [V]** -- reingest_file bug + UI Re-analyze behavior documented.
+**Known issue discovered: ingest_design_docs project root mismatch**
+The seed DB project root is `seed/` but DESIGN.md lives at `examples/commonplace/docs/`.
+`ingest_design_docs` cannot find it via normal path. Workaround used this session:
+direct script calling `discover_docs` + `extract_rules` on the parent dir.
+This should probably be fixed in `ingest_design_docs` to accept an explicit path arg.
 
 ## Known issues (carried forward)
 
 **UI Re-analyze+ does NOT use reingest_file [V]:** Runs background discover_run thread.
-Can conflict with open sqlite3 connections; graph_edges may be empty after UI reingest.
 Workaround: call `reingest_file()` from Python CLI directly.
 
 **Frontier Load button navigates to Chat [?]:** Clicking "Load + Enter" in Frontier tab
@@ -47,16 +56,21 @@ Workaround: kill server, delete seed.db, restart.
 
 ## NEXT SESSION -- start here
 
-1. **RM15 Step 4:** Run `check_design_violations` on `extractor.py`
-   - Should surface the 3-responsibility tension (fetch + parse + extract in one module)
-   - Per COMMONPLACE_VISION.md Step 4 spec
-   - Tool call via UI Chat or Python: `check_design_violations(assessor, {"symbol": "extract_metadata", "file": "...extractor.py"})`
-   - LLM must be running (Qwen3-8B on port 8081, started automatically by UI)
+1. **RM15 Step 6:** Work the topology shapes
+   - `find_abc_gaps` -- already verified working, returns EntryProcessor gap
+   - `find_conditional_stubs` -- check if any conditional stubs exist in seed
+   - `detect_topology` chain shapes -- reason about implementation order
+   - Tool calls via Python script (same pattern as this session)
 
-2. Seed DB is up to date -- no reingest needed before step 4.
+2. **Optional Determined improvement:** add `path` arg to `ingest_design_docs` so it
+   doesn't require `get_project_root()` to find the design docs dir. Low effort, high
+   value for any corpus where docs live outside the ingested root.
 
-3. Update `.claude/step_queue.md` CURRENT to step 4 when starting.
+3. Seed DB is current -- no reingest needed before step 6.
+
+4. Update `.claude/step_queue.md` CURRENT to step 6 when starting.
 
 ## Seed corpus DB
 `C:/Users/bartl/dev/Determined/C_Users_bartl_dev_Determined_examples_commonplace_seed.db`
-9 files, 2 stubs, graph_edges populated [V]
+16 files, 10 stubs, 12 design_notes (10 from DESIGN.md + 2 auto-generated noise)
+graph_edges populated [V]
