@@ -337,7 +337,7 @@ def extract_rules_llm(
     rel_path: str = "",
 ) -> list[DesignRule]:
     """
-    Use the local 3B model to extract implied design rules from a prose section.
+    Use the local LLM to extract implied design rules from a prose section.
     Called only when deterministic extraction yields < 2 rules for a section
     that still has design intent language.
     Returns [] silently if llama-server is unavailable.

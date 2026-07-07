@@ -3822,9 +3822,9 @@ def _filter_gaps_by_design_intent(
 def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
     """
     corpus_synthesis() - two-pass architectural gap analysis.
-    Pass 1 (3B, large context): reads all distilled one-liners and maps the
+    Pass 1 (large context): reads all distilled one-liners and maps the
     codebase into named subsystems.
-    Pass 2 (27B, quality reasoning): given the subsystem map, identifies
+    Pass 2 (quality reasoning): given the subsystem map, identifies
     structural gaps, disconnections, and missing game features.
     """
     from determined.agent.llm_client import generate as fast_gen, chat_quality
@@ -3852,7 +3852,7 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
                     "  python -m determined.agent.local_agent --source <dir> --summarize")
 
     def _first_sentence(text: str) -> str:
-        """Extract first sentence, cap at 100 chars to strip 3B noise."""
+        """Extract first sentence, cap at 100 chars to strip LLM noise."""
         text = (text or "").strip().strip('"').strip("'")
         for sep in (".", "!", "?", "\n"):
             idx = text.find(sep)
@@ -3863,7 +3863,7 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
     file_list = "\n".join(f"{r[0]}: {_first_sentence(r[1])}" for r in rows)
     estimated_tokens = len(file_list) // 4
 
-    print(f"  Pass 1 (3B): {len(rows)} files, ~{estimated_tokens:,} tokens "
+    print(f"  Pass 1: {len(rows)} files, ~{estimated_tokens:,} tokens "
           f"(fast ctx: {fast_ctx:,})")
 
     if estimated_tokens > fast_ctx * 0.85:
@@ -3929,7 +3929,7 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
 
     # Store both passes as a backlog item
     full_result = "\n\n".join([
-        "=== SUBSYSTEM MAP (3B pass) ===",
+        "=== SUBSYSTEM MAP (pass 1) ===",
         subsystem_map,
         "=== ARCHITECTURAL GAPS (27B reasoning) — design-intent filtered ===",
         filtered_analysis or "(all gaps filtered as intentional by design)",
@@ -4036,7 +4036,7 @@ def reason_about(assessor: "Assessor", args: dict) -> str:
     reason_about(question, symbol?) - AI-assisted architectural decision pipeline.
     Decomposes the question into sub-questions, answers each (DB or evaluate()),
     then synthesizes a recommendation with confidence and provenance.
-    Uses quality LLM (8B) for decomposition and synthesis; 3B for sub-evaluations.
+    Uses Qwen3-8B for decomposition, synthesis, and sub-evaluations.
     May take 60-120 seconds when the quality tier is cold.
     """
     question = args.get("question", "").strip()

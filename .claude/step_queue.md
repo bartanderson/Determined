@@ -1,3 +1,3 @@
-PREVIOUS: RM15 step 9 done -- ABC gap fixed, processors wired, findings written
-CURRENT:  RM15 COMPLETE -- choose RM18 (Flask entry-point heuristic) or ingest_design_docs path arg
-NEXT:     TBD
+PREVIOUS: RM18 Gap 2 done -- Flask @route = entry_point in _classify_role, 9 tests pass; 3B refs purged
+CURRENT:  NEW SESSION START -- (1) write RM19 into TRACKER.md, (2) RM18 Gap 10 (auto-discover design docs on corpus load)
+NEXT:     RM18 Gap 1 -- structured layer-rule violation detection

@@ -329,11 +329,11 @@ REGISTRY: dict[str, dict] = {
         "category": "discovery",
     },
     "corpus_synthesis": {
-        "purpose": "Two-pass architectural analysis. Pass 1 (3B, large context): maps all distilled file summaries into named subsystems. Pass 2 (27B): reasons over the subsystem map to find structural gaps, broken connections, and missing game features.",
+        "purpose": "Two-pass architectural analysis. Pass 1 (large context): maps all distilled file summaries into named subsystems. Pass 2 (quality reasoning): reasons over the subsystem map to find structural gaps, broken connections, and missing game features.",
         "args": {},
         "output": "Subsystem map (pass 1) + architectural gap findings (pass 2); stored as backlog item",
         "feeds": ["workflow_status", "goal_intake"],
-        "use_when": "User wants a full-system architectural view of what is missing or broken. More powerful than gap_analysis — reads the whole corpus. Requires both LLM tiers running.",
+        "use_when": "User wants a full-system architectural view of what is missing or broken. More powerful than gap_analysis — reads the whole corpus.",
         "category": "discovery",
     },
     "evaluate_claim": {
@@ -792,9 +792,9 @@ TASK_PATTERNS: dict[str, dict] = {
     },
 
     "corpus_synthesis": {
-        "description": "Two-pass architectural analysis: 3B maps all files into subsystems, 27B finds structural gaps and broken connections.",
+        "description": "Two-pass architectural analysis: pass 1 maps all files into subsystems, pass 2 finds structural gaps and broken connections.",
         "steps": [
-            {"tool": "corpus_synthesis", "args_hint": {}, "why": "pass 1 (3B) builds subsystem map, pass 2 (27B) reasons over it for gaps"},
+            {"tool": "corpus_synthesis", "args_hint": {}, "why": "pass 1 builds subsystem map, pass 2 reasons over it for gaps"},
         ],
     },
 }

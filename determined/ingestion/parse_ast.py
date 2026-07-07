@@ -550,6 +550,7 @@ def _extract_symbol_references(
 
 
 def _classify_role(path: Path, source: str) -> str:
+    import re as _re
     name = path.name
     parts = [p.lower() for p in path.parts]
     if name == "__init__.py":
@@ -557,6 +558,9 @@ def _classify_role(path: Path, source: str) -> str:
     if any(p in ("test", "tests") for p in parts) or name.startswith("test_") or name.endswith("_test.py"):
         return "test"
     if "__main__" in source:
+        return "entry_point"
+    # Flask/Blueprint route files: any @<name>.route( decorator = HTTP entry point
+    if _re.search(r'@\w[\w.]*\.route\(', source):
         return "entry_point"
     if name in ("config.py", "settings.py", "constants.py") or name.endswith("_config.py"):
         return "config"
