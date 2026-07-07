@@ -726,20 +726,18 @@ def test_check_design_violations_with_notes():
 
 def test_import_layer_violations_detected():
     """_check_import_layer_violations returns confirmed violation when routes/ imports storage."""
+    import json
     from determined.agent.agent_tools import _check_import_layer_violations
     oracle = _make_fixture()
 
-    # Insert a CONSTRAINT layer rule for routes/
+    # Insert a structured layer_rule artifact
+    rule = json.dumps({"from_layer": "routes", "to_layer": "storage",
+                       "direction": "forbidden", "source": "DESIGN.md"})
     oracle.conn.execute(
         "INSERT INTO knowledge_artifacts "
         "(subject, kind, content, provenance, created_at, needs_review) "
         "VALUES (?, ?, ?, ?, datetime('now'), 0)",
-        (
-            "routes",
-            "design_note",
-            "[CONSTRAINT|high|DESIGN.md] [routes/] Routes must not import from `storage/`.",
-            "llm-extracted",
-        ),
+        ("DESIGN.md", "layer_rule", rule, "human-confirmed"),
     )
     # Insert a route file that imports storage
     oracle.conn.execute(
@@ -749,28 +747,27 @@ def test_import_layer_violations_detected():
     oracle.conn.commit()
 
     violations = _check_import_layer_violations(oracle.conn, f"{PROJECT_ROOT}/routes/capture.py")
+    real = [v for v in violations if "_hint" not in v]
 
-    assert len(violations) == 1
-    assert violations[0]["layer"] == "routes"
-    assert violations[0]["forbidden_import"] == "storage"
-    assert violations[0]["line_number"] == 5
+    assert len(real) == 1
+    assert real[0]["from_layer"] == "routes"
+    assert real[0]["forbidden_import"] == "storage"
+    assert real[0]["line_number"] == 5
 
 
 def test_import_layer_violations_none_when_clean():
     """_check_import_layer_violations returns empty list when no forbidden imports exist."""
+    import json
     from determined.agent.agent_tools import _check_import_layer_violations
     oracle = _make_fixture()
 
+    rule = json.dumps({"from_layer": "routes", "to_layer": "storage",
+                       "direction": "forbidden", "source": "DESIGN.md"})
     oracle.conn.execute(
         "INSERT INTO knowledge_artifacts "
         "(subject, kind, content, provenance, created_at, needs_review) "
         "VALUES (?, ?, ?, ?, datetime('now'), 0)",
-        (
-            "routes",
-            "design_note",
-            "[CONSTRAINT|high|DESIGN.md] [routes/] Routes must not import from `storage/`.",
-            "llm-extracted",
-        ),
+        ("DESIGN.md", "layer_rule", rule, "human-confirmed"),
     )
     # Route file that only imports flask (allowed)
     oracle.conn.execute(
@@ -780,8 +777,9 @@ def test_import_layer_violations_none_when_clean():
     oracle.conn.commit()
 
     violations = _check_import_layer_violations(oracle.conn, f"{PROJECT_ROOT}/routes/search.py")
+    real = [v for v in violations if "_hint" not in v]
 
-    assert violations == []
+    assert real == []
 
 
 def test_orphaned_impls_ready_but_blocked():

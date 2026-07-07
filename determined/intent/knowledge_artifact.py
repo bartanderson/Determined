@@ -36,6 +36,8 @@ VALID_KINDS = {
     "waypoint",
     # reasoning chains produced by the decompose/synthesize pipeline
     "reasoning_chain",
+    # structured import-layer constraint: content is JSON {from_layer, to_layer, direction}
+    "layer_rule",
 }
 
 VALID_PROVENANCES = {

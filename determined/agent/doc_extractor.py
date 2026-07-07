@@ -455,3 +455,84 @@ def deduplicate(rules: list[DesignRule]) -> list[DesignRule]:
         if key not in seen:
             seen[key] = r
     return list(seen.values())
+
+
+# Layer rule patterns: "X must not import Y", "X cannot depend on Y", "X layer forbidden from Y"
+_LAYER_RULE_RE = re.compile(
+    r"`?([A-Za-z0-9_./]+)`?\s+"
+    r"(?:must not|cannot|should not|is forbidden (?:from|to))\s+"
+    r"(?:import from|depend on|import|use)\s+"
+    r"`?([A-Za-z0-9_./]+)`?",
+    re.IGNORECASE,
+)
+
+
+def _extract_layer_rules(text: str, source: str) -> list[dict]:
+    """
+    Deterministically parse text for import-layer constraints.
+    Returns list of dicts: {from_layer, to_layer, direction, source}.
+    """
+    results = []
+    seen = set()
+    for line in text.splitlines():
+        m = _LAYER_RULE_RE.search(line)
+        if m:
+            from_layer = m.group(1).strip("/").replace("/", ".").lower()
+            to_layer = m.group(2).strip("/").replace("/", ".").lower()
+            key = (from_layer, to_layer)
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "from_layer": from_layer,
+                    "to_layer": to_layer,
+                    "direction": "forbidden",
+                    "source": source,
+                })
+    return results
+
+
+_SEED_LAYER_RULES_DOC = """\
+# Layer Rules for Determined
+
+Determined uses this file to detect architectural violations — imports that cross
+boundaries they shouldn't. Add rules for your project below, then run
+`ingest_design_docs` to activate them.
+
+## How rules work
+
+Each rule says: code in one layer must not import from another.
+Write them in plain English using this pattern:
+
+    `from_layer` must not import `to_layer`
+
+Example: `` `ui` must not import `storage` `` means any file under the `ui/`
+package importing directly from `storage/` is flagged as a violation.
+
+## Universal rules (active for all projects)
+
+`tests` must not import from production code that imports `tests`
+(i.e. production modules must not depend on test code)
+
+## Add your project-specific rules below
+
+Uncomment and adapt these common patterns, or write your own:
+
+# `ui` must not import `storage`
+# `api` must not import `ui`
+# `cli` must not import `web`
+# `presentation` must not depend on `persistence`
+"""
+
+
+def write_seed_layer_rules_doc(project_root: str) -> str:
+    """
+    Write LAYER_RULES.md to project_root if it does not already exist.
+    Returns the path written, or empty string if it already existed.
+    """
+    import os
+    dest = os.path.join(project_root, "LAYER_RULES.md")
+    if os.path.exists(dest):
+        return ""
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(_SEED_LAYER_RULES_DOC)
+    return dest

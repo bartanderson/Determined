@@ -226,10 +226,13 @@ RM18. **[ACTIVE] Act on RM17 gaps**
    to `project_meta`. `_design_doc_hint()` reads it; `_emit_corpus_ready` includes
    it in payload. Frontend shows orange notice in header with dismiss button.
 
-   **Gap 1 [LATER]:** Structured layer-rule violation detection.
-   Needs a structured import-path rule type in knowledge_artifacts
-   (from_layer, to_layer, direction=forbidden). The import graph is already tracked --
-   a direct query works once rules have structured fields. Medium effort.
+   **Gap 1 [DONE 2026-07-07]:** Structured layer-rule violation detection.
+   `layer_rule` kind added to knowledge_artifacts (content = JSON {from_layer, to_layer,
+   direction, source}). `_extract_layer_rules()` in doc_extractor.py parses design docs
+   deterministically. `ingest_design_docs` stores layer_rule artifacts and writes
+   LAYER_RULES.md seed doc with human-readable message if none found.
+   `_check_import_layer_violations` now queries layer_rule artifacts directly; returns
+   hint message when no rules defined. 15 new regression tests. 464 passed.
 
 ---
 

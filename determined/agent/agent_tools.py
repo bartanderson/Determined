@@ -572,42 +572,69 @@ _CONSTRAINT_PATTERNS = (
 
 def _check_import_layer_violations(conn, file_path: str) -> list[dict]:
     """
-    Deterministic layer-import check: query the imports table against CONSTRAINT
-    design_notes. Returns confirmed violations (no cosine similarity, no false positives).
-    Each result: {layer, forbidden_import, line_number, rule}.
+    Deterministic layer-import check against structured layer_rule artifacts.
+    Each result: {from_layer, forbidden_import, line_number, to_layer, source}.
+    Returns empty list with a hint if no layer_rules are defined yet.
     """
-    import re
+    import json
 
     if not file_path:
         return []
 
+    # Determine this file's layers from all path segments (handles absolute paths)
     norm = file_path.replace("\\", "/")
-    path_parts = set(norm.split("/"))
+    segments = [p for p in norm.split("/") if p and p != "." and p != ".."]
+    if not segments:
+        return []
+    dir_segments = segments[:-1]  # exclude filename
+    # Build all individual segments and dot-joined suffixes so "routes" matches
+    # in both relative ("routes/foo.py") and absolute ("/home/user/proj/routes/foo.py")
+    file_layer_prefixes = set(dir_segments)
+    for i in range(len(dir_segments)):
+        file_layer_prefixes.add(".".join(dir_segments[i:]))
 
     rows = conn.execute(
-        "SELECT subject, content FROM knowledge_artifacts "
-        "WHERE kind='design_note' AND content LIKE '[CONSTRAINT%'"
+        "SELECT content FROM knowledge_artifacts WHERE kind='layer_rule'"
     ).fetchall()
 
+    if not rows:
+        return [{"_hint": (
+            "No layer rules defined. We've created LAYER_RULES.md in your project folder "
+            "with examples to get you started. Open it, uncomment the rules that fit your "
+            "project, and run ingest_design_docs to activate them. Layer rules tell Determined "
+            "which parts of your code shouldn't be importing from other parts — catching "
+            "architectural drift before it becomes a problem."
+        )}]
+
     violations = []
-    for subject, content in rows:
-        if subject not in path_parts:
+    for (content,) in rows:
+        try:
+            rule = json.loads(content)
+        except Exception:
             continue
-        # Extract backtick-quoted layer names like `storage/` from constraint text
-        forbidden_layers = re.findall(r"`([^`/]+)/`", content)
-        for prefix in forbidden_layers:
-            hits = conn.execute(
-                "SELECT module, line_number FROM imports "
-                "WHERE file_path = ? AND (module = ? OR module LIKE ?)",
-                (file_path, prefix, f"{prefix}.%"),
-            ).fetchall()
-            for module, line_no in hits:
-                violations.append({
-                    "layer": subject,
-                    "forbidden_import": module,
-                    "line_number": line_no,
-                    "rule": content[:300],
-                })
+        if rule.get("direction") != "forbidden":
+            continue
+        from_layer = rule.get("from_layer", "")
+        to_layer = rule.get("to_layer", "")
+        if not from_layer or not to_layer:
+            continue
+        # Check if this file belongs to from_layer
+        if not any(lp == from_layer or lp.startswith(from_layer + ".") or lp.endswith("." + from_layer) for lp in file_layer_prefixes):
+            continue
+        # Check imports table for forbidden to_layer imports
+        hits = conn.execute(
+            "SELECT module, line_number FROM imports "
+            "WHERE file_path = ? AND (module = ? OR module LIKE ?)",
+            (file_path, to_layer, f"{to_layer}.%"),
+        ).fetchall()
+        for module, line_no in hits:
+            violations.append({
+                "from_layer": from_layer,
+                "forbidden_import": module,
+                "line_number": line_no,
+                "to_layer": to_layer,
+                "source": rule.get("source", ""),
+            })
 
     return violations
 
@@ -670,13 +697,21 @@ def check_design_violations(assessor: "Assessor", args: dict) -> str:
 
     lines = [f"Design violation check for '{symbol}':"]
 
-    if import_violations:
+    # Hint returned when no layer_rules are defined yet
+    hint_items = [v for v in import_violations if "_hint" in v]
+    real_violations = [v for v in import_violations if "_hint" not in v]
+
+    if hint_items:
+        lines.append("")
+        lines.append(f"  Note: {hint_items[0]['_hint']}")
+
+    if real_violations:
         lines.append("")
         lines.append("  CONFIRMED layer-import violations (deterministic):")
-        for v in import_violations:
+        for v in real_violations:
             lines.append(
-                f"    [VIOLATION] {v['layer']}/ imports `{v['forbidden_import']}` "
-                f"(line {v['line_number']}) -- layer boundary breach"
+                f"    [VIOLATION] {v['from_layer']} imports `{v['forbidden_import']}` "
+                f"(line {v['line_number']}) -- forbidden by rule in {v['source']}"
             )
 
     if hits:
@@ -2089,6 +2124,7 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
         discover_docs, extract_rules, extract_rules_llm,
         detect_conflicts, deduplicate, _split_by_headings,
         _extract_constraint_sentences, _CONSTRAINT_RE,
+        _extract_layer_rules, write_seed_layer_rules_doc,
     )
     oracle = assessor.oracle
     root = oracle.get_project_root()
@@ -2161,14 +2197,52 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
         assessor.add_artifact(rule.subject, "design_note", content, provenance=prov)
         stored += 1
 
+    # Extract and store structured layer rules from all processed docs
+    layer_rules_stored = 0
+    for doc in design_docs:
+        try:
+            text = open(doc.path, encoding="utf-8", errors="ignore").read()
+            for lr in _extract_layer_rules(text, doc.rel_path):
+                import json
+                content = json.dumps(lr)
+                existing = oracle.conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts "
+                    "WHERE kind='layer_rule' AND content = ?", (content,)
+                ).fetchone()[0]
+                if not existing:
+                    assessor.add_artifact(doc.rel_path, "layer_rule", content, provenance="human-confirmed")
+                    layer_rules_stored += 1
+        except Exception:
+            pass
+
+    # If no layer rules were found at all, write the seed doc and tell the user
+    total_layer_rules = oracle.conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='layer_rule'"
+    ).fetchone()[0]
+    seed_msg = ""
+    if total_layer_rules == 0:
+        dest = write_seed_layer_rules_doc(root)
+        if dest:
+            seed_msg = (
+                f"\n\nWe didn't find any layer rules for this project. "
+                f"We've created LAYER_RULES.md in your project folder with some examples to get you started. "
+                f"Open it, uncomment the rules that fit your project, and run ingest_design_docs to activate them. "
+                f"Layer rules tell Determined which parts of your code shouldn't be importing from other parts "
+                f"— catching architectural drift before it becomes a problem."
+            )
+
     lines = [
         f"Design doc ingestion: {stored} rules stored, {skipped} already present, {errors} errors",
     ]
     if conflicted:
         lines.append(f"  Conflicts detected: {conflicted} rules flagged for human review")
+    if layer_rules_stored:
+        lines.append(f"  Layer rules stored: {layer_rules_stored}")
     lines.append(f"Processed {len(processed_files)} docs:")
     for f in processed_files:
         lines.append(f"  {f}")
+    if seed_msg:
+        lines.append(seed_msg)
     return "\n".join(lines)
 
 
