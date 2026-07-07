@@ -1,3 +1,3 @@
-PREVIOUS: RM15 step 8 done -- stubs 10->2, implemented 16->27, frontier flat; find_abc_gaps same-file blind spot logged
-CURRENT:  RM15 step 9 -- (1) fix find_abc_gaps same-file blind spot, (2) wire EnrichmentProcessor into capture route, (3) write journey findings
-NEXT:     RM15 complete
+PREVIOUS: RM15 step 9 done -- ABC gap fixed, processors wired, findings written
+CURRENT:  RM15 COMPLETE -- choose RM18 (Flask entry-point heuristic) or ingest_design_docs path arg
+NEXT:     TBD
