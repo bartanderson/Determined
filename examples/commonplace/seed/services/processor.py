@@ -48,11 +48,25 @@ class DeduplicateProcessor(EntryProcessor):
 
 class EnrichmentProcessor(EntryProcessor):
     """
-    STUB: LLM-powered enrichment pass.
-    Frontier: call suggest_tags and find_connections, attach results to entry.
-    ABC gap: process() and can_handle() not overridden -- Determined detects this.
+    LLM enrichment pass: attaches suggested tags and related entry connections.
+    Requires llm_endpoint and all_entries to be set before use.
     """
-    pass
+
+    def __init__(self, llm_endpoint=None, all_entries=None):
+        self.llm_endpoint = llm_endpoint
+        self.all_entries = all_entries or []
+
+    def can_handle(self, entry: dict) -> bool:
+        return bool(entry.get("content"))
+
+    def process(self, entry: dict) -> dict:
+        from services import tagger, linker
+        entry = dict(entry)
+        entry["tags"] = tagger.suggest_tags(entry["content"], self.llm_endpoint)
+        entry["connections"] = linker.find_connections(
+            entry.get("id"), entry["content"], self.all_entries
+        )
+        return entry
 
 
 def run_processors(entry: dict, processors=None) -> dict:

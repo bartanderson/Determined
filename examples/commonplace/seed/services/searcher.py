@@ -14,8 +14,7 @@ def search(query):
 
 def semantic_search(query):
     """
-    STUB: Embedding-based semantic search.
-    Falls back to text search until embeddings are available.
-    Frontier: implement with sentence-transformers or llama-server embeddings.
+    Semantic search over entries. Currently delegates to text search.
+    Replace with embedding-based ranking when embeddings are available.
     """
     return search(query)

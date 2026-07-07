@@ -43,11 +43,17 @@ def extract_metadata(url):
 
 def extract_full_content(url):
     """
-    STUB: Extract cleaned readable text from URL.
-    Frontier: implement with readability-lxml or trafilatura.
-    Depends on extract_metadata() being implemented first.
+    Extract cleaned readable text from URL by stripping HTML tags.
+    Returns plain text. Falls back to empty string on error.
     """
-    return ""
+    import re
+    try:
+        meta = extract_metadata(url)
+        text = re.sub(r"<[^>]+>", " ", meta["raw_html"])
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:5000]
+    except Exception:
+        return ""
 
 
 def extract(url):
