@@ -14,3 +14,11 @@ def insert_entry(entry):
     Depends on storage.db.init_db() having been called.
     """
     pass
+
+
+def search_entries(query):
+    """
+    STUB: Full-text search across entries title and content.
+    Frontier: implement with SQL LIKE or FTS5.
+    """
+    return []

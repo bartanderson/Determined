@@ -1,3 +1,3 @@
-PREVIOUS: RM15 step 2 done -- extract_metadata implemented, frontier dropped 2->1 stubs
-CURRENT:  RM15 step 3 -- add storage queries (insert_entry stub), wire into capture, reingest, watch orphaned-impl drop
-NEXT:     RM15 step 4 -- run check_design_violations on extractor.py, surface 3-responsibility tension
+PREVIOUS: RM15 step 4 done -- check_design_violations surfaced extractor tension (score 0.43), reason_about recommended keep unified (95%)
+CURRENT:  RM15 step 5 -- add search/tagging/linking stubs, reingest, watch topology grow (chain-head + ABC gap appear)
+NEXT:     RM15 step 6 -- work the topology: find_abc_gaps, find_conditional_stubs, detect_topology chain shapes
