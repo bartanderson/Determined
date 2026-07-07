@@ -28,6 +28,8 @@ import os
 import sqlite3
 import tempfile
 
+import pytest
+
 from determined.persistence.persistence_engine import ensure_schema
 from determined.oracle.db_oracle import DBOracle
 from determined.assessor.assessor import Assessor
@@ -161,6 +163,7 @@ def test_detect_intent_routes_purpose_questions_to_role_query():
 #    -> REAL ROLE VIEW, VIA Assessor.ask()
 # =========================================================
 
+@pytest.mark.slow
 def test_ask_purpose_question_routes_to_role_view():
     # CLAUDE-EDIT 2026-06-17: was data.totals / data.files directly, which
     # assumed Select("ROLE") (metric=None) was the only legitimate AST the
@@ -203,6 +206,7 @@ def test_ask_purpose_question_routes_to_role_view():
 
 
 
+@pytest.mark.slow
 def test_ask_role_question_is_deterministic():
     # CLAUDE-EDIT 2026-06-17 (later): was asserting first["compiled_ast"] ==
     # second["compiled_ast"] (and algebra_result equality on top of that) -

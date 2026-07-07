@@ -7,6 +7,7 @@
 # All tests use in-memory SQLite; no LLM needed (LLM unavailability
 # is tested explicitly via the heuristic-fallback test).
 
+import pytest
 import sqlite3
 
 from determined.intent.semantic_summary import (
@@ -80,6 +81,7 @@ def test_semantic_summary_cache_hit_on_same_hash():
     assert second["content"] == first["content"]
 
 
+@pytest.mark.slow
 def test_semantic_summary_stale_on_changed_source():
     conn = _make_conn()
     source_v1 = "def foo(): pass"
@@ -91,6 +93,7 @@ def test_semantic_summary_stale_on_changed_source():
     assert r2["source_hash"] != r1["source_hash"]
 
 
+@pytest.mark.slow
 def test_semantic_summary_force_refresh_bypasses_cache():
     conn = _make_conn()
     source = "def foo(): pass"
@@ -121,6 +124,7 @@ def test_get_summary_if_fresh_returns_cached_when_fresh():
     assert result["cache_hit"] is True
 
 
+@pytest.mark.slow
 def test_list_summaries_returns_all():
     conn = _make_conn()
     get_or_generate_summary(conn, "a.py", "file", "x = 1")
@@ -130,6 +134,7 @@ def test_list_summaries_returns_all():
     assert {"a.py", "b.py"} <= subjects
 
 
+@pytest.mark.slow
 def test_list_summaries_filtered_by_kind():
     conn = _make_conn()
     get_or_generate_summary(conn, "a.py", "file", "x")

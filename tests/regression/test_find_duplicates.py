@@ -91,6 +91,7 @@ def test_find_duplicates_one_docstring():
     assert "fewer than 2" in result
 
 
+@pytest.mark.slow
 def test_find_duplicates_identical_docstrings_detected():
     """Two functions with identical docstrings should score ~1.0 and be detected."""
     docstring = "Parse the user input and return a cleaned string."
@@ -108,6 +109,7 @@ def test_find_duplicates_identical_docstrings_detected():
     assert rows >= 1
 
 
+@pytest.mark.slow
 def test_find_duplicates_unrelated_docstrings_below_threshold():
     """Semantically unrelated functions should not appear as duplicates."""
     conn = _make_db([
@@ -123,6 +125,7 @@ def test_find_duplicates_unrelated_docstrings_below_threshold():
     assert rows == 0
 
 
+@pytest.mark.slow
 def test_find_duplicates_artifact_content_is_valid_json():
     """Stored reconciliation_finding content must be valid JSON with required keys."""
     docstring = "Calculate the sum of all elements in a list."
@@ -146,6 +149,7 @@ def test_find_duplicates_artifact_content_is_valid_json():
         assert 0.0 <= d["score"] <= 1.0
 
 
+@pytest.mark.slow
 def test_find_duplicates_idempotent():
     """Running find_duplicates twice should not double-store pairs."""
     docstring = "Validate email address format and return bool."
@@ -166,6 +170,7 @@ def test_find_duplicates_idempotent():
     assert "already recorded" in result2
 
 
+@pytest.mark.slow
 def test_find_duplicates_clear_resets():
     """clear=True should delete existing findings and rescan."""
     docstring = "Serialize an object to a JSON string."
@@ -200,6 +205,7 @@ def test_find_duplicates_same_symbol_same_file_skipped():
     assert rows == 0
 
 
+@pytest.mark.slow
 def test_find_duplicates_threshold_respected():
     """At threshold=0.99 no pair should be stored for near-but-not-identical text."""
     conn = _make_db([
@@ -227,6 +233,7 @@ def test_list_reconciliation_findings_empty():
     assert "run find_duplicates" in result
 
 
+@pytest.mark.slow
 def test_list_reconciliation_findings_shows_stored_pairs():
     docstring = "Convert temperature from Celsius to Fahrenheit."
     conn = _make_db([

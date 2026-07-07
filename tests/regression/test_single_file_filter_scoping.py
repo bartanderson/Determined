@@ -38,6 +38,8 @@ import os
 import sqlite3
 import tempfile
 
+import pytest
+
 from determined.persistence.persistence_engine import ensure_schema
 from determined.oracle.db_oracle import DBOracle
 from determined.assessor.assessor import Assessor
@@ -179,6 +181,7 @@ def test_executor_filters_role_files_to_named_file_only():
 #    project - the literal bug Bart hit, reproduced and proven fixed.
 # =========================================================
 
+@pytest.mark.slow
 def test_ask_single_named_file_returns_only_that_file():
     oracle, tmp_path = _seeded_oracle()
     try:

@@ -27,6 +27,8 @@ import os
 import sqlite3
 import tempfile
 
+import pytest
+
 from determined.persistence.persistence_engine import ensure_schema
 from determined.oracle.db_oracle import DBOracle
 from determined.assessor.assessor import Assessor
@@ -162,6 +164,7 @@ def test_algebra_select_summary_and_subsystem_real_views():
 #    -> REAL VIEWS, VIA Assessor.ask() (the real entrypoint)
 # =========================================================
 
+@pytest.mark.slow
 def test_ask_runs_end_to_end_without_stubs():
     oracle, tmp_path = _seeded_oracle()
     try:
@@ -178,6 +181,7 @@ def test_ask_runs_end_to_end_without_stubs():
         os.remove(tmp_path)
 
 
+@pytest.mark.slow
 def test_ask_is_deterministic(warmup_llm):
     """
     Same question, same DB state, twice -> identical intent and identical

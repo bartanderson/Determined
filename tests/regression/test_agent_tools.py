@@ -8,6 +8,8 @@ import os
 import sqlite3
 import tempfile
 
+import pytest
+
 from determined.persistence.persistence_engine import ensure_schema
 from determined.intent.semantic_summary import ensure_semantic_summaries_table
 from determined.intent.knowledge_artifact import ensure_knowledge_artifacts_table
@@ -940,6 +942,7 @@ def test_infer_behavior_batch_skips_cached():
     assert "Processed: 0" in r2
 
 
+@pytest.mark.slow
 def test_infer_behavior_batch_force_reruns():
     from determined.agent.agent_tools import infer_behavior_batch
     oracle = _make_batch_fixture()
