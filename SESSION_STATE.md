@@ -1,48 +1,48 @@
-Written at commit: 13d73bf
-# SESSION STATE - session 106 handoff
+Written at commit: c510858
+# SESSION STATE - session 107 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 106, 2026-07-07)
+## What happened this session (session 107, 2026-07-07)
 
-**RM18 Gap 10 [V]:** Auto-discover design docs on corpus load.
-- `_check_design_doc_hint()` in `ui_server.py`: runs on `load_db`, scans for markdown
-  with `constraint_score >= 0.3` not yet ingested as `design_note` artifacts, writes
-  count+paths to `project_meta` as `design_doc_hint` (JSON).
-- `_design_doc_hint()` reads it; `_emit_corpus_ready` includes it in payload.
-- Frontend `corpus_ready` handler shows orange dismissible notice in header when present.
-- Committed: bdef388 [V], 449 passed, 1 skipped [V]
+**RM19 Pass 1 [V]:** Duplicate Detection -- find near-duplicate functions via embedding similarity.
 
-**RM18 Gap 1 [V]:** Structured layer-rule violation detection.
-- `layer_rule` kind added to `knowledge_artifact.py` VALID_KINDS [V]
-- `_extract_layer_rules(text, source)` in `doc_extractor.py`: deterministic regex parser
-  for "X must not import Y" / "X cannot depend on Y" patterns -> JSON dicts [V]
-- `write_seed_layer_rules_doc(project_root)` writes `LAYER_RULES.md` with universal seed
-  rules and plain-English onboarding message if file doesn't exist [V]
-- `ingest_design_docs` in `agent_tools.py`: extracts layer_rule artifacts from all docs;
-  writes seed doc + human-readable message when no rules found [V]
-- `_check_import_layer_violations`: queries `kind='layer_rule'` artifacts directly via
-  SQL+JSON; returns hint when no rules defined; handles absolute+relative paths [V]
-- `check_design_violations`: renders hint and structured violation output [V]
-- 15 new regression tests in `tests/regression/test_layer_rules.py` [V]
-- Updated 2 stale tests in `test_agent_tools.py` (old design_note format -> layer_rule) [V]
-- Committed: 13d73bf [V], 464 passed, 1 skipped [V]
-
-**RM18 fully done [V]:** Gap 2 (Flask entry_point), Gap 10 (doc discovery), Gap 1 (layer rules).
+- `reconciliation_finding` added to `VALID_KINDS` in `knowledge_artifact.py` [V]
+- `find_duplicates(assessor, args)` in `agent_tools.py` [V]:
+  - Loads all functions with non-null docstrings (up to `limit`, default 2000)
+  - Batch-encodes `"{name}: {docstring[:400]}"` via existing `_get_embed_model()` / all-MiniLM-L6-v2
+  - Computes full pairwise cosine similarity via `embeddings @ embeddings.T` (numpy matmul)
+  - Stores pairs >= threshold (default 0.85) as `reconciliation_finding` artifacts
+  - Idempotent: skips pairs already stored; `clear=True` deletes and rescans
+  - Self-pair guard (same name + same file skipped)
+  - No LLM needed
+- `list_reconciliation_findings(assessor, args)` in `agent_tools.py` [V]:
+  - Shows stored pairs sorted by score desc, optional `min_score` filter
+- Both tools wired into `TOOLS` dict and `tool_registry.py` REGISTRY [V]
+- 13 regression tests in `tests/regression/test_find_duplicates.py` [V]
+- Updated `test_dispatch_all_tools_registered` in `test_agent_tools.py` [V]
+- Committed: c510858 [V], 477 passed, 1 skipped [V]
 
 ## NEXT SESSION -- start here
 
-1. **RM19 Pass 1 -- Duplicate Detection.**
-   Embed all function docstrings+names via existing all-MiniLM-L6-v2 infrastructure.
-   Cluster by cosine similarity above 0.85. Surface groups of near-identical symbols.
-   Output: candidate pairs with similarity score. No LLM needed.
-   Build on: `determined/oracle/embedding_model.py` (embed_text, cosine_similarity),
-   `knowledge_artifacts` (kind=reconciliation_finding).
+1. **RM19 Pass 2 -- Intent Differencing.**
+   For each stored `reconciliation_finding` pair: feed both docstrings + call graph
+   context to Qwen3-8B. Classify divergence reason from fixed taxonomy:
+   - accidental copy
+   - historical evolution
+   - performance optimization
+   - platform-specific behavior
+   - security reason
+   - genuinely different abstraction
+   Store classification as knowledge_artifact (kind=reconciliation_finding, updated content
+   OR new artifact referencing the pair subject). No new schema needed.
+   Build on: existing `reconciliation_finding` artifacts, `list_callers`/`list_callees`
+   queries, `llm_client.chat()` (quality tier, Qwen3-8B, port 8081).
 
-2. **RM19 Pass 2** (after Pass 1 proven): Intent Differencing -- classify WHY near-duplicates
-   differ using Qwen3-8B. Fixed taxonomy: accidental copy, historical evolution, performance
-   optimization, platform-specific behavior, security reason, genuinely different abstraction.
+2. **RM19 Pass 3 -- Primitive Discovery** (after Pass 2 proven):
+   Mine call graph for repeated compositions A→B→C→D across independent call chains.
+   Surface: "this 4-step pattern appears N times -- no shared primitive exists."
 
 ## Known issues (carried forward)
 
@@ -53,7 +53,10 @@ call discover_docs + extract_rules directly.
 **UI Re-analyze+ does NOT use reingest_file [V]:** Runs background discover_run thread.
 Workaround: call reingest_file() from Python CLI directly.
 
-**Test count: 464 passed, 1 skipped [V]**
+**find_abc_gaps blind spot [?]:** Same-file inheritance (ABC base + subclasses in one file)
+always reports a gap even when overrides exist. See HISTORY.md 2026-07-07 entry.
+
+**Test count: 477 passed, 1 skipped [V]**
 
 ## Seed corpus state [?]
 
