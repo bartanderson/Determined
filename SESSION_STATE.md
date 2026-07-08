@@ -1,58 +1,57 @@
-Written at commit: eb7e5e3 (Determined)
-# SESSION STATE - session 120 handoff
+Written at commit: 1a34081
+# SESSION STATE - session 121 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 120, 2026-07-08)
+## What happened this session (session 121, 2026-07-08)
 
-**RM28 Stage 1: Artifact layer -- DONE [V]**
-- 7 files changed, 452 insertions (commit eb7e5e3)
-- workflow_store.py: VALID_KINDS gains 'artifact'; ensure_artifact_columns()
-  migration adds tool_name/artifact_status/feeds_into to workflow_items and
-  ingested_at to files; store_artifact(), get_artifact_by_name(),
-  list_artifacts(), mark_stale_by_files(), _cascade_staleness() added
-- persistence_engine.py: _migrate() adds files.ingested_at to existing corpus DBs
-- reingest_file.py: apply_file_delta() stamps files.ingested_at after each reingest
-- ui_server.py: get_artifacts socket handler (ensure_artifact_columns safe on old DBs)
-- console.html: Artifacts sub-panel in Build queue tab (name/tool/status/timestamp)
-- 13 new tests; 506 passed, 1 skipped [V]
+**RM28 Stage 2: Tour mode -- DONE [V]**
+- 3 files changed, 318 insertions (commit 1a34081)
+- ui_server.py: _TOUR_STEPS (8-step list) + get_tour_steps socket handler +
+  tour_run_step socket handler (background thread, dispatches via agent_tools.dispatch)
+- console.html: Tour tab button + panel-tour (step header, progress dots,
+  instruction, output pre, explanation callout, nav buttons, corpus hint banner)
+- console.html: Tour JS (tourLoad, tourRender, tourRunStep, tourNext, tourPrev,
+  socket.on tour_steps/tour_step_result, localStorage persistence)
+- step_queue.md advanced to Stage 3
+- 506 tests passed, 1 skipped [V]
+- Verified in browser: step 1 runs knowledge_status, shows output + explanation;
+  Next advances to step 2; corpus hint banner fires when non-seed corpus loaded [V]
 
-**step_queue.md updated [V]**
-- Was pointing at RM15 (done); now points at RM28 Stage 2 next
+**Tour steps (8 total):**
+  1. Orient -- knowledge_status (file count, structural facts, gaps at a glance)
+  2. Frontier Direct -- frontier_coverage (stub count, direct call stubs)
+  3. Frontier Orphan -- find_orphaned_impls (anticipatory + stranded)
+  4. Frontier ABC -- find_abc_gaps (abstract method coverage)
+  5. Topology -- detect_topology (full structural picture + action queues)
+  6. Conditional stubs -- find_conditional_stubs (hidden runtime gaps)
+  7. Doc health -- docstring_health (missing + stale docstrings)
+  8. Gap analysis -- gap_analysis (LLM brainstorm, stores proposals in build queue)
 
 ## NEXT SESSION -- start here
 
-**RM28 Stage 2: Tour mode**
+**RM28 Stage 3: Workbench palette**
 
-Scripted step-by-step walkthrough of the Commonplace corpus. Proves the mode
-concept before building Workbench (Stage 3) or Discovery (Stage 4).
+Discovery tools exposed ad hoc with artifact output. Each tool run produces a
+named artifact. User chains them manually. No sequence enforced.
 
 **What to build:**
-- Tour panel in UI: current step, instruction text, Run button, explanation
-- Tour script (static, Python list or JSON): step name, instruction, tool to
-  call, explanation of output
-- Steps mirror COMMONPLACE_USER_JOURNEY.md arc:
-  1. Orient (corpus map, entry points, gap summary)
-  2. Frontier Direct (stubs)
-  3. Frontier Orphan (unwired impls)
-  4. Frontier ABC (interface gaps)
-  5. Topology (action queue)
-  6. Tools (gap analysis, docstring health, design violations)
-  7. Knowledge (distillation, design notes)
-- Each step: instruction shown -> user clicks Run -> tool fires -> output in
-  main panel -> explanation shown -> Next advances
-- Completion tracked per step (localStorage or session state)
-- Free exploration allowed; AI Q&A available throughout (existing Ask bar)
+- Workbench tab (or panel within Build queue) with tool palette
+- Each palette item: tool name, one-line description, [Run] button
+- Running a tool stores result as artifact (kind=artifact) in workflow_items
+- Artifacts panel (already exists in Build queue tab) shows results with status
+- Tools to expose: all 8 tour steps + concept_search, docstring_health,
+  check_design_violations, ingest_design_docs, extract_design_facts, gap_analysis
 
 **Where to start:**
-1. Read TRACKER.md RM28 (full spec, tour arc section)
-2. Read console.html for tab/panel structure to decide Tour placement
-3. Define tour script as Python list in ui_server.py or a JSON file
-4. Build Tour panel HTML + JS + socket handlers
+1. Read TRACKER.md RM28 for Workbench spec
+2. Read Build queue tab HTML (panel-build_queue, around line 395 of console.html)
+3. Read arLoad() and get_artifacts socket handler to understand existing artifact flow
+4. Decide: new Workbench tab vs. sub-panel in Build queue tab
 
-**Key constraint:** Tour is Commonplace-only (scripted known content).
-Use COMMONPLACE_USER_JOURNEY.md as source of truth for step descriptions.
+**Key constraint:** Workbench should feed artifacts into the existing Artifacts
+sub-panel in Build queue. Don't duplicate artifact storage.
 
 ## Known issues (carried forward)
 
@@ -62,3 +61,5 @@ Use COMMONPLACE_USER_JOURNEY.md as source of truth for step descriptions.
 **UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI.
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
+**Tour on non-seed corpus [V]:** Shows corpus hint banner; runs tools against whatever
+  corpus is loaded (explanations are Commonplace-specific but output is real).
