@@ -29,6 +29,7 @@ from determined.agent.knowledge_status import coverage_summary, suggest_followup
 from determined.agent.pattern_executor import PatternExecutor, detect_pattern
 
 from determined.agent.llm_client import chat as _llm_chat, LLM_TIMEOUT as _LLM_TIMEOUT
+from determined.agent.claim_verifier import verify_answer as _verify_claims, build_correction_block as _correction_block
 
 
 # ------------------------------------------------------------------
@@ -411,6 +412,14 @@ def _answer(
     else:
         assemble_msgs = _assemble_prompt(user_input, facts_text, history, facts=facts, needs=needs)
         answer = _call_ollama(assemble_msgs, verbose=verbose, label="phase3-assemble")
+        # Verification loop (RM21 Technique 1): check structural claims against DB
+        corrections = _verify_claims(answer, oracle.conn)
+        if corrections:
+            corrected_facts = facts_text + _correction_block(corrections)
+            revised_msgs = _assemble_prompt(user_input, corrected_facts, history, facts=facts, needs=needs)
+            if verbose:
+                print(f"\n[verify] {len(corrections)} correction(s); re-assembling", flush=True)
+            answer = _call_ollama(revised_msgs, verbose=verbose, label="phase3-verify")
         answer = _postprocess_answer(answer, facts)
 
     if _trace is not None:

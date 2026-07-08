@@ -16,7 +16,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-08, session 117):** RM27 done. GRASP 9 principles baked as JSON (determined/data/grasp_principles.json + grasp_loader.py), wired into _check_design_violations_core alongside SOTS tenets. check_design_violations now surfaces named GRASP violations (e.g. GRASP-9 Protected Variations on check_design_violations itself). 481 passed, 1 skipped. RM23 also done this session: Phase 3 walk completed on complete Commonplace corpus (25 files, 64 functions). DB reingested 3 Walk 4 files (linker.py, searcher.py, search.py) before walking. Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct fresh-corpus state). Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs. step_queue.md corrected (session 116 claimed advancement but didn't actually write it). No engine files changed; tests not re-run.
+**Last session (2026-07-08, session 118):** RM21 Technique 1 done. claim_verifier.py added: regex claim extraction (CALLS, NO_CALLERS), DB verification against graph_edges, correction block fed back into one re-assembly pass. Wired into local_agent._answer() ASSEMBLE path. 12 new tests. 493 passed, 1 skipped.
+
+**Session 117 (2026-07-08):** RM27 done. GRASP 9 principles baked as JSON (determined/data/grasp_principles.json + grasp_loader.py), wired into _check_design_violations_core alongside SOTS tenets. check_design_violations now surfaces named GRASP violations (e.g. GRASP-9 Protected Variations on check_design_violations itself). 481 passed, 1 skipped. RM23 also done this session: Phase 3 walk completed on complete Commonplace corpus (25 files, 64 functions). DB reingested 3 Walk 4 files (linker.py, searcher.py, search.py) before walking. Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct fresh-corpus state). Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs. step_queue.md corrected (session 116 claimed advancement but didn't actually write it). No engine files changed; tests not re-run.
 
 **Session 81 (2026-07-05):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
@@ -395,7 +397,19 @@ RM16. **[DONE 2026-07-05] UI concept documentation: explain what each panel/mode
 
 ---
 
-RM21. **[FUTURE] Small-model reasoning enhancement: push Qwen3-8B beyond its natural ceiling**
+RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its natural ceiling**
+
+   **Technique 1 DONE (2026-07-08):** Verification loop wired into `_answer()` in
+   `local_agent.py`. After ASSEMBLE, `claim_verifier.py` extracts structural claims
+   (CALLS, NO_CALLERS) via regex, checks each against `graph_edges`, and builds a
+   correction block if any are wrong. One re-assembly pass with corrections prepended
+   to facts. 12 new regression tests. 493 passed, 1 skipped.
+
+   **Remaining techniques (2-6):** Constrained decoding, prompt chaining, MCTS,
+   speculative verification, large-model fallback. Build only after Technique 1
+   proves insufficient on real multi-hop queries.
+
+
 
    The long-term goal: make Determined's local model reason reliably over multi-hop
    questions without requiring a larger model. Not a single feature -- a layered

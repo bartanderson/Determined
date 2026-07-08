@@ -1,3 +1,3 @@
-PREVIOUS: RM23 -- Phase 3 extras walk documented in COMMONPLACE_USER_JOURNEY.md (committed 65ef660)
-CURRENT:  RM27 -- GRASP vocabulary: wire into check_design_violations as named violation language
-NEXT:     RM21 -- verification loops (model claim -> DB check -> correction)
+PREVIOUS: RM27 -- GRASP vocabulary wired into check_design_violations (committed 431c5ef)
+CURRENT:  RM21 -- verification loops (model claim -> DB check -> correction)
+NEXT:     RM18 -- act on RM17 gaps (Gap 2 done; Gap 10 and Gap 1 remain)
