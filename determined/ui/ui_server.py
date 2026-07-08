@@ -2133,6 +2133,135 @@ def handle_tour_run_step(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+# ── Workbench palette ─────────────────────────────────────────────────────────
+
+_WORKBENCH_TOOLS = [
+    {
+        "id": "knowledge_status",
+        "label": "Orient",
+        "tool": "knowledge_status",
+        "description": "File count, entry points, hot files, coverage gaps at a glance",
+        "args": {},
+    },
+    {
+        "id": "frontier_coverage",
+        "label": "Frontier: Direct",
+        "tool": "frontier_coverage",
+        "description": "Called-but-not-implemented stubs and direct call coverage",
+        "args": {},
+    },
+    {
+        "id": "find_orphaned_impls",
+        "label": "Frontier: Orphans",
+        "tool": "find_orphaned_impls",
+        "description": "Implemented functions that nothing calls yet (anticipatory + stranded)",
+        "args": {},
+    },
+    {
+        "id": "find_abc_gaps",
+        "label": "Frontier: ABC",
+        "tool": "find_abc_gaps",
+        "description": "Abstract methods without concrete implementations",
+        "args": {},
+    },
+    {
+        "id": "detect_topology",
+        "label": "Topology",
+        "tool": "detect_topology",
+        "description": "Full structural picture plus action queues",
+        "args": {},
+    },
+    {
+        "id": "find_conditional_stubs",
+        "label": "Conditional stubs",
+        "tool": "find_conditional_stubs",
+        "description": "Hidden runtime gaps behind conditionals",
+        "args": {},
+    },
+    {
+        "id": "docstring_health",
+        "label": "Doc health",
+        "tool": "docstring_health",
+        "description": "Missing and stale docstrings across the corpus",
+        "args": {},
+    },
+    {
+        "id": "gap_analysis",
+        "label": "Gap analysis",
+        "tool": "gap_analysis",
+        "description": "LLM brainstorm of extend/bridge/mirror/consolidate fills for the highest-signal area",
+        "args": {},
+    },
+    {
+        "id": "check_design_violations",
+        "label": "Design violations",
+        "tool": "check_design_violations",
+        "description": "SOTS and GRASP violations detected against ingested design notes",
+        "args": {},
+    },
+    {
+        "id": "concept_search",
+        "label": "Concept search",
+        "tool": "concept_search",
+        "description": "Semantic + keyword search across all text surfaces",
+        "args": {},
+        "param": {"name": "query", "placeholder": "search term or concept"},
+    },
+    {
+        "id": "extract_design_facts",
+        "label": "Extract design facts",
+        "tool": "extract_design_facts",
+        "description": "Extract design facts from ingested design documents",
+        "args": {},
+    },
+]
+
+
+@socketio.on("get_workbench_tools")
+def handle_get_workbench_tools(_data=None):
+    """Return the Workbench tool palette (metadata only, no execution)."""
+    emit("workbench_tools", {"tools": _WORKBENCH_TOOLS})
+
+
+@socketio.on("workbench_run_tool")
+def handle_workbench_run_tool(data):
+    """Run a Workbench tool, store result as artifact, and emit workbench_tool_result."""
+    if _oracle is None:
+        emit("workbench_tool_result", {"error": "No corpus loaded.", "id": (data or {}).get("id", "")})
+        return
+    tool_id = (data or {}).get("id", "")
+    extra_args = (data or {}).get("args", {})
+    tool_def = next((t for t in _WORKBENCH_TOOLS if t["id"] == tool_id), None)
+    if tool_def is None:
+        emit("workbench_tool_result", {"error": f"Unknown tool: {tool_id}", "id": tool_id})
+        return
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import dispatch
+            from determined.intent.workflow_store import store_artifact, ensure_artifact_columns
+            tool_args = {**tool_def["args"], **extra_args}
+            result = dispatch(tool_def["tool"], tool_args, _oracle, _assessor)
+            artifact_name = tool_def["id"]
+            k_conn = _assessor._knowledge_conn if _assessor else None
+            if k_conn:
+                ensure_artifact_columns(k_conn.cursor())
+                store_artifact(k_conn, artifact_name, tool_def["tool"], str(result))
+            socketio.emit("workbench_tool_result", {
+                "id": tool_id,
+                "result": result,
+                "stored": k_conn is not None,
+            }, to=sid)
+        except Exception as exc:
+            socketio.emit("workbench_tool_result", {
+                "id": tool_id,
+                "error": str(exc),
+            }, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _start_llm_server() -> None:
     """Launch llama-server subprocess and warm up the model. Runs in background thread."""
     from determined.agent.llm_client import start_server, LLM_DISPLAY_NAME
