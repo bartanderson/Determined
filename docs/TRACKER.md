@@ -162,6 +162,77 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM28. **[FILED 2026-07-08] Three-mode UX: Tour, Discovery, Workbench**
+
+   Designed in session 119. Three operating modes built on a shared artifact layer.
+
+   **The three modes:**
+
+   - **Unguided (current behavior):** full tool access, no narration. Already exists.
+   - **Guided Tour (Commonplace corpus):** scripted step-by-step walkthrough teaching
+     the tool's concepts on known content. User can explore freely; tour tracks progress
+     and fills gaps. AI answers questions in context of current step.
+   - **Discovery (own project):** same arc as tour but live -- AI runs tools, narrates
+     real output, interprets findings, proposes wiring and extensions, drafts code for
+     confirmed gaps.
+   - **Workbench (unguided + Discovery tools):** all Discovery tools available ad hoc.
+     User picks tools in any order, chains outputs manually. For users who know what
+     each tool does and want to compose their own workflow.
+
+   **Shared foundation: Artifact layer**
+   Every tool run produces a named, persistent artifact with staleness tracking.
+   Artifacts go stale when code changes (reingest invalidates them). Downstream
+   artifacts that depend on a stale upstream artifact are flagged in cascade.
+   Re-execution is targeted and diff-able (new output vs. prior run).
+
+   Artifact fields: name, tool source, content, timestamp, status (fresh/stale/superseded),
+   feeds-into list. Stored in workflow_items (kind=artifact). Staleness detected via
+   reingest_file timestamp vs. artifact timestamp.
+
+   **Tour arc (Commonplace, scripted):**
+   1. Orient -- corpus map, entry points, gap summary
+   2. Frontier -- Direct (stubs), Orphan (unwired), ABC (interface gaps)
+   3. Topology -- full structural picture, action queue
+   4. Tools -- gap analysis, ABC check, conditional stubs, design violations
+   5. Knowledge -- distillation, design notes, docstring coverage
+   Each step: instruction + "Run" button + explanation + AI Q&A available throughout.
+   Completion tracked per step; free exploration allowed; tour catches up at end.
+
+   **Discovery arc (own project, live):**
+   1. Orient -- same as tour, but narrated live
+   2. Frontier -- their actual incomplete functions
+   3. Topology -- their action queue
+   4. Design docs -- ingest any existing design docs, surface violations
+   5. Synthesize -- AI builds narrative of what the codebase is and does
+   6. Gaps -- what's missing, orphaned, undocumented
+   7. Wire -- specific proposals to connect existing unlinked pieces
+   8. Extend -- generate stubs for confirmed gaps
+   9. Code -- draft implementations for approved stubs
+
+   **Workbench:** tool palette exposing all Discovery steps individually.
+   Each produces an artifact. User chains them manually. Output of one can
+   be fed explicitly into the next. No sequence enforced.
+
+   **Build order (each stage usable independently):**
+   Stage 1: Artifact layer -- persistence, naming, staleness, cascade invalidation
+   Stage 2: Tour mode -- scripted steps, Commonplace only, proves mode concept
+   Stage 3: Workbench palette -- Discovery tools exposed ad hoc with artifact output
+   Stage 4: Discovery mode -- AI-driven sequencing over live unknown corpus
+
+   **What already exists (build on, don't replace):**
+   - workflow_items table -- extend with artifact kind and staleness fields
+   - knowledge_artifacts -- tool findings already stored here
+   - reingest_file -- already tracks file changes; use timestamp for staleness
+   - find_orphaned_impls, detect_topology, find_abc_gaps, gap_analysis, etc. -- all tools exist
+   - Build queue tab in UI -- extend into Artifacts panel
+   - local_agent + Chat bar -- AI Q&A already works; add tour context awareness
+   - COMMONPLACE_USER_JOURNEY.md -- the Tour script, already verified
+
+   **Validation approach:** build each stage, use it on Commonplace, fix failures
+   before proceeding to next stage. Requirements emerge from real use, not speculation.
+
+---
+
 RM23. **[DONE 2026-07-08] Commonplace Phase 3 extras arc: walk with Determined**
 
    Walk completed session 117. Phase 3 section of COMMONPLACE_USER_JOURNEY.md

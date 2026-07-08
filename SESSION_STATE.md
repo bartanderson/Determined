@@ -1,4 +1,4 @@
-Written at commit: 8a591b4 (Determined)
+Written at commit: (pending -- written before final commit)
 # SESSION STATE - session 119 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
@@ -7,57 +7,49 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 ## What happened this session (session 119, 2026-07-08)
 
 **RM15 Phase 1 clean user walk -- DONE [V]**
-- Loaded seed corpus (C_Users_bartl_dev_Determined_examples_commonplace_seed.db) [V]
-- Discovered seed had evolved: now 17 files, 0 stubs (Walk 4 extras implemented stubs
-  into the seed; old Phase 1 doc described 8-file, 2-stub state) [V]
-- Discovered seed DB had carry-over knowledge artifacts (22 design_notes, 8 semantic_summaries)
-  from prior developer walks -- cleared them to establish clean first-ingest state [V]
-- Walked orient → frontier (Direct/Orphan/ABC) → topology → tools → knowledge [V]
-- No broken tools found -- walk completed cleanly [V]
-- Key actuals:
-  - Corpus panel: 17 files · 0 hot · 0 stubs; roots: capture↗13, validate_entry↗6 [V]
-  - Frontier Direct: empty (0 stubs -- correct) [V]
-  - Frontier Orphan: validate_entry (anticipatory), shown as single blue node [V]
-  - Frontier ABC: empty (all overrides in place) [V]
-  - detect_topology: 0 stubs, 2 orphaned-impl (create_app, validate_entry) [V]
-  - find_abc_gaps: "All ABC stub methods have at least one non-stub override" [V]
-  - find_orphaned_impls: create_app [possibly-stranded], validate_entry [anticipatory] [V]
-  - find_conditional_stubs: 0 found [V]
-  - knowledge_status: 0/17 distilled, 0 design notes, 9/31 missing docstrings [V]
-- Rewrote COMMONPLACE_USER_JOURNEY.md Phase 1 section with actual current outputs [V]
-- Marked RM15 DONE in TRACKER.md (all 4 phases complete: 0=RM22, 1=now, 2=Walk3, 3=RM23) [V]
-- 493 passed, 1 skipped [V]
-- Committed: 8a591b4 [V]
+- Seed evolved since Phase 1 was written: now 17 files, 0 stubs (Walk 4 extras)
+- Cleared developer carry-over artifacts from seed DB (design notes, summaries)
+- Walked orient → frontier (Direct/Orphan/ABC) → topology → tools → knowledge
+- No broken tools found. Clean walk.
+- Rewrote COMMONPLACE_USER_JOURNEY.md Phase 1 with verified current outputs
+- Marked RM15 DONE in TRACKER.md (all 4 phases complete)
+- 493 passed, 1 skipped
+
+**RM28 filed -- Three-mode UX: Tour, Discovery, Workbench [V]**
+- Designed in conversation with Bart
+- Three modes: Unguided (current), Guided Tour (Commonplace), Discovery (own project)
+- Workbench: Discovery tools available ad hoc, user chains manually
+- Shared foundation: Artifact layer (named, persistent, staleness-tracked tool outputs)
+- Full spec in TRACKER.md RM28
+- Build order: Stage 1 artifact layer → Stage 2 Tour → Stage 3 Workbench → Stage 4 Discovery
 
 ## NEXT SESSION -- start here
 
-**RM15 is DONE. All four phases complete.**
+**RM28 Stage 1: Artifact layer**
 
-**What's next (from step_queue.md):**
-- RM20: design_note dedup -- Bart says "no duplicates in practice"; low priority [?]
-- RM21 Techniques 2-6: constrained decoding, prompt chaining, MCTS, etc.
-  Build only after Technique 1 proves insufficient on real multi-hop queries.
-- No other active items. Check step_queue.md for the CURRENT pointer.
+Build the artifact persistence and staleness foundation that all three modes share.
 
-**Recommended next work:**
-Ask Bart what he wants to tackle. Options:
-1. Validate RM21 Technique 1 on real multi-hop queries (does the verification
-   loop actually catch hallucinations in practice? Need a test corpus and queries.)
-2. RM20 dedup if Bart finds duplicate design_notes in practice
-3. UI/demo polish now that all four Commonplace phases are walked and documented
+**What to build:**
+- Extend workflow_items with artifact kind, staleness state, feeds-into metadata
+- OR add a new artifacts table -- check workflow_items schema first to decide
+- Staleness: compare artifact.created_at vs. reingest timestamps in files table
+- Cascade: when artifact A goes stale, flag any artifact whose source lists A
+- UI: extend Build queue tab into Artifacts panel showing name/status/age
+
+**Where to start:**
+1. Read TRACKER.md RM28 (full spec)
+2. Read determined/intent/workflow_store.py (existing workflow_items table)
+3. Read determined/ui/ui_server.py Build queue tab section
+4. Design schema extension, then build
+
+**Key constraint:** build on existing infrastructure (workflow_items, reingest_file
+timestamps, Build queue tab) -- don't replace, extend.
 
 ## Known issues (carried forward)
 
 **ingest_design_docs project root mismatch [V]:** Must call with explicit path.
-  DESIGN.md at `examples/commonplace/docs/DESIGN.md` is outside seed project root.
-**Seed DB carries developer artifacts [V]:** After any developer walk session,
-  seed DB accumulates design_notes, semantic_summaries, reasoning_chains from tool
-  calls. For a clean user demo: DELETE FROM knowledge_artifacts WHERE kind='design_note';
-  DELETE FROM semantic_summaries; before loading. Structural facts (entry, hot, dead)
-  are valid and should be kept.
-**UI Re-analyze does NOT use reingest_file [V]:** Workaround: call reingest_file()
-  from Python CLI.
-**find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = gap
-  reported even if override exists.
-**GRASP threshold [?]:** principles surface at 0.30 same as SOTS. May need tuning.
+**Seed DB carries developer artifacts [V]:** Clear design_notes + semantic_summaries
+  before a clean demo. Structural facts (entry, hot, dead) are valid, keep them.
+**UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI.
+**find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
