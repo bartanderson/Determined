@@ -1,9 +1,5 @@
 """
 Input validation utilities.
-
-validate_entry() contains a conditional stub:
-  raise NotImplementedError is inside an if-branch (strict mode).
-Determined should detect this via find_conditional_stubs().
 """
 import urllib.parse
 
@@ -31,8 +27,5 @@ def validate_entry(entry: dict, strict: bool = False) -> list:
         errors.append("source_url is required")
     elif not validate_url(entry["source_url"]):
         errors.append("source_url is not a valid http/https URL")
-
-    if strict:
-        raise NotImplementedError("strict content validation not yet implemented")
 
     return errors
