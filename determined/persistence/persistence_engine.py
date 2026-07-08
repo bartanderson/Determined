@@ -24,6 +24,9 @@ def _migrate(connection):
     fn_existing = {row[1] for row in cursor.execute("PRAGMA table_info(functions)").fetchall()}
     if "decorators_json" not in fn_existing:
         cursor.execute("ALTER TABLE functions ADD COLUMN decorators_json TEXT")
+    f_existing = {row[1] for row in cursor.execute("PRAGMA table_info(files)").fetchall()}
+    if "ingested_at" not in f_existing:
+        cursor.execute("ALTER TABLE files ADD COLUMN ingested_at TEXT")
     connection.commit()
 
 def set_project_root(connection: sqlite3.Connection, project_root) -> None:

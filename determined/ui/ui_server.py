@@ -1943,6 +1943,25 @@ def handle_mark_queue_done(data):
         emit("build_queue_result", {"error": str(exc)})
 
 
+@socketio.on("get_artifacts")
+def handle_get_artifacts(_data=None):
+    """Return tool artifacts (kind='artifact') for the Artifacts panel."""
+    if _assessor is None:
+        emit("artifacts_result", {"error": "no corpus"}); return
+    try:
+        k_conn = _assessor._knowledge_conn
+        if k_conn is None:
+            emit("artifacts_result", {"error": "no knowledge DB"}); return
+        from determined.intent.workflow_store import list_artifacts, ensure_artifact_columns
+        ensure_artifact_columns(k_conn.cursor())
+        artifacts = list_artifacts(k_conn, limit=200)
+        fresh = sum(1 for a in artifacts if a["artifact_status"] == "fresh")
+        stale = sum(1 for a in artifacts if a["artifact_status"] == "stale")
+        emit("artifacts_result", {"artifacts": artifacts, "fresh": fresh, "stale": stale})
+    except Exception as exc:
+        emit("artifacts_result", {"error": str(exc)})
+
+
 @socketio.on("get_waypoints")
 def handle_get_waypoints(_data=None):
     """Return knowledge_artifacts WHERE kind='waypoint' for the Waypoints tab."""

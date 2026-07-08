@@ -275,6 +275,12 @@ def apply_file_delta(
               getattr(edge, "line_number", None), edge.caller_file,
               1 if getattr(edge, "resolved", False) else 0))
 
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE files SET ingested_at = ? WHERE file_path = ?",
+        (now, delta.file_path),
+    )
     conn.commit()
 
 

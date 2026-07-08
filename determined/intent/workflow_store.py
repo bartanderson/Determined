@@ -14,13 +14,32 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-VALID_KINDS = {"next_up", "backlog", "future_plan", "session_decision"}
+VALID_KINDS = {"next_up", "backlog", "future_plan", "session_decision", "artifact"}
 VALID_STATUSES = {"active", "done", "deferred"}
+VALID_ARTIFACT_STATUSES = {"fresh", "stale", "superseded"}
 
 
 # ------------------------------------------------------------------
 # Schema
 # ------------------------------------------------------------------
+
+def ensure_artifact_columns(cursor: sqlite3.Cursor) -> None:
+    """
+    Idempotent migration: add artifact-related columns to workflow_items
+    and ingested_at to files (same corpus DB).
+    """
+    wi_cols = {row[1] for row in cursor.execute("PRAGMA table_info(workflow_items)").fetchall()}
+    if "tool_name" not in wi_cols:
+        cursor.execute("ALTER TABLE workflow_items ADD COLUMN tool_name TEXT")
+    if "artifact_status" not in wi_cols:
+        cursor.execute("ALTER TABLE workflow_items ADD COLUMN artifact_status TEXT DEFAULT 'fresh'")
+    if "feeds_into" not in wi_cols:
+        cursor.execute("ALTER TABLE workflow_items ADD COLUMN feeds_into TEXT")
+
+    f_cols = {row[1] for row in cursor.execute("PRAGMA table_info(files)").fetchall()}
+    if "ingested_at" not in f_cols:
+        cursor.execute("ALTER TABLE files ADD COLUMN ingested_at TEXT")
+
 
 def ensure_workflow_items_table(cursor: sqlite3.Cursor) -> None:
     cursor.execute("""
@@ -165,6 +184,152 @@ def get_item(conn: sqlite3.Connection, item_id: int) -> Optional[dict]:
     return _row_to_dict(row) if row else None
 
 
+def store_artifact(
+    conn: sqlite3.Connection,
+    name: str,
+    tool_name: str,
+    content: str,
+    feeds_into: Optional[list] = None,
+) -> int:
+    """
+    Store a named tool artifact. Supersedes any prior artifact with the same name.
+    Returns the new row id.
+    """
+    import json as _json
+    now = datetime.now(timezone.utc).isoformat()
+    # Supersede any existing fresh/stale artifact with the same name
+    conn.execute(
+        "UPDATE workflow_items SET artifact_status='superseded', updated_at=? "
+        "WHERE kind='artifact' AND subject=? AND artifact_status IN ('fresh','stale')",
+        (now, name),
+    )
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO workflow_items "
+        "(kind, subject, content, rank, status, provenance, created_at, updated_at, "
+        "tool_name, artifact_status, feeds_into) "
+        "VALUES ('artifact', ?, ?, NULL, 'active', 'tool', ?, ?, ?, 'fresh', ?)",
+        (name, content, now, now, tool_name, _json.dumps(feeds_into or [])),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_artifact_by_name(conn: sqlite3.Connection, name: str) -> Optional[dict]:
+    """Return the most recent non-superseded artifact with the given name."""
+    row = conn.execute(
+        "SELECT id, subject, content, tool_name, artifact_status, feeds_into, created_at, updated_at "
+        "FROM workflow_items "
+        "WHERE kind='artifact' AND subject=? AND artifact_status != 'superseded' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (name,),
+    ).fetchone()
+    return _artifact_row_to_dict(row) if row else None
+
+
+def list_artifacts(
+    conn: sqlite3.Connection,
+    artifact_status: Optional[str] = None,
+    limit: int = 100,
+) -> list[dict]:
+    """List artifacts, optionally filtered by artifact_status."""
+    if artifact_status:
+        rows = conn.execute(
+            "SELECT id, subject, content, tool_name, artifact_status, feeds_into, created_at, updated_at "
+            "FROM workflow_items WHERE kind='artifact' AND artifact_status=? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (artifact_status, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, subject, content, tool_name, artifact_status, feeds_into, created_at, updated_at "
+            "FROM workflow_items WHERE kind='artifact' AND artifact_status != 'superseded' "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [_artifact_row_to_dict(r) for r in rows]
+
+
+def mark_stale_by_files(
+    conn: sqlite3.Connection,
+    file_paths: Optional[list] = None,
+) -> int:
+    """
+    Mark fresh artifacts stale when any relevant file was reingested after the artifact
+    was created. file_paths=None checks all files.
+
+    Returns count of artifacts newly marked stale (including cascade).
+    """
+    import json as _json
+
+    if file_paths:
+        placeholders = ",".join("?" * len(file_paths))
+        row = conn.execute(
+            f"SELECT MAX(ingested_at) FROM files WHERE file_path IN ({placeholders}) "
+            f"AND ingested_at IS NOT NULL",
+            file_paths,
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT MAX(ingested_at) FROM files WHERE ingested_at IS NOT NULL"
+        ).fetchone()
+
+    max_ingested = row[0] if row else None
+    if not max_ingested:
+        return 0
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE workflow_items SET artifact_status='stale', updated_at=? "
+        "WHERE kind='artifact' AND artifact_status='fresh' AND created_at < ?",
+        (now, max_ingested),
+    )
+    count = conn.execute("SELECT changes()").fetchone()[0]
+    count += _cascade_staleness(conn, now)
+    conn.commit()
+    return count
+
+
+def _cascade_staleness(conn: sqlite3.Connection, now: str) -> int:
+    """
+    Transitively mark fresh artifacts stale when their feeds_into list
+    references an artifact that is already stale.
+    Returns total count of additionally stale artifacts.
+    """
+    import json as _json
+    total = 0
+    while True:
+        stale_names = {
+            row[0] for row in conn.execute(
+                "SELECT subject FROM workflow_items WHERE kind='artifact' AND artifact_status='stale'"
+            ).fetchall()
+        }
+        if not stale_names:
+            break
+        fresh = conn.execute(
+            "SELECT id, subject, feeds_into FROM workflow_items "
+            "WHERE kind='artifact' AND artifact_status='fresh' AND feeds_into IS NOT NULL"
+        ).fetchall()
+        to_stale = []
+        for row_id, subject, feeds_into_json in fresh:
+            try:
+                deps = _json.loads(feeds_into_json or "[]")
+            except Exception:
+                deps = []
+            if any(dep in stale_names for dep in deps):
+                to_stale.append(row_id)
+        if not to_stale:
+            break
+        placeholders = ",".join("?" * len(to_stale))
+        conn.execute(
+            f"UPDATE workflow_items SET artifact_status='stale', updated_at=? "
+            f"WHERE id IN ({placeholders})",
+            [now] + to_stale,
+        )
+        total += len(to_stale)
+    return total
+
+
 def format_workflow_status(conn: sqlite3.Connection) -> str:
     """
     Return a human-readable summary of current workflow state:
@@ -204,6 +369,16 @@ def format_workflow_status(conn: sqlite3.Connection) -> str:
 # ------------------------------------------------------------------
 # Internal
 # ------------------------------------------------------------------
+
+def _artifact_row_to_dict(row) -> dict:
+    import json as _json
+    return {
+        "id": row[0], "name": row[1], "content": row[2],
+        "tool_name": row[3], "artifact_status": row[4],
+        "feeds_into": _json.loads(row[5] or "[]"),
+        "created_at": row[6], "updated_at": row[7],
+    }
+
 
 def _row_to_dict(row) -> dict:
     return {

@@ -412,6 +412,28 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <tbody id="bq-body"></tbody>
         </table>
         <div id="bq-empty" style="color:var(--text3);padding:1rem;display:none">No items in build queue. Use the Frontier tab → Queue button to populate from stubs.</div>
+
+        <!-- ── artifacts sub-panel ── -->
+        <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <strong style="font-size:.9em">Artifacts</strong>
+            <span style="font-size:.78em;color:var(--text3)">named tool outputs with staleness tracking</span>
+            <button id="ar-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+            <span id="ar-status" style="font-size:.78em;color:var(--text3)"></span>
+          </div>
+          <table id="ar-table" style="width:100%;border-collapse:collapse;font-size:.82em">
+            <thead>
+              <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em">
+                <th style="padding:4px 8px">Name</th>
+                <th style="padding:4px 8px">Tool</th>
+                <th style="padding:4px 8px">Status</th>
+                <th style="padding:4px 8px">Created</th>
+              </tr>
+            </thead>
+            <tbody id="ar-body"></tbody>
+          </table>
+          <div id="ar-empty" style="color:var(--text3);padding:.8rem;font-size:.82em;display:none">No artifacts yet. Tool runs will appear here.</div>
+        </div>
       </div>
 
       <!-- ── waypoints (pins) tab ── -->
@@ -3101,8 +3123,44 @@ socket.on("build_queue_result", data => {
 
 document.getElementById("bq-refresh").addEventListener("click", bqLoad);
 document.querySelectorAll(".tab[data-tab='build_queue']").forEach(t => {
-  t.addEventListener("click", bqLoad);
+  t.addEventListener("click", () => { bqLoad(); arLoad(); });
 });
+
+// ── artifacts panel ──────────────────────────────────────────
+function arLoad() {
+  document.getElementById("ar-status").textContent = "Loading…";
+  socket.emit("get_artifacts", {});
+}
+
+socket.on("artifacts_result", data => {
+  const status = document.getElementById("ar-status");
+  const body   = document.getElementById("ar-body");
+  const empty  = document.getElementById("ar-empty");
+  if (data.error) { status.textContent = `Error: ${data.error}`; return; }
+  const arts = data.artifacts || [];
+  const freshCount = data.fresh || 0;
+  const staleCount = data.stale || 0;
+  status.textContent = arts.length
+    ? `${freshCount} fresh · ${staleCount} stale`
+    : "";
+  body.innerHTML = "";
+  empty.style.display = arts.length ? "none" : "";
+  arts.forEach(a => {
+    const isStale = a.artifact_status === "stale";
+    const color = isStale ? "var(--orange)" : "var(--green)";
+    const ts = a.created_at ? a.created_at.replace("T", " ").slice(0, 16) + " UTC" : "";
+    const tr = document.createElement("tr");
+    tr.style.cssText = `border-bottom:1px solid var(--border);opacity:${isStale ? .7 : 1}`;
+    tr.innerHTML = `
+      <td style="padding:5px 8px;font-family:var(--font-mono);color:var(--text1);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(a.name)}">${escHtml(a.name)}</td>
+      <td style="padding:5px 8px;color:var(--text3);font-size:.78em">${escHtml(a.tool_name || "")}</td>
+      <td style="padding:5px 8px;font-size:.78em;color:${color};font-weight:500">${escHtml(a.artifact_status)}</td>
+      <td style="padding:5px 8px;color:var(--text3);font-size:.75em">${escHtml(ts)}</td>`;
+    body.appendChild(tr);
+  });
+});
+
+document.getElementById("ar-refresh").addEventListener("click", arLoad);
 
 // ── waypoints (pins) tab ────────────────────────────────────
 function wpLoad() {
