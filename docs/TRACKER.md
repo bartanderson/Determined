@@ -488,29 +488,23 @@ RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined ite
 
    **Four phases (0=scratch, 1=seed, 2=complete, 3=extras):**
 
-   - Phase 0 (Scratch): NOT walked. Blocked on RM22 (no "new corpus" UI flow).
-   - Phase 1 (Seed): Walks 1+2 were developer/fixing passes, not clean user walks.
-     Tool output verified and recorded. Clean user walk not yet done.
-     Journey script extracted in COMMONPLACE_USER_JOURNEY.md -- use to validate next attempt.
-   - Phase 2 (Complete): Walk 3 done. 0 broken stubs. Actuals recorded in
-     COMMONPLACE_USER_JOURNEY.md Phase 2 section.
-   - Phase 3 (Extras): Not started. Filed as RM23.
+   - Phase 0 (Scratch): DONE 2026-07-08 (RM22 resolved, walk recorded).
+   - Phase 1 (Seed): DONE 2026-07-08 (session 119, clean user walk).
+     Seed is now 17 files, 0 stubs (Walk 4 extras implemented). Journey doc updated.
+     Key findings: 0 stubs in seed = no stub implementation story; 2 orphaned-impl
+     (create_app false positive, validate_entry actionable); 0 design notes on clean start.
+     COMMONPLACE_USER_JOURNEY.md Phase 1 section rewritten with actual current outputs.
+   - Phase 2 (Complete): DONE (Walk 3). 0 broken stubs. Actuals recorded.
+   - Phase 3 (Extras): DONE 2026-07-08 (RM23). Walk recorded in COMMONPLACE_USER_JOURNEY.md.
 
-   **What "clean user walk" means for Phase 1:**
-   Walk seed→complete as a new user would, following only Determined output.
-   No developer fixes mid-walk. If something breaks, stop, file it, fix it
-   separately, then re-walk from the start. Validate against COMMONPLACE_USER_JOURNEY.md.
+   **All four phases complete. RM15 DONE.**
 
-   **Known issues that affect the walk:**
+   **Known issues (for future reference):**
    - ingest_design_docs path mismatch: DESIGN.md lives outside seed/ project root.
-     Must call with explicit path, not auto-discovery. (Known, documented in USER_JOURNEY.)
-   - UI Re-analyze does not use reingest_file -- runs background thread. Workaround:
-     call reingest_file() from Python CLI directly after editing files.
-
-   **Next walk decision (Walk 4):**
-   Options: Phase 3 Extra 1 (wire suggest_tags to llama-server) -- low effort, high
-   demo value; OR clean Phase 1 user walk with COMMONPLACE_USER_JOURNEY.md as validator.
-   RM22 must be solved before Phase 0 can be walked.
+     Must call with explicit path, not auto-discovery.
+   - Seed DB accumulates developer walk artifacts (design notes, distillation) across
+     sessions. For a truly clean user demo, delete knowledge_artifacts (design_note,
+     distilled) and semantic_summaries before loading the seed DB.
 
 ---
 

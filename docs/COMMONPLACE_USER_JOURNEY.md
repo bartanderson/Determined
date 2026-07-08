@@ -5,7 +5,7 @@ Extracted from Walk 1, Walk 2, Walk 3 developer logs. This is what a new user
 should see and do, distilled from actual tool output. Use this to validate the
 next clean attempt and to design the guided UI (Phase 4).
 
-Last updated: 2026-07-08 (session 116). Phase 0 walked and recorded. Actuals from complete corpus also recorded.
+Last updated: 2026-07-08 (session 119). Phase 0 walked and recorded. Phase 1 walked and updated (session 119, current 17-file seed). Actuals from complete corpus also recorded.
 
 ---
 
@@ -129,216 +129,222 @@ and DB bottleneck as the first signals.
 
 ---
 
-## PHASE 1 -- Seed (PARTIALLY WALKED)
+## PHASE 1 -- Seed (WALKED 2026-07-08, session 119)
 
-Walk 1 and Walk 2 walked the seed corpus. The seed lives at
-`examples/commonplace/seed/`. Load it via corpus switcher.
+The seed lives at `examples/commonplace/seed/`. Load via corpus switcher
+(Switch corpus → pick `C_Users_bartl_dev_Determined_examples_commonplace_seed.db`).
 
-### Step 1 -- Orient (Walk 1, Step 1) [VERIFIED]
+**Note on seed evolution:** Walks 1+2 used an 8-file, 2-stub seed. Walk 4
+extras (sessions 113-115) implemented the stubs, growing the seed to 17 files
+with 0 stubs. Phase 1 actuals below reflect the current (Walk 4+) seed state.
 
-**User action:** Switch corpus to seed, open corpus panel.
+**Pre-walk setup:** The seed DB may contain knowledge artifacts from prior developer
+walks (design notes, distilled summaries). A clean user walk starts with these
+cleared. Structural facts (entry, hot, dead, stub) are retained -- they come from
+the ingest pass itself and are valid first-run output.
+
+---
+
+### Step 1 -- Orient [VERIFIED]
+
+**User action:** Switch corpus to seed, open corpus panel (🗄 icon).
 
 **What they see:**
 ```
-8 files · 0 hot · 2 stubs
-Roots: capture, index
+17 files · 0 hot · 0 stubs
+
+Roots:
+  capture          ↗13
+  validate_entry   ↗6
+  index            ↗2
+  EntryProcessor   ↗0
+  EnrichmentProcessor ↗0
+
+Gaps:
+  docs 71%  distilled 0%  0 design notes  C: 71% (9 missing)
 ```
 
-**What it teaches:** Entry point + direct-call frontier. "Here is what exists.
-Here is where it stops."
+**What it teaches:** Entry point + call-graph roots. `capture` is the heaviest
+root (13 outbound calls) -- that's where the application's work happens.
+`validate_entry` appears as a root because it has many callers... but wait,
+the Orphan mode will show it has zero callers. The ↗6 count is something else
+(outbound calls, not inbound). EntryProcessor and EnrichmentProcessor as roots
+surface the ABC class hierarchy immediately.
+
+**No hot files:** 0 hot at seed scale is expected. The DB hotness threshold
+requires multiple inbound edges; at 17 files there isn't enough density.
 
 ---
 
-### Step 2 -- Read the frontier (Walk 1, Steps 2-3) [VERIFIED]
+### Step 2 -- Read the frontier [VERIFIED]
 
-**User action:** Frontier tab → set Direct mode → Load.
+**User action:** Frontier tab → Direct (caller→stub) mode → Load.
 
 **What they see:**
 ```
-extract_metadata   (red -- stub, direct-call)
-extract_full_content  (red -- stub, direct-call)
-extract            (orange -- caller of stubs)
+No frontier edges found for this mode.
 ```
 
-**User action:** Click `extract_metadata` in graph.
-
-**What they see:** Spotlight: declaration + STUB docstring + SAFE risk + 1 caller.
-
-**What it teaches:** The graph shows the edges of the working system. Stubs are
-the frontier. Implement them in priority order.
-
-**Known issue:** Spotlight panel invisible in preview pane (too narrow). Works in
-real browser. Not a bug.
+**What it teaches:** The seed has 0 stubs. Direct mode is empty. This means:
+"the codebase is implemented at this scale -- nothing is definitively broken."
+A new user should try Orphan mode next.
 
 ---
 
-### Step 3 -- Implement first stub (Walk 1, Step 5-6) [VERIFIED]
+### Step 3 -- Orphan mode: find unwired code [VERIFIED]
 
-**User action:** Editor tab → open `extractor.py` → implement `extract_metadata`
-(urllib + HTMLParser, already shown in seed as partial implementation) → Save.
+**User action:** Frontier tab → Orphan (disconnected) mode → Load.
 
-**What they see after save:**
+**What they see:**
 ```
-Sidebar: 2 stubs → 1 stub (live, no reload)
+[Orphan] 1 anticipatory · 0 stranded · 1 total
+
+validate_entry  (blue node)
 ```
 
-**What it teaches:** write → reingest → frontier moves. The loop is:
-edit_file → Save → watch sidebar update.
-
-**Known issue fixed during walk:** UI was calling `reingest_file(oracle, fp)`
-with wrong signature. Fixed to `reingest_file(db_path, fp)`. Now works correctly.
+**What it teaches:** `validate_entry` exists and works but nothing calls it yet.
+"Anticipatory" = written ahead of its callers. This is actionable: wire a caller
+into `capture` or a route handler to use the validator.
 
 ---
 
-### Step 4 -- Topology (Walk 1, Step 4) [VERIFIED]
+### Step 4 -- ABC gaps [VERIFIED]
+
+**User action:** Frontier tab → ABC (interface gaps) mode → Load.
+
+**What they see:**
+```
+No frontier edges found for this mode.
+```
+
+`EntryProcessor` has 3 subclasses (`CleanupProcessor`, `DeduplicateProcessor`,
+`EnrichmentProcessor`) all with overrides in place. No gaps.
+
+---
+
+### Step 5 -- Topology [VERIFIED]
 
 **User action:** Topology tab → Refresh.
 
 **What they see:**
 ```
 CORPUS TOPOLOGY
-  Total stubs: 2  |  Total implemented: N
+  Total stubs: 0  |  Total implemented: 31
 
-  Direct-call: 2   extract_metadata, extract_full_content
-  Action queue: implement direct-call stubs
+  Direct-call:    0
+  ABC-interface:  0
+  Chain-head:     0
+  Chain-middle:   0
+  Chain-tail:     0
+  Orphaned-impl:  2   (implementations with no functional callers)
+  Entry-point:    0
+  Disconnected:   0
+
+  Action queues:
+    Implement now:  chain-tail (0) > direct-call (0) > abc-interface (0) > chain-head (0)
+    Write callers:  orphaned-impl (2)
+    Decide:         disconnected (0) | entry-point (0)
+
+FRONTIER COVERAGE
+  Implemented functions: 31
+  Stubs in corpus:       0
+  Has impl caller:       20  (reachable through functional code)
+  No callers at all:     3   (orphaned -- see find_orphaned_impls)
+  Signal: LOW stub pressure -- most implemented code is reachable.
 ```
 
-**What it teaches:** Topology tab explains WHY stubs matter and what to do next.
-It's the "decide what to write" surface, not just a count.
+**What it teaches:** The topology summarizes the whole corpus in one view.
+0 stubs → nothing is broken. 2 orphaned-impl → there's code that's ready but
+not yet called. Action: "Write callers: orphaned-impl (2)."
 
 ---
 
-### Step 5 -- Design doc (Walk 2, Step 4) [VERIFIED]
+### Step 6 -- Drill into orphaned impls [VERIFIED]
 
-**User action:** Ingest `docs/DESIGN.md` via ingest_design_docs.
-
-**Note:** Auto-discovery doesn't find DESIGN.md when it lives outside the seed/
-project root. Must call ingest_design_docs manually with the correct path.
-Known limitation -- filed as RM15 known issue.
-
-**What they see after ingest:**
-```
-10 design rules extracted, stored as design_note artifacts
-```
-
-**User action:** Run `check_design_violations` on `extract_metadata`.
+**User action:** Run `find_orphaned_impls`.
 
 **What they see:**
 ```
-0.43 -- extractor.py: one module or three? (real tension)
-0.41 -- PERMISSION: same rule (duplicate -- noise, known issue RM20)
-0.32 -- searcher.py: bypasses service layer (cross-symbol noise)
+Orphaned implementations (2 shown)
+
+  app.py
+    create_app  line 15  [possibly-stranded (0 stub callers)]
+  validator.py
+    validate_entry  line 16  [anticipatory]
 ```
 
-**User action:** Run `reason_about` on `extract_metadata`.
-
-**What they see:**
-```
-Decision:   Keep extractor.py as a single module
-Confidence: 95%
-Reasoning:  SOTS tenet: minimize indirection. 2 callers, 5 callees -- manageable.
-```
-
-**What it teaches:** Determined surfaces design questions, not just structural gaps.
-`check_design_violations` at >= 0.45 is high signal. 0.30-0.40 is noise floor.
+**What it teaches:**
+- `create_app` is possibly-stranded. It's a Flask application factory -- called
+  by the WSGI server, not by any in-corpus symbol. This is a known false positive
+  for static analysis: Flask factories are always invisible to call graph tools.
+- `validate_entry` is anticipatory: implemented, working, no callers yet.
+  The action is to wire it into the capture route.
 
 ---
 
-### Step 6 -- ABC gap (Walk 2, Steps 1-2) [VERIFIED]
-
-**User action:** Run `find_abc_gaps`.
-
-**What they see:**
-```
-EnrichmentProcessor (inherits EntryProcessor)
-  can_handle  [not overridden]
-  process     [not overridden]
-```
-
-**User action:** Implement `can_handle` and `process` on `EnrichmentProcessor`.
-Reingest `processor.py`.
-
-**What they see:**
-```
-find_abc_gaps: (empty -- 0 gaps)
-detect_topology: ABC-interface: 0 (was 2)
-```
-
-**What it teaches:** ABC gaps are a different stub shape. `find_abc_gaps` is
-distinct from `detect_topology` -- it checks per-subclass, not globally.
-
----
-
-### Step 7 -- Orphaned-impl (Walk 2, Step 3) [VERIFIED]
-
-**User action:** Run `detect_topology`.
-
-**What they see:**
-```
-Orphaned-impl: 2  (semantic_search, init_db)
-Action queue:  write callers
-```
-
-**User action:** Wire `search_bp` into `app.py`. Change route to call
-`semantic_search` instead of `search`. Reingest both files.
-
-**What they see:**
-```
-Orphaned-impl: 1  (init_db -- known false positive, Flask app_context)
-```
-
-**What it teaches:** Orphaned-impl means "working code with no callers."
-Sometimes it's a gap (wire it up); sometimes it's a known analysis limit
-(Flask app_context is invisible to static analysis). Read the reason.
-
----
-
-### Step 8 -- Conditional stub (Walk 2, Steps 5-7) [VERIFIED]
+### Step 7 -- Conditional stubs [VERIFIED]
 
 **User action:** Run `find_conditional_stubs`.
 
 **What they see:**
 ```
-1 found:
-  validator.py :: validate_entry  (raise NotImplementedError inside if strict:)
-  "implemented functions with raise NotImplementedError in a branch"
+No conditional stubs found (no non-stub functions with conditional NotImplementedError).
 ```
 
-**User action:** Run `reason_about` on `validate_entry`.
+**What it teaches:** No hidden runtime gaps. `validate_entry` was a conditional
+stub in earlier seed versions (Walk 2 Step 8: `if strict: raise NotImplementedError`).
+That branch was removed during Walk 2. The seed is clean.
 
-**What they see:**
-```
-Decision:   Remove the strict branch entirely
-Confidence: 95%
-Reasoning:  No callers need strict=True yet. Removing simplifies the function.
-```
+---
 
-**User action:** Remove `if strict: raise NotImplementedError`. Reingest.
+### Step 8 -- Knowledge status [VERIFIED]
+
+**User action:** Knowledge tab → Refresh (or run `knowledge_status`).
 
 **What they see:**
 ```
-find_conditional_stubs: 0 found
-detect_topology: Total stubs: 0  |  Orphaned-impl: 1 (known false positive)
+Knowledge coverage for corpus (17 files, 31 functions):
+  File summaries (semantic_summaries): 0/17 files covered
+  Total knowledge artifacts: 19
+    by kind: file_purpose=5, reasoning_chain=4, entry=4, strategy_decision=2,
+             dead=2, stub=1, hot=1
+  Structural facts: entry points: 4  dead code: 2  hot: 1  stub files: 1
+
+GAPS AT A GLANCE:
+  Docstring coverage:    22/31 functions documented
+  Distillation coverage: 0/17 files distilled
+  Design notes:          0 total
+  Modules with missing docstrings:  C:: 9/31 missing
 ```
 
-**What it teaches:** Conditional stubs pass structural analysis but fail at
-runtime on specific inputs. They represent deferred decisions disguised as
-working code. `find_conditional_stubs` is the only tool that catches these.
+**What it teaches:** The knowledge layer is empty except for structural facts
+from the ingest pass. 9/31 functions lack docstrings. The action is:
+- Run `extract_design_facts` + `describe_file` to populate file-level summaries
+- Ingest `docs/DESIGN.md` via `ingest_design_docs` to get design rules
+
+**Note on design doc ingest:** Auto-discovery won't find DESIGN.md if it lives
+outside the seed project root. Must call `ingest_design_docs` with explicit path:
+`examples/commonplace/docs/DESIGN.md`. Known limitation (filed as RM15 issue).
 
 ---
 
 ### Seed journey complete -- verified tool coverage
 
-| Tool | Lesson demonstrated | Signal quality |
-|------|--------------------|----|
-| `detect_topology` | structural shape of the corpus | HIGH |
-| `find_abc_gaps` | missing ABC overrides | HIGH |
-| `find_conditional_stubs` | hidden runtime gaps | HIGH |
-| `check_design_violations` | design rule cross-reference | HIGH at >= 0.45, NOISY below |
-| `reason_about` | architectural decisions grounded in SOTS | HIGH (correct conclusion, slight reasoning path drift) |
-| `symbol_context` | everything known about one symbol | HIGH |
-| `reingest_file` | incremental re-ingest after edit | HIGH |
-| Editor tab save | live reingest trigger | HIGH |
+**What the current seed demonstrates:** A 17-file, 0-stub, implemented-but-not-fully-wired
+codebase. The story is "all stubs are done -- now wire what's orphaned and document what's
+undocumented." Contrast with the complete corpus which has intentional stubs.
+
+| Tool | What it shows on current seed | Signal quality |
+|------|----------------------------|----|
+| Corpus panel | 17 files, 0 hot, 0 stubs; roots + gaps at a glance | HIGH |
+| Frontier Direct | Empty -- correct, 0 stubs | HIGH (confirms clean state) |
+| Frontier Orphan | validate_entry (anticipatory) | HIGH |
+| Frontier ABC | Empty -- all overrides in place | HIGH (confirms clean state) |
+| `detect_topology` | 0 stubs, 2 orphaned-impl; action: write callers | HIGH |
+| `find_orphaned_impls` | create_app (false positive), validate_entry (actionable) | HIGH |
+| `find_conditional_stubs` | 0 found -- no hidden runtime gaps | HIGH |
+| `knowledge_status` | 0 distilled, 0 design notes, 9/31 missing docstrings | HIGH |
+| `find_abc_gaps` | All overridden -- confirms ABC hierarchy is complete | HIGH |
 
 ---
 
