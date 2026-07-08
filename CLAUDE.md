@@ -127,10 +127,11 @@ Common mistakes:
 Run this before writing SESSION_STATE.md. This runs when memory is least
 reliable -- nothing goes in the file from memory alone.
 
-**Step 1 -- Archive the old handoff**
-If SESSION_STATE.md exists: move it to `.handoffs/<YYYYMMDD-HHMMSS>-session-state.md`
-(create `.handoffs/` if needed). Carry forward any still-relevant failed
-approaches or traps -- re-tagged [?] unless re-verified in Step 2.
+**Step 1 -- Carry forward traps**
+Read the existing SESSION_STATE.md (if any). Identify any still-relevant failed
+approaches or traps and carry them forward into the new file -- re-tagged [?]
+unless re-verified in Step 2. Then overwrite SESSION_STATE.md in place.
+(Git history is the archive; no need to copy the old file elsewhere.)
 
 **Step 2 -- Verify before writing (anti-hallucination protocol)**
 A claim may be tagged [V] only if confirmed by a command or file read during
