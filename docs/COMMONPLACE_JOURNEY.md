@@ -410,6 +410,65 @@ The user must decide whether to implement strict mode or remove the branch.
 
 ---
 
+## WALK 2 - Step 6: Work the topology — conditional stub + reason_about decision
+
+### Actions taken (2026-07-07, session 110)
+
+Re-ran `find_conditional_stubs` (confirms Step 5 finding still live).
+Ran `reason_about` on `validate_entry` with the strict-mode decision question.
+
+### Output
+
+```
+find_conditional_stubs:
+  1 found:
+    validator.py :: validate_entry  (def line 20, raise line 36)
+    "implemented functions with raise NotImplementedError in a branch"
+
+reason_about: validate_entry -- implement strict mode or remove branch?
+  [db:is_stub]      no (has implementation)
+  [db:caller_count] 0 callers
+  [evaluate]        SOTS: routes must not contain business logic; validation at HTTP level
+  [db:callee_count] 4 callees
+
+  Decision:   Remove the strict branch entirely
+  Confidence: 95%
+  Reasoning:  validate_entry is responsible for input validation at HTTP level per SOTS.
+              No callers, multiple callees -- removing the strict branch simplifies the
+              function and aligns with "no business logic in routes."
+```
+
+### Reasoning
+
+**What find_conditional_stubs teaches (vs detect_topology):**
+`detect_topology` classifies a function as a stub only if its entire body is a stub
+(raise NotImplementedError, pass, or ...). `validate_entry` has a real body, so
+topology sees it as implemented (31 implemented, 0 stubs). But it will crash when
+called with `strict=True`. `find_conditional_stubs` catches this hidden runtime gap.
+
+The lesson: **not all gaps are visible in the topology.** Conditional stubs pass
+structural analysis but fail at runtime on specific inputs. They represent deferred
+decisions disguised as working code.
+
+**What reason_about got right:**
+- Correctly identified 0 callers (no one calls validate_entry yet)
+- Surfaced the SOTS tenet about routes owning HTTP-level validation
+- Recommended removing the strict branch — the right call for a small corpus with
+  no caller pressure to implement strict mode
+
+**What reason_about got wrong (slight):**
+The SOTS reasoning conflated "routes should handle validation" with "remove business
+logic from routes." `validate_entry` is in `utils/`, not `routes/` — it's already
+correctly placed. The tenet cited is accurate but the reasoning path was slightly off.
+The conclusion (remove the branch) is still correct: no caller needs strict=True yet.
+
+**Step 7 decision:**
+Remove the `if strict: raise NotImplementedError` branch from `validate_entry`.
+Re-ingest. `find_conditional_stubs` should return 0. This closes the last open gap
+in the seed corpus and demonstrates the full guided journey loop.
+
+---
+
 ## FINDINGS TO FIX (in order of journey impact)
 
 F1. [DONE] Frontier mode resets to Direct on tab open.
