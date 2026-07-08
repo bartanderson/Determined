@@ -567,6 +567,97 @@ Two options:
 
 ---
 
+## WALK 3 - Complete corpus orientation
+
+### Corpus: examples/commonplace/ (not seed)
+
+**Setup (2026-07-07, session 112):**
+Added `.determinedignore` to `examples/commonplace/` to exclude `seed/` subdirectory.
+Re-ingested complete corpus fresh. 25 files, 55 functions.
+
+### Output (detect_topology)
+
+```
+CORPUS TOPOLOGY
+  Total stubs: 6  |  Total implemented: 49
+
+  Shape                  Count
+  Direct-call                3   stubs called by functional code
+  ABC-interface              2   abstract methods with no concrete override
+  Chain-head                 1   stubs: functional callers + stub callees [bridge]
+  Chain-tail                 2   stubs: stub callers only [implement first]
+  Orphaned-impl             16   implementations with no functional callers
+  Entry-point                0   stubs in route/handler/cli files
+  Disconnected               1   stubs with no graph connections
+
+  Action queues:
+    Implement now:  chain-tail (2) > direct-call (3) > abc-interface (2) > chain-head (1)
+    Write callers:  orphaned-impl (16)
+    Decide:         disconnected (1)
+```
+
+```
+find_abc_gaps:
+  EnrichmentProcessor (inherits EntryProcessor)
+    can_handle  [not overridden]
+    process     [not overridden]
+
+find_conditional_stubs:
+  validator.py :: validate_entry  (def line 20, raise line 36)
+```
+
+### Stub map
+
+| Function | File | Shape |
+|---|---|---|
+| `extract_full_content` | extractor.py | direct-call |
+| `semantic_search` | searcher.py | direct-call (STUB by docstring, falls back) |
+| `find_connections` | linker.py | chain-tail (only called by enrich_entry stub) |
+| `suggest_tags` | tagger.py | chain-tail (only called by enrich_entry stub) |
+| `enrich_entry` | pipeline.py | chain-head (functional caller + stub callees) |
+| `_similarity_score` | linker.py | disconnected (no callers yet) |
+| `EnrichmentProcessor.process` | processor.py | ABC-interface gap |
+| `EnrichmentProcessor.can_handle` | processor.py | ABC-interface gap |
+| `validate_entry` | validator.py | conditional stub |
+
+### Key observations
+
+**Chain topology working correctly:**
+`enrich_entry` is a stub (flagged via `stub_by_doc` -- docstring starts with "STUB:").
+It sits between the functional capture route (caller) and `find_connections`/`suggest_tags`
+(stub callees). Determined correctly classifies it as chain-head: "implement the tails first."
+The action queue puts chain-tail before chain-head -- correct priority order.
+
+**Disconnected stub (_similarity_score):**
+A private helper in linker.py not yet wired into `find_connections`. It's placeholder code
+for embedding-based similarity -- the design intent is clear (linker will use it) but the
+connection isn't established yet. The "Decide:" queue is right: this is deferred architecture,
+not missing code.
+
+**Orphaned-impl (16) -- three categories:**
+1. Flask route handlers (capture, index, get_entry, etc.): 6 functions. External triggers --
+   Flask calls them, static analysis cannot see that. These are correctly excluded from
+   the "Write callers" action queue by `_has_framework_decorator` filtering in detect_topology.
+   But they DO appear in my raw query. Determined's count of 16 is after filtering routes.
+2. Model methods (Entry.validate, Entry.to_dict, Tag.validate, Connection.validate): 4 functions.
+   Real code, no callers yet. The routes use raw SQLite rows, not model objects. These are
+   anticipatory implementations waiting for the routes to adopt them.
+3. Storage query functions (get_connections, get_entry_tags, insert_connection, etc.): most of
+   queries.py is implemented but only a few functions are called from routes. The browse route
+   uses some; the rest are ready but waiting.
+4. Private helpers (_normalize_entry, _call_llm, _parse_tags, extractor class methods):
+   internal implementation details. Expected orphans -- they're called by their own module.
+
+**What the complete corpus teaches beyond seed:**
+- Chain positions (head/tail) are visible and correctly prioritized
+- Disconnected stubs represent deferred design, not missing wiring
+- Orphaned-impl at 16 is HIGH but explainable: model layer + storage layer are implemented
+  bottom-up and not yet fully wired to routes. This is a real-world pattern.
+- `stub_by_doc` detection extends stub coverage to functions with real bodies but
+  documented incompleteness ("STUB:" in first docstring line)
+
+---
+
 ## FINDINGS TO FIX (in order of journey impact)
 
 F1. [DONE] Frontier mode resets to Direct on tab open.
