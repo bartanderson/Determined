@@ -248,6 +248,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
       <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
       <button class="tab tab-nodot" data-tab="topology">Topology</button>
+      <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
     </div>
 
     <!-- tab panels -->
@@ -458,6 +459,58 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
         </div>
         <pre id="topo-content" style="font-size:.82em;line-height:1.7;white-space:pre-wrap;margin:0"></pre>
         <div id="topo-empty" style="color:var(--text3);padding:1rem;display:none">No corpus loaded.</div>
+      </div>
+
+      <!-- ── tour tab ── -->
+      <div class="tab-panel" id="panel-tour" style="flex-direction:column;min-height:0;overflow:hidden">
+
+        <!-- corpus hint banner -->
+        <div id="tour-corpus-hint" style="display:none;padding:6px 14px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:.8em;color:var(--text3)">
+          ⚠ This tour is designed for the Commonplace seed corpus
+          (<code>examples_commonplace_seed.db</code>). Results on other corpora will differ.
+        </div>
+
+        <!-- step header -->
+        <div style="padding:10px 16px 8px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <span id="tour-badge" style="font-size:.78em;color:var(--text3);white-space:nowrap">Step 1 of 8</span>
+            <span id="tour-dots" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+            <span id="tour-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
+          </div>
+          <div id="tour-title" style="font-weight:600;font-size:.95em;color:var(--text1)"></div>
+        </div>
+
+        <!-- scrollable body -->
+        <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column">
+
+          <!-- instruction -->
+          <div style="padding:12px 16px 0">
+            <div style="font-size:.8em;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">What to do</div>
+            <div id="tour-instruction" style="color:var(--text2);line-height:1.55;font-size:.88em;margin-bottom:10px"></div>
+            <button id="tour-run-btn" class="send-btn" style="font-size:.82em;padding:4px 14px" onclick="tourRunStep()">▶ Run</button>
+          </div>
+
+          <!-- result -->
+          <div id="tour-result-area" style="display:none;padding:10px 16px 0">
+            <div style="font-size:.8em;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Output</div>
+            <pre id="tour-result" style="font-size:.78em;line-height:1.55;white-space:pre-wrap;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin:0;overflow-x:auto;max-height:220px;overflow-y:auto"></pre>
+          </div>
+
+          <!-- explanation -->
+          <div id="tour-explanation-area" style="display:none;padding:10px 16px 0">
+            <div style="font-size:.8em;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">What this means</div>
+            <div id="tour-explanation" style="color:var(--text2);line-height:1.6;font-size:.86em;background:var(--bg2);border-left:3px solid var(--accent);padding:8px 12px;border-radius:0 4px 4px 0"></div>
+          </div>
+
+          <!-- spacer -->
+          <div style="flex:1;min-height:12px"></div>
+
+          <!-- navigation -->
+          <div style="padding:10px 16px;display:flex;gap:8px;border-top:1px solid var(--border);flex-shrink:0">
+            <button id="tour-prev-btn" class="send-btn" style="font-size:.82em;padding:4px 12px" onclick="tourPrev()" disabled>← Back</button>
+            <button id="tour-next-btn" class="send-btn" style="font-size:.82em;padding:4px 12px;margin-left:auto" onclick="tourNext()" disabled>Next →</button>
+          </div>
+        </div>
       </div>
 
       <!-- ── doc health tab ── -->
@@ -3230,6 +3283,119 @@ socket.on("topology_result", data => {
 document.getElementById("topo-refresh").addEventListener("click", topoLoad);
 document.querySelectorAll(".tab[data-tab='topology']").forEach(t => {
   t.addEventListener("click", topoLoad);
+});
+
+// ── Tour panel ─────────────────────────────────────────────
+let _tourSteps = [];
+let _tourIndex = parseInt(localStorage.getItem("tourIndex") || "0", 10);
+let _tourResults = JSON.parse(localStorage.getItem("tourResults") || "{}");
+let _tourCompleted = new Set(JSON.parse(localStorage.getItem("tourCompleted") || "[]").map(Number));
+
+function tourLoad() {
+  if (_tourSteps.length) { tourRender(); return; }
+  socket.emit("get_tour_steps", {});
+}
+
+socket.on("tour_steps", data => {
+  _tourSteps = data.steps || [];
+  tourRender();
+});
+
+function tourRender() {
+  if (!_tourSteps.length) return;
+  const step = _tourSteps[_tourIndex];
+  const count = _tourSteps.length;
+
+  document.getElementById("tour-badge").textContent = `Step ${_tourIndex + 1} of ${count}`;
+  document.getElementById("tour-title").textContent = step.title;
+  document.getElementById("tour-instruction").textContent = step.instruction;
+
+  // progress dots
+  const dots = document.getElementById("tour-dots");
+  dots.innerHTML = _tourSteps.map((_, i) => {
+    const done = _tourCompleted.has(i);
+    const cur  = i === _tourIndex;
+    const bg   = cur ? "var(--accent)" : done ? "var(--text3)" : "var(--border)";
+    return `<span style="width:7px;height:7px;border-radius:50%;background:${bg};display:inline-block;flex-shrink:0" title="Step ${i+1}"></span>`;
+  }).join("");
+
+  // run button
+  const runBtn = document.getElementById("tour-run-btn");
+  runBtn.disabled = false;
+  runBtn.textContent = _tourCompleted.has(_tourIndex) ? "↺ Re-run" : "▶ Run";
+  document.getElementById("tour-running").style.display = "none";
+
+  // show saved result if exists
+  const saved = _tourResults[String(_tourIndex)];
+  if (saved) {
+    document.getElementById("tour-result").textContent = saved.result;
+    document.getElementById("tour-result-area").style.display = "block";
+    document.getElementById("tour-explanation").textContent = saved.explanation;
+    document.getElementById("tour-explanation-area").style.display = "block";
+  } else {
+    document.getElementById("tour-result-area").style.display = "none";
+    document.getElementById("tour-explanation-area").style.display = "none";
+  }
+
+  // nav
+  document.getElementById("tour-prev-btn").disabled = _tourIndex === 0;
+  document.getElementById("tour-next-btn").disabled = _tourIndex >= count - 1;
+
+  // corpus hint: show if loaded corpus isn't the Commonplace seed
+  const hint = document.getElementById("tour-corpus-hint");
+  const dbName = (document.getElementById("status-db-name") || {}).textContent || "";
+  hint.style.display = (dbName && !dbName.includes("commonplace_seed")) ? "block" : "none";
+}
+
+function tourRunStep() {
+  const runBtn = document.getElementById("tour-run-btn");
+  runBtn.disabled = true;
+  document.getElementById("tour-running").style.display = "inline";
+  socket.emit("tour_run_step", { step: _tourIndex });
+}
+
+socket.on("tour_step_result", data => {
+  document.getElementById("tour-running").style.display = "none";
+  const runBtn = document.getElementById("tour-run-btn");
+
+  if (data.error) {
+    document.getElementById("tour-result").textContent = "Error: " + data.error;
+    document.getElementById("tour-result-area").style.display = "block";
+    document.getElementById("tour-explanation-area").style.display = "none";
+    runBtn.disabled = false;
+    runBtn.textContent = "▶ Run";
+    return;
+  }
+  if (data.step !== _tourIndex) return; // stale result from previous step
+
+  // persist result
+  _tourResults[String(data.step)] = { result: data.result, explanation: data.explanation };
+  localStorage.setItem("tourResults", JSON.stringify(_tourResults));
+  _tourCompleted.add(data.step);
+  localStorage.setItem("tourCompleted", JSON.stringify([..._tourCompleted]));
+  localStorage.setItem("tourIndex", String(_tourIndex));
+
+  tourRender();
+});
+
+function tourNext() {
+  if (_tourIndex < _tourSteps.length - 1) {
+    _tourIndex++;
+    localStorage.setItem("tourIndex", String(_tourIndex));
+    tourRender();
+  }
+}
+
+function tourPrev() {
+  if (_tourIndex > 0) {
+    _tourIndex--;
+    localStorage.setItem("tourIndex", String(_tourIndex));
+    tourRender();
+  }
+}
+
+document.querySelectorAll(".tab[data-tab='tour']").forEach(t => {
+  t.addEventListener("click", tourLoad);
 });
 </script>
 

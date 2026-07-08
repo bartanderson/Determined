@@ -1984,6 +1984,155 @@ def handle_get_waypoints(_data=None):
         emit("waypoints_result", {"error": str(exc)})
 
 
+_TOUR_STEPS = [
+    {
+        "index": 0,
+        "title": "1. Orient — What is this codebase?",
+        "instruction": "Run knowledge_status to see the corpus overview: file count, entry points, hot files, stubs, and coverage gaps.",
+        "tool": "knowledge_status",
+        "tool_args": {},
+        "explanation": (
+            "The knowledge layer starts from structural facts Determined extracts automatically at ingest time: "
+            "entry points (functions with many callers or at module root), hot files (high inbound edge count), "
+            "and stub files. The GAPS AT A GLANCE section shows docstring coverage, distillation coverage, "
+            "and design note count — the three dimensions of how well the codebase is understood."
+        ),
+    },
+    {
+        "index": 1,
+        "title": "2. Frontier: Direct — Are there broken stubs?",
+        "instruction": "Run frontier_coverage to find functions that are called but not yet implemented.",
+        "tool": "frontier_coverage",
+        "tool_args": {},
+        "explanation": (
+            "Empty result is good news: the seed has 0 stubs. Nothing is definitively broken. "
+            "The codebase is fully implemented at this scale. On a real project, this view shows "
+            "exactly which stubs still need implementing and who is waiting on them."
+        ),
+    },
+    {
+        "index": 2,
+        "title": "3. Frontier: Orphan — Find unwired code",
+        "instruction": "Run find_orphaned_impls to find implemented functions that nothing calls yet.",
+        "tool": "find_orphaned_impls",
+        "tool_args": {},
+        "explanation": (
+            "validate_entry is 'anticipatory': it's implemented and correct, but not yet wired "
+            "into any route. The action is clear: add a call from capture() or a route handler. "
+            "create_app is a known false positive — Flask factories are always invisible to static "
+            "call graphs because the WSGI server calls them, not your code."
+        ),
+    },
+    {
+        "index": 3,
+        "title": "4. Frontier: ABC — Are all interfaces implemented?",
+        "instruction": "Run find_abc_gaps to check whether all abstract methods have concrete implementations.",
+        "tool": "find_abc_gaps",
+        "tool_args": {},
+        "explanation": (
+            "EntryProcessor has 3 subclasses (CleanupProcessor, DeduplicateProcessor, "
+            "EnrichmentProcessor) all with overrides in place — no gaps. On a project with "
+            "unimplemented ABCs, this shows exactly which methods need implementing before the "
+            "class hierarchy is wired up."
+        ),
+    },
+    {
+        "index": 4,
+        "title": "5. Topology — Full structural picture",
+        "instruction": "Run detect_topology to see the full shape of the codebase and its action queues.",
+        "tool": "detect_topology",
+        "tool_args": {},
+        "explanation": (
+            "The topology summarizes the whole corpus in one view. 0 stubs means nothing is broken. "
+            "2 orphaned-impl means code is ready but not yet called. The 'Action queues' section "
+            "translates the structural picture into concrete next steps: 'Write callers: "
+            "orphaned-impl (2)' is the only thing the corpus is asking for."
+        ),
+    },
+    {
+        "index": 5,
+        "title": "6. Tools — Conditional stubs",
+        "instruction": "Run find_conditional_stubs to check for hidden runtime gaps behind conditionals.",
+        "tool": "find_conditional_stubs",
+        "tool_args": {},
+        "explanation": (
+            "No conditional stubs found means no hidden runtime gaps. A conditional stub raises "
+            "NotImplementedError only on certain code paths — harder to spot than a pure stub "
+            "and easier to miss in testing. Clean here means the seed is production-safe."
+        ),
+    },
+    {
+        "index": 6,
+        "title": "7. Tools — Docstring health",
+        "instruction": "Run docstring_health to see which functions lack documentation.",
+        "tool": "docstring_health",
+        "tool_args": {},
+        "explanation": (
+            "9 of 31 functions are missing docstrings. Determined flags these so you can document "
+            "before the codebase grows too large to remember from context. The staleness check "
+            "compares existing docstrings against the distilled code summary — divergence flags "
+            "that the docstring no longer describes what the function actually does."
+        ),
+    },
+    {
+        "index": 7,
+        "title": "8. Knowledge — What gaps remain?",
+        "instruction": "Run gap_analysis to brainstorm what is missing, incomplete, or could bridge existing pieces.",
+        "tool": "gap_analysis",
+        "tool_args": {},
+        "explanation": (
+            "gap_analysis is generative: it uses the LLM to brainstorm typed fills (extend, bridge, mirror, "
+            "consolidate) for the highest-signal area it finds. Results are explicitly framed as possibilities, "
+            "not prescriptions. The proposals are stored in the build queue for you to accept or dismiss. "
+            "Next steps: run extract_design_facts, then ingest_design_docs pointing at "
+            "examples/commonplace/docs/DESIGN.md to populate the design-rule layer."
+        ),
+    },
+]
+
+
+@socketio.on("get_tour_steps")
+def handle_get_tour_steps(_data=None):
+    """Return tour step metadata (titles, instructions, explanations — no execution)."""
+    steps = [
+        {"index": s["index"], "title": s["title"],
+         "instruction": s["instruction"], "explanation": s["explanation"]}
+        for s in _TOUR_STEPS
+    ]
+    emit("tour_steps", {"steps": steps, "count": len(steps)})
+
+
+@socketio.on("tour_run_step")
+def handle_tour_run_step(data):
+    """Run the tool for tour step N and emit tour_step_result."""
+    if _oracle is None:
+        emit("tour_step_result", {"error": "No corpus loaded. Load the Commonplace seed corpus first."})
+        return
+    step_index = (data or {}).get("step", 0)
+    if step_index < 0 or step_index >= len(_TOUR_STEPS):
+        emit("tour_step_result", {"error": f"Invalid step index {step_index}."})
+        return
+    step = _TOUR_STEPS[step_index]
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import dispatch
+            result = dispatch(step["tool"], step["tool_args"], _oracle, _assessor)
+            socketio.emit("tour_step_result", {
+                "step": step_index,
+                "result": result,
+                "explanation": step["explanation"],
+            }, to=sid)
+        except Exception as exc:
+            socketio.emit("tour_step_result", {
+                "step": step_index,
+                "error": str(exc),
+            }, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _start_llm_server() -> None:
     """Launch llama-server subprocess and warm up the model. Runs in background thread."""
     from determined.agent.llm_client import start_server, LLM_DISPLAY_NAME

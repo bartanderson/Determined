@@ -1,3 +1,3 @@
-PREVIOUS: RM15 -- Commonplace guided journey all 4 phases done (session 119)
-CURRENT:  RM28 Stage 1 -- Artifact layer (persistence, staleness, cascade, UI panel)
-NEXT:     RM28 Stage 2 -- Tour mode (scripted Commonplace walkthrough)
+PREVIOUS: RM28 Stage 1 -- Artifact layer done (session 120)
+CURRENT:  RM28 Stage 2 -- Tour mode (scripted Commonplace walkthrough)
+NEXT:     RM28 Stage 3 -- Workbench palette (Discovery tools ad hoc)
