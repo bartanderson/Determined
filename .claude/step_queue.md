@@ -1,3 +1,3 @@
-PREVIOUS: RM22 walk -- seed files written, Phase 0 actuals documented in COMMONPLACE_USER_JOURNEY.md (committed 9ff2b78)
-CURRENT:  RM23 -- Phase 3 extras walk with Determined (in progress, session 117)
-NEXT:     future
+PREVIOUS: RM23 -- Phase 3 extras walk documented in COMMONPLACE_USER_JOURNEY.md (committed 65ef660)
+CURRENT:  RM27 -- GRASP vocabulary: wire into check_design_violations as named violation language
+NEXT:     RM21 -- verification loops (model claim -> DB check -> correction)

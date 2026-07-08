@@ -650,6 +650,7 @@ def _check_design_violations_core(
     import re
     from determined.agent.evaluator import collect_symbol_context, retrieve_evidence_scored
     from determined.data.sots_loader import tenet_texts
+    from determined.data.grasp_loader import principle_texts
 
     query = collect_symbol_context(assessor.oracle.conn, symbol)
     scored = retrieve_evidence_scored(
@@ -658,13 +659,20 @@ def _check_design_violations_core(
         surfaces=["design_note"],
         top_n=5,
         threshold=0.30,
-        extra_items=list(tenet_texts()),
+        extra_items=list(tenet_texts()) + list(principle_texts()),
     )
-    _tenet_re = re.compile(r"^\[([IVX]+)\]")
+    _sots_re = re.compile(r"^\[([IVX]+)\]")
+    _grasp_re = re.compile(r"^\[GRASP-(\d+)\]")
     results = []
     for score, content in scored:
-        m = _tenet_re.match(content)
-        subject = f"SOTS {m.group(1)}" if m else "design_note"
+        ms = _sots_re.match(content)
+        mg = _grasp_re.match(content)
+        if mg:
+            subject = f"GRASP-{mg.group(1)}"
+        elif ms:
+            subject = f"SOTS {ms.group(1)}"
+        else:
+            subject = "design_note"
         results.append({"subject": subject, "content": content, "score": score})
     return results
 
@@ -690,9 +698,11 @@ def check_design_violations(assessor: "Assessor", args: dict) -> str:
 
     if not import_violations and not hits:
         from determined.data.sots_loader import load_tenets
+        from determined.data.grasp_loader import load_principles
         return (
             f"No design violations detected for '{symbol}' "
-            f"(checked {len(load_tenets())} SOTS tenets, none matched above threshold)."
+            f"(checked {len(load_tenets())} SOTS tenets + {len(load_principles())} GRASP principles, "
+            f"none matched above threshold)."
         )
 
     lines = [f"Design violation check for '{symbol}':"]

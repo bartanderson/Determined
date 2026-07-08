@@ -1,0 +1,65 @@
+[
+  {
+    "id": "GRASP-1",
+    "name": "Information Expert",
+    "description": "Assign a responsibility to the class or function that has the information necessary to fulfill it. When a function reaches into another module to fetch or compute data that module already owns, it has taken a responsibility that belongs elsewhere.",
+    "violation_signal": "A function accesses or computes data owned by another class or module, rather than asking that owner to do it.",
+    "ask": "Who has the information needed to fulfill this responsibility? Is that who is doing the work?"
+  },
+  {
+    "id": "GRASP-2",
+    "name": "Creator",
+    "description": "Assign class B the responsibility to create instances of class A if B contains, aggregates, records, or closely uses A. When an unrelated module creates objects it has no relationship to, object creation is misplaced.",
+    "violation_signal": "A function creates objects it does not contain, aggregate, or closely use — creation responsibility is in the wrong place.",
+    "ask": "Does the creator have a close, natural relationship to what it is creating?"
+  },
+  {
+    "id": "GRASP-3",
+    "name": "Controller",
+    "description": "Assign responsibility for handling a system event to a controller class — a use-case or session controller, not a domain or UI object. Domain objects should not handle system events directly.",
+    "violation_signal": "A domain object or low-level utility handles system-level events (requests, user actions, external triggers) that should be delegated to a controller layer.",
+    "ask": "Is this a domain object being asked to play the role of a controller?"
+  },
+  {
+    "id": "GRASP-4",
+    "name": "Low Coupling",
+    "description": "Assign responsibilities to minimize dependencies between modules. High coupling creates brittleness: changes in one module ripple into many others. A function with many unrelated imports is a coupling smell.",
+    "violation_signal": "A module imports from or calls into many unrelated modules, creating a web of dependencies that resists change.",
+    "ask": "Does adding this responsibility increase coupling unnecessarily? Could the dependency be inverted or removed?"
+  },
+  {
+    "id": "GRASP-5",
+    "name": "High Cohesion",
+    "description": "Assign related responsibilities together and keep unrelated responsibilities apart. A class or function that does many unrelated things is low cohesion — it is harder to understand, maintain, and reuse.",
+    "violation_signal": "A function or class handles multiple unrelated concerns — it is doing too many different things that do not naturally belong together.",
+    "ask": "Are all the responsibilities in this class or function strongly related to a single, clear purpose?"
+  },
+  {
+    "id": "GRASP-6",
+    "name": "Indirection",
+    "description": "Assign responsibility to an intermediate object to mediate between two components, reducing direct coupling. When two components that should be decoupled call each other directly, indirection is missing.",
+    "violation_signal": "Two components that should be isolated from each other are calling each other directly, with no intermediary to absorb change.",
+    "ask": "Should these two components be communicating through a mediator or interface rather than directly?"
+  },
+  {
+    "id": "GRASP-7",
+    "name": "Polymorphism",
+    "description": "When behavior varies by type, use polymorphic operations rather than explicit type-checking (isinstance chains, if/elif by type). Type-based branching is a signal that polymorphism is missing.",
+    "violation_signal": "A function uses isinstance checks or if/elif branches on object type to select behavior that could be handled polymorphically via method dispatch.",
+    "ask": "Is this type-checking logic a sign that these objects should share an interface with polymorphic behavior?"
+  },
+  {
+    "id": "GRASP-8",
+    "name": "Pure Fabrication",
+    "description": "When no domain class is a natural fit for a responsibility, assign it to a fabricated service class that has no domain-model counterpart. Forcing domain objects to carry non-domain responsibilities violates cohesion.",
+    "violation_signal": "A domain entity (User, Entry, Tag) is being given infrastructure or service responsibilities (caching, formatting, persistence) that have no domain justification.",
+    "ask": "Is this responsibility a domain concern or an infrastructure concern? If infrastructure, it belongs in a fabricated service, not a domain object."
+  },
+  {
+    "id": "GRASP-9",
+    "name": "Protected Variations",
+    "description": "Identify points of predicted instability or variation, and wrap them in a stable interface. Code that directly accesses unstable APIs, external services, or implementation details without indirection is unprotected against variation.",
+    "violation_signal": "Code directly accesses an unstable interface, external dependency, or implementation detail without a stable wrapper — changes in that dependency will ripple throughout callers.",
+    "ask": "Is this code protected against the most likely sources of change? Should there be a stable interface between this code and what it depends on?"
+  }
+]
