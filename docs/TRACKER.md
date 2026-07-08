@@ -160,6 +160,73 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM23. **[FILED 2026-07-08] Commonplace Phase 3 extras arc: wire live features, walk with Determined**
+
+   Phase 3 of the Commonplace journey. The complete corpus has 0 broken stubs.
+   These are the natural next steps Determined surfaces on its own -- features
+   the user adds to a codebase they now understand, using Determined as navigation.
+
+   Full user-facing spec in `docs/COMMONPLACE_USER_JOURNEY.md` (Phase 3 section).
+
+   **Extra 1 -- Wire suggest_tags to llama-server (LOW effort)**
+   `suggest_tags` already calls `_call_llm` if endpoint provided. Wire endpoint
+   config to llama-server port 8081 via config.py or env var. One config change +
+   reingest. Walk: Determined surfaces enrich_entry as stub_by_doc frontier →
+   user wires endpoint → verify suggest_tags returns real tags.
+
+   **Extra 2 -- Semantic search with real embeddings (MEDIUM effort)**
+   `semantic_search` currently delegates to text `search()`. Wire
+   sentence-transformers or llama-server `/embeddings` endpoint. Walk: Determined
+   shows semantic_search as functional-fallback stub → user implements embedding
+   lookup → reingest → stub_by_doc clears.
+
+   **Extra 3 -- Connection inference upgrade (MEDIUM effort)**
+   `find_connections` uses keyword overlap (Jaccard). `_similarity_score` is the
+   disconnected stub that was flagged "Decide" in Walk 3 Step 1. Wire it as the
+   scoring function upgrade (embedding-based similarity). Walk: _similarity_score
+   transitions from disconnected → wired callee → reingest confirms closure.
+
+   **Order:** Extra 1 → Extra 3 → Extra 2 (complexity order, each builds on prior).
+   **When to work this:** after RM22 Phase 0 bootstrap is solved, or in parallel
+   as a separate walk that doesn't require blank-start infrastructure.
+
+---
+
+RM22. **[FILED 2026-07-08] Phase 0 bootstrap: new corpus from blank directory**
+
+   Determined has no clean "start from scratch" entry point. All current flows
+   assume a corpus DB already exists. Phase 0 of the Commonplace journey (scratch
+   → seed) cannot be walked until this is solved.
+
+   **The problem:**
+   - `reingest_file` hard-fails with FileNotFoundError if DB is missing
+   - The corpus switcher has no "New corpus from directory" option
+   - A user with a blank directory has no guidance and no path forward
+   - Full Analyze (UI button) creates the DB but there's no prompt to do this first
+
+   **The actual two-step bootstrap (currently undocumented):**
+   1. Write first file(s) to a directory
+   2. Point Determined at the directory, hit Analyze → DB is created
+   3. From then on: write → reingest_file (incremental)
+   Step 2 is invisible to the user. Nothing in the UI explains it.
+
+   **What needs to be built:**
+   1. "New corpus from directory" option in corpus switcher (or a dedicated
+      "Start here" panel for the zero-corpus state)
+   2. UI guidance: "No corpus yet. Write your first file, then click Analyze."
+   3. Document the two-step bootstrap in COMMONPLACE_USER_JOURNEY.md Phase 0 section
+   4. Walk Phase 0→1: write seed files one by one, Analyze on first, reingest_file
+      for each subsequent file. Document actual output at each step.
+
+   **Reverse-seed approach for the walk script:**
+   Walk the complete→seed diff in reverse to determine file-creation order.
+   Each file removed going complete→seed = one "write this next" step in the
+   scratch→seed journey. This gives an exact script without guessing.
+
+   **Estimated effort:** UI change ~2 hours. Walk documentation ~1 session.
+
+---
+
 RM20. **[FILED 2026-07-07] design_note deduplication: LLM pass re-extracts rules the deterministic pass already stored**
 
    Discovered during RM15 Walk 2 Step 4 (Commonplace DESIGN.md ingest).
@@ -423,23 +490,33 @@ RM21. **[FUTURE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
 RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined iteratively**
 
    The next active work arc. Full description in docs/COMMONPLACE_VISION.md.
+   Synthesized user-facing journey (actuals from all walks): docs/COMMONPLACE_USER_JOURNEY.md
 
-   **Two entry paths:**
-   - Easy path: start from the seed skeleton, use Determined to fill it out
-   - Hardcore path: build the seed from scratch with Determined open, ingest
-     as you go, write-reingest-read-frontier loop IS the workflow
+   **Four phases (0=scratch, 1=seed, 2=complete, 3=extras):**
 
-   Both paths converge at seed, then continue to complete, then enhance
-   (wire tagger to llama-server, add semantic search, connection inference).
+   - Phase 0 (Scratch): NOT walked. Blocked on RM22 (no "new corpus" UI flow).
+   - Phase 1 (Seed): Walks 1+2 were developer/fixing passes, not clean user walks.
+     Tool output verified and recorded. Clean user walk not yet done.
+     Journey script extracted in COMMONPLACE_USER_JOURNEY.md -- use to validate next attempt.
+   - Phase 2 (Complete): Walk 3 done. 0 broken stubs. Actuals recorded in
+     COMMONPLACE_USER_JOURNEY.md Phase 2 section.
+   - Phase 3 (Extras): Not started. Filed as RM23.
 
-   **How to work this item:**
-   Start the server. Point Determined at seed (or blank dir). Walk the
-   COMMONPLACE_VISION.md journey steps. When something breaks or feels rough,
-   fix Determined. Continue. Iterative -- not a one-shot audit.
+   **What "clean user walk" means for Phase 1:**
+   Walk seed→complete as a new user would, following only Determined output.
+   No developer fixes mid-walk. If something breaks, stop, file it, fix it
+   separately, then re-walk from the start. Validate against COMMONPLACE_USER_JOURNEY.md.
 
-   **Pending housekeeping before starting:**
-   - Run ingest_design_docs via the UI to repopulate dj2 design notes
-     (all 268 purged session 79; DB empty for kind=design_note until re-run)
+   **Known issues that affect the walk:**
+   - ingest_design_docs path mismatch: DESIGN.md lives outside seed/ project root.
+     Must call with explicit path, not auto-discovery. (Known, documented in USER_JOURNEY.)
+   - UI Re-analyze does not use reingest_file -- runs background thread. Workaround:
+     call reingest_file() from Python CLI directly after editing files.
+
+   **Next walk decision (Walk 4):**
+   Options: Phase 3 Extra 1 (wire suggest_tags to llama-server) -- low effort, high
+   demo value; OR clean Phase 1 user walk with COMMONPLACE_USER_JOURNEY.md as validator.
+   RM22 must be solved before Phase 0 can be walked.
 
 ---
 
