@@ -240,7 +240,17 @@ RM20. **[FILED 2026-07-07] design_note deduplication: LLM pass re-extracts rules
 
 ---
 
-RM19. **[FILED 2026-07-07] Semantic Reconciliation Arc: duplicate detection, intent differencing, primitive discovery**
+RM19. **[DONE 2026-07-07] Semantic Reconciliation Arc: duplicate detection, intent differencing, primitive discovery**
+
+   All three passes implemented (confirmed session 118 — was marked FILED but code already exists):
+   - Pass 1: `find_duplicates` — embed "{name}: {docstring}", pairwise cosine similarity matrix, pairs above threshold stored as `reconciliation_finding` artifacts.
+   - Pass 2: `classify_duplicates` — feeds each stored pair to Qwen3-8B, classifies divergence from fixed taxonomy (accidental copy, historical evolution, performance optimization, platform-specific behavior, security reason, genuinely different abstraction). Stores classification as `reconciliation_finding`.
+   - Pass 3: `find_primitive_gaps` — mines call graph for callee pairs that appear together across multiple callers; surfaces as `primitive_gap` artifacts.
+   All three wired into TOOLS, tool_registry.py, and `list_reconciliation_findings`.
+
+   Passes 4 (canonicalization) and 5 (architectural drift) deferred — require evidence from 1-3 first.
+
+
 
    Determined has shifted from static analyzer toward semantic maintenance system. This arc
    adds three reconciliation passes grounded in the call graph and embedding infrastructure
@@ -291,7 +301,7 @@ RM19. **[FILED 2026-07-07] Semantic Reconciliation Arc: duplicate detection, int
 
 ---
 
-RM18. **[ACTIVE] Act on RM17 gaps**
+RM18. **[DONE 2026-07-07] Act on RM17 gaps**
 
    Priority order from RM17 findings: Gap 2 → Gap 10 → Gap 1.
 
