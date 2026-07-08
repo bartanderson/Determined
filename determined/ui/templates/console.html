@@ -133,7 +133,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
           <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
           <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;display:none;background:var(--surface2)">Switch corpus</button>
-          <div id="ingest-hint" style="font-size:.73em;color:var(--text3);padding:4px 2px 0;line-height:1.5">Point at any Python project folder. Determined reads the source, builds a call graph, and stores everything in a local DB for instant querying.</div>
+          <div id="ingest-hint" style="font-size:.73em;color:var(--text3);padding:4px 2px 0;line-height:1.5">Point at any Python project folder. Determined reads the source, builds a call graph, and stores everything in a local DB for instant querying.<br><br><strong style="color:var(--text2)">New project?</strong> Write your first <code>.py</code> file to the directory, then click Analyze to bootstrap the corpus. After that, use Re-analyze or reingest_file for incremental updates.</div>
         </div>
       </div>
       <div class="sidebar-section" id="corpus-map" style="display:none">
@@ -1167,6 +1167,26 @@ socket.on("browse_result", data => {
 socket.on("scan_result", data => {
   clearStatusMsgs();
   if (data.error) { addErrorBlock(data.error); return; }
+  if (data.file_count === 0) {
+    showModal(`
+      <div style="font-weight:600;margin-bottom:.5rem">No source files found</div>
+      <div style="color:var(--text2);font-size:.9em;margin-bottom:1rem;word-break:break-all">${escHtml(data.path)}</div>
+      <div style="color:var(--text2);margin-bottom:1.2rem;line-height:1.6">
+        This directory has no recognized source files yet.<br>
+        <strong>To bootstrap a new corpus:</strong><br>
+        1. Write your first <code>.py</code> file to this directory<br>
+        2. Come back and click Analyze — Determined will create the corpus DB<br>
+        3. After that, use Re-analyze or <code>reingest_file</code> for each new file
+      </div>
+      <div style="display:flex;gap:.6rem;justify-content:flex-end">
+        <button class="send-btn" style="background:var(--surface2)" id="cancel-ingest">OK</button>
+      </div>`);
+    document.getElementById("cancel-ingest").addEventListener("click", () => {
+      hideModal();
+      ingestPath.value = "";
+    });
+    return;
+  }
   const secs = Math.max(5, data.file_count * 2 + data.size_mb * 3);
   const timeEst = secs < 60 ? `~${Math.round(secs)}s` : `~${Math.max(1, Math.round(secs / 60))} min`;
   showModal(`
