@@ -394,16 +394,108 @@ After Walk 3 Step 3 (extract_full_content, EnrichmentProcessor implemented):
 
 ---
 
-## PHASE 3 -- Extras (PARTIALLY WALKED)
+## PHASE 3 -- Extras (WALKED 2026-07-08, session 117)
 
 Filed as RM23. Three natural next steps surfaced by Determined on the complete corpus:
 
 1. **Wire suggest_tags to llama-server** [WALKED -- Extra 1, session 115]
-2. **Semantic search with real embeddings** [NOT YET WALKED]
-3. **Connection inference live** [NOT YET WALKED]
+2. **Semantic search with real embeddings** [WALKED -- Extra 2, session 115]
+3. **Connection inference live** [WALKED -- Extra 3, session 115]
 
 Each extra: Determined surfaces the frontier → user implements → reingest → verify.
 The tool becomes navigation layer for a codebase the user already understands.
+
+---
+
+### Phase 3 Walk -- Determined's view of the complete corpus (session 117)
+
+Walk date: 2026-07-08. DB reingested 3 Walk 4 files before walking
+(`services/linker.py`, `routes/search.py`, `services/searcher.py`).
+Corpus: 25 files, 64 functions.
+
+**Step 1 -- knowledge_status**
+
+```
+Knowledge coverage for corpus (25 files, 64 functions):
+  File summaries (semantic_summaries): 0/25 files covered
+  Total knowledge artifacts: 0
+  Structural facts extracted:
+    entry points: 0  dead code candidates: 0  hot symbols: 0  stub files: 0
+
+GAPS AT A GLANCE:
+  Docstring coverage:    22/64 functions documented
+  Distillation coverage: 0/25 files distilled
+  Design notes:          0 total
+  Modules with missing docstrings:
+    C:: 42/64 missing
+```
+
+Fresh corpus -- knowledge layer empty. This is the expected starting state before
+any `describe_file` or `extract_design_facts` pass. 42/64 functions missing
+docstrings is the documentation debt surfaced immediately.
+
+**Step 2 -- find_abc_gaps**
+
+```
+All ABC stub methods have at least one non-stub override in the corpus.
+```
+
+`EntryProcessor` base + `CleanupProcessor`, `DeduplicateProcessor`,
+`EnrichmentProcessor` subclasses are all fully overriding. No gaps.
+
+**Step 3 -- frontier_coverage**
+
+```
+FRONTIER COVERAGE
+  Implemented functions : 64
+  Stubs in corpus       : 0
+
+  Stub-gated (1-hop)    : 0  (0.0% of implemented corpus)
+  Has impl caller       : 30  (reachable through functional code)
+  Has stub caller only  : 0
+  No callers at all     : 16  (orphaned -- see find_orphaned_impls)
+
+  Signal: LOW stub pressure -- most implemented code is reachable.
+```
+
+0 stubs. All 3 Walk 4 extras are implemented. 16 orphaned functions -- not broken,
+just not yet called from the current routing layer (model classes, HTML parser
+internals, utility functions).
+
+**Step 4 -- find_orphaned_impls**
+
+```
+  app.py       create_app            [possibly-stranded (0 stub callers)]
+  connection.py validate             [anticipatory]
+  entry.py     validate, to_dict     [anticipatory]
+  tag.py       validate              [anticipatory]
+  extractor.py handle_starttag x2, handle_endtag x2, handle_data x2, get_text  [anticipatory]
+  pipeline.py  _normalize_entry      [anticipatory]
+  processor.py run_processors        [anticipatory]
+  db.py        close_db              [anticipatory]
+  queries.py   insert_connection     [anticipatory]
+  text.py      make_excerpt          [anticipatory]
+  validator.py validate_entry        [anticipatory]
+```
+
+All "anticipatory" -- implemented and waiting for callers. `create_app` is
+possibly-stranded (Flask factory pattern: called by the WSGI server, not by
+any in-corpus symbol). No dead code; these are all latent-functional.
+
+**Step 5 -- check_design_violations**
+
+Requires `symbol` arg and design_notes in DB. Corpus has 0 design notes
+(no `ingest_design_docs` run yet). Tool returns "no layer rules defined" --
+correct for a fresh corpus without a `LAYER_RULES.md`.
+
+**What Phase 3 shows about the tool:**
+- Determined correctly reports 0 stubs after Walk 4 extras land
+- `find_abc_gaps` immediately surfaces the hierarchy structure and confirms override coverage
+- `find_orphaned_impls` distinguishes "orphaned but well-formed" (anticipatory) from
+  "orphaned and suspicious" (possibly-stranded) -- `create_app` is the one to watch
+- `check_design_violations` and `knowledge_status` distillation both require a
+  prior setup pass (`ingest_design_docs`, `describe_file`) -- they're navigation tools
+  for a corpus the user has already annotated, not cold-start tools
 
 ---
 

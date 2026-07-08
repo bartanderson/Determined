@@ -16,7 +16,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-08, session 116):** RM22 fully done. Phase 0 walk completed: 17 seed files written to blank dir, Analyze created DB in ~30s, actuals recorded in COMMONPLACE_USER_JOURNEY.md Phase 0 section. Key finding: 0 stubs in current seed (Walk 4 extras implemented extractor + processor). ABC hierarchy (EntryProcessor) surfaces immediately. TRACKER RM22 marked done. No engine files changed; tests not re-run.
+**Last session (2026-07-08, session 117):** RM23 done. Phase 3 walk completed on complete Commonplace corpus (25 files, 64 functions). DB reingested 3 Walk 4 files (linker.py, searcher.py, search.py) before walking. Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct fresh-corpus state). Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs. step_queue.md corrected (session 116 claimed advancement but didn't actually write it). No engine files changed; tests not re-run.
 
 **Session 81 (2026-07-05):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
@@ -160,35 +160,21 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM23. **[FILED 2026-07-08] Commonplace Phase 3 extras arc: wire live features, walk with Determined**
+RM23. **[DONE 2026-07-08] Commonplace Phase 3 extras arc: walk with Determined**
 
-   Phase 3 of the Commonplace journey. The complete corpus has 0 broken stubs.
-   These are the natural next steps Determined surfaces on its own -- features
-   the user adds to a codebase they now understand, using Determined as navigation.
+   Walk completed session 117. Phase 3 section of COMMONPLACE_USER_JOURNEY.md
+   updated with actual tool outputs. All 3 extras were already implemented (Walk 4,
+   session 115); this session was the documentation pass.
 
-   Full user-facing spec in `docs/COMMONPLACE_USER_JOURNEY.md` (Phase 3 section).
+   **Actuals (complete corpus, 25 files, 64 functions):**
+   - knowledge_status: 0 distilled, 42/64 missing docstrings, 0 design notes
+   - find_abc_gaps: "All ABC stub methods have at least one non-stub override"
+   - frontier_coverage: 0 stubs, 16 orphans (all anticipatory), LOW pressure
+   - find_orphaned_impls: create_app possibly-stranded; 15 others anticipatory
+   - check_design_violations: requires design notes first (0 in DB -- correct for fresh corpus)
 
-   **Extra 1 -- Wire suggest_tags to llama-server (LOW effort)**
-   `suggest_tags` already calls `_call_llm` if endpoint provided. Wire endpoint
-   config to llama-server port 8081 via config.py or env var. One config change +
-   reingest. Walk: Determined surfaces enrich_entry as stub_by_doc frontier →
-   user wires endpoint → verify suggest_tags returns real tags.
-
-   **Extra 2 -- Semantic search with real embeddings (MEDIUM effort)**
-   `semantic_search` currently delegates to text `search()`. Wire
-   sentence-transformers or llama-server `/embeddings` endpoint. Walk: Determined
-   shows semantic_search as functional-fallback stub → user implements embedding
-   lookup → reingest → stub_by_doc clears.
-
-   **Extra 3 -- Connection inference upgrade (MEDIUM effort)**
-   `find_connections` uses keyword overlap (Jaccard). `_similarity_score` is the
-   disconnected stub that was flagged "Decide" in Walk 3 Step 1. Wire it as the
-   scoring function upgrade (embedding-based similarity). Walk: _similarity_score
-   transitions from disconnected → wired callee → reingest confirms closure.
-
-   **Order:** Extra 1 → Extra 3 → Extra 2 (complexity order, each builds on prior).
-   **When to work this:** after RM22 Phase 0 bootstrap is solved, or in parallel
-   as a separate walk that doesn't require blank-start infrastructure.
+   **DB reingested** 3 Walk 4 files before walking (linker.py, search.py, searcher.py
+   were newer than DB). 1 updated in linker.py, 2 updated in searcher.py.
 
 ---
 
