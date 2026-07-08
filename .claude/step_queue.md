@@ -1,3 +1,3 @@
-PREVIOUS: RM15 Step 8 -- Walk 2 wrap-up complete (committed 837d185)
-CURRENT:  RM15 Walk 3 Step 1 -- Orient: re-ingest complete corpus, verify topology shapes (chain-middle, ABC, conditional stub)
-NEXT:     RM15 Walk 3 Step 2 -- Work the topology: implement stubs in priority order, document chain-shape findings
+PREVIOUS: RM15 Walk 3 Step 1 -- Orient complete corpus, chain topology documented (committed 592789a)
+CURRENT:  RM15 Walk 3 Step 2 -- Implement chain-tail stubs (find_connections, suggest_tags), re-ingest, verify enrich_entry shape change
+NEXT:     RM15 Walk 3 Step 3 -- Implement extract_full_content, wire _similarity_score, close ABC gap (EnrichmentProcessor)
