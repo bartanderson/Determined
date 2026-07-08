@@ -728,3 +728,52 @@ the disconnected stub is now a direct callee of an implemented function. The "De
 queue correctly predicted: this was deferred architecture waiting for `find_connections`
 to be implemented. Once `find_connections` had real logic, the right home for
 `_similarity_score` was obvious.
+
+---
+
+## WALK 3 - Step 3: Close remaining stubs
+
+### Actions taken (2026-07-08, session 114)
+
+Implemented `extract_full_content` in `services/extractor.py`:
+- Added `_TextExtractor(HTMLParser)` -- extracts visible text, skips script/style/head/noscript
+- `extract_full_content` now fetches the URL and returns `_TextExtractor.get_text()`
+- No external dependencies; uses stdlib HTMLParser same as rest of module
+
+Closed ABC gap in `services/processor.py` -- `EnrichmentProcessor`:
+- `process()`: calls `suggest_tags`, attaches result as `entry["tags"]`
+- `can_handle()`: returns True when entry has content
+- Both abstractmethods now overridden; class is no longer abstract
+
+`semantic_search` in `services/searcher.py`: left as-is. Already delegates to
+`search()` and returns real results -- designed fallback, not a broken stub.
+
+Re-ingested `extractor.py` (+2 added, ~7 updated) and `processor.py` (~3 updated).
+
+### Stub count after Step 3
+
+```
+Remaining stubs: 2
+  services/pipeline.py:enrich_entry    -- stub_by_doc, intentional corpus design
+  services/searcher.py:semantic_search -- functional fallback, not broken
+```
+
+Zero broken/unimplemented stubs remain.
+
+### Walk 3 WHAT WORKS assessment
+
+Determined correctly tracked the stub closure arc across three steps:
+- Step 1: oriented full corpus, identified 6 stubs, classified by shape
+  (chain-tail, disconnected, direct-call, chain-head)
+- Step 2: implemented chain-tail and disconnected stubs; both categories dropped to 0
+- Step 3: implemented direct-call stubs and ABC gap; only intentional stubs remain
+
+Chain topology was a useful navigation guide: chain-tail stubs pointed at
+implementation order (implement the tail first, the head's shape becomes clear).
+The disconnected stub (_similarity_score) self-resolved once its natural caller was
+implemented -- Determined flagged it correctly as "decide" rather than "implement."
+
+The ABC gap detection (EnrichmentProcessor with no overrides) was a real finding --
+find_abc_gaps surfaces this in live analysis. Closing it by implementing process()
+and can_handle() demonstrates the full corpus-design loop: Determined finds it,
+developer implements it, reingest confirms closure.
