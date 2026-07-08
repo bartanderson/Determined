@@ -34,6 +34,34 @@ class _TitleParser(HTMLParser):
             self.title = data.strip()
 
 
+class _TextExtractor(HTMLParser):
+    """Extract visible text, skipping script/style blocks."""
+
+    _SKIP_TAGS = {"script", "style", "head", "noscript"}
+
+    def __init__(self):
+        super().__init__()
+        self._skip_depth = 0
+        self._parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag):
+        if tag in self._SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+
+    def handle_data(self, data):
+        if not self._skip_depth:
+            text = data.strip()
+            if text:
+                self._parts.append(text)
+
+    def get_text(self):
+        return " ".join(self._parts)
+
+
 def extract_metadata(url):
     """Fetch URL and return (title, description, raw_html). Raises on failure."""
     req = urllib.request.Request(url, headers={"User-Agent": "Commonplace/1.0"})
@@ -49,12 +77,13 @@ def extract_metadata(url):
 
 
 def extract_full_content(url):
-    """
-    STUB: Extract cleaned readable text from URL.
-    Currently returns empty string -- full extraction not yet implemented.
-    Frontier: implement with readability or trafilatura.
-    """
-    return ""
+    """Fetch URL and return visible text, stripping script/style/head tags."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Commonplace/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        raw = resp.read(65536).decode("utf-8", errors="replace")
+    parser = _TextExtractor()
+    parser.feed(raw)
+    return parser.get_text()
 
 
 def extract(url):
