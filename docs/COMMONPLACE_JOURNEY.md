@@ -8,16 +8,40 @@ when a fundamental break requires it. Look ahead 2-3 steps before walking.
 
 ## WHAT WORKS (verified, don't re-test)
 
-- CSS fix: .tab-content grid-row 4->5 (commit pending). Frontier, Graph,
-  Topology tabs now render at full height.
+**Walk 1 verified:**
+- CSS fix: .tab-content grid-row 4->5. Frontier, Graph, Topology tabs render at full height.
 - Seed corpus loads correctly: 8 files, 0 hot, 2 stubs, Roots: capture/index
-- Frontier Direct mode: shows extract_metadata + extract_full_content as red
-  stubs, extract as orange caller. Correct.
-- Topology tab: renders correctly, shows Total stubs:2, direct-call shape,
-  action queue points at stubs. Correct.
-- symbol_context on extract_metadata: correct output via UI spotlight trigger
-  (declaration, docstring, SAFE risk, 1 caller). Spotlight code is correct;
-  preview pane too narrow to show it (556px < 590px needed). Not a bug.
+- Frontier Direct mode: shows stubs correctly (red) with callers (orange).
+- Topology tab: renders correctly, action queue points at stubs.
+- symbol_context: correct output (declaration, docstring, risk, callers). Spotlight
+  invisible in preview pane (too narrow) -- not a bug, works in real browser.
+- Editor tab: loads file, save triggers reingest, sidebar updates stub count live without reload.
+- ingest_design_docs: wired into post-ingest pass, runs automatically.
+
+**Walk 2 verified (2026-07-07):**
+- find_abc_gaps: correctly detects missing ABC overrides, checks per-subclass via
+  methods_json. Drops to 0 cleanly when overrides are added. High signal, no false positives
+  on the seed corpus.
+- detect_topology: ABC-interface and orphaned-impl counts accurate. False positive known:
+  init_db stays orphaned because Flask app-context call is invisible to static analysis.
+  Not a bug -- a documented limit.
+- check_design_violations: HIGH-SIGNAL at >= 0.45 (real rule matches the right symbol).
+  NOISY at 0.30-0.40 (cross-symbol contamination, duplicate rule entries). Threshold 0.30
+  is too permissive -- 0.45 is a more reliable signal floor for small corpora.
+- reason_about: correct recommendations grounded in SOTS tenets. Confidence 95% on both
+  decisions exercised (keep extractor unified; remove strict branch). Slight reasoning
+  mismatch on utils/ vs routes/ context, but conclusion correct.
+- find_conditional_stubs: detects hidden runtime gaps in functions that pass structural
+  analysis. Correctly fires on `if strict: raise NotImplementedError` pattern.
+  Drops to 0 after branch removal and reingest. High signal.
+- Full write → reingest → detect_topology / find_abc_gaps / find_conditional_stubs
+  loop works end-to-end across all three gap shapes (ABC, orphan, conditional stub).
+
+**Known Determined gaps found during Walk 2:**
+- Duplicate design_note entries: LLM extraction pass re-extracts rules already found by
+  deterministic pass. 60-char prefix dedup is insufficient when LLM rephrases. Results
+  in duplicate PERMISSION-prefixed entries inflating check_design_violations output.
+  Filed as TRACKER item (see TRACKER.md).
 
 ---
 
@@ -466,6 +490,80 @@ The conclusion (remove the branch) is still correct: no caller needs strict=True
 Remove the `if strict: raise NotImplementedError` branch from `validate_entry`.
 Re-ingest. `find_conditional_stubs` should return 0. This closes the last open gap
 in the seed corpus and demonstrates the full guided journey loop.
+
+---
+
+## WALK 2 - Step 7: Remove conditional stub, close last gap
+
+### Actions taken (2026-07-07, session 110)
+
+Removed the `if strict: raise NotImplementedError` branch from `validate_entry`
+in `utils/validator.py`. Function is now unconditionally implemented.
+Re-ingested `utils/validator.py`.
+
+### Output after reingest
+
+```
+find_conditional_stubs:
+  0 found  (was 1 -- validate_entry strict branch removed)
+
+detect_topology:
+  Total stubs: 0  |  Total implemented: 31
+  Orphaned-impl: 1  (init_db -- known false positive, Flask app-context)
+  All others: 0
+```
+
+### Reasoning
+
+The seed corpus is now clean: 0 stubs, 0 ABC gaps, 0 conditional stubs,
+1 known-false orphan. This closes the Walk 2 loop.
+
+The full guided journey has exercised:
+- ABC gap: detect → implement override → reingest → verify 0
+- Orphaned-impl: detect → wire caller → reingest → verify count drops
+- Design violations: ingest design doc → run check → reason_about decision
+- Conditional stub: find_conditional_stubs → reason_about → remove branch → verify 0
+
+---
+
+## WALK 2 - Step 8: Wrap-up assessment
+
+### What the journey taught (Walk 2)
+
+**High-signal Determined outputs (trust these):**
+- `find_abc_gaps`: no false positives on seed. Fires correctly, clears correctly.
+- `find_conditional_stubs`: correctly surfaces hidden runtime gaps. High value --
+  these pass all structural checks but will crash on specific inputs.
+- `detect_topology` ABC-interface + orphaned-impl counts: accurate.
+- `check_design_violations` at score >= 0.45: real matches. The 0.61 on the
+  search route bypassing service layer was the correct finding for the correct symbol.
+- `reason_about`: recommendations correct on both decisions. SOTS grounding adds
+  real weight to the output, not just hedging.
+
+**Noisy Determined outputs (calibrate before trusting):**
+- `check_design_violations` at 0.30-0.40: cross-symbol contamination is common.
+  The `extract_metadata` picking up a `searcher.py` service-layer rule is a false positive.
+  Treat the 0.30 threshold as a floor for "possibly relevant," not "worth acting on."
+  0.45+ is the actionable signal band for small corpora.
+- Duplicate design_note entries: LLM pass re-extracts what deterministic pass already found.
+  Until fixed, check_design_violations output will show the same rule 2-3x at similar
+  scores. De-duplicate mentally by rule body, not by entry count.
+- Static-analysis orphan false positives: `init_db` via Flask app_context is a
+  permanent known false positive. Cross-module aliased imports (`from utils.validator
+  import validate_url`) may not resolve to call edges. Both are analysis limits, not bugs.
+
+**Determined gaps filed (Walk 2):**
+- Duplicate design_note deduplication: filed in TRACKER.md under RM20.
+
+### Next arc decision
+
+Two options:
+1. **Build Commonplace "complete" state** -- add browse route, models (Entry/Tag),
+   storage queries. Exercises chain shapes, richer topology, more call graph variety.
+   Purpose: stress-test Determined against a fuller codebase, find more gaps.
+2. **RM19 Pass 3 filter improvement** -- cross-reference primitive_gap callees against
+   symbols table to exclude constructors/stdlib (~30 min, agent_tools.py:4642).
+   Purpose: reduce noise in an existing tool without new corpus work.
 
 ---
 

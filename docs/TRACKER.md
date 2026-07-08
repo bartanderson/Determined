@@ -16,7 +16,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-05, session 82):** Clarified Commonplace work arc. COMMONPLACE_VISION.md updated with clear framing. RM15 filed as next active item.
+**Last session (2026-07-07, session 111):** RM15 Walk 2 wrap-up (Step 8). COMMONPLACE_JOURNEY.md updated with Walk 2 WHAT WORKS assessment and Step 7+8 sections. RM20 filed (design_note dedup via embedding similarity). Walk 2 complete: full guided journey loop exercised across ABC gap, orphaned-impl, design violations, and conditional stub shapes. 481 passed, 1 skipped (not re-run this session -- no engine files changed).
 
 **Session 81 (2026-07-05):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
@@ -157,6 +157,47 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
+
+---
+
+RM20. **[FILED 2026-07-07] design_note deduplication: LLM pass re-extracts rules the deterministic pass already stored**
+
+   Discovered during RM15 Walk 2 Step 4 (Commonplace DESIGN.md ingest).
+
+   **The problem:** `ingest_design_docs` runs two passes over a design doc:
+   (1) a deterministic regex/keyword pass that extracts explicit constraint phrases, and
+   (2) an LLM pass that extracts named invariants and authority rules.
+   Both passes store their findings as `kind=design_note` artifacts. When the LLM
+   rephrases a rule the deterministic pass already found, deduplication fails.
+
+   **Current dedup:** compares the first 60 chars of the rule body at store time.
+   Insufficient when LLM paraphrases: "PERMISSION: X must not Y" (deterministic) vs.
+   "Only X is permitted to Y" (LLM) are the same rule but won't match.
+
+   **Effect:** `check_design_violations` output shows the same rule 2-3x at nearly
+   identical scores, inflating apparent violation count and obscuring signal.
+   Observed: PERMISSION-prefixed duplicates appearing at 0.41 and 0.30 for a single
+   query against a 10-rule corpus.
+
+   **Fix options (in order of confidence):**
+   1. Embed each candidate rule at store time; skip if cosine similarity to any
+      existing design_note in the corpus exceeds 0.85. Reuses existing embedding
+      infrastructure (`embed_text` from `determined/oracle/embedding_model.py`).
+   2. Run dedup as a post-pass after all extraction: cluster all stored design_notes
+      by embedding similarity, keep one canonical form per cluster.
+   3. Skip the LLM extraction pass for rule types the deterministic pass already
+      covers (PERMISSION, LAYER, MUST-NOT phrases). LLM pass restricted to rules
+      the deterministic pass cannot find (e.g. implicit authority rules, named invariants
+      phrased as prose without trigger words).
+
+   **Recommended:** Option 1. One embedding call per candidate at ingest time.
+   If similarity >= 0.85 to any stored rule, skip storage. Fast, local, uses
+   existing infrastructure. No schema change needed.
+
+   **Where to implement:** `determined/agent/doc_extractor.py` — the store step
+   inside `ingest_design_docs`. Check before INSERT.
+
+   **Estimated effort:** ~1 hour. Small, self-contained.
 
 ---
 
