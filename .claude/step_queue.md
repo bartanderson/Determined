@@ -1,3 +1,3 @@
-PREVIOUS: RM15 Step 2 -- EnrichmentProcessor implemented, ABC-interface 2->0 (committed a0a090e)
-CURRENT:  RM15 Step 3 -- Wire orphaned-impl callers, re-ingest, watch orphan count drop
-NEXT:     RM15 Step 4 -- Document Step 3 output + reasoning in COMMONPLACE_JOURNEY.md
+PREVIOUS: RM15 Step 3 -- Orphaned-impl 2->1, search_bp wired (committed c21d8b6)
+CURRENT:  RM15 Step 4 -- check_design_violations on extractor.py, reason_about three-responsibility tension
+NEXT:     RM15 Step 5 -- Expand frontier: add stubs for tagging/linking/validation, re-ingest, watch topology grow

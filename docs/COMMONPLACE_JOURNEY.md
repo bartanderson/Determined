@@ -289,6 +289,74 @@ Three times: direct-call stubs (Walk 1) → ABC gap (Step 2) → orphaned-impl (
 
 ---
 
+## WALK 2 - Step 4: Design decision — check_design_violations + reason_about
+
+### Actions taken (2026-07-07, session 110)
+
+Ingested `examples/commonplace/docs/DESIGN.md` manually (outside seed project root,
+auto-discovery doesn't find it — known limitation). Extracted 10 rules, stored as
+design_note artifacts in the seed corpus DB.
+
+Ran `check_design_violations` on `extract_metadata` and `search` (route handler).
+Ran `reason_about` on `extract_metadata` with the extractor-split question.
+
+### Output
+
+**check_design_violations: extract_metadata**
+```
+Potential violations (score >= 0.30):
+  0.43 -- extractor.py: one module or three? (always called together, splitting adds indirection)
+  0.41 -- PERMISSION: same rule (duplicate from LLM extraction pass)
+  0.32 -- searcher.py: bypasses service layer (low signal for this symbol)
+  0.30 -- same rule duplicate
+```
+
+**check_design_violations: search (route handler)**
+```
+Potential violations (score >= 0.30):
+  0.61 -- searcher.py: bypasses service layer (high signal -- correct flag)
+  0.55 -- PERMISSION: same rule
+  0.34 -- storage/ only layer touching DB directly
+  0.33 -- same rule duplicate
+  0.32 -- extractor.py: one module or three? (low signal, noise)
+```
+
+**reason_about: extract_metadata — split extractor or keep unified?**
+```
+Decision:   Keep extractor.py as a single module
+Confidence: 95%
+Reasoning:  SOTS tenet: minimize indirection, maintain cohesion.
+            2 callers, 5 callees -- scope is manageable as one module.
+            Splitting adds complexity without clear benefit.
+```
+
+### Reasoning
+
+**What check_design_violations got right:**
+The `search` route handler correctly flags the `searcher.py: bypasses service layer`
+tension at 0.61 — high enough to warrant manual review. This is a real documented
+violation in DESIGN.md: `searcher.search()` calls `queries.search_entries()` directly,
+bypassing the service boundary. The tool found the right violation for the right symbol.
+
+**What check_design_violations got wrong (noise to address):**
+- Duplicate rules at high count: the PERMISSION-prefixed entries are the same rule
+  extracted twice (once deterministically, once via LLM pass). Deduplication is imperfect.
+- Low-signal cross-contamination: `extract_metadata` picking up the `searcher.py`
+  service-layer rule at 0.32 is a false positive — the extractor doesn't touch storage.
+  Threshold of 0.30 may be too low for this corpus size.
+
+**What reason_about got right:**
+Correctly recommended keeping extractor.py unified. SOTS tenet surfaced (minimize
+indirection). The STALE PRIOR CHAIN warning is interesting — it detected that caller
+count changed since a prior analysis, which is accurate (we added callers in Step 3).
+
+**Design note for Determined (potential fix):**
+Duplicate design_note entries from PERMISSION-prefix suggest the LLM extraction pass
+is adding rules that the deterministic pass already found. Could filter by rule body
+similarity at store time, not just exact prefix match.
+
+---
+
 ## FINDINGS TO FIX (in order of journey impact)
 
 F1. [DONE] Frontier mode resets to Direct on tab open.
