@@ -12,16 +12,16 @@ from services.linker import find_connections
 from services.tagger import suggest_tags
 
 
-def enrich_entry(entry: dict, all_entries: list) -> dict:
+def enrich_entry(entry: dict, all_entries: list, llm_endpoint: str = None) -> dict:
     """
-    STUB: Enrich a newly captured entry with connections and tags.
-    Calls find_connections and suggest_tags -- both stubs.
+    Enrich a newly captured entry with connections and tags.
+    Calls find_connections and suggest_tags.
     Chain middle: called from capture route, calls stub services.
     """
     connections = find_connections(
         entry.get("id"), entry.get("content", ""), all_entries
     )
-    tags = suggest_tags(entry.get("content", ""))
+    tags = suggest_tags(entry.get("content", ""), endpoint=llm_endpoint)
     return dict(entry, connections=connections, suggested_tags=tags)
 
 

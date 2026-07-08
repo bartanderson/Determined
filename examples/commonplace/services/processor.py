@@ -52,7 +52,7 @@ class EnrichmentProcessor(EntryProcessor):
     def process(self, entry: dict) -> dict:
         from services.tagger import suggest_tags
         entry = dict(entry)
-        entry["tags"] = suggest_tags(entry.get("id", ""), entry.get("content", ""))
+        entry["tags"] = suggest_tags(entry.get("content", ""))
         return entry
 
     def can_handle(self, entry: dict) -> bool:

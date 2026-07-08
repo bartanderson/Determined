@@ -49,10 +49,11 @@ def capture():
     # enrich_entry is the chain-middle: called here (chain-head), calls
     # find_connections and suggest_tags (chain-tail stubs).
     all_entries = queries.list_entries(limit=200)
-    enriched = enrich_entry({"id": entry_id, "content": content}, all_entries)
+    llm_endpoint = current_app.config.get("LLM_ENDPOINT")
+    enriched = enrich_entry({"id": entry_id, "content": content}, all_entries, llm_endpoint=llm_endpoint)
 
     if current_app.config.get("TAGGING_ENABLED"):
-        suggested = tagger.suggest_tags(content)
+        suggested = tagger.suggest_tags(content, endpoint=llm_endpoint)
         for tag_name in suggested:
             tag_id = queries.insert_tag(tag_name, source="llm")
             queries.link_tag(entry_id, tag_id)
