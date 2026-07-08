@@ -1,61 +1,71 @@
-Written at commit: 9327db7 (Determined); CWD local main also advanced (not pushed)
-# SESSION STATE - session 114 handoff
+Written at commit: 0aaa111 (Determined)
+# SESSION STATE - session 115 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 114, 2026-07-08)
+## What happened this session (session 115, 2026-07-08)
 
-**RM15 Walk 3 Step 2: committed (was uncommitted from session 113) [V]**
-Committed find_connections + suggest_tags (a300b49). Chain-tail: 0, disconnected: 0.
+**CWD desktop adapter deleted [V]**
+User decided the fold benefits don't apply to this workflow (Claude Code already reads
+files on demand). Deleted C:\Users\bartl\dev\context-warp-drive clone entirely.
+Nothing pushed upstream, no impact. Memory saved: project_tool_call_repair.md
+(validate-then-repair pattern for open model tool calls, four failure modes).
 
-**RM15 Walk 3 Step 3: close remaining stubs [V]**
-- `extract_full_content` (extractor.py): added `_TextExtractor(HTMLParser)`, fetches URL, returns visible text. No external deps.
-- `EnrichmentProcessor` (processor.py): ABC gap closed. `process()` calls `suggest_tags`, `can_handle()` checks content.
-- `semantic_search` (searcher.py): left as-is -- functional fallback, designed not broken.
-- Re-ingested both files. Stub count: 2 remaining (both intentional).
-- Committed: d32aa57
+**RM15 Walk 4 Extra 1: wire suggest_tags to llama-server [V]**
+- pipeline.enrich_entry: added llm_endpoint param, forwards to suggest_tags
+- routes/capture.py: reads LLM_ENDPOINT from app config, passes to both call sites
+- services/processor.py: fixed arg bug (EnrichmentProcessor was passing id as content)
+- Seed left unchanged (TAGGING_ENABLED=False correct for seed state)
+- Committed: da8b15e
 
-**RM15 Walk 3 Step 4: documentation [V]**
-COMMONPLACE_JOURNEY.md updated with Step 3 actuals and Walk 3 WHAT WORKS assessment. Committed: bf6efa9
+**RM15 Walk 4 Extra 2+3: semantic_search + _similarity_score upgrade [V]**
+- utils/text.py: added get_embed_model() lazy singleton (all-MiniLM-L6-v2) + cosine_similarity()
+- services/searcher.py: semantic_search now embeds query + all entries, ranks by cosine (threshold 0.25), falls back to text search
+- services/linker.py: _similarity_score upgraded from Jaccard to embedding cosine similarity, same fallback
+- routes/search.py: now calls semantic_search instead of search
+- Committed: d241528
 
-**RM21 filed: small-model reasoning enhancement arc [V]**
-6 techniques (verification loops, constrained decoding, prompt chaining, MCTS, speculative verification, browser bridge).
-Browser bridge already exists: dj2/tools.old/bridge/ (unified_core.py + deepseek_lib.py, Selenium CDP-attach).
-Fortress (github.com/tiliondev/fortress) noted as headless option. Committed: dfc7bde
+**RM15 Walk 4 wrap-up: COMMONPLACE_USER_JOURNEY.md Phase 3 fully documented [V]**
+All three extras verified and recorded with actuals. Phase 3 section updated from
+NOT YET WALKED to PARTIALLY WALKED (all three done). Committed: 0df2a2c
 
-**RM22 + RM23 filed; RM15 updated; COMMONPLACE_USER_JOURNEY.md created [V]**
-- RM22: Phase 0 bootstrap (blank dir, no DB)
-- RM23: Phase 3 extras arc (wire LLM tagging, semantic search, connection inference)
-- COMMONPLACE_USER_JOURNEY.md: synthesized user-facing journey from Walk 1/2/3 logs, actuals from complete corpus recorded
-- Committed: 9327db7
+**RM22 Phase 0 bootstrap: UI guidance [V]**
+- console.html hint text: explains bootstrap pattern (write first .py, then Analyze, then reingest_file)
+- scan_result handler: 0-file directories now show 3-step bootstrap guide instead of confusing modal
+- Modal verified in browser (showModal test). Committed: 0aaa111
 
-**CWD interrupt: context-warp-drive desktop adapter [V]**
-Cloned dogtorjonah/context-warp-drive to C:\Users\bartl\dev\context-warp-drive.
-Built and tested adapter -- verified on this session (295 source rows folded).
-- src/providers/claudeDesktop.ts: read-only fold pipeline for claude.ai desktop app
-- examples/claude-desktop-fold.ts: CLI tool
-- README.md: desktop app section added
-Merged to local CWD main. PR to upstream deferred.
-Key finding: CWD fold != SESSION_STATE.md replacement. Fold = token-efficient context
-seed for model. SESSION_STATE = curated intent/next-steps. Both useful, complementary.
+**Test count: 481 passed, 1 skipped [V]** (run at da8b15e, d241528, 0aaa111 -- all clean)
 
-**Test count: 481 passed, 1 skipped [?]** (not re-run -- no engine files changed)
+**Tool call repair pattern saved to memory [V]**
+memory/project_tool_call_repair.md: four failure modes, validate-then-repair inversion,
+relational invariants, schema hints. Applies to Determined/RM21.
 
 ## NEXT SESSION -- start here
 
 **Step 0: update step queue [V needed]**
-File: .claude/step_queue.md -- still shows Walk 3 as CURRENT. Update first.
+File: .claude/step_queue.md -- shows CURRENT as RM22 Phase 0 bootstrap (done).
+Advance to RM22 walk.
 
-**Walk 4 decision (RM15):**
-Options:
-1. Clean Phase 1 user walk -- walk seed->complete as new user, validate against COMMONPLACE_USER_JOURNEY.md
-2. Phase 3 Extra 1 -- wire suggest_tags to llama-server (low effort, high demo value)
-3. Phase 0 bootstrap (RM22) -- "New corpus from directory" UI flow
+**RM22 walk: Phase 0 scratch-to-seed (next concrete task)**
+Write the Commonplace seed files one by one from a blank directory, document
+actuals in COMMONPLACE_USER_JOURNEY.md Phase 0 section.
 
-**CWD PR (when ready):**
-Repo: C:\Users\bartl\dev\context-warp-drive (local main has adapter, not pushed)
-Need to: fork dogtorjonah/context-warp-drive on GitHub, push branch, open PR.
+Approach: use the reverse-seed diff to determine file creation order.
+  git diff examples/commonplace/seed/ examples/commonplace/ -- shows what the
+  complete corpus adds over seed. Reverse = what to write to go seed→complete.
+  For scratch→seed: start from nothing, write seed files in dependency order.
+
+The two-step bootstrap (verified working):
+  1. Write first file to empty directory
+  2. Hit Analyze in UI → DB created
+  3. reingest_file for each subsequent file
+
+Prerequisite: create a blank working directory for the walk (not inside the repo).
+
+**RM22 TRACKER: partially done**
+UI piece done (committed 0aaa111). Walk documentation not yet done.
+TRACKER.md RM22 item should be updated to reflect UI done, walk pending.
 
 ## Known issues (carried forward)
 
@@ -63,5 +73,4 @@ Need to: fork dogtorjonah/context-warp-drive on GitHub, push branch, open PR.
 **UI Re-analyze does NOT use reingest_file [V]:** Workaround: call from Python CLI directly.
 **Duplicate design_note extraction [V]:** Filed as RM20. Not yet fixed.
 **primitive_gap noise [V]:** Fix is RM19 Pass 3.
-**Step queue stale [V]:** .claude/step_queue.md shows Walk 3 as CURRENT. Fix at session start.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
