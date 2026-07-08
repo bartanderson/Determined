@@ -1,3 +1,3 @@
-PREVIOUS: RM15 Walk 3 Step 2 -- Implement find_connections, suggest_tags; chain-tail drops to 0 (committed a300b49)
-CURRENT:  RM15 Walk 3 Step 3 -- Implement extract_full_content, close ABC gap (EnrichmentProcessor), verify stub count drops to 0
-NEXT:     RM15 Walk 3 Step 4 -- Document Walk 3 in COMMONPLACE_JOURNEY.md, wrap-up assessment
+PREVIOUS: RM15 Walk 3 Step 3 -- extract_full_content, EnrichmentProcessor ABC gap closed (committed d32aa57)
+CURRENT:  RM15 Walk 3 complete -- all steps committed, 0 broken stubs, Walk 3 documented in COMMONPLACE_JOURNEY.md
+NEXT:     RM15 Walk 4 -- decide next walk focus (design violations pass, semantic_search embedding upgrade, or enrich_entry wire-up)
