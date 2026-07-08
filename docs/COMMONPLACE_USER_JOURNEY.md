@@ -5,7 +5,7 @@ Extracted from Walk 1, Walk 2, Walk 3 developer logs. This is what a new user
 should see and do, distilled from actual tool output. Use this to validate the
 next clean attempt and to design the guided UI (Phase 4).
 
-Last updated: 2026-07-08 (session 114). Actuals from complete corpus also recorded.
+Last updated: 2026-07-08 (session 116). Phase 0 walked and recorded. Actuals from complete corpus also recorded.
 
 ---
 
@@ -22,28 +22,110 @@ intent but not yet walked.
 
 ---
 
-## PHASE 0 -- Scratch (NOT YET WALKED)
+## PHASE 0 -- Scratch (WALKED 2026-07-08, session 116)
 
-**Starting state:** blank directory, no files, no DB.
+**Starting state:** blank directory `C:\Users\bartl\dev\commonplace-walk`, no files, no DB.
 
-**Blocker:** Determined has no "new corpus from directory" flow. `reingest_file`
-requires a DB to already exist. Full corpus Analyze creates the DB but requires
-at least one file. The two-step bootstrap is:
-  1. Write first file
-  2. Hit Analyze (creates DB)
-  3. From then on: write → reingest_file (incremental)
+**RM22 blocker resolved:** UI now shows a 3-step bootstrap guide when Analyze is
+clicked on a directory with 0 source files (committed 0aaa111). Walk proceeded
+by writing all seed files first, then Analyze.
 
-**UI gap:** No "New corpus" prompt. User lands on corpus switcher with nothing
-to switch to. There is no guidance for starting from zero.
+### Step 0 -- Empty directory: what the UI shows [VERIFIED]
 
-**Filed as:** RM22. Must be solved before Phase 0 can be walked.
+**User action:** Enter path to blank directory → click Switch corpus → path scanned.
 
-**[Expected] first-file state after Analyze:**
+**What they see (0-file scan result modal):**
 ```
-CORPUS TOPOLOGY
-  Total files: 1  |  Total stubs: 0  |  Total implemented: N
-  (depends on first file written)
+No source files found
+<directory path>
+
+This directory has no recognized source files yet.
+To bootstrap a new corpus:
+1. Write your first .py file to this directory
+2. Come back and click Analyze — Determined will create the corpus DB
+3. After that, use Re-analyze or reingest_file for each new file
+
+[OK]
 ```
+
+**What it teaches:** The bootstrap pattern. Write first, then Analyze, then
+reingest_file incrementally. This closes the "where do I start" gap.
+
+---
+
+### Step 1 -- Write seed files, then Analyze [VERIFIED]
+
+**User action:** Write all seed files to directory. Enter path → Switch corpus →
+scan finds 17 files → modal: "Analyze this project?"
+
+**What they see (scan modal):**
+```
+Analyze this project?
+C:\Users\bartl\dev\commonplace-walk
+17 source files · 0 MB · ~34s
+[Cancel]  [Analyze ↵]
+```
+
+**User action:** Click Analyze ↵.
+
+**What happens:** Ingest runs (~30s for 17 files). DB created at
+`C_Users_bartl_dev_commonplace_walk.db`.
+
+---
+
+### Step 2 -- After Analyze: what Determined shows [VERIFIED]
+
+**Corpus map after first Analyze of walk directory (all 17 seed files):**
+```
+17 files · 1 hot · 0 stubs
+
+Roots:
+  capture ↗13
+  validate_entry ↗6
+  index ↗2
+  EntryProcessor ↗0
+  EnrichmentProcessor ↗0
+
+Core:
+  process ↙0
+  capture ↙0
+  search ↙1
+  _similarity_score ↙1
+  insert_entry ↙0
+  _call_llm ↙1
+  get_db ↙7
+  extract_metadata ↙2
+  create_app ↙1
+  enrich_entry ↙0
+
+Gaps:
+  docs 71% (9 missing)
+  distilled 76%
+  5 design notes
+```
+
+**Verified corpus DB facts:**
+- 17 files ingested (all seed files)
+- Roles: 3 entry_points (app.py, capture.py, search.py), 1 config, 4 inits, 9 modules
+- 1 hot file: storage/db.py (most inbound connections: get_db called 7 times)
+- 31 functions, 5 classes, 137 graph edges
+- 0 stubs detected (seed extractor.py and processor.py are now implemented from Walk 4 extras)
+- ABC classes: EntryProcessor (ABC), CleanupProcessor, DeduplicateProcessor, EnrichmentProcessor
+
+**What it teaches:**
+- `capture` is the heaviest entry point (13 outbound calls) -- that's where the
+  application's work happens.
+- `storage/db.py::get_db` is hot (7 callers) -- the DB connection is the bottleneck.
+- 0 stubs in current seed state: Walk 4 extras implemented the extractor and
+  processor functions that were stubs in earlier walks.
+- EntryProcessor ABC with 3 subclasses surfaces immediately in Roots -- Determined
+  shows abstract class hierarchies even without explicit stub detection.
+
+**Note on stub state:** Earlier walks (Phase 1 Walk 1) showed 2 stubs in the seed.
+Those stubs (`extract_metadata`, `extract_full_content`) were implemented during
+Walk 4 Extras 1-3. The seed corpus reflects those implementations. A user starting
+from the current seed sees a 0-stub, 17-file codebase with a clear entry point
+and DB bottleneck as the first signals.
 
 ---
 

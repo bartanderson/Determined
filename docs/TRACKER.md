@@ -16,7 +16,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-07, session 111):** RM15 Walk 2 wrap-up (Step 8). COMMONPLACE_JOURNEY.md updated with Walk 2 WHAT WORKS assessment and Step 7+8 sections. RM20 filed (design_note dedup via embedding similarity). Walk 2 complete: full guided journey loop exercised across ABC gap, orphaned-impl, design violations, and conditional stub shapes. 481 passed, 1 skipped (not re-run this session -- no engine files changed).
+**Last session (2026-07-08, session 116):** RM22 fully done. Phase 0 walk completed: 17 seed files written to blank dir, Analyze created DB in ~30s, actuals recorded in COMMONPLACE_USER_JOURNEY.md Phase 0 section. Key finding: 0 stubs in current seed (Walk 4 extras implemented extractor + processor). ABC hierarchy (EntryProcessor) surfaces immediately. TRACKER RM22 marked done. No engine files changed; tests not re-run.
 
 **Session 81 (2026-07-05):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
@@ -192,38 +192,22 @@ RM23. **[FILED 2026-07-08] Commonplace Phase 3 extras arc: wire live features, w
 
 ---
 
-RM22. **[FILED 2026-07-08] Phase 0 bootstrap: new corpus from blank directory**
+RM22. **[DONE 2026-07-08] Phase 0 bootstrap: new corpus from blank directory**
 
-   Determined has no clean "start from scratch" entry point. All current flows
-   assume a corpus DB already exists. Phase 0 of the Commonplace journey (scratch
-   → seed) cannot be walked until this is solved.
+   UI guidance shipped (committed 0aaa111). Walk documented in
+   COMMONPLACE_USER_JOURNEY.md Phase 0 section (committed this session).
 
-   **The problem:**
-   - `reingest_file` hard-fails with FileNotFoundError if DB is missing
-   - The corpus switcher has no "New corpus from directory" option
-   - A user with a blank directory has no guidance and no path forward
-   - Full Analyze (UI button) creates the DB but there's no prompt to do this first
+   **What was built:**
+   - 0-file scan: modal shows 3-step bootstrap guide (write first file, Analyze, then reingest_file)
+   - Non-zero scan: modal shows "Analyze this project? N files · M MB · ~Xs" + confirm
+   - Phase 0 walk: 17 seed files written to blank dir, Analyze produced DB in ~30s
+   - Actuals: 17 files, 1 hot (storage/db.py), 0 stubs, 31 functions, 137 edges
+   - Walk directory: C:\Users\bartl\dev\commonplace-walk (not in repo)
 
-   **The actual two-step bootstrap (currently undocumented):**
-   1. Write first file(s) to a directory
-   2. Point Determined at the directory, hit Analyze → DB is created
-   3. From then on: write → reingest_file (incremental)
-   Step 2 is invisible to the user. Nothing in the UI explains it.
-
-   **What needs to be built:**
-   1. "New corpus from directory" option in corpus switcher (or a dedicated
-      "Start here" panel for the zero-corpus state)
-   2. UI guidance: "No corpus yet. Write your first file, then click Analyze."
-   3. Document the two-step bootstrap in COMMONPLACE_USER_JOURNEY.md Phase 0 section
-   4. Walk Phase 0→1: write seed files one by one, Analyze on first, reingest_file
-      for each subsequent file. Document actual output at each step.
-
-   **Reverse-seed approach for the walk script:**
-   Walk the complete→seed diff in reverse to determine file-creation order.
-   Each file removed going complete→seed = one "write this next" step in the
-   scratch→seed journey. This gives an exact script without guessing.
-
-   **Estimated effort:** UI change ~2 hours. Walk documentation ~1 session.
+   **Key finding from walk:** 0 stubs in current seed (Walk 4 extras implemented
+   extractor + processor functions). Phase 1 journey doc (which shows 2 stubs) was
+   from an earlier seed state. Phase 0 → seed shows a clean 0-stub codebase as
+   starting point. ABC class hierarchy (EntryProcessor) surfaces immediately.
 
 ---
 
