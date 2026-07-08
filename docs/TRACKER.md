@@ -358,6 +358,50 @@ RM16. **[DONE 2026-07-05] UI concept documentation: explain what each panel/mode
 
 ---
 
+RM21. **[FUTURE] Small-model reasoning enhancement: push Qwen3-8B beyond its natural ceiling**
+
+   The long-term goal: make Determined's local model reason reliably over multi-hop
+   questions without requiring a larger model. Not a single feature -- a layered
+   architecture built incrementally.
+
+   **Why this matters:** Qwen3-8B can call one tool fine but degrades on multi-step
+   reasoning chains (A→B→C→D). Each technique below attacks a different part of that
+   failure mode. Determined's deterministic fact layer is the key enabler -- the model
+   doesn't need to *know* facts, it needs to *accept corrections* from the DB.
+
+   **Technique 1 -- Verification loops (highest leverage, do first)**
+   Model generates a claim → Determined checks it against the DB → if wrong, feed
+   the correction back → model revises. Pure tool-call pattern, no new infrastructure.
+   Qwen3-8B is already good enough at accepting corrections. Start here.
+
+   **Technique 2 -- Constrained decoding**
+   Force model output to match a grammar or schema (e.g. `outlines` library).
+   Model fills slots, can't hallucinate outside the schema. Dramatically reduces
+   noise on structured queries. Pair with Technique 1.
+
+   **Technique 3 -- Prompt chaining / decomposition**
+   Break one hard question into N easy questions each within model capability.
+   Determined answers each hop deterministically; model only plans the chain.
+   This is the "lightly reasoned over" pattern already partially in place.
+
+   **Technique 4 -- MCTS over reasoning (already in notes as future item)**
+   Tree-search over evaluate() -- explore multiple reasoning paths, score them,
+   pick the best. Expensive but effective for unfamiliar domains. Build after
+   Techniques 1-3 prove insufficient for a real query.
+
+   **Technique 5 -- Speculative verification**
+   Model proposes, Determined's DB scores. No LLM judge needed -- the corpus IS
+   the judge. Requires Technique 1 infrastructure to already exist.
+
+   **Tractability order:** 1 → 3 → 2 → 5 → 4. Each depends on the prior being
+   proven on a real RM15-style query before adding the next layer.
+
+   **When to work this:** after RM15 Commonplace journey is complete and we have
+   a baseline of what the model gets wrong on real multi-hop queries. The failures
+   will tell us which technique to reach for first.
+
+---
+
 RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined iteratively**
 
    The next active work arc. Full description in docs/COMMONPLACE_VISION.md.
