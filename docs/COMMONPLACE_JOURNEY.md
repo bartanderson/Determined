@@ -674,3 +674,57 @@ RM16. [DONE] UI concept documentation pass -- explain every panel/mode/concept
     Fix: Frontier mode hint line (one sentence per mode), hot-count tooltip,
     empty-state Analyze hint, Topology subtitle expanded, Tools panel title=
     attributes, spotlight risk badge tooltip. Commit 8e1a3cf.
+
+---
+
+## WALK 3 - Step 2: Implement chain-tail stubs
+
+### Actions taken (2026-07-08, session 113)
+
+Implemented `find_connections` in `services/linker.py`:
+- Keyword overlap (Jaccard) strategy: extract non-stop words >= 4 chars from both texts
+- `_similarity_score` wired as the scoring function (closes disconnected stub)
+- Returns top 10 (other_id, "related", confidence) tuples, threshold 0.1
+- `_extract_keywords` private helper extracts the word sets
+
+Implemented `suggest_tags` in `services/tagger.py`:
+- If endpoint provided: calls `_call_llm`, parses comma-separated response
+- Falls back to `_keyword_tags` (top-5 by frequency) when LLM unavailable or raises
+- `_keyword_tags` private helper added to module
+
+Re-ingested both files via `reingest_file`.
+
+### Output after reingest
+
+```
+Before:
+  Total stubs: 6
+    Chain-tail: 2  (find_connections, suggest_tags)
+    Disconnected: 1  (_similarity_score)
+
+After:
+  Total stubs: 3
+    extract_full_content  (direct-call)
+    enrich_entry          (chain-head, stub_by_doc -- intentional)
+    semantic_search       (direct-call)
+    Chain-tail: 0
+    Disconnected: 0
+```
+
+### Shape change: enrich_entry
+
+`enrich_entry` remains `is_stub=1` (stub_by_doc -- docstring starts with "STUB:").
+Its callees (`services.linker.find_connections`, `services.tagger.suggest_tags`) are
+now `is_stub=0`. It no longer calls any stubs. Whether Determined reclassifies it
+from chain-head to direct-call stub depends on whether its callers are re-ingested
+(pipeline.py callers need to be checked). The stub_by_doc flag is the binding signal;
+shape label is secondary.
+
+### Key observation: _similarity_score closure
+
+`_similarity_score` was the disconnected stub -- no callers, no callees. Implementing
+`find_connections` with `_similarity_score` as its scoring core closes this:
+the disconnected stub is now a direct callee of an implemented function. The "Decide"
+queue correctly predicted: this was deferred architecture waiting for `find_connections`
+to be implemented. Once `find_connections` had real logic, the right home for
+`_similarity_score` was obvious.
