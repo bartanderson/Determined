@@ -9,6 +9,7 @@ two direct-call stubs in extractor.py are the only unimplemented work.
 from flask import Flask
 from storage.db import init_db
 from routes.capture import capture_bp
+from routes.search import search_bp
 
 
 def create_app(config=None):
@@ -21,6 +22,7 @@ def create_app(config=None):
         init_db()
 
     app.register_blueprint(capture_bp)
+    app.register_blueprint(search_bp)
     return app
 
 

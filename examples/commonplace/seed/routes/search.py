@@ -23,5 +23,5 @@ _TEMPLATE = """
 @search_bp.route("/search", methods=["GET"])
 def search():
     query = request.args.get("q", "").strip()
-    results = searcher.search(query) if query else []
+    results = searcher.semantic_search(query) if query else []
     return render_template_string(_TEMPLATE, query=query, results=results)
