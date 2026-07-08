@@ -359,19 +359,42 @@ called in tests, so it never surfaced. Reingest after the fix confirmed closure.
 
 ---
 
-### Extra 2 -- Semantic search with real embeddings [NOT YET WALKED]
+### Extra 2 -- Semantic search with real embeddings [VERIFIED]
 
-`semantic_search` currently delegates to text `search()`. Wire sentence-transformers
-or llama-server `/embeddings` endpoint. Medium effort. Demonstrates Determined
-navigating an actively evolving feature.
+**What Determined showed:** `semantic_search` as functional-fallback stub (delegates
+to `search()`). `routes/search.py` calling `searcher.search()` directly, bypassing
+the semantic layer entirely.
+
+**What changed (commit d241528):**
+- `utils/text.py` -- added `get_embed_model()` (lazy singleton, all-MiniLM-L6-v2)
+  and `cosine_similarity()` shared by both extras
+- `services/searcher.py::semantic_search` -- loads all entries, embeds query + content
+  via sentence-transformers, ranks by cosine similarity (threshold 0.25), falls back
+  to text search if model unavailable
+- `routes/search.py` -- now calls `semantic_search` instead of `search`
+
+**The lesson:** The stub was a functional fallback, not a broken stub. Determined
+correctly flagged it as "designed not broken" -- the fix was wiring, not implementing.
+The shared embedding helper in `utils/text.py` is the natural home for this since
+both Extra 2 and Extra 3 needed the same model.
 
 ---
 
-### Extra 3 -- Connection inference upgrade [NOT YET WALKED]
+### Extra 3 -- Connection inference upgrade [VERIFIED]
 
-`find_connections` uses keyword overlap (Jaccard). Wire `_similarity_score` as
-scoring upgrade (embedding-based similarity). Shows the "Decide" disconnected stub
-resolving into a real enhancement.
+**What Determined showed:** `_similarity_score` as a disconnected stub flagged
+"Decide" in Walk 3. Jaccard keyword overlap was a placeholder, not the intended
+implementation.
+
+**What changed (commit d241528):**
+- `services/linker.py::_similarity_score` -- upgraded from Jaccard keyword overlap
+  to embedding cosine similarity using the shared `get_embed_model()` helper.
+  Falls back to Jaccard if sentence-transformers unavailable.
+
+**The lesson:** The "Decide" disconnected stub resolved exactly as Determined
+predicted -- it became the scoring function upgrade. `find_connections` required
+no changes; only the implementation of `_similarity_score` changed. This is the
+cleanest possible outcome: Determined identified the right insertion point.
 
 ---
 
