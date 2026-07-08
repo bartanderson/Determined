@@ -312,25 +312,66 @@ After Walk 3 Step 3 (extract_full_content, EnrichmentProcessor implemented):
 
 ---
 
-## PHASE 3 -- Extras (NOT YET WALKED)
+## PHASE 3 -- Extras (PARTIALLY WALKED)
 
 Filed as RM23. Three natural next steps surfaced by Determined on the complete corpus:
 
-1. **Wire suggest_tags to llama-server** -- `suggest_tags` already calls `_call_llm`
-   if endpoint provided. Wire endpoint config to llama-server port 8081. One config
-   change + reingest. Low effort, high demo value.
-
-2. **Semantic search with real embeddings** -- `semantic_search` currently delegates
-   to text `search()`. Wire sentence-transformers or llama-server `/embeddings` endpoint.
-   Medium effort. Demonstrates Determined navigating an actively evolving feature.
-
-3. **Connection inference live** -- `find_connections` implemented with keyword overlap
-   (Jaccard). Wire `_similarity_score` as scoring upgrade (embedding-based similarity
-   instead of keyword overlap). Shows the "Decide" disconnected stub resolving into
-   a real enhancement.
+1. **Wire suggest_tags to llama-server** [WALKED -- Extra 1, session 115]
+2. **Semantic search with real embeddings** [NOT YET WALKED]
+3. **Connection inference live** [NOT YET WALKED]
 
 Each extra: Determined surfaces the frontier → user implements → reingest → verify.
 The tool becomes navigation layer for a codebase the user already understands.
+
+---
+
+### Extra 1 -- Wire suggest_tags to llama-server [VERIFIED]
+
+**What Determined showed:** `suggest_tags` and `enrich_entry` as chain-tail stubs
+in the complete corpus frontier. The stub docstring said "LLM_ENDPOINT" was the
+missing piece.
+
+**What the user found:**
+- `services/tagger.py::suggest_tags` already had the full `_call_llm` path written.
+  The `endpoint` parameter existed but was never passed from callers.
+- `config.py` already had `LLM_ENDPOINT = os.environ.get("LLM_ENDPOINT", "http://localhost:8081")`
+  and `TAGGING_ENABLED` flag -- both defined, neither wired through.
+
+**What changed (commit da8b15e):**
+- `services/pipeline.py::enrich_entry` -- added `llm_endpoint` param, forwards to `suggest_tags`
+- `routes/capture.py` -- reads `LLM_ENDPOINT` from `current_app.config`, passes to both
+  `enrich_entry` and the direct `tagger.suggest_tags` call
+- `services/processor.py::EnrichmentProcessor.process` -- fixed arg bug: was calling
+  `suggest_tags(entry.get("id", ""), entry.get("content", ""))` (id as content, content as endpoint)
+
+**To activate:** set `TAGGING_ENABLED=true` and `LLM_ENDPOINT=http://localhost:8081`
+in environment before starting the app. With llama-server running on 8081, capture
+will return real LLM-suggested tags.
+
+**The lesson:** Determined surfaced the frontier correctly. The implementation was
+already written -- the gap was purely in wiring (endpoint not threaded through callers).
+This is the pattern Extra 1 was designed to demonstrate: "Determined as navigation
+layer for a codebase you already understand."
+
+**Bonus finding:** `EnrichmentProcessor` had a silent arg-order bug that would have
+caused `id` to be treated as content and `content` as endpoint. The stub was never
+called in tests, so it never surfaced. Reingest after the fix confirmed closure.
+
+---
+
+### Extra 2 -- Semantic search with real embeddings [NOT YET WALKED]
+
+`semantic_search` currently delegates to text `search()`. Wire sentence-transformers
+or llama-server `/embeddings` endpoint. Medium effort. Demonstrates Determined
+navigating an actively evolving feature.
+
+---
+
+### Extra 3 -- Connection inference upgrade [NOT YET WALKED]
+
+`find_connections` uses keyword overlap (Jaccard). Wire `_similarity_score` as
+scoring upgrade (embedding-based similarity). Shows the "Decide" disconnected stub
+resolving into a real enhancement.
 
 ---
 
