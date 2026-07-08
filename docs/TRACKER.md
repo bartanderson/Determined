@@ -393,12 +393,30 @@ RM21. **[FUTURE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    Model proposes, Determined's DB scores. No LLM judge needed -- the corpus IS
    the judge. Requires Technique 1 infrastructure to already exist.
 
-   **Tractability order:** 1 → 3 → 2 → 5 → 4. Each depends on the prior being
-   proven on a real RM15-style query before adding the next layer.
+   **Technique 6 -- Large-model fallback via browser bridge (already built)**
+   When all local techniques fail, package the relevant context and send it to a
+   large model (ChatGPT, Claude.ai, DeepSeek) via CDP browser automation. No API
+   key required -- attaches to your running Chrome profile via CDP port 9222.
+   Existing code: `C:\Users\bartl\dev\dj2\tools.old\bridge\`
+   - `unified_core.py` -- BridgeCore: CDP attach, send, extract response (Selenium)
+   - `deepseek_lib.py` -- DeepSeek-specific selectors and IOC context injection
+   - `diagnostics/` -- test harness (test_full_consult.py, test_send.py, etc.)
+   Determined already selects relevant context; bridge just needs a target URL and
+   the packaged context string. Copy bridge/ into Determined when ready to wire.
+
+   **Tractability order:** 1 → 3 → 2 → 5 → 4 → 6. Each depends on the prior being
+   proven on a real RM15-style query before adding the next layer. Technique 6 is
+   the escape hatch -- available now, use only when local techniques are exhausted.
 
    **When to work this:** after RM15 Commonplace journey is complete and we have
    a baseline of what the model gets wrong on real multi-hop queries. The failures
    will tell us which technique to reach for first.
+
+   **Note -- stealth browser option:** `https://github.com/tiliondev/fortress` is a
+   Chromium fork patched at C++ level (V8/Blink/BoringSSL) that defeats bot detection.
+   Not needed for the CDP-attach-to-real-profile approach above, but useful if a target
+   site blocks even real Chrome profiles or if the bridge needs a fully headless setup
+   (e.g. running on a server without a display).
 
 ---
 
