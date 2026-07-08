@@ -12,6 +12,7 @@ from services import extractor
 from services import pipeline
 from services.processor import run_processors
 from storage import queries
+from utils.validator import validate_url, validate_entry
 
 capture_bp = Blueprint("capture", __name__)
 
@@ -36,7 +37,7 @@ def capture():
     url = request.form.get("url", "").strip()
     if not url:
         return render_template_string(_FORM, error="URL is required."), 400
-    if not (url.startswith("http://") or url.startswith("https://")):
+    if not validate_url(url):
         return render_template_string(_FORM, error="Must be an http/https URL."), 400
 
     try:

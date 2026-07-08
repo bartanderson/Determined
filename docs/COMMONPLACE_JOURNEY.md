@@ -357,6 +357,59 @@ similarity at store time, not just exact prefix match.
 
 ---
 
+## WALK 2 - Step 5: Expand frontier — add validator, wire caller, watch topology
+
+### Actions taken (2026-07-07, session 110)
+
+Added `utils/validator.py` and `utils/__init__.py` to the seed. `validator.py` contains:
+- `validate_url()` — implemented, pure function
+- `validate_entry()` — implemented but with a **conditional stub**: `raise NotImplementedError`
+  inside `if strict:` branch. This is the topology shape `find_conditional_stubs()` detects.
+
+Updated `routes/capture.py` to import and call `validate_url()` from the new utility,
+replacing the inline `url.startswith()` check with the proper utility call. This also
+wires a caller for the validator module.
+
+Re-ingested: `utils/__init__.py`, `utils/validator.py`, `routes/capture.py`.
+
+### Output after reingest
+
+```
+detect_topology:
+  Total stubs: 0  |  Total implemented: 31  (was 29)
+  Orphaned-impl: 2  (validate_url, validate_entry -- capture.py call not resolved by static analysis)
+  All others: 0
+
+find_conditional_stubs:
+  1 found:
+    validator.py :: validate_entry  (def line 20, raise line 36)
+    "implemented functions with raise NotImplementedError in a branch"
+```
+
+### Reasoning
+
+**Why no new stub shapes in detect_topology?**
+`validate_entry` has a `raise NotImplementedError` inside a conditional branch, not
+as its entire body. Static analysis sees it as implemented (body exists, not a stub).
+`find_conditional_stubs` is specifically designed to catch this pattern — it's a
+separate pass, not part of topology classification. This is intentional: topology
+tells you structural shape, conditional stubs tell you hidden runtime gaps.
+
+**Why orphaned-impl at 2?**
+The capture route imports `validate_url` but static analysis didn't resolve the
+cross-module call edge from `routes/capture.py` to `utils/validator.py`. This is
+a known call-graph resolution limit — aliased imports (`from utils.validator import
+validate_url`) may not always produce a traceable edge. Not a Determined bug that
+needs fixing here; the conditional stub finding is the lesson of this step.
+
+**What Step 6 exercises:**
+`find_conditional_stubs` is now live and producing real output. Step 6 documents
+what the tool output teaches: conditional stubs are a different risk than missing
+stubs — the function exists and looks complete, but crashes on specific inputs.
+The user must decide whether to implement strict mode or remove the branch.
+
+---
+
 ## FINDINGS TO FIX (in order of journey impact)
 
 F1. [DONE] Frontier mode resets to Direct on tab open.
