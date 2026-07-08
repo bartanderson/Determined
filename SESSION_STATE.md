@@ -1,71 +1,77 @@
-Written at commit: 0aaa111 (Determined)
-# SESSION STATE - session 115 handoff
+Written at commit: cc1d72e (Determined)
+# SESSION STATE - session 116 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 115, 2026-07-08)
+## What happened this session (session 116, 2026-07-08)
 
-**CWD desktop adapter deleted [V]**
-User decided the fold benefits don't apply to this workflow (Claude Code already reads
-files on demand). Deleted C:\Users\bartl\dev\context-warp-drive clone entirely.
-Nothing pushed upstream, no impact. Memory saved: project_tool_call_repair.md
-(validate-then-repair pattern for open model tool calls, four failure modes).
+**RM22 walk: Phase 0 fully documented [V]**
+- Created blank walk directory: C:\Users\bartl\dev\commonplace-walk (not in repo)
+- Wrote all 17 seed files to the walk directory in dependency order
+- Started Determined UI on port 5051, emitted scan socket event
+- Scan modal showed: "17 source files · 0 MB · ~34s" [V]
+- Clicked Analyze -- DB created: C_Users_bartl_dev_commonplace_walk.db [V]
+- Queried DB directly for actuals (sqlite3)
+- Loaded corpus in browser (socket.emit load_db), confirmed corpus map
+- COMMONPLACE_USER_JOURNEY.md Phase 0 section: NOT YET WALKED -> WALKED [V]
+- TRACKER.md RM22 marked DONE [V]
+- step_queue.md advanced: CURRENT=RM23, NEXT=future [V]
+- Committed: cc1d72e [V]
 
-**RM15 Walk 4 Extra 1: wire suggest_tags to llama-server [V]**
-- pipeline.enrich_entry: added llm_endpoint param, forwards to suggest_tags
-- routes/capture.py: reads LLM_ENDPOINT from app config, passes to both call sites
-- services/processor.py: fixed arg bug (EnrichmentProcessor was passing id as content)
-- Seed left unchanged (TAGGING_ENABLED=False correct for seed state)
-- Committed: da8b15e
+**Key finding: 0 stubs in current seed [V]**
+Walk 4 extras (session 115) implemented extract_metadata, extract_full_content,
+and the processor functions. The seed no longer shows stubs. Phase 1 journey doc
+(showing "2 stubs") reflects an older seed state -- not a regression, just history.
 
-**RM15 Walk 4 Extra 2+3: semantic_search + _similarity_score upgrade [V]**
-- utils/text.py: added get_embed_model() lazy singleton (all-MiniLM-L6-v2) + cosine_similarity()
-- services/searcher.py: semantic_search now embeds query + all entries, ranks by cosine (threshold 0.25), falls back to text search
-- services/linker.py: _similarity_score upgraded from Jaccard to embedding cosine similarity, same fallback
-- routes/search.py: now calls semantic_search instead of search
-- Committed: d241528
+**Verified corpus actuals for commonplace-walk [V]**
+- 17 files, 1 hot (storage/db.py -- get_db called 7 times), 0 stubs
+- 31 functions, 5 classes, 137 graph edges
+- Roles: 3 entry_points (app.py, capture.py, search.py), 1 config, 4 inits, 9 modules
+- Corpus map roots: capture (↗13), validate_entry (↗6), index (↗2)
+- ABC hierarchy: EntryProcessor base + 3 subclasses (Cleanup, Deduplicate, Enrichment)
+- Gaps: docs 71% (9 missing), distilled 76%, 5 design notes
 
-**RM15 Walk 4 wrap-up: COMMONPLACE_USER_JOURNEY.md Phase 3 fully documented [V]**
-All three extras verified and recorded with actuals. Phase 3 section updated from
-NOT YET WALKED to PARTIALLY WALKED (all three done). Committed: 0df2a2c
+**0-file bootstrap modal verified [V]** (from session 115 commit 0aaa111)
+Scan of empty directory shows 3-step guide: write first file → Analyze → reingest_file.
+Not re-verified this session (no blank dir available after files written), but
+committed and tested in session 115.
 
-**RM22 Phase 0 bootstrap: UI guidance [V]**
-- console.html hint text: explains bootstrap pattern (write first .py, then Analyze, then reingest_file)
-- scan_result handler: 0-file directories now show 3-step bootstrap guide instead of confusing modal
-- Modal verified in browser (showModal test). Committed: 0aaa111
-
-**Test count: 481 passed, 1 skipped [V]** (run at da8b15e, d241528, 0aaa111 -- all clean)
-
-**Tool call repair pattern saved to memory [V]**
-memory/project_tool_call_repair.md: four failure modes, validate-then-repair inversion,
-relational invariants, schema hints. Applies to Determined/RM21.
+**Tests: not re-run this session [?]**
+No engine files changed (docs + step_queue only). Last clean run: 481 passed, 1 skipped
+at commit 0aaa111 (session 115).
 
 ## NEXT SESSION -- start here
 
-**Step 0: update step queue [V needed]**
-File: .claude/step_queue.md -- shows CURRENT as RM22 Phase 0 bootstrap (done).
-Advance to RM22 walk.
+**RM23: Phase 3 extras walk with Determined**
+Walk the complete corpus using Determined as navigation. Phase 3 extras are already
+implemented (Walk 4 did the code work). The walk is the documentation pass.
 
-**RM22 walk: Phase 0 scratch-to-seed (next concrete task)**
-Write the Commonplace seed files one by one from a blank directory, document
-actuals in COMMONPLACE_USER_JOURNEY.md Phase 0 section.
+Full spec in docs/TRACKER.md RM23 item and docs/COMMONPLACE_USER_JOURNEY.md Phase 3 section.
 
-Approach: use the reverse-seed diff to determine file creation order.
-  git diff examples/commonplace/seed/ examples/commonplace/ -- shows what the
-  complete corpus adds over seed. Reverse = what to write to go seed→complete.
-  For scratch→seed: start from nothing, write seed files in dependency order.
+**Load the complete corpus:**
+  DB: C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
+  Path: C:\Users\bartl\dev\Determined\examples\commonplace\
 
-The two-step bootstrap (verified working):
-  1. Write first file to empty directory
-  2. Hit Analyze in UI → DB created
-  3. reingest_file for each subsequent file
+**Phase 3 extras already implemented (from Walk 4):**
+- Extra 1: suggest_tags wired to llama-server via LLM_ENDPOINT config (routes/capture.py)
+- Extra 2: semantic_search uses sentence-transformers embeddings (services/searcher.py)
+- Extra 3: _similarity_score upgraded to embedding cosine similarity (services/linker.py)
 
-Prerequisite: create a blank working directory for the walk (not inside the repo).
+**Walk approach for Phase 3:**
+Use Determined tools to navigate the complete corpus:
+1. orient_to_codebase / corpus_status -- what does Determined see?
+2. find_abc_gaps -- does it surface EnrichmentProcessor?
+3. check_design_violations -- does it flag the extractor design tension?
+4. frontier / stub_by_doc -- what stubs remain after extras?
+5. Document each step's actual output in COMMONPLACE_USER_JOURNEY.md Phase 3 section
 
-**RM22 TRACKER: partially done**
-UI piece done (committed 0aaa111). Walk documentation not yet done.
-TRACKER.md RM22 item should be updated to reflect UI done, walk pending.
+Phase 3 section in COMMONPLACE_USER_JOURNEY.md currently shows Walk 4 actuals
+(the code work). The walk documentation (what Determined says about the completed
+codebase) is still needed.
+
+**Note on complete corpus DB:** May need reingest to pick up Walk 4 changes
+(semantic_search, _similarity_score upgrade). Check file timestamps vs DB mtime.
 
 ## Known issues (carried forward)
 
@@ -74,3 +80,4 @@ TRACKER.md RM22 item should be updated to reflect UI done, walk pending.
 **Duplicate design_note extraction [V]:** Filed as RM20. Not yet fixed.
 **primitive_gap noise [V]:** Fix is RM19 Pass 3.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
+**find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = gap reported even if override exists.
