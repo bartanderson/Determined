@@ -1,84 +1,67 @@
-Written at commit: 592789a
-# SESSION STATE - session 112 handoff
+Written at commit: 9327db7 (Determined); CWD local main also advanced (not pushed)
+# SESSION STATE - session 114 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 112, 2026-07-07)
+## What happened this session (session 114, 2026-07-08)
 
-**RM15 Walk 3 Step 1: complete corpus orientation [V]** (commit 592789a)
+**RM15 Walk 3 Step 2: committed (was uncommitted from session 113) [V]**
+Committed find_connections + suggest_tags (a300b49). Chain-tail: 0, disconnected: 0.
 
-Added `.determinedignore` to `examples/commonplace/` to exclude `seed/` subdirectory.
-Re-ingested complete corpus (25 files, 55 functions, 6 stubs).
-Documented Walk 3 Step 1 in COMMONPLACE_JOURNEY.md.
+**RM15 Walk 3 Step 3: close remaining stubs [V]**
+- `extract_full_content` (extractor.py): added `_TextExtractor(HTMLParser)`, fetches URL, returns visible text. No external deps.
+- `EnrichmentProcessor` (processor.py): ABC gap closed. `process()` calls `suggest_tags`, `can_handle()` checks content.
+- `semantic_search` (searcher.py): left as-is -- functional fallback, designed not broken.
+- Re-ingested both files. Stub count: 2 remaining (both intentional).
+- Committed: d32aa57
 
-**Complete corpus topology (verified) [V]:**
-```
-Total stubs: 6  |  Total implemented: 49
-  Direct-call:   3  (extract_full_content, semantic_search, + 1)
-  ABC-interface: 2  (EnrichmentProcessor.process, .can_handle)
-  Chain-head:    1  (enrich_entry -- functional caller + stub callees)
-  Chain-tail:    2  (find_connections, suggest_tags -- implement first)
-  Disconnected:  1  (_similarity_score -- deferred architecture)
-  Orphaned-impl: 16 (routes + models + storage -- see breakdown below)
-find_conditional_stubs: validate_entry strict branch
-find_abc_gaps:          EnrichmentProcessor (2 gaps)
-```
+**RM15 Walk 3 Step 4: documentation [V]**
+COMMONPLACE_JOURNEY.md updated with Step 3 actuals and Walk 3 WHAT WORKS assessment. Committed: bf6efa9
 
-**Orphaned-impl breakdown [V]:**
-- Route handlers (6): Flask externally triggers these -- correctly filtered from action queue
-- Model methods (4): Entry.validate, Entry.to_dict, Tag.validate, Connection.validate --
-  real code, no callers. Routes use raw SQLite rows, not model objects yet.
-- Storage queries (most of queries.py): implemented bottom-up, not yet fully wired to routes
-- Private helpers (_normalize_entry, _call_llm, _parse_tags, HTMLParser methods)
+**RM21 filed: small-model reasoning enhancement arc [V]**
+6 techniques (verification loops, constrained decoding, prompt chaining, MCTS, speculative verification, browser bridge).
+Browser bridge already exists: dj2/tools.old/bridge/ (unified_core.py + deepseek_lib.py, Selenium CDP-attach).
+Fortress (github.com/tiliondev/fortress) noted as headless option. Committed: dfc7bde
 
-**Key finding: stub_by_doc detection [V]:**
-`enrich_entry` has a real body but docstring starts with "STUB:". parse_ast.py line 177:
-`stub_by_doc = bool(docstring.strip().upper().startswith("STUB:"))`. Correctly flagged
-as chain-head stub. This is intentional corpus design.
+**RM22 + RM23 filed; RM15 updated; COMMONPLACE_USER_JOURNEY.md created [V]**
+- RM22: Phase 0 bootstrap (blank dir, no DB)
+- RM23: Phase 3 extras arc (wire LLM tagging, semantic search, connection inference)
+- COMMONPLACE_USER_JOURNEY.md: synthesized user-facing journey from Walk 1/2/3 logs, actuals from complete corpus recorded
+- Committed: 9327db7
+
+**CWD interrupt: context-warp-drive desktop adapter [V]**
+Cloned dogtorjonah/context-warp-drive to C:\Users\bartl\dev\context-warp-drive.
+Built and tested adapter -- verified on this session (295 source rows folded).
+- src/providers/claudeDesktop.ts: read-only fold pipeline for claude.ai desktop app
+- examples/claude-desktop-fold.ts: CLI tool
+- README.md: desktop app section added
+Merged to local CWD main. PR to upstream deferred.
+Key finding: CWD fold != SESSION_STATE.md replacement. Fold = token-efficient context
+seed for model. SESSION_STATE = curated intent/next-steps. Both useful, complementary.
+
+**Test count: 481 passed, 1 skipped [?]** (not re-run -- no engine files changed)
 
 ## NEXT SESSION -- start here
 
-Read step_queue.md: CURRENT is Walk 3 Step 2.
+**Step 0: update step queue [V needed]**
+File: .claude/step_queue.md -- still shows Walk 3 as CURRENT. Update first.
 
-**Walk 3 Step 2:** Work the chain topology.
-- Implement `find_connections` (chain-tail in linker.py) -- keyword overlap strategy
-- Implement `suggest_tags` (chain-tail in tagger.py) -- return hardcoded tags or
-  call `_call_llm` if endpoint provided
-- Re-ingest both files
-- Verify: chain-tail count drops to 0, enrich_entry shape may change
-- Does `enrich_entry` become direct-call (no longer calling stubs)?
-- Document in COMMONPLACE_JOURNEY.md
+**Walk 4 decision (RM15):**
+Options:
+1. Clean Phase 1 user walk -- walk seed->complete as new user, validate against COMMONPLACE_USER_JOURNEY.md
+2. Phase 3 Extra 1 -- wire suggest_tags to llama-server (low effort, high demo value)
+3. Phase 0 bootstrap (RM22) -- "New corpus from directory" UI flow
 
-**Walk 3 Step 3 (after Step 2):**
-- Implement `extract_full_content` (direct-call stub in extractor.py)
-- Wire `_similarity_score` into `find_connections` (closes disconnected stub)
-- Implement `EnrichmentProcessor.process` + `can_handle` (closes ABC gap)
-- Re-ingest, verify all shapes drop to 0
-- Document
-
-**Optional: ingest DESIGN.md for complete corpus:**
-`examples/commonplace/docs/DESIGN.md` -- same doc used in Walk 2 seed. Run
-`ingest_design_docs` (via Python CLI, not UI -- known project root mismatch issue)
-to populate design notes and run `check_design_violations` on searcher.py service-layer
-bypass (should fire at ~0.61, same as Walk 2).
+**CWD PR (when ready):**
+Repo: C:\Users\bartl\dev\context-warp-drive (local main has adapter, not pushed)
+Need to: fork dogtorjonah/context-warp-drive on GitHub, push branch, open PR.
 
 ## Known issues (carried forward)
 
-**ingest_design_docs project root mismatch [V]:** oracle.get_project_root() returns
-the source dir root. DESIGN.md lives in docs/ under examples/commonplace/. Must call
-discover_docs + extract_rules directly with the correct path.
-
-**UI Re-analyze+ does NOT use reingest_file [V]:** Runs background discover_run thread.
-Workaround: call reingest_file() from Python CLI directly.
-
+**ingest_design_docs project root mismatch [V]:** Must call with explicit path, not auto-discovery.
+**UI Re-analyze does NOT use reingest_file [V]:** Workaround: call from Python CLI directly.
 **Duplicate design_note extraction [V]:** Filed as RM20. Not yet fixed.
-
-**primitive_gap noise [V]:** Constructors/stdlib pass bare-name filter. Fix is RM19 Pass 3.
-
-**Test count: 481 passed, 1 skipped [?]** (not re-run this session -- no engine files changed)
-
-**Complete corpus DB path [V]:**
-`C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db`
-Ingest script at scratchpad (session-specific, may not persist): use Python CLI or
-`_ingest_source` from local_agent.py for future re-ingests.
+**primitive_gap noise [V]:** Fix is RM19 Pass 3.
+**Step queue stale [V]:** .claude/step_queue.md shows Walk 3 as CURRENT. Fix at session start.
+**Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
