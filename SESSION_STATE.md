@@ -1,68 +1,57 @@
-Written at commit: 431c5eb (Determined)
-# SESSION STATE - session 117 handoff
+Written at commit: 9b2ff73 (Determined)
+# SESSION STATE - session 118 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 117, 2026-07-08)
+## What happened this session (session 118, 2026-07-08)
 
-**RM23: Phase 3 extras walk -- DONE [V]**
-- Detected DB stale (3 Walk 4 files newer than DB): reingested linker.py, searcher.py, search.py
-- Ran knowledge_status, find_abc_gaps, frontier_coverage, find_orphaned_impls,
-  check_design_violations on complete Commonplace corpus (25 files, 64 functions)
-- Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct)
-- Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs [V]
-- step_queue.md corrected (session 116 claimed advancement but file was never written -- caught hallucination)
-- TRACKER RM23 marked DONE [V]
-- Committed: 65ef660 [V]
+**RM21 Technique 1: Verification loop -- DONE [V]**
+- Created determined/agent/claim_verifier.py: extract structural claims (CALLS,
+  NO_CALLERS) from assembled answers via regex; verify each against graph_edges;
+  return Correction objects with correction text [V]
+- Wired into local_agent._answer() ASSEMBLE path: after first assembly, if
+  corrections found, re-assemble once with correction block prepended to facts [V]
+- 12 new regression tests (test_claim_verifier.py) [V]
+- 493 passed, 1 skipped [V]
+- Committed: 6dc69a3 [V]
 
-**RM27: GRASP vocabulary -- DONE [V]**
-- Created determined/data/grasp_principles.json: 9 GRASP principles (Larman),
-  each with violation_signal and ask fields for detection use [V]
-- Created determined/data/grasp_loader.py: mirrors sots_loader.py pattern,
-  load_principles() / principle_texts() / search_principles() [V]
-- Wired into _check_design_violations_core alongside SOTS tenets:
-  extra_items now = tenet_texts() + principle_texts() [V]
-- Added GRASP label regex in results loop: [GRASP-N] -> "GRASP-N" subject [V]
-- Updated "no violations" message to mention GRASP count [V]
-- Live test: GRASP-9 Protected Variations surfaced on check_design_violations
-  itself (score 0.33) against Determined corpus [V]
-- 481 passed, 1 skipped [V]
-- Committed: 431c5eb [V]
-
-**Confirmed: RM20 (design_note dedup) not needed [?]**
-Bart noted no duplicates occur in practice on the Determined corpus.
-Not verified independently -- flagged [?].
+**Tracker housekeeping -- DONE [V]**
+- Discovered RM18 (all 3 gaps) and RM19 (all 3 passes) were already implemented
+  in prior sessions but left as [ACTIVE]/[FILED] in TRACKER.md [V]
+- RM18 marked DONE 2026-07-07 [V]
+- RM19 marked DONE with implementation notes [V]
+- step_queue.md advanced: CURRENT=RM15 Phase 1 walk [V]
+- Committed: 9b2ff73 [V]
 
 ## NEXT SESSION -- start here
 
-**RM21: Verification loops (Technique 1)**
-Model generates a claim -> Determined checks against DB -> if wrong, feeds
-correction back -> model revises. No new infrastructure; pure tool-call pattern
-on top of existing evaluate() + agent_tools.
+**RM15: Commonplace Phase 1 clean user walk**
+Walk the seed Commonplace corpus as a new user would -- following only Determined
+output, no developer fixes mid-walk. Validate against COMMONPLACE_USER_JOURNEY.md.
 
-**Why this is next:** RM27 is done, which was the prerequisite -- richer correction
-language (GRASP + SOTS) makes the loop more useful from the start.
+**What "clean user walk" means:**
+- Load seed corpus (C:\Users\bartl\dev\commonplace-walk or fresh seed directory)
+- Walk orient → frontier → topology → tools → knowledge using only Determined output
+- If something breaks: stop, file it, fix it separately, re-walk from start
+- Validate each step against Phase 1 section of COMMONPLACE_USER_JOURNEY.md
 
-**Design note (from session discussion):**
-- RM27 feeds RM21: corrections now carry named principles, not just contradictions
-- RM21 stress-tests RM27: loop exposes which GRASP vocabulary is missing or unused
-- Build Technique 1 first; Techniques 2-5 only if 1 proves insufficient
+**Known issues that affect the walk [V from prior sessions]:**
+- ingest_design_docs path mismatch: DESIGN.md lives outside seed/ project root;
+  must call with explicit path, not auto-discovery
+- UI Re-analyze does NOT use reingest_file; call reingest_file() from Python CLI
 
-**Where to implement:** determined/agent/evaluator.py (evaluate() function) +
-determined/agent/local_agent.py (the agentic loop). The verify step sits between
-evaluate() returning a judgment and the caller acting on it.
-
-**TRACKER.md RM21 entry:** still marked [FUTURE], condition was "after RM15 done."
-RM15 is now done. Update status to ACTIVE when starting.
+**What else is genuinely open:**
+- RM20: design_note dedup (Bart says no duplicates in practice -- low priority [?])
+- RM21 Techniques 2-6: constrained decoding, prompt chaining, MCTS, etc.
+  Build only after Technique 1 proves insufficient on real queries.
 
 ## Known issues (carried forward)
 
 **ingest_design_docs project root mismatch [V]:** Must call with explicit path.
 **UI Re-analyze does NOT use reingest_file [V]:** Workaround: call from Python CLI.
 **Duplicate design_note extraction [?]:** RM20 -- Bart says no duplicates in practice; not re-verified.
-**primitive_gap noise [V]:** Fix is RM19 Pass 3.
+**primitive_gap noise [V]:** Fix is RM19 Pass 3 (already implemented as find_primitive_gaps).
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = gap reported even if override exists.
-**GRASP threshold:** principles surface at 0.30 same as SOTS. May need tuning once
-  we see real usage -- thin docstrings won't reach threshold (observed on Commonplace).
+**GRASP threshold:** principles surface at 0.30 same as SOTS. May need tuning once we see real usage.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
