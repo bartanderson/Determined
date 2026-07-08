@@ -1,68 +1,76 @@
-Written at commit: dc10511
-# SESSION STATE - session 109 handoff
+Written at commit: c2a37e0
+# SESSION STATE - session 110 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 109, 2026-07-07)
+## What happened this session (session 110, 2026-07-07)
 
-**delete_artifact chip [V]:** Not a real duplicate -- correct delegation pattern. No change.
+**dj2 TRACKER additions [V]:** Two items filed in `C:\Users\bartl\dev\dj2\TRACKER.md`:
+- G10: Verb registry -- actions as first-class entities
+- G11: Semantic sensor layer -- DFA pattern detection over event stream
+Both stem from Ragel/beagle-ext discussion. Core idea: LLM translates messy
+player speech → semantic tokens; DFAs recognize multi-event patterns → higher-level facts.
 
-**RM19 Pass 3 live run [V]:** find_primitive_gaps validated against Determined self-corpus.
-410 callers, 30 patterns at min_callers=3. High-signal: SocketIO+emit (25), SocketIO+strip (19),
-_infer_behavior_for_symbol+join (10). Noise from constructors/stdlib bare names (known issue).
+**RM15 Walk 2 complete (Steps 2-7) [V]:** Full guided journey loop executed
+against the Commonplace seed corpus. All 6 steps committed:
+- Step 2 (a0a090e): EnrichmentProcessor.can_handle + process implemented. ABC-interface 2→0.
+- Step 3 (c21d8b6): search_bp registered in create_app; route calls semantic_search. Orphaned-impl 2→1.
+- Step 4 (4aaa3f0): DESIGN.md ingested (10 rules). check_design_violations flagged
+  searcher service-layer bypass at 0.61. reason_about recommended keeping extractor.py
+  unified (SOTS: minimize indirection, 95%). Noise finding: duplicate PERMISSION rules.
+- Step 5 (523c168): utils/validator.py added with conditional stub (validate_entry,
+  if strict: raise NotImplementedError). capture.py wires validate_url(). find_conditional_stubs fires.
+- Step 6 (4c0d0b0): Documented what conditional stubs teach vs detect_topology.
+  reason_about recommended removing strict branch (95%, 0 callers, SOTS-grounded).
+- Step 7 (c2a37e0): Removed strict branch. Reingested. find_conditional_stubs → 0.
 
-**RM15 seed fix [V]:** Two Determined bugs found and fixed while aligning seed corpus.
-- `parse_ast._is_stub`: exclude @abstractmethod decorated functions (they are interface
-  definitions, not actionable stubs). Committed 71296db.
-- `find_abc_gaps` + `_get_abc_gap_set`: switch from is_stub+global-name check to
-  decorators_json (@abstractmethod) + per-subclass methods_json check. Same commit.
-- `seed/processor.py`: removed EnrichmentProcessor overrides -- restored as true ABC gap.
-- `test_find_abc_gaps.py`: rewritten to match new per-subclass behavior (6 tests).
-- 481 passed, 1 skipped, 18 deselected [V]
+**Seed corpus final state [V]:** 0 stubs, 0 ABC gaps, 0 conditional stubs,
+1 known-false orphan (init_db -- Flask app-context call invisible to static analysis).
+31 implemented functions. All topology shapes exercised across the walk.
 
-**RM15 Step 1 Orient [V]:** Seed orient output captured and documented.
-- detect_topology: 0 direct-call stubs, 2 ABC-interface (EnrichmentProcessor), 2 orphaned-impl
-- find_abc_gaps: EnrichmentProcessor missing can_handle + process
-- Reasoning written to docs/COMMONPLACE_JOURNEY.md (Walk 2). Committed dc10511.
-
-**Step queue mechanics fixed [V]:** Now read SESSION_STATE.md + step_queue.md at each step
-change before acting. Hook confirms CURRENT before each tool use.
+**Determined gap found during Step 4 [V]:**
+Duplicate design_note entries: deterministic + LLM extraction passes both store the
+same rule. Deduplication uses 60-char prefix match -- insufficient when LLM rephrases.
+Filed in COMMONPLACE_JOURNEY.md under "noise finding." Not yet filed as TRACKER item.
 
 ## NEXT SESSION -- start here
 
-Read step_queue.md first: CURRENT is Step 2.
+Read step_queue.md first: CURRENT is Step 8.
 
-**RM15 Step 2:** Implement EnrichmentProcessor.can_handle and EnrichmentProcessor.process
-in `examples/commonplace/seed/services/processor.py`. Re-ingest via reingest_file.
-Run detect_topology + find_abc_gaps. Expect: ABC-interface drops to 0, orphaned-impl stays 2.
-Document output + reasoning in COMMONPLACE_JOURNEY.md as Walk 2 Step 2.
+**RM15 Step 8:** Walk 2 wrap-up.
+- Assess what the journey taught: which Determined outputs were high-signal vs noisy
+- File any Determined gaps discovered as TRACKER items (duplicate rule noise is one)
+- Update COMMONPLACE_JOURNEY.md WHAT WORKS section with Walk 2 verified capabilities
+- Decide: continue to "complete" state (add browse route, models, storage queries)
+  or pivot to other RM15 work
 
-Command to reingest:
-```python
-from determined.ingestion.reingest_file import reingest_file
-reingest_file(DB, r"examples/commonplace/seed/services/processor.py", repo_root=PROJECT_ROOT)
-```
-
-**RM15 Step 3 (after Step 2):** Wire init_db into create_app and add a search route caller
-for semantic_search. Re-ingest. Orphaned-impl should drop toward 0.
-
-**RM19 Pass 3 filter improvement (optional):** Cross-reference primitive_gap callees against
-symbols table to exclude constructors/stdlib. ~30 min. find_primitive_gaps in agent_tools.py:4642.
+**After Step 8:** The seed journey is functionally complete. The natural next arc is
+either:
+1. Build the "complete" Commonplace state (adds browse, models, connections schema)
+   to exercise chain shapes and more topology variety
+2. Start RM19 Pass 3 filter improvement (cross-reference primitive_gap callees against
+   symbols table to exclude constructors/stdlib, ~30 min, agent_tools.py:4642)
 
 ## Known issues (carried forward)
 
-**ingest_design_docs project root mismatch [?]:** oracle.get_project_root() returns seed/,
-not examples/commonplace/. Workaround: call discover_docs + extract_rules directly.
+**ingest_design_docs project root mismatch [V]:** oracle.get_project_root() returns
+seed/, not examples/commonplace/. DESIGN.md lives outside seed root -- must call
+discover_docs + extract_rules directly with the correct path. Workaround confirmed
+working in Step 4 (10 rules ingested via manual script).
 
 **UI Re-analyze+ does NOT use reingest_file [V]:** Runs background discover_run thread.
 Workaround: call reingest_file() from Python CLI directly.
 
-**find_abc_gaps blind spot FIXED [V]:** Per-subclass check now correct (71296db).
+**Duplicate design_note extraction [V]:** LLM pass re-extracts rules the deterministic
+pass already found. 60-char prefix dedup insufficient when LLM rephrases. Results in
+PERMISSION-prefixed duplicates in check_design_violations output. Not yet filed as item.
 
-**primitive_gap noise [V]:** Constructors/stdlib pass bare-name filter. Fix deferred.
+**primitive_gap noise [V]:** Constructors/stdlib pass bare-name filter. Fix deferred
+to RM19 Pass 3.
 
 **frontier_priority doesn't incorporate ABC gaps [?]:** Shows "no stubs" even when
-ABC-interface count > 0. detect_topology counts them but priority scorer ignores them.
+ABC-interface count > 0. Not re-verified this session.
 
-**Test count: 481 passed, 1 skipped, 18 deselected [V]**
+**Test count: 481 passed, 1 skipped, 18 deselected [?]** (not re-run this session --
+no Determined engine files changed, only seed corpus files touched)
