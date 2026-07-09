@@ -806,6 +806,37 @@ function renderCorpusMap(data) {
   stats.innerHTML = `${data.files} files · <span title="Hot: frequently called or recently changed — highest blast radius when modified">${data.hot} hot</span> · ${data.stubs} stubs${stubsHint}${dupesHint}`;
   corpusMapInner.appendChild(stats);
 
+  // ── Gaps (coverage) — rendered before Roots/Core so toggle doesn't shift it ──
+  const gs = data.gap_summary;
+  if (gs && Object.keys(gs).length) {
+    const docPct  = gs.total_fns   > 0 ? Math.round(100 * gs.documented_fns  / gs.total_fns)   : 0;
+    const distPct = gs.total_files > 0 ? Math.min(100, Math.round(100 * gs.distilled_files / gs.total_files)) : 0;
+    const cls = v => v >= 80 ? "gs-ok" : "gs-warn";
+
+    const gapHdr = document.createElement("div");
+    gapHdr.className = "sidebar-label";
+    gapHdr.style.marginTop = ".4rem";
+    gapHdr.title = "Coverage gaps: how much of the codebase has been documented and summarised. Low numbers mean Determined has less context to work with.";
+    gapHdr.textContent = "Gaps";
+    corpusMapInner.appendChild(gapHdr);
+
+    const gapBody = document.createElement("div");
+    gapBody.style.cssText = "font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7";
+    let html = `<div>
+      <span class="${cls(docPct)}"   title="Percentage of functions that have docstrings">docs ${docPct}%</span> &nbsp;
+      <span class="${cls(distPct)}"  title="Percentage of files that have been distilled into summaries">distilled ${distPct}%</span> &nbsp;
+      <span style="color:var(--text2)" title="Design rules extracted from docs via ingest_design_docs">${gs.design_note_count} design notes</span>
+    </div>`;
+    if (gs.modules && gs.modules.length) {
+      html += gs.modules.map(m => {
+        const pct = m.total > 0 ? Math.round(100 * (m.total - m.missing) / m.total) : 100;
+        return `<div><span class="gs-mod">${escHtml(m.module)}</span> <span class="${cls(pct)}">${pct}%</span> <span style="color:var(--text3)">(${m.missing} missing)</span></div>`;
+      }).join("");
+    }
+    gapBody.innerHTML = html;
+    corpusMapInner.appendChild(gapBody);
+  }
+
   // ── Roots / Core toggle ─────────────────────────────────
   if (eps.length || hots.length) {
     const ROOTS_TIP = "Roots: entry points and orchestrators — symbols that call many others. Start here to understand how the program flows.";
@@ -845,37 +876,6 @@ function renderCorpusMap(data) {
     };
     rootsTab.addEventListener("click", () => activate(true));
     coreTab.addEventListener ("click", () => activate(false));
-  }
-
-  // ── Gaps (coverage) ─────────────────────────────────────
-  const gs = data.gap_summary;
-  if (gs && Object.keys(gs).length) {
-    const docPct  = gs.total_fns   > 0 ? Math.round(100 * gs.documented_fns  / gs.total_fns)   : 0;
-    const distPct = gs.total_files > 0 ? Math.min(100, Math.round(100 * gs.distilled_files / gs.total_files)) : 0;
-    const cls = v => v >= 80 ? "gs-ok" : "gs-warn";
-
-    const gapHdr = document.createElement("div");
-    gapHdr.className = "sidebar-label";
-    gapHdr.style.marginTop = ".4rem";
-    gapHdr.title = "Coverage gaps: how much of the codebase has been documented and summarised. Low numbers mean Determined has less context to work with.";
-    gapHdr.textContent = "Gaps";
-    corpusMapInner.appendChild(gapHdr);
-
-    const gapBody = document.createElement("div");
-    gapBody.style.cssText = "font-size:.78em;color:var(--text2);padding:2px 4px;line-height:1.7";
-    let html = `<div>
-      <span class="${cls(docPct)}"   title="Percentage of functions that have docstrings">docs ${docPct}%</span> &nbsp;
-      <span class="${cls(distPct)}"  title="Percentage of files that have been distilled into summaries">distilled ${distPct}%</span> &nbsp;
-      <span style="color:var(--text2)" title="Design rules extracted from docs via ingest_design_docs">${gs.design_note_count} design notes</span>
-    </div>`;
-    if (gs.modules && gs.modules.length) {
-      html += gs.modules.map(m => {
-        const pct = m.total > 0 ? Math.round(100 * (m.total - m.missing) / m.total) : 100;
-        return `<div><span class="gs-mod">${escHtml(m.module)}</span> <span class="${cls(pct)}">${pct}%</span> <span style="color:var(--text3)">(${m.missing} missing)</span></div>`;
-      }).join("");
-    }
-    gapBody.innerHTML = html;
-    corpusMapInner.appendChild(gapBody);
   }
 
   corpusMapEl.style.display = (eps.length || hots.length || data.files) ? "" : "none";
