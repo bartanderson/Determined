@@ -1,70 +1,54 @@
-Written at commit: 2547407
-# SESSION STATE - session 123 handoff
+Written at commit: 0418275
+# SESSION STATE - session 124 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 123, 2026-07-08)
+## What happened this session (session 124, 2026-07-09)
 
-**RM28 Stage 4: Discovery mode -- DONE [V]**
-- 4414ab0: Discovery tab (6-step arc), Logs tab, LLM status dot + restart button
-- 57f57bc: Load existing corpus DB by default; staleness check on open
-- e9caad2: Ingest path field stays blank (design rule enforced)
-- c2e4387: UI_VISION.md corpus loading design documented
-- 2547407: TRACKER header cleaned (no more TRACKER_history.md reference)
-- 506 tests passed, 1 skipped [V]
+**Doc consolidation [V]**
+- DESIGN_ARC.md + DISCOVERY_MODEL.md + REASONING_MODEL.md collapsed into docs/ANALYSIS_MODEL.md
+- Three source docs deleted
+- Two source-file references updated (reasoning_engine.py, agent_tools.py)
+- step_queue.md updated (was stale, still showing Stage 4 as CURRENT)
 
-**Discovery mode (6 steps, AI-narrated):** [V]
-- Orient, Frontier, Topology, Orphans, Doc health, Gap analysis
-- Each step: tool dispatch + LLM narration emitted live via discovery_step socket
-- discovery_progress fires at step START so UI shows "running..." immediately
-- Final synthesis call across all 6 narrations
-- Raw tool outputs stored as artifacts in corpus DB
+**Commonplace terminal structure established [V]**
+- examples/commonplace/seed/ = Terminal 1 (skeleton, 17 files, 2 stubs) -- unchanged
+- examples/commonplace/ = Terminal 2 (complete, 25 files, stubs closed, pre-enhancement)
+  - Rolled back: tagger.py (suggest_tags returns []), searcher.py (semantic_search delegates to text search),
+    linker.py (_similarity_score Jaccard only), utils/text.py (no embed helpers)
+- examples/enhanced/ = Terminal 3 (enhanced, Walk 4 extras wired in)
+  - suggest_tags -> LLM endpoint, semantic_search -> embeddings, _similarity_score -> cosine
+- Terminal 0 = empty directory user creates themselves
 
-**Logs tab:** [V]
-- _emit_log() helper broadcasts timestamped lines to all clients (server_log event)
-- Logs tab flashes on new entry when not active; Clear button
-- Discovery wired: tool running, tool done, narrating, complete per step
-
-**LLM status dot in topbar:** [V]
-- Green/yellow/red dot + model name + restart button (↺)
-- llm_get_status: is_available() health check on connect
-- llm_restart: stop_server() + _start_llm_server() in background
-- llm_status events emitted on start/ready/fail and server restart
-
-**Corpus loading redesign:** [V]
-- scan_result includes db_exists, stale_count, new_count
-- "Previous analysis found" modal: Load (default) vs Re-analyze
-- Staleness banner in sidebar if files changed since last ingest
-- load_corpus socket handler: init() without re-ingesting
-- Ingest path field stays blank -- auto-loads server-side on startup
-
-**Context window bump:** [V]
-- llm_client.py: --ctx-size 4096 → 32768 (Qwen3-8B native max)
-- config.py: get_quality_ctx() default 4096 → 32768
-- Revert: change both back to 4096 if memory/stability issues arise
-
-**Doc cleanup:** [V]
-- TRACKER_history.md reference removed from TRACKER.md header
-- Corpus loading design written into UI_VISION.md (authoritative, will be ingested)
-- Ingest path field rule saved to memory/feedback_ingest_path_field.md
-- Bart archived/removed: EXPERIMENTS.md, RM15_findings.md, RM17_findings.md, COMMONPLACE_JOURNEY.md
+**Design conversation [?]**
+- Bart pushed back on "done" declarations -- tool is not ready for real users
+- No getting started doc exists; no user-facing instructions exist
+- The tour forward through phases is the primary user experience
+- Users need to be able to navigate to any point once they've completed the tour
 
 ## NEXT SESSION -- start here
 
-**Design doc consolidation (discussed, not started)**
-1. Read DESIGN_ARC.md, DISCOVERY_MODEL.md, REASONING_MODEL.md
-2. Collapse into one "Analysis Model" doc -- prune composability audits (all DONE),
-   prune Open Paths sections (stale vs TRACKER), remove Design Principles overlap with sots.md
-3. DESIGN.md and UI_VISION.md are clean -- leave as-is
+**Getting started doc (primary task)**
+- Four terminals, three phases, choose-your-own-adventure structure
+- Phase 1: Empty -> Skeleton (Terminal 0 -> 1): user builds skeleton from scratch OR loads seed
+- Phase 2: Skeleton -> Complete (Terminal 1 -> 2): close stubs, wire orphans
+- Phase 3: Complete -> Enhanced (Terminal 2 -> 3): LLM tagging, semantic search, cosine similarity
+- Forward tour by default; any point navigable once complete
+- Every tool explained: what it is, what it needs, what it produces, what comes next
+- Dependencies called out explicitly; no dead ends
+- Two audiences: no experience (every concept defined) and experienced (concepts still Determined-specific)
+- Doc is a map + tour guide, not a script; tool carries inline context, doc fills the big picture
+- Lives at docs/GETTING_STARTED.md
 
-**After consolidation: Discovery narration persistence**
-- LLM narrations and synthesis not yet persisted to DB (raw tool outputs are)
-- Option: narration column on knowledge_artifacts + load prior run on dscLoad()
+**Before writing the doc:**
+- Run tests to confirm nothing broken by the terminal restructure
+- Verify COMMONPLACE_USER_JOURNEY.md is accurate for all three phases as they now exist
+- The enhanced/ folder needs a .determinedignore to exclude seed/ if it exists (already removed)
 
-**After that: RM28 Stage 5**
-- Test Discovery on dj2 or a real user corpus (Commonplace verified [V])
-- Wire/Extend/Code proposals (steps 7-9) not built -- natural next arc
+**After getting started doc:**
+- Discovery narration persistence (narrations not yet saved to DB)
+- RM28 Stage 5: test Discovery on dj2
 
 ## Known issues (carried forward)
 
@@ -74,3 +58,4 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
 **LLM restart required after ctx-size change [V]:** --ctx-size 32768 only takes effect after full UI restart.
+**Getting started doc does not exist [V]:** No user-facing instructions for running the tool.
