@@ -33,8 +33,10 @@ def get_fast_ctx(default: int = 131072) -> int:
     return _load().getint("llm", "fast_ctx", fallback=default)
 
 
-def get_quality_ctx(default: int = 4096) -> int:
-    """Context window (tokens) for the quality tier (llama-server, port 8081)."""
+def get_quality_ctx(default: int = 32768) -> int:
+    """Context window (tokens) for the quality tier (llama-server, port 8081).
+    32768 = Qwen3's native max. Raised from 4096 for Discovery mode (session 123).
+    To revert: change default back to 4096, or set LLM_QUALITY_CTX=4096 in env."""
     if "LLM_QUALITY_CTX" in os.environ:
         return int(os.environ["LLM_QUALITY_CTX"])
     return _load().getint("llm", "quality_ctx", fallback=default)

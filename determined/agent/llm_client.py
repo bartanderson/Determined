@@ -33,7 +33,9 @@ LLM_MAX_TOKENS   = 400
 # Server launch config — used by start_server() / stop_server()
 LLM_SERVER_EXE  = r"C:\Users\bartl\models\llama-server\llama-server.exe"
 LLM_MODEL_PATH  = r"C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf"
-LLM_SERVER_ARGS = ["--port", "8081", "--host", "127.0.0.1", "--ctx-size", "4096", "-ngl", "99"]
+# ctx-size raised to 32768 (Qwen3-8B native max) for Discovery mode (session 123).
+# To revert: change 32768 back to 4096. Requires server restart to take effect.
+LLM_SERVER_ARGS = ["--port", "8081", "--host", "127.0.0.1", "--ctx-size", "32768", "-ngl", "99"]
 
 _server_proc: subprocess.Popen | None = None
 

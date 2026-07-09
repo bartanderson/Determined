@@ -17,6 +17,8 @@ from determined.oracle.db_oracle import DBOracle
 from determined.assessor.assessor import Assessor
 from determined.agent.knowledge_status import coverage_summary
 
+import time as _time
+
 _TEMPLATE_DIR = str(Path(__file__).parent / "templates")
 _STATIC_DIR   = str(Path(__file__).parent / "static")
 _SESSION_FILE = Path(__file__).parent.parent.parent / ".determined_session.json"
@@ -28,6 +30,13 @@ app.config["SECRET_KEY"] = "dev-console-local"
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+
+def _emit_log(msg: str) -> None:
+    """Broadcast a log line to all connected clients (server_log event)."""
+    ts = _time.strftime("%H:%M:%S")
+    socketio.emit("server_log", {"ts": ts, "msg": msg})
+
 
 # shared state (single-user local tool)
 _oracle: DBOracle | None = None
@@ -2262,15 +2271,198 @@ def handle_workbench_run_tool(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+# ── Discovery mode ────────────────────────────────────────────────────────────
+
+_DISCOVERY_STEPS = [
+    {
+        "num": 1,
+        "id": "orient",
+        "label": "Orient",
+        "tool": "knowledge_status",
+        "args": {},
+        "narrate": (
+            "You just ran a knowledge status check on a codebase. "
+            "Here is the output:\n\n{result}\n\n"
+            "In 2-3 sentences, what does this tell you about the state of this codebase? "
+            "Be specific to the actual numbers and gaps shown."
+        ),
+    },
+    {
+        "num": 2,
+        "id": "frontier",
+        "label": "Frontier",
+        "tool": "frontier_coverage",
+        "args": {},
+        "narrate": (
+            "You just ran a frontier coverage analysis on a codebase. "
+            "Here is the output:\n\n{result}\n\n"
+            "In 2-3 sentences, what does this reveal about implementation completeness? "
+            "Be specific to any stubs or orphaned functions shown."
+        ),
+    },
+    {
+        "num": 3,
+        "id": "topology",
+        "label": "Topology",
+        "tool": "detect_topology",
+        "args": {},
+        "narrate": (
+            "You just ran a topology analysis on a codebase. "
+            "Here is the output:\n\n{result}\n\n"
+            "In 2-3 sentences, what does this reveal about the structural shape of the codebase "
+            "and where work is concentrated?"
+        ),
+    },
+    {
+        "num": 4,
+        "id": "orphans",
+        "label": "Orphaned impls",
+        "tool": "find_orphaned_impls",
+        "args": {},
+        "narrate": (
+            "You just found orphaned implementations in a codebase. "
+            "Here is the output:\n\n{result}\n\n"
+            "In 2-3 sentences, what do these orphans suggest about wiring gaps or premature code?"
+        ),
+    },
+    {
+        "num": 5,
+        "id": "doc_health",
+        "label": "Doc health",
+        "tool": "docstring_health",
+        "args": {},
+        "narrate": (
+            "You just ran a docstring health check on a codebase. "
+            "Here is the output:\n\n{result}\n\n"
+            "In 2-3 sentences, what does the documentation coverage tell you about the maturity "
+            "and maintainability of this codebase?"
+        ),
+    },
+    {
+        "num": 6,
+        "id": "gaps",
+        "label": "Gap analysis",
+        "tool": "gap_analysis",
+        "args": {},
+        "narrate": (
+            "You just ran a gap analysis on a codebase. "
+            "Here is the output:\n\n{result}\n\n"
+            "In 2-3 sentences, which gap category looks most actionable and why?"
+        ),
+    },
+]
+
+_DISCOVERY_SYNTHESIS_PROMPT = """\
+You have completed a Discovery analysis of a codebase. Here are the findings from each step:
+
+{summaries}
+
+Based on all of this, write a concise synthesis (4-6 sentences) covering:
+1. What kind of codebase this appears to be and how mature it is
+2. The most pressing structural issue
+3. One concrete next action the developer should take
+"""
+
+
+@socketio.on("discovery_start")
+def handle_discovery_start(_data=None):
+    """Run the 6-step Discovery arc, narrating each step with the LLM."""
+    if _oracle is None:
+        emit("discovery_step", {"error": "No corpus loaded."})
+        return
+    sid = request.sid
+
+    def _run():
+        from determined.agent.agent_tools import dispatch
+        from determined.agent.local_agent import _call_ollama
+        from determined.intent.workflow_store import store_artifact, ensure_artifact_columns
+
+        narrations = []
+        k_conn = _assessor._knowledge_conn if _assessor else None
+        if k_conn:
+            ensure_artifact_columns(k_conn.cursor())
+
+        for step in _DISCOVERY_STEPS:
+            _emit_log(f"Discovery step {step['num']}/{len(_DISCOVERY_STEPS)}: {step['label']} — running tool…")
+            socketio.emit("discovery_progress", {
+                "num": step["num"], "label": step["label"],
+                "total": len(_DISCOVERY_STEPS),
+            }, to=sid)
+            # Run tool
+            try:
+                result = dispatch(step["tool"], step["args"], _oracle, _assessor)
+            except Exception as exc:
+                _emit_log(f"Discovery step {step['num']} ERROR: {exc}")
+                socketio.emit("discovery_step", {
+                    "num": step["num"], "id": step["id"], "label": step["label"],
+                    "result": "", "narration": "", "error": str(exc),
+                }, to=sid)
+                narrations.append(f"Step {step['num']} ({step['label']}): ERROR — {exc}")
+                continue
+
+            _emit_log(f"Discovery step {step['num']}: tool done — narrating…")
+            # Narrate
+            prompt = step["narrate"].format(result=str(result)[:6000])
+            try:
+                narration = _call_ollama([{"role": "user", "content": prompt}])
+            except Exception as exc:
+                narration = f"(narration unavailable: {exc})"
+
+            # Store as artifact
+            if k_conn:
+                store_artifact(k_conn, f"discovery_{step['id']}", step["tool"], str(result))
+
+            _emit_log(f"Discovery step {step['num']}: {step['label']} complete")
+            socketio.emit("discovery_step", {
+                "num": step["num"], "id": step["id"], "label": step["label"],
+                "result": result, "narration": narration,
+            }, to=sid)
+
+            narrations.append(f"Step {step['num']} ({step['label']}):\n{narration}")
+
+        # Final synthesis
+        _emit_log("Discovery: synthesizing all findings…")
+        summaries_text = "\n\n".join(narrations)
+        synthesis_prompt = _DISCOVERY_SYNTHESIS_PROMPT.format(summaries=summaries_text)
+        try:
+            synthesis = _call_ollama([{"role": "user", "content": synthesis_prompt}])
+        except Exception as exc:
+            synthesis = f"(synthesis unavailable: {exc})"
+
+        _emit_log("Discovery: done")
+        socketio.emit("discovery_done", {"synthesis": synthesis}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _start_llm_server() -> None:
     """Launch llama-server subprocess and warm up the model. Runs in background thread."""
     from determined.agent.llm_client import start_server, LLM_DISPLAY_NAME
-    print(f"LLM: starting {LLM_DISPLAY_NAME}...")
+    _emit_log(f"LLM: starting {LLM_DISPLAY_NAME}…")
+    socketio.emit("llm_status", {"state": "starting"})
     ready = start_server(wait_seconds=120)
     if ready:
-        print(f"LLM: {LLM_DISPLAY_NAME} ready")
+        _emit_log(f"LLM: {LLM_DISPLAY_NAME} ready")
+        socketio.emit("llm_status", {"state": "running"})
     else:
-        print(f"LLM: WARNING — could not start {LLM_DISPLAY_NAME} (check LLM_SERVER_EXE / LLM_MODEL_PATH in llm_client.py)")
+        _emit_log(f"LLM: WARNING — could not start {LLM_DISPLAY_NAME}")
+        socketio.emit("llm_status", {"state": "stopped"})
+
+
+@socketio.on("llm_get_status")
+def handle_llm_get_status(_data=None):
+    from determined.agent.llm_client import is_available
+    state = "running" if is_available() else "stopped"
+    emit("llm_status", {"state": state})
+
+
+@socketio.on("llm_restart")
+def handle_llm_restart(_data=None):
+    from determined.agent.llm_client import stop_server
+    _emit_log("LLM: stopping for restart…")
+    socketio.emit("llm_status", {"state": "starting"})
+    stop_server()
+    threading.Thread(target=_start_llm_server, daemon=True).start()
 
 
 def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 5050) -> None:

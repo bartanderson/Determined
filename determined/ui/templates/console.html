@@ -108,7 +108,11 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <button class="mode-btn" data-mode="trace"  title="Call trace — follow call chains, graph, frontier stubs">🔗 Trace</button>
       <button class="mode-btn" data-mode="review" title="Gap review — docstring health, proposals, workflow queue">✅ Review</button>
     </div>
-    <span class="model-label">{{ model_name }}</span>
+    <span id="llm-status-wrap" style="display:flex;align-items:center;gap:5px">
+      <span id="llm-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0" title="LLM status"></span>
+      <span class="model-label" id="llm-model-name">{{ model_name }}</span>
+      <button id="llm-restart-btn" title="Restart LLM server" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:.8em;padding:0 2px;line-height:1" onclick="llmRestart()">↺</button>
+    </span>
     <span class="queue-badge" id="queue-badge" style="display:none" title="Pending next_up items"></span>
     <div id="design-doc-notice" style="display:none;font-size:11px;color:var(--orange);padding:2px 8px;max-width:320px" title="Run ingest_design_docs to extract rules from these files"><span id="design-doc-notice-msg"></span> <button onclick="this.parentElement.style.display='none'" style="border:none;background:none;cursor:pointer;color:var(--text2);font-size:10px">✕</button></div>
   </div>
@@ -250,6 +254,8 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <button class="tab tab-nodot" data-tab="topology">Topology</button>
       <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
       <button class="tab tab-nodot" data-tab="workbench" title="Run any Discovery tool ad hoc; results stored as artifacts">Workbench</button>
+      <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus — runs all analysis steps and narrates findings">Discovery</button>
+      <button class="tab tab-nodot" data-tab="logs" title="Live server log — see what's running">Logs</button>
     </div>
 
     <!-- tab panels -->
@@ -522,6 +528,34 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <span id="dh-status" style="font-size:.78em;color:var(--text3)"></span>
         </div>
         <div id="dh-list" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+
+      <!-- ── discovery tab ── -->
+      <div class="tab-panel" id="panel-discovery" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-shrink:0">
+          <strong style="font-size:.95em">Discovery</strong>
+          <span style="font-size:.8em;color:var(--text3)">AI-driven analysis — runs 6 tools in sequence and narrates findings</span>
+          <button id="dsc-start" class="send-btn" style="margin-left:auto;padding:4px 14px;font-size:.82em">Begin Discovery</button>
+        </div>
+
+        <!-- step list -->
+        <div id="dsc-steps" style="display:flex;flex-direction:column;gap:10px"></div>
+
+        <!-- synthesis -->
+        <div id="dsc-synthesis-wrap" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+          <div style="font-size:.85em;font-weight:600;color:var(--text1);margin-bottom:6px">Synthesis</div>
+          <div id="dsc-synthesis" style="font-size:.82em;line-height:1.6;color:var(--text1);white-space:pre-wrap"></div>
+        </div>
+      </div>
+
+      <!-- ── logs tab ── -->
+      <div class="tab-panel" id="panel-logs" style="flex-direction:column;min-height:0;padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
+          <strong style="font-size:.95em">Logs</strong>
+          <span style="font-size:.8em;color:var(--text3)">live server output</span>
+          <button id="logs-clear" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Clear</button>
+        </div>
+        <pre id="logs-output" style="flex:1;overflow-y:auto;font-size:.78em;line-height:1.6;white-space:pre-wrap;margin:0;color:var(--text2);min-height:0"></pre>
       </div>
 
       <!-- ── workbench tab ── -->
@@ -3509,6 +3543,143 @@ document.getElementById("wb-clear").addEventListener("click", () => {
 
 document.querySelectorAll(".tab[data-tab='workbench']").forEach(t => {
   t.addEventListener("click", wbLoad);
+});
+
+// ── Discovery panel ─────────────────────────────────────────────
+let _dscRunning = false;
+
+function dscLoad() {
+  // nothing to pre-load; panel is ready on click
+}
+
+function dscReset() {
+  document.getElementById("dsc-steps").innerHTML = "";
+  document.getElementById("dsc-synthesis-wrap").style.display = "none";
+  document.getElementById("dsc-synthesis").textContent = "";
+}
+
+document.getElementById("dsc-start").addEventListener("click", () => {
+  if (_dscRunning) return;
+  _dscRunning = true;
+  dscReset();
+  document.getElementById("dsc-start").textContent = "Running…";
+  document.getElementById("dsc-start").disabled = true;
+  socket.emit("discovery_start", {});
+});
+
+socket.on("discovery_progress", data => {
+  const container = document.getElementById("dsc-steps");
+  // Remove any existing placeholder for this step
+  const existing = container.querySelector(`[data-dsc-step="${data.num}"]`);
+  if (existing) existing.remove();
+  const el = document.createElement("div");
+  el.dataset.dscStep = data.num;
+  el.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:5px;background:var(--bg1);font-size:.83em;color:var(--text2)";
+  el.innerHTML = `<span style="color:var(--accent);font-weight:700">Step ${data.num}/${data.total}</span> <span style="color:var(--text1);font-weight:600">${escHtml(data.label)}</span> <span style="color:var(--text3)">— running…</span>`;
+  container.appendChild(el);
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+
+socket.on("discovery_step", data => {
+  const container = document.getElementById("dsc-steps");
+  // Remove the progress placeholder for this step
+  const placeholder = container.querySelector(`[data-dsc-step="${data.num}"]`);
+  if (placeholder) placeholder.remove();
+  if (data.error) {
+    const el = document.createElement("div");
+    el.style.cssText = "padding:8px 10px;border:1px solid var(--red,#e06c75);border-radius:5px;font-size:.8em;color:var(--red,#e06c75)";
+    el.textContent = `Step ${data.num} (${data.label}): ${data.error}`;
+    container.appendChild(el);
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "border:1px solid var(--border);border-radius:5px;background:var(--bg1);overflow:hidden";
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg2);cursor:pointer" class="dsc-step-header">
+      <span style="font-size:.78em;font-weight:700;color:var(--accent)">Step ${data.num}</span>
+      <span style="font-size:.85em;font-weight:600;color:var(--text1)">${escHtml(data.label)}</span>
+      <span style="margin-left:auto;font-size:.75em;color:var(--green)">✓</span>
+    </div>
+    <div class="dsc-step-body" style="padding:10px 12px">
+      <div style="font-size:.8em;color:var(--accent);font-weight:600;margin-bottom:4px">AI interpretation</div>
+      <div style="font-size:.82em;line-height:1.55;color:var(--text1);margin-bottom:10px">${escHtml(data.narration)}</div>
+      <details>
+        <summary style="font-size:.75em;color:var(--text3);cursor:pointer;user-select:none">Raw output</summary>
+        <pre style="font-size:.75em;line-height:1.5;white-space:pre-wrap;margin:6px 0 0;color:var(--text2)">${escHtml(String(data.result))}</pre>
+      </details>
+    </div>`;
+
+  // toggle body on header click
+  wrap.querySelector(".dsc-step-header").addEventListener("click", () => {
+    const body = wrap.querySelector(".dsc-step-body");
+    body.style.display = body.style.display === "none" ? "" : "none";
+  });
+
+  container.appendChild(wrap);
+  wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+
+socket.on("discovery_done", data => {
+  _dscRunning = false;
+  const btn = document.getElementById("dsc-start");
+  btn.textContent = "Run Again";
+  btn.disabled = false;
+
+  const synWrap = document.getElementById("dsc-synthesis-wrap");
+  const syn = document.getElementById("dsc-synthesis");
+  syn.textContent = data.synthesis || "";
+  synWrap.style.display = "";
+  synWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  if (typeof arLoad === "function") arLoad();
+});
+
+document.querySelectorAll(".tab[data-tab='discovery']").forEach(t => {
+  t.addEventListener("click", dscLoad);
+});
+
+// ── LLM status ──────────────────────────────────────────────────
+function llmSetDot(state) {
+  const dot = document.getElementById("llm-dot");
+  const btn = document.getElementById("llm-restart-btn");
+  if (!dot) return;
+  const colors = { running: "var(--green)", stopped: "var(--red,#e06c75)", starting: "var(--orange,#e5c07b)" };
+  dot.style.background = colors[state] || "var(--text3)";
+  dot.title = "LLM: " + state;
+  if (btn) btn.style.display = state === "starting" ? "none" : "";
+}
+
+function llmRestart() {
+  llmSetDot("starting");
+  document.getElementById("llm-restart-btn").style.display = "none";
+  socket.emit("llm_restart", {});
+}
+
+socket.on("llm_status", data => {
+  llmSetDot(data.state);
+});
+
+// Poll LLM status on connect and after reconnect
+socket.on("connect", () => { socket.emit("llm_get_status", {}); });
+
+// ── Logs panel ──────────────────────────────────────────────────
+const _logsEl = document.getElementById("logs-output");
+
+socket.on("server_log", data => {
+  const line = `[${data.ts}] ${data.msg}\n`;
+  _logsEl.textContent += line;
+  _logsEl.scrollTop = _logsEl.scrollHeight;
+  // Flash the Logs tab if it's not active
+  const logsTab = document.querySelector(".tab[data-tab='logs']");
+  if (logsTab && !logsTab.classList.contains("active")) {
+    logsTab.style.color = "var(--accent)";
+    setTimeout(() => { logsTab.style.color = ""; }, 1500);
+  }
+});
+
+document.getElementById("logs-clear").addEventListener("click", () => {
+  _logsEl.textContent = "";
 });
 </script>
 
