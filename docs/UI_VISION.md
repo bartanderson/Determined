@@ -312,6 +312,25 @@ Count badge on queue items, click to expand list, accept/dismiss inline.
 
 ---
 
+## Corpus loading design (session 123)
+
+The corpus DB is the project file. Opening a folder finds its DB and loads it
+immediately — no re-analysis required. Staleness is informational, not blocking.
+
+**Ingest path field stays blank.** The server auto-restores the last corpus on
+startup (session file). The path input is the switching mechanism — it exists
+for choosing a new project, not as a persistent default. Do not pre-fill it
+from session state, source_path, or any stored value. If the empty field feels
+like friction, the fix is a recent-projects list or browse button — not
+restoring the pre-fill.
+
+**Load vs. Re-analyze.** When a DB exists for a path: default action is Load
+(instant). Re-analyze is the explicit opt-in. Staleness banner appears after
+load if files have changed, with a Re-analyze button. The user decides when
+to pay the analysis cost.
+
+---
+
 ## What this document is for
 
 Use it to evaluate every UI change: does this make a surface more
