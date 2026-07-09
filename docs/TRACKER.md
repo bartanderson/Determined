@@ -2,10 +2,8 @@ tools/analysis - TRACKER (consolidated)
 =========================================
 
 This file is the canonical open-items list and at-a-glance status for the
-Determined analysis tool. Active open items only. For closed items, phase
-plans, tier status, UI vision, branch methodology, and environment defects,
-see docs/archive/TRACKER_history.md. For historical context, use git log.
-For architecture/intent (the why behind the design), see DESIGN.md.
+Determined analysis tool. Active open items only. Closed items are deleted —
+for historical context use git log. For architecture/intent, see DESIGN.md.
 
 Per CLAUDE.md's working agreement: update this file in place as part of
 finishing work (checkboxes, dated notes) so Bart can see what changed via
