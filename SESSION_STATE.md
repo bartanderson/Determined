@@ -1,56 +1,76 @@
-Written at commit: be0eaff
-# SESSION STATE - session 122 handoff
+Written at commit: 2547407
+# SESSION STATE - session 123 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 122, 2026-07-08)
+## What happened this session (session 123, 2026-07-08)
 
-**RM28 Stage 3: Workbench palette -- DONE [V]**
-- 3 files changed, 245 insertions (commit be0eaff)
-- ui_server.py: _WORKBENCH_TOOLS (11 tools) + get_workbench_tools socket handler +
-  workbench_run_tool socket handler (background thread, dispatch + store_artifact)
-- console.html: Workbench tab button + panel-workbench (palette rows with label,
-  description, optional param input for concept_search, Run button)
-- console.html: Workbench JS (wbLoad, wbRender, wbRunTool,
-  socket.on workbench_tools/workbench_tool_result, arLoad auto-refresh on store)
-- step_queue.md advanced to Stage 4 [V]
+**RM28 Stage 4: Discovery mode -- DONE [V]**
+- 4414ab0: Discovery tab (6-step arc), Logs tab, LLM status dot + restart button
+- 57f57bc: Load existing corpus DB by default; staleness check on open
+- e9caad2: Ingest path field stays blank (design rule enforced)
+- c2e4387: UI_VISION.md corpus loading design documented
+- 2547407: TRACKER header cleaned (no more TRACKER_history.md reference)
 - 506 tests passed, 1 skipped [V]
-- Verified in browser: Orient runs knowledge_status, output appears,
-  stored-note banner fires, Artifacts panel auto-refreshes [V]
 
-**Workbench tools (11 total):**
-  1. Orient -- knowledge_status
-  2. Frontier: Direct -- frontier_coverage
-  3. Frontier: Orphans -- find_orphaned_impls
-  4. Frontier: ABC -- find_abc_gaps
-  5. Topology -- detect_topology
-  6. Conditional stubs -- find_conditional_stubs
-  7. Doc health -- docstring_health
-  8. Gap analysis -- gap_analysis
-  9. Design violations -- check_design_violations
-  10. Concept search -- concept_search (param: query input field)
-  11. Extract design facts -- extract_design_facts
+**Discovery mode (6 steps, AI-narrated):** [V]
+- Orient, Frontier, Topology, Orphans, Doc health, Gap analysis
+- Each step: tool dispatch + LLM narration emitted live via discovery_step socket
+- discovery_progress fires at step START so UI shows "running..." immediately
+- Final synthesis call across all 6 narrations
+- Raw tool outputs stored as artifacts in corpus DB
+
+**Logs tab:** [V]
+- _emit_log() helper broadcasts timestamped lines to all clients (server_log event)
+- Logs tab flashes on new entry when not active; Clear button
+- Discovery wired: tool running, tool done, narrating, complete per step
+
+**LLM status dot in topbar:** [V]
+- Green/yellow/red dot + model name + restart button (↺)
+- llm_get_status: is_available() health check on connect
+- llm_restart: stop_server() + _start_llm_server() in background
+- llm_status events emitted on start/ready/fail and server restart
+
+**Corpus loading redesign:** [V]
+- scan_result includes db_exists, stale_count, new_count
+- "Previous analysis found" modal: Load (default) vs Re-analyze
+- Staleness banner in sidebar if files changed since last ingest
+- load_corpus socket handler: init() without re-ingesting
+- Ingest path field stays blank -- auto-loads server-side on startup
+
+**Context window bump:** [V]
+- llm_client.py: --ctx-size 4096 → 32768 (Qwen3-8B native max)
+- config.py: get_quality_ctx() default 4096 → 32768
+- Revert: change both back to 4096 if memory/stability issues arise
+
+**Doc cleanup:** [V]
+- TRACKER_history.md reference removed from TRACKER.md header
+- Corpus loading design written into UI_VISION.md (authoritative, will be ingested)
+- Ingest path field rule saved to memory/feedback_ingest_path_field.md
+- Bart archived/removed: EXPERIMENTS.md, RM15_findings.md, RM17_findings.md, COMMONPLACE_JOURNEY.md
 
 ## NEXT SESSION -- start here
 
-**RM28 Stage 4: Discovery mode**
+**Design doc consolidation (discussed, not started)**
+1. Read DESIGN_ARC.md, DISCOVERY_MODEL.md, REASONING_MODEL.md
+2. Collapse into one "Analysis Model" doc -- prune composability audits (all DONE),
+   prune Open Paths sections (stale vs TRACKER), remove Design Principles overlap with sots.md
+3. DESIGN.md and UI_VISION.md are clean -- leave as-is
 
-AI-driven sequencing over live unknown corpus. Agent runs tools, narrates
-real output, interprets findings, proposes wiring and extensions.
+**After consolidation: Discovery narration persistence**
+- LLM narrations and synthesis not yet persisted to DB (raw tool outputs are)
+- Option: narration column on knowledge_artifacts + load prior run on dscLoad()
 
-**Where to start:**
-1. Read TRACKER.md RM28 for Discovery mode spec
-2. Read determined/agent/local_agent.py _answer() to understand current AI flow
-3. Decide: single-shot "analyze this corpus" command vs. iterative step-confirm loop
+**After that: RM28 Stage 5**
+- Test Discovery on dj2 or a real user corpus (Commonplace verified [V])
+- Wire/Extend/Code proposals (steps 7-9) not built -- natural next arc
 
 ## Known issues (carried forward)
 
 **ingest_design_docs project root mismatch [V]:** Must call with explicit path.
-**Seed DB carries developer artifacts [V]:** Clear design_notes + semantic_summaries
-  before a clean demo. Structural facts (entry, hot, dead) are valid, keep them.
+**Seed DB carries developer artifacts [V]:** Clear design_notes + semantic_summaries before clean demo.
 **UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI.
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
-**Tour on non-seed corpus [V]:** Shows corpus hint banner; runs tools against whatever
-  corpus is loaded (explanations are Commonplace-specific but output is real).
+**LLM restart required after ctx-size change [V]:** --ctx-size 32768 only takes effect after full UI restart.
