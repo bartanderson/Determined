@@ -87,7 +87,9 @@ def _corpus_status() -> dict:
         stubs     = _oracle.conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub=1").fetchone()[0]
         dupes     = _oracle.conn.execute(
             "SELECT COUNT(*) FROM ("
-            "  SELECT name FROM functions GROUP BY name HAVING COUNT(DISTINCT file_path) > 1"
+            "  SELECT name FROM functions"
+            "  WHERE class_name IS NULL"
+            "  GROUP BY name HAVING COUNT(DISTINCT file_path) > 1"
             ")"
         ).fetchone()[0]
         artifacts = 0
