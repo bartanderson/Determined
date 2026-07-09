@@ -801,7 +801,7 @@ function renderCorpusMap(data) {
         >view stubs</span>`
     : "";
   const dupesHint = (data.dupes > 0)
-    ? ` · <span style="color:var(--orange)" title="${data.dupes} function name(s) appear in more than one file — one may mask the other in Orphan mode">${data.dupes} duplicate names</span>`
+    ? ` · <span style="color:var(--orange)" title="${data.dupes} function name(s) appear in more than one file. May be intentional (e.g. validate() on each model class, matching route+query names) or a real collision. Check Orphan mode — a called copy can mask an uncalled one with the same name.">${data.dupes} duplicate names</span>`
     : "";
   stats.innerHTML = `${data.files} files · <span title="Hot: frequently called or recently changed — highest blast radius when modified">${data.hot} hot</span> · ${data.stubs} stubs${stubsHint}${dupesHint}`;
   corpusMapInner.appendChild(stats);

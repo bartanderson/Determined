@@ -160,6 +160,33 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM30. **[FILED 2026-07-09] Duplicate name detection: filter intentional patterns**
+
+   The current duplicate-names count (`COUNT(DISTINCT file_path) > 1 per name`) fires
+   on common non-bug patterns: method names shared across model classes (`validate` on
+   Entry/Connection/Tag), matching route+query pairs (`get_entry` in api.py and queries.py),
+   layered service names (`search` in route/service/searcher). These are intentional
+   conventions, not collisions. The badge is noisy as a result.
+
+   **What's needed:** filter out names where all occurrences are class methods (functions
+   defined inside a class body) — those share a name by design. A real collision is two
+   module-level functions with the same name in different files, or a module-level function
+   masking a same-named function in another module.
+
+   **Implementation sketch:**
+   - `functions` table has `class_name` (populated if the function is a method). If
+     `COUNT(DISTINCT file_path) > 1` but all rows have non-null `class_name`, it's
+     likely intentional. Filter: require at least one row with `class_name IS NULL` to
+     count as a real duplicate.
+   - Further refinement: if the two files are in a route layer and a storage layer
+     (matching naming convention), that's also intentional. Harder to detect without
+     layer metadata.
+
+   **Current state:** tooltip updated to warn "may be intentional." Badge fires but
+   user is told to check manually. Good enough until this is implemented.
+
+---
+
 RM29. **[FILED 2026-07-09] Duplicate symbol detection — automatic and prominent**
 
    Discovered during GETTING_STARTED.md walk: when two functions with the same name
