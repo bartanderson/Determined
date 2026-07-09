@@ -1,55 +1,69 @@
-Written at commit: 0418275
-# SESSION STATE - session 124 handoff
+Written at commit: 6f04a13
+# SESSION STATE - session 126 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 124, 2026-07-09)
+## What happened this session (session 126, 2026-07-09)
 
-**Doc consolidation [V]**
-- DESIGN_ARC.md + DISCOVERY_MODEL.md + REASONING_MODEL.md collapsed into docs/ANALYSIS_MODEL.md
-- Three source docs deleted
-- Two source-file references updated (reasoning_engine.py, agent_tools.py)
-- step_queue.md updated (was stale, still showing Stage 4 as CURRENT)
+**Discovery narration persistence [V]**
+- Each Discovery step's LLM narration now stored as artifact: `discovery_{id}_narration`
+- Final synthesis stored as `discovery_synthesis`
+- Previously both were ephemeral (socket-only, lost on reload)
+- 506 tests passed, 1 skipped. Committed bdc2c09.
 
-**Commonplace terminal structure established [V]**
-- examples/commonplace/seed/ = Terminal 1 (skeleton, 17 files, 2 stubs) -- unchanged
-- examples/commonplace/ = Terminal 2 (complete, 25 files, stubs closed, pre-enhancement)
-  - Rolled back: tagger.py (suggest_tags returns []), searcher.py (semantic_search delegates to text search),
-    linker.py (_similarity_score Jaccard only), utils/text.py (no embed helpers)
-- examples/enhanced/ = Terminal 3 (enhanced, Walk 4 extras wired in)
-  - suggest_tags -> LLM endpoint, semantic_search -> embeddings, _similarity_score -> cosine
-- Terminal 0 = empty directory user creates themselves
+**pyproject.toml cleanup [V]**
+- Removed stale `ollama>=0.5` dependency (replaced by llama-server in session 36)
 
-**Design conversation [?]**
-- Bart pushed back on "done" declarations -- tool is not ready for real users
-- No getting started doc exists; no user-facing instructions exist
-- The tour forward through phases is the primary user experience
-- Users need to be able to navigate to any point once they've completed the tour
+**UI: no auto-load on startup [V]**
+- Removed `_load_session()` fallback from startup
+- UI now starts with no corpus loaded -- user always switches explicitly
+- Committed 6f04a13
+
+**docs/SETUP.md created [V]**
+- Windows-only setup guide: Python 3.11.9, venv, install, llm config, start UI
+- llama-server and model paths now documented as configurable in `llm_client.py` lines 34-35
+- Committed 6f04a13
+
+**GETTING_STARTED.md -- in progress, being rewritten collaboratively [?]**
+- Prior version (session 125) was written at wrong altitude -- described tool output, not user experience
+- Correct framing established: teaching doc, tool is the lens not the subject, reader learns to recognize patterns for their own project
+- Walked through with Bart in browser: confirmed corpus panel output, Frontier Direct empty, Frontier Orphan shows validate_entry (blue circle, anticipatory)
+- Draft content written in conversation but NOT yet written to file
+- Key findings from walk:
+  - Re-analyze button opens folder browser (not Switch corpus)
+  - Mode change in Frontier dropdown auto-loads -- Load button redundant
+  - Corpus panel starts open (should default closed -- noted, deferred)
+  - Tab bar needs usability pass (grouping, selects) -- noted, deferred
 
 ## NEXT SESSION -- start here
 
-**Getting started doc (primary task)**
-- Four terminals, three phases, choose-your-own-adventure structure
-- Terminal 0 lives at examples/commonplace/noseed/ (user creates it; name is the instruction)
-  -- noseed sits parallel to seed/ so the relationship is explicit; seed is the answer key
-- Phase 1: Empty -> Skeleton (Terminal 0 -> 1): user builds skeleton from scratch OR loads seed
-- Phase 2: Skeleton -> Complete (Terminal 1 -> 2): close stubs, wire orphans
-- Phase 3: Complete -> Enhanced (Terminal 2 -> 3): LLM tagging, semantic search, cosine similarity
-- Forward tour by default; any point navigable once complete
-- Every tool explained: what it is, what it needs, what it produces, what comes next
-- Dependencies called out explicitly; no dead ends
-- Two audiences: no experience (every concept defined) and experienced (concepts still Determined-specific)
-- Doc is a map + tour guide, not a script; tool carries inline context, doc fills the big picture
-- Lives at docs/GETTING_STARTED.md
+**Primary task: finish rewriting GETTING_STARTED.md**
 
-**Before writing the doc:**
-- Run tests to confirm nothing broken by the terminal restructure
-- Verify COMMONPLACE_USER_JOURNEY.md is accurate for all three phases as they now exist
-- The enhanced/ folder needs a .determinedignore to exclude seed/ if it exists (already removed)
+Content written so far (in conversation, not yet in file):
+1. Opening orientation paragraph [done]
+2. Loading the skeleton -- Re-analyze flow [done]
+3. Corpus panel explanation: 17 files, hot, stubs, Roots, Gaps [done]
+4. Frontier tab -- Direct mode (empty, 0 stubs, good news) [done]
+5. Frontier tab -- Orphan mode (validate_entry, anticipatory vs stranded) [done]
 
-**After getting started doc:**
-- Discovery narration persistence (narrations not yet saved to DB)
+Still to write:
+- Frontier tab -- ABC mode
+- Topology tab
+- The seed files themselves: what each file is and why it exists
+- Phase 2: complete corpus, stub closure arc (one function at a time, reingest cycle)
+- Phase 3: enhanced corpus, one enhancement at a time
+
+Rules established this session:
+- Each section explains only what that control shows -- no forward references until the flow reaches it
+- No algorithm names without plain-English explanation first
+- Written for two attention levels: thorough readers get full explanations, skimmers hit each concept at least once
+- Bart walks it in browser and reports what he sees; doc is written from actual observations
+
+**Also deferred (do after GETTING_STARTED.md is done):**
+- Corpus panel defaults to closed on startup
+- Tab bar usability pass (grouping, selects, multiple windows)
+- Test the install from scratch (pyproject.toml, SETUP.md) on a clean environment
 - RM28 Stage 5: test Discovery on dj2
 
 ## Known issues (carried forward)
@@ -60,4 +74,4 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
 **LLM restart required after ctx-size change [V]:** --ctx-size 32768 only takes effect after full UI restart.
-**Getting started doc does not exist [V]:** No user-facing instructions for running the tool.
+**Corpus panel starts open [?]:** Should default to closed; deferred to after GETTING_STARTED.md done.

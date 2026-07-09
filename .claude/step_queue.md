@@ -1,3 +1,3 @@
-PREVIOUS: RM28 Stage 4 -- Discovery mode done (session 123)
-CURRENT:  Doc consolidation + session 124 open work
-NEXT:     Discovery narration persistence OR RM28 Stage 5
+PREVIOUS: Doc consolidation + session 124 open work
+CURRENT:  Rewrite GETTING_STARTED.md (in progress, collaborative walk with Bart)
+NEXT:     Finish GETTING_STARTED.md -- ABC mode, Topology, seed files, Phase 2, Phase 3
