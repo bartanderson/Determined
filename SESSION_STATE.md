@@ -1,77 +1,75 @@
-Written at commit: 6f04a13
-# SESSION STATE - session 126 handoff
+Written at commit: bd39950
+# SESSION STATE - session 127 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 126, 2026-07-09)
+## What happened this session (session 127, 2026-07-09)
 
-**Discovery narration persistence [V]**
-- Each Discovery step's LLM narration now stored as artifact: `discovery_{id}_narration`
-- Final synthesis stored as `discovery_synthesis`
-- Previously both were ephemeral (socket-only, lost on reload)
-- 506 tests passed, 1 skipped. Committed bdc2c09.
+**GETTING_STARTED.md rewrite -- in progress [V]**
+- Full rewrite of Phase 1 (skeleton walk) with peer-hacker voice
+- Covers: corpus panel, Frontier (Direct/Orphan/ABC), Topology, Call tree, seed structure
+- Phase 2 started: models layer + routes layer additions with actual observations
+- Key lessons captured in doc:
+  - Determined finds stubs, not missing symbols
+  - Orphan mode reveals design intent ahead of wiring
+  - Call graph built from imports/calls, not intent
+  - Duplicate symbols: genuine gap in the tool (filed RM29)
+- Dropped noseed/Terminal 0 concept -- skeleton is the right starting point
+- Core framing established: comprehension tool, not a linter; "what was this trying to become?"
 
-**pyproject.toml cleanup [V]**
-- Removed stale `ollama>=0.5` dependency (replaced by llama-server in session 36)
+**Re-analyze UX fixes [V]**
+- WinError 32: clear tables in place instead of deleting DB (Defender/Search holds file)
+- Re-analyze now skips Load/Re-analyze modal -- goes straight to ingest
+- Discovery batch size 20→5 for more frequent progress updates
+- WAL/SHM sidecars cleaned on re-analyze
 
-**UI: no auto-load on startup [V]**
-- Removed `_load_session()` fallback from startup
-- UI now starts with no corpus loaded -- user always switches explicitly
-- Committed 6f04a13
+**seed/ additions [V]**
+- examples/commonplace/seed/models/ -- Entry, Connection, Tag dataclasses
+- examples/commonplace/seed/routes/api.py and browse.py -- new route layer
 
-**docs/SETUP.md created [V]**
-- Windows-only setup guide: Python 3.11.9, venv, install, llm config, start UI
-- llama-server and model paths now documented as configurable in `llm_client.py` lines 34-35
-- Committed 6f04a13
+**RM29 filed [V]**
+- Duplicate symbol detection: automatic and prominent when found
+- SQL sketch: SELECT name, COUNT(DISTINCT file_path) FROM functions GROUP BY name HAVING COUNT > 1
 
-**GETTING_STARTED.md -- in progress, being rewritten collaboratively [?]**
-- Prior version (session 125) was written at wrong altitude -- described tool output, not user experience
-- Correct framing established: teaching doc, tool is the lens not the subject, reader learns to recognize patterns for their own project
-- Walked through with Bart in browser: confirmed corpus panel output, Frontier Direct empty, Frontier Orphan shows validate_entry (blue circle, anticipatory)
-- Draft content written in conversation but NOT yet written to file
-- Key findings from walk:
-  - Re-analyze button opens folder browser (not Switch corpus)
-  - Mode change in Frontier dropdown auto-loads -- Load button redundant
-  - Corpus panel starts open (should default closed -- noted, deferred)
-  - Tab bar needs usability pass (grouping, selects) -- noted, deferred
+**Memory updated [V]**
+- project_getting_started_intent.md: voice guidance, Phase 2 file order, comprehension framing,
+  no-manufacturing-stubs rule all captured
+
+## Current state of seed/
+
+23 files total when analyzed. Orphan mode shows: validate_entry, validate, to_dict (3 anticipatory).
+
+**Still to add for Phase 2 walk:**
+- utils/text.py (truncate, clean, make_excerpt helpers)
+- utils/url.py (normalize, validate_url -- NOTE: duplicate of validator.py::validate_url, intentional lesson)
+
+After utils walk, revert seed/ additions with git clean + git checkout.
 
 ## NEXT SESSION -- start here
 
-**Primary task: finish rewriting GETTING_STARTED.md**
+**Primary task: finish GETTING_STARTED.md**
 
-Content written so far (in conversation, not yet in file):
-1. Opening orientation paragraph [done]
-2. Loading the skeleton -- Re-analyze flow [done]
-3. Corpus panel explanation: 17 files, hot, stubs, Roots, Gaps [done]
-4. Frontier tab -- Direct mode (empty, 0 stubs, good news) [done]
-5. Frontier tab -- Orphan mode (validate_entry, anticipatory vs stranded) [done]
+Phase 2 walk remaining:
+1. Add utils/text.py and utils/url.py to seed → re-analyze → observe orphans + duplicate validate_url
+2. Write that section with the duplicate symbol lesson
+3. Revert seed/ to original state with git
+4. Write Phase 3: complete corpus (examples/commonplace) -- load it, walk Frontier/Topology
+5. Write closing section
 
-Still to write:
-- Frontier tab -- ABC mode
-- Topology tab
-- The seed files themselves: what each file is and why it exists
-- Phase 2: complete corpus, stub closure arc (one function at a time, reingest cycle)
-- Phase 3: enhanced corpus, one enhancement at a time
-
-Rules established this session:
-- Each section explains only what that control shows -- no forward references until the flow reaches it
-- No algorithm names without plain-English explanation first
-- Written for two attention levels: thorough readers get full explanations, skimmers hit each concept at least once
-- Bart walks it in browser and reports what he sees; doc is written from actual observations
-
-**Also deferred (do after GETTING_STARTED.md is done):**
-- Corpus panel defaults to closed on startup
-- Tab bar usability pass (grouping, selects, multiple windows)
-- Test the install from scratch (pyproject.toml, SETUP.md) on a clean environment
-- RM28 Stage 5: test Discovery on dj2
+Rules in force (see memory/project_getting_started_intent.md):
+- Peer-hacker voice: explain why, not what
+- Each control transition must name what previous couldn't tell you
+- Do NOT manufacture stubs to force demo results
+- Do NOT load finished corpus and describe it -- live through the walk
+- Bart walks in browser, doc written from actual observations
 
 ## Known issues (carried forward)
 
 **ingest_design_docs project root mismatch [V]:** Must call with explicit path.
 **Seed DB carries developer artifacts [V]:** Clear design_notes + semantic_summaries before clean demo.
-**UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI.
+**UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI for single file.
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
 **LLM restart required after ctx-size change [V]:** --ctx-size 32768 only takes effect after full UI restart.
-**Corpus panel starts open [?]:** Should default to closed; deferred to after GETTING_STARTED.md done.
+**RM29 duplicate symbol detection [V]:** Not yet implemented. Filed this session.
