@@ -638,26 +638,6 @@ def handle_ingest(data):
 
             init(db_path)
             try:
-                from determined.agent.discovery_agent import run as discover_run
-                from determined.agent.knowledge_status import coverage_report
-                batch = 0
-                while True:
-                    batch += 1
-                    rpt = coverage_report(_oracle, _assessor)
-                    remaining = rpt.get("unknown_total", 0)
-                    if remaining == 0:
-                        socketio.emit("ingest_status", {"message": "Discovery complete — all files surveyed."}, to=sid)
-                        break
-                    socketio.emit("ingest_status", {
-                        "message": f"Discovering… {remaining} files remaining (batch {batch})"
-                    }, to=sid)
-                    found = discover_run(db_path, limit=5, verbose=False)
-                    if found == 0:
-                        socketio.emit("ingest_status", {"message": f"Discovery stalled — {remaining} files unreachable."}, to=sid)
-                        break
-            except Exception as disc_exc:
-                socketio.emit("ingest_status", {"message": f"Discovery skipped: {disc_exc}"}, to=sid)
-            try:
                 from determined.agent.agent_tools import ingest_design_docs
                 socketio.emit("ingest_status", {"message": "Scanning for design docs…"}, to=sid)
                 design_result = ingest_design_docs(_assessor, {})
