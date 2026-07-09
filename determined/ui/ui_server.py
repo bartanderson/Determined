@@ -606,17 +606,27 @@ def handle_ingest(data):
             from determined.engine.db_resolver import resolve_analysis_db_path
 
             db_path = resolve_analysis_db_path(str(target))
+            # close active connection unconditionally before re-analyzing to avoid WinError 32
+            with _lock:
+                global _oracle, _assessor
+                if _oracle:
+                    try: _oracle.conn.close()
+                    except Exception: pass
+                    _oracle = None
+                    _assessor = None
             if Path(db_path).exists():
-                # close active connection before deleting to avoid WinError 32
-                with _lock:
-                    global _oracle, _assessor
-                    if _oracle and str(Path(_db_path).resolve()) == str(Path(db_path).resolve()):
-                        try: _oracle.conn.close()
-                        except Exception: pass
-                        _oracle = None
-                        _assessor = None
-                Path(db_path).unlink()
-                global _source_path
+                # clear tables in place rather than deleting the file (avoids WinError 32 from
+                # external processes holding the file e.g. Windows Search / Defender)
+                _clear_conn = sqlite3.connect(db_path)
+                _tables = [r[0] for r in _clear_conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()]
+                for _t in _tables:
+                    _clear_conn.execute(f"DELETE FROM {_t}")
+                _clear_conn.commit()
+                _clear_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                _clear_conn.close()
+            global _source_path
             _source_path = str(target)
             socketio.emit("ingest_status", {"message": f"Analyzing {target.name}…"}, to=sid)
 
@@ -639,9 +649,9 @@ def handle_ingest(data):
                         socketio.emit("ingest_status", {"message": "Discovery complete — all files surveyed."}, to=sid)
                         break
                     socketio.emit("ingest_status", {
-                        "message": f"Discovering… batch {batch} ({remaining} files remaining)"
+                        "message": f"Discovering… {remaining} files remaining (batch {batch})"
                     }, to=sid)
-                    found = discover_run(db_path, limit=20, verbose=False)
+                    found = discover_run(db_path, limit=5, verbose=False)
                     if found == 0:
                         socketio.emit("ingest_status", {"message": f"Discovery stalled — {remaining} files unreachable."}, to=sid)
                         break

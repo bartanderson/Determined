@@ -160,6 +160,35 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM29. **[FILED 2026-07-09] Duplicate symbol detection — automatic and prominent**
+
+   Discovered during GETTING_STARTED.md walk: when two functions with the same name
+   exist in different files, Determined has no way to surface this. One will appear
+   as an orphan (if uncalled), but the tool doesn't say WHY it's orphaned or that a
+   same-named function already exists elsewhere. The user has to connect those dots
+   manually — which they won't.
+
+   **The gap:** `url.py::validate_url` and `validator.py::validate_url` can both
+   exist in a corpus. Determined sees two graph nodes. It doesn't know they might be
+   the same function twice. No existing mode surfaces the collision.
+
+   **What's needed:**
+   - Automatic detection: when a function name appears in more than one file, flag it
+   - Surface it prominently: corpus panel alongside hot/stubs, or inline in Orphan view
+     ("this orphan shares a name with `validator.py::validate_url`")
+   - Should not require the user to ask — if duplicates exist, they should see it
+
+   **Why it matters:** duplicate implementations are one of the most common real-world
+   problems — copy-paste logic, parallel evolution, someone writing a function without
+   knowing one already existed. A comprehension tool that misses this is missing a core
+   use case.
+
+   **Implementation sketch:** graph query on function name — `SELECT name, COUNT(DISTINCT
+   file_path) FROM functions GROUP BY name HAVING COUNT > 1`. Surface result in corpus
+   panel as "N duplicate symbols" and in Orphan mode as inline annotation.
+
+---
+
 RM28. **[FILED 2026-07-08] Three-mode UX: Tour, Discovery, Workbench**
 
    Designed in session 119. Three operating modes built on a shared artifact layer.

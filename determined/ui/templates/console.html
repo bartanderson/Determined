@@ -1282,8 +1282,10 @@ function startIngest(path) {
   socket.emit("ingest", { path });
 }
 
+let _reanalyzeIntent = false;
 ingestBtn.addEventListener("click", () => {
   const p = ingestPath.value.trim();
+  _reanalyzeIntent = (ingestBtn.textContent.trim().startsWith("Re-analyze"));
   if (p) { startScan(p); return; }
   socket.emit("browse", {});
 });
@@ -1299,6 +1301,13 @@ socket.on("browse_result", data => {
 socket.on("scan_result", data => {
   clearStatusMsgs();
   if (data.error) { addErrorBlock(data.error); return; }
+
+  // Existing DB — if user clicked Re-analyze, skip the modal and go straight to ingest
+  if (data.db_exists && _reanalyzeIntent) {
+    _reanalyzeIntent = false;
+    startIngest(data.path);
+    return;
+  }
 
   // Existing DB — load it immediately, show staleness info
   if (data.db_exists) {

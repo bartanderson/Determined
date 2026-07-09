@@ -32,3 +32,5 @@ def search_entries(query):
         "SELECT * FROM entries WHERE title LIKE ? OR content LIKE ? ORDER BY created_at DESC",
         (pattern, pattern),
     ).fetchall()
+
+
