@@ -2456,9 +2456,11 @@ def handle_discovery_start(_data=None):
             except Exception as exc:
                 narration = f"(narration unavailable: {exc})"
 
-            # Store as artifact
+            # Store tool result and narration as artifacts
             if k_conn:
                 store_artifact(k_conn, f"discovery_{step['id']}", step["tool"], str(result))
+                if narration:
+                    store_artifact(k_conn, f"discovery_{step['id']}_narration", step["tool"], narration)
 
             _emit_log(f"Discovery step {step['num']}: {step['label']} complete")
             socketio.emit("discovery_step", {
@@ -2476,6 +2478,9 @@ def handle_discovery_start(_data=None):
             synthesis = _call_ollama([{"role": "user", "content": synthesis_prompt}])
         except Exception as exc:
             synthesis = f"(synthesis unavailable: {exc})"
+
+        if k_conn and synthesis:
+            store_artifact(k_conn, "discovery_synthesis", "discovery", synthesis)
 
         _emit_log("Discovery: done")
         socketio.emit("discovery_done", {"synthesis": synthesis}, to=sid)
