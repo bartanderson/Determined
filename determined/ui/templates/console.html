@@ -1232,7 +1232,7 @@ function setCorpusLoaded(loaded, sourcePath) {
   ingestBtn.style.display  = "";
   ingestPath.style.display = "";
   resumeBtn.style.display  = loaded ? "" : "none";
-  if (loaded && sourcePath) ingestPath.value = sourcePath;
+  if (!loaded) ingestPath.value = "";
   const hint = document.getElementById("ingest-hint");
   if (hint) hint.style.display = loaded ? "none" : "";
 }
@@ -1317,12 +1317,14 @@ socket.on("scan_result", data => {
       </div>`);
     document.getElementById("confirm-ingest").addEventListener("click", () => {
       hideModal();
+      ingestPath.value = "";
       addStatusMsg("Loading existing analysis…");
       socket.emit("load_corpus", { db_path: data.db_path });
       if (stale > 0) _pendingStaleInfo = { count: stale, path: data.path, db_path: data.db_path };
     });
     document.getElementById("reanalyze-ingest").addEventListener("click", () => {
       hideModal();
+      ingestPath.value = "";
       startIngest(data.path);
     });
     document.getElementById("cancel-ingest").addEventListener("click", () => {
