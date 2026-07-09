@@ -1,0 +1,3 @@
+# Commonplace complete corpus -- exclude seed subdirectory
+# seed/ is a separate corpus (Walk 1/2 journey start state)
+seed

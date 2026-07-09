@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Commonplace — Recent{% endblock %}
+{% block content %}
+<h1>Recent Entries</h1>
+{% if entries %}
+  <ul class="entry-list">
+    {% for e in entries %}
+    <li class="entry-card">
+      <span class="entry-type">{{ e['type'] }}</span>
+      <a href="{{ url_for('browse.entry_detail', entry_id=e['id']) }}">
+        {{ e['title'] or e['content'][:80] }}
+      </a>
+      <span class="entry-date">{{ e['created_at'][:10] }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty">Nothing captured yet. <a href="{{ url_for('capture.capture_form') }}">Add something.</a></p>
+{% endif %}
+{% endblock %}

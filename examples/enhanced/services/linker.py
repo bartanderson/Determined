@@ -43,9 +43,14 @@ def find_connections(entry_id, content, all_entries):
 
 def _similarity_score(text_a, text_b):
     """
-    Jaccard keyword overlap between two texts.
-    Frontier: upgrade to embedding cosine similarity (see Enhanced terminal).
+    Embedding-based cosine similarity between two texts.
+    Falls back to Jaccard keyword overlap if sentence-transformers unavailable.
     """
+    from utils.text import get_embed_model, cosine_similarity
+    model = get_embed_model()
+    if model:
+        vecs = model.encode([text_a, text_b], normalize_embeddings=True)
+        return cosine_similarity(vecs[0], vecs[1])
     kw_a = _extract_keywords(text_a)
     kw_b = _extract_keywords(text_b)
     if not kw_a or not kw_b:
