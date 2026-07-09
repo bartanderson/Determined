@@ -227,3 +227,88 @@ Two things happened. First, `entry_detail` is now a root — it's a new route wi
 Also notice: **0 stubs, still**. The new routes call storage functions that don't exist yet in `queries.py` — `get_entry`, `get_entry_tags`, `get_connections`, `list_entries`. But those functions were never written at all, not even as placeholders. Determined finds stubs — functions that exist but do nothing. It cannot find missing symbols — functions that are called but were never written. That's what a type checker catches.
 
 This is an important boundary to know. Determined tells you about the shape of what exists. For what's absent entirely, you need runtime errors or static type analysis. The two tools answer different questions.
+
+### Adding utils
+
+The last addition is two utility files: `utils/text.py` (truncate, clean, make_excerpt) and `utils/url.py` (normalize, validate_url). After re-analyzing, Frontier → Orphan shows:
+
+```
+[Orphan] 5 anticipatory · 0 stranded · 5 total
+
+  validate_entry   (blue)
+  make_excerpt     (blue)
+  normalize        (blue)
+  validate         (blue)
+  to_dict          (blue)
+```
+
+Five orphans. Three are new: `make_excerpt`, `normalize`, and two from the models layer that were already there. All anticipatory — fully implemented, not yet wired.
+
+Now look at what's missing: `validate_url` from `utils/url.py`. It should be here. It has no callers. But it doesn't appear.
+
+Here's why: `utils/validator.py` also has a `validate_url` — written earlier, and it *is* called by `validate_entry`. Determined builds its graph on function names. When it looks up `validate_url` to check for callers, it finds one — the caller of the *other* `validate_url`. The duplicate in `url.py` inherits that caller and disappears from the orphan list.
+
+Two functions with the same name, in different files. One is used. One is dead. Determined can't tell them apart, so the dead one hides behind the live one.
+
+This is a real gap in the tool. On a project you didn't write, you'd see five orphans and think the utils layer is cleanly structured. You wouldn't know a duplicate exists unless you searched for it manually. The orphan view only surfaces what has no callers *by name* — not what has no callers *by identity*.
+
+The lesson for your own project: when Orphan mode shows fewer items than you expected from a new module, check for name collisions. If a function seems like it should be orphaned but isn't, another function with the same name may be pulling it out of the list.
+
+---
+
+## Phase 3: the complete corpus
+
+So far you've watched the skeleton grow — models, routes, utils added one layer at a time. Now load the complete Commonplace application and see what Determined shows when everything is wired up.
+
+In the corpus panel, click **Re-analyze** and point it at `examples/commonplace` (not `seed` — the parent directory). This is the full application.
+
+Switch to **Frontier → Orphan**:
+
+```
+[Orphan] 12 anticipatory · 0 stranded · 12 total
+```
+
+Twelve orphans on a complete, working application. That's not a problem — it's information. Utility helpers not yet called from routes, model methods the services haven't adopted yet, parser callbacks the main path doesn't reach directly. All anticipatory. All implemented. None broken.
+
+On a working application, orphan mode stops being a bug-finder and becomes a design-reader. These 12 functions tell you where the application has headroom — what it was built to support that isn't fully threaded through yet. If you were extending this application, the orphan list is where you'd start: code written in anticipation of features that haven't landed.
+
+Switch to **Topology**:
+
+```
+CORPUS TOPOLOGY
+  Total stubs: 1  |  Total implemented: 60
+
+  Shape                  Count  Description
+  ──────────────────────────────────────────────────────────────
+  Direct-call                1  stubs called by functional code
+  ABC-interface              0  abstract methods with no concrete override
+  Orphaned-impl             15  implementations with no functional callers
+  ...
+
+  Action queues:
+    Implement now:  chain-tail (0) > direct-call (1) > abc-interface (0) > chain-head (0)
+    Write callers:  orphaned-impl (15)
+    Decide:         disconnected (0) | entry-point (0)
+
+Signal: LOW stub pressure — most implemented code is reachable.
+```
+
+The "Implement now" queue is not quite empty — direct-call (1) is there. One stub somewhere in the complete corpus is being called by working code. That's a real item. The pressure is LOW, not zero.
+
+This is closer to reality than "done" usually looks. A working application often has one unfinished corner — something planned, partially wired, not yet implemented. Determined found it without being asked. The rest of the picture is clean: 15 orphans all anticipatory, no ABC gaps, 60 implemented functions reachable through the graph.
+
+This is the contrast the walk was building toward. The skeleton had pressure — multiple action queue entries, direct-call stubs, orphaned work. The complete application has almost none. The tool didn't tell you the application is finished. It told you where the remaining pressure is, and how small it is.
+
+When you point Determined at your own project, this is the reference frame. Not "how many stubs" but "where is the pressure." A high direct-call count means broken paths. A full orphan list means unconnected work. A nearly-empty topology means you're building forward, not catching up.
+
+---
+
+## What to do next
+
+You've seen Determined on three corpus states — skeleton, growing, complete. You know what each panel is for and what it can and can't see. Now point it at your own project.
+
+The first thing to check is always Frontier → Direct. If anything is there, fix it before doing anything else — those are broken execution paths. Then Orphan: is the work sitting in your codebase connected to the rest of it? Then Topology: what does the action queue say?
+
+The Ask bar at the bottom runs natural-language queries against the structural database. Type a symbol name to get callers, callees, and risk profile. Type a question about the codebase to get an answer grounded in the graph, not in the model's training data.
+
+Determined won't tell you what your code should do. It tells you what it actually does — and where what it actually does diverges from what you probably intended.
