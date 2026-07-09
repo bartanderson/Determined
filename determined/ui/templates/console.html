@@ -1299,6 +1299,39 @@ socket.on("browse_result", data => {
 socket.on("scan_result", data => {
   clearStatusMsgs();
   if (data.error) { addErrorBlock(data.error); return; }
+
+  // Existing DB — load it immediately, show staleness info
+  if (data.db_exists) {
+    const stale = (data.stale_count || 0) + (data.new_count || 0);
+    const staleNote = stale > 0
+      ? `<div style="color:var(--orange,#e5c07b);font-size:.85em;margin-bottom:1rem">${stale} file${stale > 1 ? "s" : ""} changed since last analysis</div>`
+      : `<div style="color:var(--green);font-size:.85em;margin-bottom:1rem">Up to date</div>`;
+    showModal(`
+      <div style="font-weight:600;margin-bottom:.5rem">Previous analysis found</div>
+      <div style="color:var(--text2);font-size:.9em;margin-bottom:.5rem;word-break:break-all">${escHtml(data.path)}</div>
+      ${staleNote}
+      <div style="display:flex;gap:.6rem;justify-content:flex-end">
+        <button class="send-btn" style="background:var(--surface2)" id="cancel-ingest">Cancel</button>
+        <button class="send-btn" style="background:var(--surface2)" id="reanalyze-ingest">Re-analyze ↵</button>
+        <button class="send-btn" id="confirm-ingest">Load ↵</button>
+      </div>`);
+    document.getElementById("confirm-ingest").addEventListener("click", () => {
+      hideModal();
+      addStatusMsg("Loading existing analysis…");
+      socket.emit("load_corpus", { db_path: data.db_path });
+      if (stale > 0) _pendingStaleInfo = { count: stale, path: data.path, db_path: data.db_path };
+    });
+    document.getElementById("reanalyze-ingest").addEventListener("click", () => {
+      hideModal();
+      startIngest(data.path);
+    });
+    document.getElementById("cancel-ingest").addEventListener("click", () => {
+      hideModal();
+      ingestPath.value = "";
+    });
+    return;
+  }
+
   if (data.file_count === 0) {
     showModal(`
       <div style="font-weight:600;margin-bottom:.5rem">No source files found</div>
@@ -1337,6 +1370,27 @@ socket.on("scan_result", data => {
     hideModal();
     ingestPath.value = "";
   });
+});
+
+// Staleness banner — shown after loading an existing corpus with changed files
+let _pendingStaleInfo = null;
+socket.on("corpus_ready", () => {
+  const info = _pendingStaleInfo;
+  _pendingStaleInfo = null;
+  if (!info || info.count === 0) return;
+  // Inject banner into sidebar below ingest controls
+  const existing = document.getElementById("stale-banner");
+  if (existing) existing.remove();
+  const banner = document.createElement("div");
+  banner.id = "stale-banner";
+  banner.style.cssText = "margin-top:8px;padding:7px 10px;background:var(--bg2);border:1px solid var(--orange,#e5c07b);border-radius:5px;font-size:.78em;line-height:1.5";
+  banner.innerHTML = `<span style="color:var(--orange,#e5c07b);font-weight:600">${info.count} file${info.count > 1 ? "s" : ""} changed</span> since last analysis. <button id="stale-reanalyze" class="send-btn" style="padding:2px 8px;font-size:.78em;margin-left:4px">Re-analyze</button> <button id="stale-dismiss" style="background:none;border:none;cursor:pointer;color:var(--text3);float:right">✕</button>`;
+  document.querySelector(".sidebar-ingest").appendChild(banner);
+  document.getElementById("stale-reanalyze").addEventListener("click", () => {
+    banner.remove();
+    startIngest(info.path);
+  });
+  document.getElementById("stale-dismiss").addEventListener("click", () => banner.remove());
 });
 
 socket.on("ingest_status", data => addStatusMsg(data.message));

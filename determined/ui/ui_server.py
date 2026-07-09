@@ -509,6 +509,36 @@ def handle_browse(data):
         emit("browse_result", {"path": "", "error": str(exc)})
 
 
+def _staleness_check(db_path: str, source_path: str) -> dict:
+    """Compare source file mtimes against last_modified stored in DB files table.
+    Returns {stale_count, new_count, last_ingested_ts}."""
+    import os
+    try:
+        conn = sqlite3.connect(db_path)
+        rows = {r[0]: r[1] for r in conn.execute(
+            "SELECT file_path, last_modified FROM files"
+        )}
+        conn.close()
+    except Exception:
+        return {"stale_count": 0, "new_count": 0, "last_ingested_ts": None}
+
+    last_ts = max(rows.values()) if rows else None
+    stale, new = 0, 0
+    root = Path(source_path)
+    for f in root.rglob("*.py"):
+        try:
+            rel = str(f.relative_to(root))
+            mtime = f.stat().st_mtime
+            if rel in rows:
+                if mtime > rows[rel]:
+                    stale += 1
+            else:
+                new += 1
+        except Exception:
+            pass
+    return {"stale_count": stale, "new_count": new, "last_ingested_ts": last_ts}
+
+
 @socketio.on("scan")
 def handle_scan(data):
     path = (data.get("path") or "").strip()
@@ -521,6 +551,7 @@ def handle_scan(data):
         return
     try:
         from determined.ingestion.scan_project_files import load_ignore_list, should_ignore_path
+        from determined.engine.db_resolver import resolve_analysis_db_path
         extensions = {".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", ".c", ".cpp", ".h"}
         ignored = load_ignore_list(target)
         files = [
@@ -529,13 +560,30 @@ def handle_scan(data):
             and not should_ignore_path(f.relative_to(target), ignored)
         ]
         total_bytes = sum(f.stat().st_size for f in files)
+        db_path = resolve_analysis_db_path(str(target))
+        db_exists = Path(db_path).exists()
+        staleness = _staleness_check(db_path, str(target)) if db_exists else {}
         emit("scan_result", {
             "path": str(target),
             "file_count": len(files),
             "size_mb": round(total_bytes / (1024 * 1024), 1),
+            "db_exists": db_exists,
+            "db_path": db_path,
+            **staleness,
         })
     except Exception as exc:
         emit("scan_result", {"error": str(exc)})
+
+
+@socketio.on("load_corpus")
+def handle_load_corpus(data):
+    """Load an existing corpus DB without re-ingesting."""
+    db_path = (data.get("db_path") or "").strip()
+    if not db_path or not Path(db_path).exists():
+        emit("ingest_error", {"message": f"DB not found: {db_path}"})
+        return
+    init(db_path)
+    _emit_corpus_ready(switched=True)
 
 
 @socketio.on("ingest")
