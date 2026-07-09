@@ -1,7 +1,7 @@
 # determined/agent/reasoning_engine.py
 #
 # Reasoning pipeline: Decomposer -> Router -> Synthesizer
-# See docs/REASONING_MODEL.md for the full design.
+# See docs/ANALYSIS_MODEL.md for the full design.
 #
 # Public API:
 #   decompose(question, symbol, conn) -> list[SubQuestion]

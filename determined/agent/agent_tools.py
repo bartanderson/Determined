@@ -4938,7 +4938,7 @@ TOOLS = {
     "trace_data_flow":            (trace_data_flow,            "assessor"),
     # Two-pass architectural synthesis
     "corpus_synthesis":        (corpus_synthesis,        "assessor"),
-    # Reasoning pipeline (REASONING_MODEL.md R4)
+    # Reasoning pipeline (ANALYSIS_MODEL.md)
     "reason_about":            (reason_about,            "assessor"),
     # Web search (RM12)
     "search_web":              (search_web,              "assessor"),
