@@ -1607,6 +1607,15 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
         ).fetchall()
     }
 
+    # Build name→files map for duplicate detection
+    name_files: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT name, file_path FROM functions WHERE is_stub = 0"
+    ).fetchall():
+        n, fp = row
+        fp_short = (fp or "").replace("\\", "/").split("/")[-1]
+        name_files.setdefault(n, []).append(fp_short)
+
     lines = [
         f"Orphaned implementations ({len(rows)} shown)",
         "  ready-but-blocked = no callers, same file has stubs (wire the stub to call this)",
@@ -1625,7 +1634,9 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
             label = "ready-but-blocked" if file_path in files_with_stubs else "anticipatory"
         else:
             label = f"possibly-stranded ({int(stub_callers)} stub callers)"
-        lines.append(f"    {name}  line {line_no}  [{label}]")
+        other_files = [f for f in name_files.get(name, []) if f != fp_short]
+        dupe_note = f"  ⚠ also in {', '.join(other_files)}" if other_files else ""
+        lines.append(f"    {name}  line {line_no}  [{label}]{dupe_note}")
     return "\n".join(lines)
 
 

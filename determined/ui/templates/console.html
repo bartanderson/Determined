@@ -800,7 +800,10 @@ function renderCorpusMap(data) {
           title="Stubs are functions whose body is not yet implemented (pass, TODO, raise NotImplementedError). Click to open the Frontier tab showing all stubs and their position in the call graph."
         >view stubs</span>`
     : "";
-  stats.innerHTML = `${data.files} files · <span title="Hot: frequently called or recently changed — highest blast radius when modified">${data.hot} hot</span> · ${data.stubs} stubs${stubsHint}`;
+  const dupesHint = (data.dupes > 0)
+    ? ` · <span style="color:var(--orange)" title="${data.dupes} function name(s) appear in more than one file — one may mask the other in Orphan mode">${data.dupes} duplicate names</span>`
+    : "";
+  stats.innerHTML = `${data.files} files · <span title="Hot: frequently called or recently changed — highest blast radius when modified">${data.hot} hot</span> · ${data.stubs} stubs${stubsHint}${dupesHint}`;
   corpusMapInner.appendChild(stats);
 
   // ── Roots / Core toggle ─────────────────────────────────

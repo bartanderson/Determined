@@ -85,13 +85,18 @@ def _corpus_status() -> dict:
         files     = _oracle.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         hot       = _oracle.conn.execute("SELECT COUNT(*) FROM files WHERE is_hot=1").fetchone()[0]
         stubs     = _oracle.conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub=1").fetchone()[0]
+        dupes     = _oracle.conn.execute(
+            "SELECT COUNT(*) FROM ("
+            "  SELECT name FROM functions GROUP BY name HAVING COUNT(DISTINCT file_path) > 1"
+            ")"
+        ).fetchone()[0]
         artifacts = 0
         if _assessor and _assessor._knowledge_conn:
             artifacts = _assessor._knowledge_conn.execute(
                 "SELECT COUNT(*) FROM knowledge_artifacts"
             ).fetchone()[0]
         db_name = Path(_db_path).stem.replace("_", " ")
-        return {"files": files, "hot": hot, "stubs": stubs,
+        return {"files": files, "hot": hot, "stubs": stubs, "dupes": dupes,
                 "artifacts": artifacts, "db_name": db_name}
     except Exception:
         return {}
