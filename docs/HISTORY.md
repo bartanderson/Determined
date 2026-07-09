@@ -8,6 +8,8 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-08: Ingest path field intentionally blank on load. Server auto-restores the last corpus via session file (no friction for the common case). The path input is for switching to a new project — not a default state. Do not pre-fill it from the session, source_path, or any other source. The pre-fill was removed because each new journey (Commonplace, dj2, a user's own project) needs an explicit choice, not a sticky default. If this feels like friction, the fix is better corpus-switching UX, not re-adding the pre-fill.
+
 2026-07-07: find_abc_gaps blind spot: gap query uses `file_path != ?` to find concrete overrides, so same-file inheritance (ABC base + subclasses all in one file) always reports a gap even when overrides exist. EnrichmentProcessor.process/can_handle in processor.py not detected as overrides of EntryProcessor abstract methods. Fix: change query to check for any non-stub function with same name regardless of file, or use class hierarchy to confirm subclass relationship.
 
 2026-07-06: reingest_file graph_edges wipe bug: when reingesting a stub file (zero outgoing calls), symbol_references is empty → GraphBuilder produces no edges → files_in_run is empty set → _persist_graph_edges falls through to `DELETE FROM graph_edges` full reset. Fix: explicit `DELETE FROM graph_edges WHERE caller_file = ?` before building the graph, then insert edges directly, bypassing _persist_graph_edges entirely for the reingest path.
