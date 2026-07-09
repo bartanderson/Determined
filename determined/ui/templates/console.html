@@ -1230,12 +1230,14 @@ function hideModal() {
 modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) hideModal(); });
 
 // ── analyze ───────────────────────────────────────────────
+let _currentSourcePath = "";
 function setCorpusLoaded(loaded, sourcePath) {
   ingestBtn.textContent = loaded ? "Re-analyze ↵" : "Analyze ↵";
   ingestBtn.style.display  = "";
   ingestPath.style.display = "";
   resumeBtn.style.display  = loaded ? "" : "none";
   if (!loaded) ingestPath.value = "";
+  if (sourcePath) _currentSourcePath = sourcePath;
   const hint = document.getElementById("ingest-hint");
   if (hint) hint.style.display = loaded ? "none" : "";
 }
@@ -1290,6 +1292,8 @@ ingestBtn.addEventListener("click", () => {
   const p = ingestPath.value.trim();
   _reanalyzeIntent = (ingestBtn.textContent.trim().startsWith("Re-analyze"));
   if (p) { startScan(p); return; }
+  // Re-analyze with no path typed: re-use the current corpus source path if known
+  if (_reanalyzeIntent && _currentSourcePath) { startScan(_currentSourcePath); return; }
   socket.emit("browse", {});
 });
 

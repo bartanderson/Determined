@@ -306,6 +306,7 @@ def _emit_corpus_ready(switched=False):
             "files": s.get("files", 0),
             "hot": s.get("hot", 0),
             "stubs": s.get("stubs", 0),
+            "dupes": s.get("dupes", 0),
             "artifacts": s.get("artifacts", 0),
             "top_entry": m.get("top_entry", ""),
             "entry_points": m.get("entry_points", []),
