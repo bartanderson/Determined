@@ -31,6 +31,8 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 **Getting started doc (primary task)**
 - Four terminals, three phases, choose-your-own-adventure structure
+- Terminal 0 lives at examples/commonplace/noseed/ (user creates it; name is the instruction)
+  -- noseed sits parallel to seed/ so the relationship is explicit; seed is the answer key
 - Phase 1: Empty -> Skeleton (Terminal 0 -> 1): user builds skeleton from scratch OR loads seed
 - Phase 2: Skeleton -> Complete (Terminal 1 -> 2): close stubs, wire orphans
 - Phase 3: Complete -> Enhanced (Terminal 2 -> 3): LLM tagging, semantic search, cosine similarity
