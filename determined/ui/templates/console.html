@@ -49,6 +49,24 @@
 .sp-propose-box textarea{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text1);font-family:var(--font-mono);font-size:.8em;padding:6px;resize:vertical;min-height:60px}
 .sp-propose-box .sp-propose-actions{display:flex;gap:6px}
 
+/* ── training mode toggle ── */
+#guide-toggle-wrap{display:flex;align-items:center;gap:4px;margin-right:8px}
+#guide-toggle-btn{font-size:.73em;padding:3px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
+#guide-toggle-btn:hover{background:var(--bg3);color:var(--text1)}
+#guide-toggle-btn.guide-on{background:rgba(255,180,0,.18);border-color:var(--orange);color:var(--orange)}
+#guide-dismiss-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.8em;padding:0 2px;line-height:1}
+#guide-dismiss-btn:hover{color:var(--text1)}
+#guide-footer{text-align:center;padding:6px 0 4px;font-size:.72em;color:var(--text3);border-top:1px solid var(--border);margin-top:4px}
+#guide-footer a{color:var(--text3);text-decoration:underline dotted;cursor:pointer}
+#guide-footer a:hover{color:var(--text2)}
+/* ── rail dot progress indicators ── */
+.rail-icon{position:relative}
+.rail-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:transparent;transition:background .2s}
+.guide-on .rail-dot[data-state="unvisited"]{background:transparent}
+.guide-on .rail-dot[data-state="red"]{background:#e05050}
+.guide-on .rail-dot[data-state="amber"]{background:#c98c00}
+.guide-on .rail-dot[data-state="green"]{background:#3a9a5c}
+
 /* ── context mode buttons ── */
 .mode-btns{display:flex;gap:4px;align-items:center;margin-right:10px}
 .mode-btn{font-size:.73em;padding:3px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s,border-color .12s}
@@ -103,6 +121,10 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <span class="sep">·</span>
     <span class="db-badge" id="db-badge">{{ db_name }}</span>
     <span class="spacer"></span>
+    <div id="guide-toggle-wrap">
+      <button id="guide-toggle-btn" title="Toggle training mode — color indicators + guide card">☀ Guide</button>
+      <button id="guide-dismiss-btn" title="Dismiss guide permanently">✕</button>
+    </div>
     <div class="mode-btns" id="mode-btns">
       <button class="mode-btn" data-mode="design" title="Module design — explore design notes, violations, knowledge artifacts">📐 Design</button>
       <button class="mode-btn" data-mode="trace"  title="Call trace — follow call chains, graph, frontier stubs">🔗 Trace</button>
@@ -119,11 +141,11 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
 
   <!-- ── icon rail ── -->
   <div class="icon-rail" id="icon-rail">
-    <button class="rail-icon active" data-section="corpus" title="Corpus — analyze / switch">🗄</button>
-    <button class="rail-icon" data-section="navigate" title="Navigate — start here, corpus map">🧭</button>
-    <button class="rail-icon" data-section="tools" title="Tools — query shortcuts">🔧</button>
+    <button class="rail-icon active" data-section="corpus" title="Corpus — analyze / switch">🗄<span class="rail-dot" data-key="rail:corpus" data-state="unvisited"></span></button>
+    <button class="rail-icon" data-section="navigate" title="Navigate — start here, corpus map">🧭<span class="rail-dot" data-key="rail:navigate" data-state="unvisited"></span></button>
+    <button class="rail-icon" data-section="tools" title="Tools — query shortcuts">🔧<span class="rail-dot" data-key="rail:tools" data-state="unvisited"></span></button>
     <div class="rail-spacer"></div>
-    <button class="rail-icon" id="ask-rail-icon" data-section="ask" title="Ask / chat">💬</button>
+    <button class="rail-icon" id="ask-rail-icon" data-section="ask" title="Ask / chat">💬<span class="rail-dot" data-key="rail:ask" data-state="unvisited"></span></button>
   </div>
 
   <!-- ── sidebar panel ── -->
@@ -211,6 +233,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       </div>
     </div>
 
+    <div id="guide-footer" style="display:none"><a id="guide-restore-link">Guide</a></div>
   </div>
 
   <!-- ── main ── -->
@@ -3753,6 +3776,89 @@ socket.on("server_log", data => {
 document.getElementById("logs-clear").addEventListener("click", () => {
   _logsEl.textContent = "";
 });
+
+// ── Training mode (RM28 Stage 1) ────────────────────────────────────────────
+// localStorage keys:
+//   det_guide_dismissed  — "1" = permanently hidden, toggle gone
+//   det:visited:<key>    — "1" = this element has been visited
+
+const GUIDE_DISMISSED_KEY = "det_guide_dismissed";
+const guideToggleWrap = document.getElementById("guide-toggle-wrap");
+const guideToggleBtn  = document.getElementById("guide-toggle-btn");
+const guideDismissBtn = document.getElementById("guide-dismiss-btn");
+const guideFooter     = document.getElementById("guide-footer");
+const guideRestoreLink = document.getElementById("guide-restore-link");
+const iconRail        = document.getElementById("icon-rail");
+
+let _guideOn = false;
+
+function guideMarkVisited(key) {
+  localStorage.setItem("det:visited:" + key, "1");
+  guideUpdateDots();
+}
+
+function guideIsVisited(key) {
+  return localStorage.getItem("det:visited:" + key) === "1";
+}
+
+// For Stage 1: each rail section is a one-action element — unvisited → green on first open.
+// Red/amber multi-sub-element logic will be added in Stage 2.
+const GUIDE_COLORS = { unvisited: "transparent", red: "#e05050", amber: "#c98c00", green: "#3a9a5c" };
+function guideUpdateDots() {
+  document.querySelectorAll(".rail-dot[data-key]").forEach(dot => {
+    const key = dot.dataset.key;
+    const state = guideIsVisited(key) ? "green" : "unvisited";
+    dot.dataset.state = state;
+    dot.style.background = _guideOn ? (GUIDE_COLORS[state] || "transparent") : "transparent";
+  });
+}
+
+function guideSetOn(on) {
+  _guideOn = on;
+  guideToggleBtn.classList.toggle("guide-on", on);
+  guideToggleBtn.textContent = on ? "☀ Guide" : "○ Guide";
+  iconRail.classList.toggle("guide-on", on);
+  guideUpdateDots();
+}
+
+function guidePermanentDismiss() {
+  localStorage.setItem(GUIDE_DISMISSED_KEY, "1");
+  guideToggleWrap.style.display = "none";
+  guideSetOn(false);
+  guideFooter.style.display = "";   // show restore link
+}
+
+function guideRestore() {
+  localStorage.removeItem(GUIDE_DISMISSED_KEY);
+  guideToggleWrap.style.display = "";
+  guideFooter.style.display = "none";
+  guideSetOn(true);
+}
+
+guideToggleBtn.addEventListener("click", () => guideSetOn(!_guideOn));
+guideDismissBtn.addEventListener("click", guidePermanentDismiss);
+guideRestoreLink.addEventListener("click", guideRestore);
+
+// Hook rail section opens → mark visited (second listener fires after existing one)
+document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    guideMarkVisited("rail:" + btn.dataset.section);
+  });
+});
+
+// Initialize on page load
+(function guideInit() {
+  const dismissed = localStorage.getItem(GUIDE_DISMISSED_KEY) === "1";
+  if (dismissed) {
+    guideToggleWrap.style.display = "none";
+    guideFooter.style.display = "";
+  } else {
+    guideFooter.style.display = "none";
+  }
+  // corpus is active by default on load — mark it visited
+  guideMarkVisited("rail:corpus");
+  guideUpdateDots();
+})();
 </script>
 
 </body>
