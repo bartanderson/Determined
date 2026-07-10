@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-10, session 137):** RM33 + RM34 done. RM33: `_assembly_hint()` now detects comparative/boolean question shapes and injects YES/NO-first cross-reference instruction into ASSEMBLE prompt. RM34: `claim_verifier` extended with HAS_METHOD claim kind â€” detects "X has a Y method" patterns, verifies against `classes.methods_json`, emits corrections on confabulation. 529 passed, 1 skipped.
+**Last session (2026-07-10, session 138):** RM36 + RM37 done. RM36: `_corpus_index()` injects hot files + entry points into Phase 1 DECOMPOSE prompt when grounding is empty -- eliminates `<file.py>` placeholder NEEDs. RM37: negative lookahead on survey heuristic's `what is` branch prevents "path" from being extracted as a symbol name. Also fixed `blast_radius` OperationalError (functions table has no `symbol_type` column -- queried as real column instead of literal). RM21 probe re-run: all 6 queries pass. 533 passed, 1 skipped.
 
 **Session 117 (2026-07-08):** RM27 done. GRASP 9 principles baked as JSON (determined/data/grasp_principles.json + grasp_loader.py), wired into _check_design_violations_core alongside SOTS tenets. check_design_violations now surfaces named GRASP violations (e.g. GRASP-9 Protected Variations on check_design_violations itself). 481 passed, 1 skipped. RM23 also done this session: Phase 3 walk completed on complete Commonplace corpus (25 files, 64 functions). DB reingested 3 Walk 4 files (linker.py, searcher.py, search.py) before walking. Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct fresh-corpus state). Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs. step_queue.md corrected (session 116 claimed advancement but didn't actually write it). No engine files changed; tests not re-run.
 
@@ -160,7 +160,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM37. **[FILED 2026-07-10] Traversal heuristic false-fires on "path" as symbol name**
+RM37. **[DONE 2026-07-10] Traversal heuristic false-fires on "path" as symbol name**
 
    Discovered in RM21 probe re-run. Q5: "what is the path from the web route to the
    database for a new entry?" matches the traversal heuristic, but the heuristic
@@ -180,7 +180,7 @@ RM37. **[FILED 2026-07-10] Traversal heuristic false-fires on "path" as symbol n
 
 ---
 
-RM36. **[FILED 2026-07-10] Orient/overview questions produce `<file.py>` placeholder NEEDs**
+RM36. **[DONE 2026-07-10] Orient/overview questions produce `<file.py>` placeholder NEEDs**
 
    Discovered in RM21 probe re-run. Q1: "give me a quick overview of what this codebase
    does" -- Phase 1 LLM emits `NEED: what does <file.py> do` with a literal angle-bracket
@@ -589,8 +589,7 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    - Q4 (comparative boolean): PASS -- RM33 YES/NO hint fired, answer correct
    - Q6 (Entry class methods): PASS -- RM34 prompt hardening + verifier, no invented methods
    - Q1 (orient/overview): FAIL -- model emits `<file.py>` placeholder NEED, zero facts. Filed RM36.
-   - Q2 (blast-radius linker.py): PARTIAL -- RM31 routing improved, answer reads a DB error finding
-     rather than doing caller analysis. Acceptable for now.
+   - Q2 (blast-radius linker.py): PASS -- blast_radius OperationalError fixed (symbol_type literal not column); answer now traces actual callers.
    - Q5 (traversal web-to-db): FAIL -- "path" word triggers traversal heuristic but extracts
      "path" as symbol name, runs dead searches. Filed RM37.
 

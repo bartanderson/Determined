@@ -1,29 +1,42 @@
-Written at commit: 3c81160
-# SESSION STATE - session 137 handoff
+Written at commit: 70bcbd3
+# SESSION STATE - session 138 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 137, 2026-07-10)
+## What happened this session (session 138, 2026-07-10)
 
-**RM33: comparative synthesis hint in _assembly_hint() -- DONE [V]**
-- Committed fc0e843
-- Added `_COMPARATIVE_RE` regex to `local_agent.py`. Detects multi-condition question shapes.
-- Threaded `question` param into `_assembly_hint(needs, question="")` via `_assemble_prompt`.
-- When matched, ASSEMBLE prompt says: answer YES/NO first, name symbols, cite facts.
+**RM36: corpus index injection -- DONE [V]**
+- Committed 435db10
+- Added `_corpus_index(oracle)` helper to `local_agent.py`.
+  Queries `files WHERE is_hot=1` (up to 8) and `files WHERE role='entry_point'` (up to 6).
+  Builds a short "Corpus map" block and injects it into Phase 1 DECOMPOSE prompt
+  when `ground_question()` returns empty string.
+- Fixes Q1 "give me an overview" -- model now emits real filenames instead of `<file.py>` placeholders.
+- 4 new regression tests in `test_local_agent.py`.
 
-**RM34: method confabulation detection -- DONE [V]**
-- Committed da81931 (claim verifier) + 3c81160 (prompt hardening)
-- Added `HAS_METHOD` claim kind to `claim_verifier.py`. 4 regex patterns.
-- `verify_claim` queries `classes.methods_json`, emits correction if method absent.
-- Also added "Do not name any method, attribute, or symbol not in facts" to `_ASSEMBLE_SYSTEM`.
+**RM37: traversal heuristic "path" false-fire -- DONE [V]**
+- Committed 435db10 (same commit as RM36)
+- Added negative lookahead `(?!(?:the\s+)?path\b)` to the `what\s+is\s+` branch of the
+  survey heuristic in `agent_resolver.py`.
+- Fixes Q5 "what is the path from..." -- no longer extracts "path" as a symbol name.
 
-**TRACKER cleanup -- DONE [V]**
-- Committed 3704d69 + 209788a
-- Pruned RM29-RM35 (all done) from open items. Updated RM21 Technique 1 status.
-- Marked RM15 and RM20 done (both completed in earlier sessions, stale [ACTIVE] tags).
+**blast_radius OperationalError fix -- DONE [V]**
+- Committed 70bcbd3
+- `agent_tools.py` line 143: `functions` table has no `symbol_type` column.
+  Was querying `SELECT name, symbol_type FROM functions` -- column doesn't exist.
+  Fixed to `SELECT name, 'function' AS symbol_type FROM functions` (literal string).
+- Fixes Q2 blast-radius which was returning the DB error as its answer.
 
-**529 tests passed, 1 skipped [V]**
+**RM21 probe -- ALL 6 PASS [V]**
+- Q1 orient: real filenames in answer (RM36)
+- Q2 blast-radius: actual caller trace (blast_radius fix)
+- Q3 search centrality: correct (RM32, prior session)
+- Q4 comparative: YES/NO first, named symbols (RM33, prior session)
+- Q5 traversal: correct route-to-DB trace (RM37)
+- Q6 Entry class methods: only real methods named (RM34, prior session)
+
+**533 tests passed, 1 skipped [V]**
 
 ## Known issues (carried forward)
 
@@ -34,27 +47,20 @@ are separate stores -- both must be updated together when adding card content. N
 **UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI for single file.
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 **Complete corpus DB path [V]:** C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined_examples_commonplace.db
-**LLM restart required after ctx-size change [V]:** --ctx-size 32768 only takes effect after full UI restart.
 
 ## NEXT SESSION -- start here
 
-**True open items as of this session:**
-- RM21 Techniques 2-6 (gated: probe first to see if RM31-34 fixed the original failures)
-- RM28 Stage 5 (deferred: general guide layer for non-Commonplace corpora)
-- RM10 (FUTURE: DeRe-CoT recomposition pass)
+**RM21 Technique 1 arc is complete and validated.** All 6 probe queries pass cleanly.
+Techniques 2-6 are on hold -- gated on Technique 1 proving insufficient on real queries.
 
-**Best next move: run a live RM21 probe.**
-Re-run the 6 queries from the original RM21 probe against the Commonplace complete corpus
-to see if RM31-34 actually improved answers. If yes, close RM21 Technique 1 arc as validated.
-If answers still fail on specific queries, those failures point to which Technique (2-6) to build.
+**True open items:**
+- RM28 Stage 5 (deferred): general guide layer for non-Commonplace corpora.
+  guide_general.json keyed to element only (no corpus phase). Low urgency.
+- RM10 (FUTURE): DeRe-CoT recomposition pass in goal_intake.
+- RM13 (FUTURE): Self-Harness -- mine adversarial traces into routing heuristics.
 
-Original probe queries (from session 134, HISTORY.md):
-- Q1: orient (routed to corpus_synthesis -- was this fixed by RM31?)
-- Q2: blast-radius (was incorrectly routed to corpus_synthesis -- RM31 fixed)
-- Q3: name collision search (RM32 fixed)
-- Q4: boolean/comparative (RM33 fixed)
-- Q5: traversal (RM31 fixed)
-- Q6: method confabulation Entry (RM34 fixed)
+**Best next move:** RM28 Stage 5, or run the Q&A pipeline against a fresh corpus
+(dj2 or harrow) to surface the next real failure mode before building more.
 
-Requires: LLM server running (llama-server on port 8081 with Qwen3-8B or 27B model).
-Start server: check docs/DESIGN.md or run `llama-server.exe -m models/gguf/... --port 8081`
+LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
+Started via UI (port 5050) or manually.
