@@ -3966,7 +3966,12 @@ const GUIDE_DATA = {
 };
 
 function guideUpdateCard() {
-  if (!_guideOn || !_isCommonplace) {
+  if (!_guideOn) {
+    guideCard.classList.remove("visible");
+    return;
+  }
+  if (guideCheckCompletion()) return;
+  if (!_isCommonplace) {
     guideCard.classList.remove("visible");
     return;
   }
@@ -4010,8 +4015,9 @@ function guideIsVisited(key) {
   return localStorage.getItem("det:visited:" + key) === "1";
 }
 
-// For Stage 1: each rail section is a one-action element — unvisited → green on first open.
-// Red/amber multi-sub-element logic will be added in Stage 2.
+// Colorable element inventory — all keys that must be visited to reach completion.
+const COLORABLE_KEYS = ["rail:corpus", "rail:navigate", "rail:tools", "rail:ask"];
+
 const GUIDE_COLORS = { unvisited: "transparent", red: "#e05050", amber: "#c98c00", green: "#3a9a5c" };
 function guideUpdateDots() {
   document.querySelectorAll(".rail-dot[data-key]").forEach(dot => {
@@ -4020,6 +4026,27 @@ function guideUpdateDots() {
     dot.dataset.state = state;
     dot.style.background = _guideOn ? (GUIDE_COLORS[state] || "transparent") : "transparent";
   });
+}
+
+function guideAllGreen() {
+  return COLORABLE_KEYS.every(k => guideIsVisited(k));
+}
+
+let _completionScheduled = false;
+function guideCheckCompletion() {
+  if (!_guideOn || !guideAllGreen()) return false;
+  // Show completion card idempotently — every guideUpdateCard() call while all-green
+  const phaseRow = document.getElementById("gc-phase-row");
+  if (phaseRow) phaseRow.style.display = "none";
+  gcHeadline.textContent = "You’ve explored everything.";
+  gcBody.textContent = "The guide will step back.";
+  gcNotice.style.display = "none";
+  guideCard.classList.add("visible");
+  if (!_completionScheduled) {
+    _completionScheduled = true;
+    setTimeout(guidePermanentDismiss, 4000);
+  }
+  return true;
 }
 
 function guideSetOn(on) {
