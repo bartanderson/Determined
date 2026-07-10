@@ -1,36 +1,24 @@
-Written at commit: 287f0ce
-# SESSION STATE - session 130 handoff
+Written at commit: 626a2ed
+# SESSION STATE - session 131 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 130, 2026-07-09)
+## What happened this session (session 131, 2026-07-09)
 
-**RM30: filter class methods from duplicate name count -- DONE [V]**
-- Changed dupe query in `determined/ui/ui_server.py` `_corpus_status()` to add
-  `WHERE class_name IS NULL` -- only module-level functions count as real duplicates.
-- 506 passed, 1 skipped [V]
-- Committed ac746b7
-
-**RM28: full design agreed and documented [V]**
-- Old "three-mode UX" concept replaced with "training mode" design.
-- Full spec written into TRACKER.md RM28 entry (committed 287f0ce).
-- Core decisions (all agreed with Bart):
-  - Small toggle in header, permanent dismissal via X to localStorage flag,
-    restorable via tiny "Guide" footer link (no manual localStorage deletion)
-  - Adaptive guide: no mode choice, guide watches what user does and surfaces
-    contextual card keyed to (active_tab + active_mode + corpus_phase)
-  - Color grammar on UI elements: no color=unvisited, red=<half explored,
-    amber=half+ explored, green=fully explored; one-action elements skip red to green
-  - Completion: all green -- auto-dismiss message -- toggle permanently disappears
-  - Corpus phase picker (skeleton/complete/enhanced) + live code injection via
-    reingest_file -- user watches metrics shift as implementations are added
-  - Content in `determined/data/guide_commonplace.json` keyed by element+phase
-  - General guide layer (non-Commonplace) deferred -- RM16 one-liners cover floor
-  - Commonplace detection: `_db_path` contains "commonplace" (case-insensitive)
-- Build order: Stage 1 (toggle+localStorage+color rail) -- Stage 2 (guide
-  card+content JSON) -- Stage 3 (phase picker+injection) -- Stage 4 (completion) --
-  Stage 5 (general guide, deferred)
+**RM28 Stage 1: Guide toggle + localStorage scaffold + rail color dots -- DONE [V]**
+- Added Guide toggle button to topbar (amber when on, neutral when off)
+- Permanent dismiss: X button stores `det_guide_dismissed=1` in localStorage, toggle disappears
+- Restore: tiny "Guide" link in sidebar panel footer clears flag and shows toggle again
+- `.rail-dot` span added to each of the 4 rail icon buttons (corpus/navigate/tools/ask)
+- `guideMarkVisited(key)` / `guideIsVisited(key)` -- localStorage `det:visited:<key>` pattern
+- `guideUpdateDots()` -- sets dot color via inline `dot.style.background` (NOT CSS attr-selector;
+  see HISTORY.md for the two traps hit this session)
+- Stage 1 color grammar: unvisited=transparent, first-visit=green (one-action elements)
+- Red/amber progression deferred to Stage 2 with guide card content
+- Only `console.html` changed; no Python files touched
+- 506 passed, 1 skipped [V] (confirmed this session)
+- Committed 626a2ed [V]
 
 ## Current state of seed/ [V]
 17 files, original baseline. No additions staged or tracked.
@@ -48,16 +36,22 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 Active open items in TRACKER.md: RM28, RM21, RM20.
 
-**RM28 Stage 1** -- first thing to build. Small, verifiable in browser.
-- Add toggle to header in `determined/ui/templates/console.html`
-- localStorage keys: `det_guide_dismissed` (permanent hide), `det:visited:<key>` (per element)
-- Color indicators on tab rail icons (the 4-icon sidebar rail)
-- No content yet -- just the scaffold and color grammar working in browser
-- Files: `determined/ui/templates/console.html` + inline CSS/JS in same file
+**RM28 Stage 2** -- next thing to build.
+- Guide card panel: appears below topbar when guide is on, keyed to (active_tab + corpus_phase)
+- Content file: `determined/data/guide_commonplace.json`
+  Shape: `{ "tab:frontier:skeleton": { "headline": "...", "body": "...", "what_to_notice": "..." }, ... }`
+- Commonplace detection: key off `_db_path` containing "commonplace" (case-insensitive);
+  serve flag from Python to JS (e.g. add to corpus_ready payload or a new socket event)
+- Card updates as user clicks tabs / changes Frontier sub-mode (Direct/Orphan/ABC)
+- No phase picker yet (Stage 3); for Stage 2 default phase = "skeleton"
+- Files: `determined/ui/templates/console.html` (card HTML + JS),
+         `determined/data/guide_commonplace.json` (content),
+         `determined/ui/ui_server.py` (emit is_commonplace flag)
+- Content source: `docs/COMMONPLACE_USER_JOURNEY.md` -- distill each phase/tab into card text
 
-**RM20** (design_note dedup) -- ~1 hour, self-contained, good warmup if RM28 feels large.
-- File: `determined/agent/doc_extractor.py` store step inside `ingest_design_docs`
-- Check cosine similarity >= 0.85 to any existing design_note before INSERT
+**RM20** (~1 hour, good warmup if Stage 2 feels large)
+- File: `determined/agent/doc_extractor.py` -- store step inside `ingest_design_docs`
+- Embed candidate rule; skip if cosine similarity >= 0.85 to any existing design_note before INSERT
+- Reuses `embed_text` from `determined/oracle/embedding_model.py`
 
-**RM21** (small-model reasoning Techniques 2-6) -- build only after Technique 1
-proves insufficient on real multi-hop queries.
+**RM21** -- build only after Technique 1 proves insufficient on real multi-hop queries.

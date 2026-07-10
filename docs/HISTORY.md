@@ -8,6 +8,10 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-09: RM28 Stage 1 CSS color debugging trap: `.guide-on .rail-dot[data-state="green"]` CSS attribute-selector approach was correct in markup but `getComputedStyle` returned `rgba(0,0,0,0)` in eval even with inline `!important`. Root cause unclear (eval context oddity or override). Fix: set `dot.style.background` directly in `guideUpdateDots()` JS. Avoids the ambiguity entirely; CSS data-state attr kept for potential future use.
+
+2026-07-09: Overriding a function declaration with another function declaration in the same script causes hoisting conflict: both get hoisted, the later one replaces the earlier, and `const _orig = fn` captures the overrider not the original. Fix: add a second `addEventListener` on the rail icon buttons for the visit-tracking side effect instead of wrapping `railShowSection`.
+
 2026-07-09: LLM discovery removed from ingest path. semantic_summary (LLM per file) was blocking UI for minutes after every re-analyze. All main UI views (Frontier, Topology, Call tree, corpus panel) are pure graph queries -- no LLM needed. Discovery loop stripped from handle_reingest; "discover more" in Ask bar still available for manual run. LLM fires on-demand via symbol spotlight.
 
 2026-07-09: WinError 32 on Re-analyze: Windows holds DB file open (Search indexer / Defender) even after server closes its connection. Fix: clear tables in place (DELETE FROM each table + WAL checkpoint) instead of deleting the file. Retry loop on unlink is insufficient -- external processes hold longer than 3s.
