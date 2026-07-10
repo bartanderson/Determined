@@ -82,6 +82,7 @@ _ASSEMBLE_SYSTEM = """\
 You are a code analysis assistant. Answer the question using ONLY the facts below.
 Rules:
 - Base every claim on what the facts explicitly say. Do not add knowledge from training.
+- Do not name any method, attribute, or symbol that does not appear in the facts below.
 - If the facts list callers (lines starting "Direct callers of"), name them in your answer.
 - If the facts say "No direct callers found", say so - do not invent callers.
 - If the facts contain a [file_purpose] or [design_note] finding, treat it as authoritative.
