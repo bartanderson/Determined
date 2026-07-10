@@ -216,74 +216,127 @@ RM29. **[FILED 2026-07-09] Duplicate symbol detection — automatic and prominen
 
 ---
 
-RM28. **[FILED 2026-07-08] Three-mode UX: Tour, Discovery, Workbench**
+RM28. **[DESIGNED 2026-07-09] Training mode: adaptive guided exploration**
 
-   Designed in session 119. Three operating modes built on a shared artifact layer.
+   Replaces the three-mode UX concept (Tour/Discovery/Workbench) with a lighter,
+   more elegant design that emerged from a full design discussion session 130.
 
-   **The three modes:**
+   ---
 
-   - **Unguided (current behavior):** full tool access, no narration. Already exists.
-   - **Guided Tour (Commonplace corpus):** scripted step-by-step walkthrough teaching
-     the tool's concepts on known content. User can explore freely; tour tracks progress
-     and fills gaps. AI answers questions in context of current step.
-   - **Discovery (own project):** same arc as tour but live -- AI runs tools, narrates
-     real output, interprets findings, proposes wiring and extensions, drafts code for
-     confirmed gaps.
-   - **Workbench (unguided + Discovery tools):** all Discovery tools available ad hoc.
-     User picks tools in any order, chains outputs manually. For users who know what
-     each tool does and want to compose their own workflow.
+   **Core concept: Training mode toggle**
 
-   **Shared foundation: Artifact layer**
-   Every tool run produces a named, persistent artifact with staleness tracking.
-   Artifacts go stale when code changes (reingest invalidates them). Downstream
-   artifacts that depend on a stale upstream artifact are flagged in cascade.
-   Re-execution is targeted and diff-able (new output vs. prior run).
+   A small toggle in the header bar. Off by default for experienced users; on for
+   new users discovering the tool. When off: today's UI, unchanged. When on: three
+   things appear -- a corpus phase picker, a contextual guide card, and exploration
+   color indicators on UI elements.
 
-   Artifact fields: name, tool source, content, timestamp, status (fresh/stale/superseded),
-   feeds-into list. Stored in workflow_items (kind=artifact). Staleness detected via
-   reingest_file timestamp vs. artifact timestamp.
+   **Permanent dismissal:** an X on the toggle stores `det_guide_dismissed=true` in
+   localStorage. Toggle disappears permanently. A tiny "Guide" link in the footer
+   restores it (no manual localStorage deletion required).
 
-   **Tour arc (Commonplace, scripted):**
-   1. Orient -- corpus map, entry points, gap summary
-   2. Frontier -- Direct (stubs), Orphan (unwired), ABC (interface gaps)
-   3. Topology -- full structural picture, action queue
-   4. Tools -- gap analysis, ABC check, conditional stubs, design violations
-   5. Knowledge -- distillation, design notes, docstring coverage
-   Each step: instruction + "Run" button + explanation + AI Q&A available throughout.
-   Completion tracked per step; free exploration allowed; tour catches up at end.
+   ---
 
-   **Discovery arc (own project, live):**
-   1. Orient -- same as tour, but narrated live
-   2. Frontier -- their actual incomplete functions
-   3. Topology -- their action queue
-   4. Design docs -- ingest any existing design docs, surface violations
-   5. Synthesize -- AI builds narrative of what the codebase is and does
-   6. Gaps -- what's missing, orphaned, undocumented
-   7. Wire -- specific proposals to connect existing unlinked pieces
-   8. Extend -- generate stubs for confirmed gaps
-   9. Code -- draft implementations for approved stubs
+   **Adaptive guide -- no mode choice, no explicit steps**
 
-   **Workbench:** tool palette exposing all Discovery steps individually.
-   Each produces an artifact. User chains them manually. Output of one can
-   be fed explicitly into the next. No sequence enforced.
+   The guide watches what the user does and surfaces a contextual card for wherever
+   they are. If they follow a logical order it feels like a tour. If they explore
+   freely it still helps. No "next" button, no scripted sequence, no friction.
 
-   **Build order (each stage usable independently):**
-   Stage 1: Artifact layer -- persistence, naming, staleness, cascade invalidation
-   Stage 2: Tour mode -- scripted steps, Commonplace only, proves mode concept
-   Stage 3: Workbench palette -- Discovery tools exposed ad hoc with artifact output
-   Stage 4: Discovery mode -- AI-driven sequencing over live unknown corpus
+   The card is keyed to (active_tab + active_mode + corpus_phase). One card, always
+   relevant, updates as the user moves. Card is visually neutral -- color lives on
+   UI elements, not the card.
 
-   **What already exists (build on, don't replace):**
-   - workflow_items table -- extend with artifact kind and staleness fields
-   - knowledge_artifacts -- tool findings already stored here
-   - reingest_file -- already tracks file changes; use timestamp for staleness
-   - find_orphaned_impls, detect_topology, find_abc_gaps, gap_analysis, etc. -- all tools exist
-   - Build queue tab in UI -- extend into Artifacts panel
-   - local_agent + Chat bar -- AI Q&A already works; add tour context awareness
-   - COMMONPLACE_USER_JOURNEY.md -- the Tour script, already verified
+   **Content storage:** `determined/data/guide_commonplace.json`
+   Shape: `{ "tab:frontier:orphan:skeleton": { "headline": "...", "body": "...",
+   "what_to_notice": "..." }, ... }`
 
-   **Validation approach:** build each stage, use it on Commonplace, fix failures
-   before proceeding to next stage. Requirements emerge from real use, not speculation.
+   General-layer guide (tool concepts independent of Commonplace) is deferred --
+   RM16 one-liners already cover that floor. Build general layer as a second pass
+   after Commonplace proves the pattern.
+
+   ---
+
+   **Exploration color grammar**
+
+   Color indicators on the tab rail, sub-modes, corpus phases, and key tools.
+   Tracks visited state in localStorage (`det:visited:tab:frontier` etc.).
+
+   Rules:
+   - **No color** -- unvisited. Not asking for attention.
+   - **Red** -- visited, less than half the sub-elements explored.
+   - **Amber** -- half or more explored, at least one remaining.
+   - **Green** -- all sub-elements explored.
+   - **One-action elements** -- skip red entirely, go straight to green on first visit.
+     (A tab with no sub-modes, a tool with one action -- red would lie about there
+     being more to do.)
+
+   Color is a reward/progress indicator, not a to-do list. The game: find everything
+   red and amber and turn it green. When everything is green, training mode has
+   nothing left to offer.
+
+   **Completion state:** all elements green → guide card shows "You've explored
+   everything. The guide will step back." → toggle permanently auto-dismisses.
+
+   ---
+
+   **Corpus phase picker + code injection**
+
+   Appears in training mode. Three phases: skeleton / complete / enhanced.
+   Phase picker shows current phase and lets user jump between them.
+
+   Implementation: start from skeleton (the existing seed/ files + seed DB).
+   Injection is live -- "Add next piece" button writes the next implementation
+   file to the corpus directory and calls reingest_file. The corpus panel updates
+   in real time. The user watches metrics shift as code is added -- orphan count
+   drops, hot symbols appear, stubs resolve. That IS the lesson.
+
+   To jump ahead: inject all remaining pieces for a phase at once.
+   Pre-built DBs for complete and enhanced are a fallback if injection proves
+   fragile, but live injection is the preferred experience.
+
+   Commonplace detection: key off `_db_path` containing "commonplace" (case-insensitive).
+   Phase picker only appears when Commonplace is the loaded corpus.
+
+   ---
+
+   **Colorable element inventory (to finalize at build time)**
+
+   Tab rail: Corpus, Navigate, Tools, Ask
+   Frontier sub-modes: Direct, Orphan, ABC
+   Corpus panel elements: Roots/Core toggle, corpus map expand, duplicate badge
+   Corpus phases: skeleton, complete, enhanced (only when Commonplace loaded)
+   Tools panel: each tool individually
+   Ask bar: first query run
+
+   Exact list locked in during Stage 1 build when the localStorage keys are defined.
+
+   ---
+
+   **Build order (each stage independently useful)**
+
+   Stage 1: Toggle in header + permanent dismissal + localStorage scaffold +
+            color indicators on tab rail (no content yet). Verify color grammar
+            in browser before wiring anything else.
+
+   Stage 2: Guide card panel + guide_commonplace.json content for all tab/mode
+            combinations. Card updates as user navigates.
+
+   Stage 3: Corpus phase picker + code injection. Skeleton → complete → enhanced
+            live in the browser.
+
+   Stage 4: Completion state. All green → auto-dismiss message.
+
+   Stage 5 (deferred): General guide layer for non-Commonplace corpora.
+            guide_general.json keyed to element only (no corpus phase).
+
+   ---
+
+   **What already exists (build on, don't replace)**
+
+   - COMMONPLACE_USER_JOURNEY.md -- content source for guide_commonplace.json
+   - seed/ directory -- the skeleton state, 17 files, ready to inject from
+   - reingest_file -- already works; injection calls this
+   - RM16 one-liners -- the general-guide floor, already in place
 
 ---
 
