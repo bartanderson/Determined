@@ -160,6 +160,45 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM37. **[FILED 2026-07-10] Traversal heuristic false-fires on "path" as symbol name**
+
+   Discovered in RM21 probe re-run. Q5: "what is the path from the web route to the
+   database for a new entry?" matches the traversal heuristic, but the heuristic
+   extracts "path" as the symbol name and runs symbol/file/findings searches for "path".
+   Nothing found, answer is empty.
+
+   The RM31 traversal fix registered a heuristic for "path from X to Y" but the word
+   "path" in other phrasings (route path, code path) also fires it, extracting the
+   wrong noun.
+
+   **Fix:** tighten the traversal regex so it requires "from <A> to <B>" structure and
+   extracts A and B as the subject/target. If A and B aren't extractable, fall through
+   to LLM decompose instead of running dead symbol searches.
+
+   Entry point: `determined/agent/agent_resolver.py` -- traversal heuristic in
+   `_HEURISTICS`.
+
+---
+
+RM36. **[FILED 2026-07-10] Orient/overview questions produce `<file.py>` placeholder NEEDs**
+
+   Discovered in RM21 probe re-run. Q1: "give me a quick overview of what this codebase
+   does" -- Phase 1 LLM emits `NEED: what does <file.py> do` with a literal angle-bracket
+   placeholder. The resolver finds no match, zero facts retrieved, answer is empty.
+
+   The model doesn't know which files to ask about, so it emits a template instead of
+   real filenames. The grounding step doesn't fire for this question shape (no symbol or
+   file name to extract).
+
+   **Fix:** add a named heuristic for orient/overview questions that deterministically
+   builds a NEED list from the corpus: top N files by call-edge count (hottest files),
+   plus entry points. No LLM needed for decompose -- the corpus map IS the answer.
+
+   Entry point: `determined/agent/agent_resolver.py` -- add to `_HEURISTICS`.
+   Reference: `graph_most_connected` and `find_entry_points` tools already exist.
+
+---
+
 RM28. **[STAGES 1-4 DONE 2026-07-10] Training mode: adaptive guided exploration**
    Replaces the three-mode UX concept (Tour/Discovery/Workbench) with a lighter,
    more elegant design that emerged from a full design discussion session 130.
@@ -544,6 +583,16 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    pass with corrections prepended to facts. RM31-34 also done as part of this arc:
    blast-radius and traversal routing fixed (RM31), name-collision tagging in facts (RM32),
    comparative synthesis hint in ASSEMBLE (RM33), method confabulation detection (RM34).
+
+   **RM21 probe re-run 2026-07-10 (after RM31-34):**
+   - Q3 (name collision/search centrality): PASS -- RM32 tagging works, model answered correctly
+   - Q4 (comparative boolean): PASS -- RM33 YES/NO hint fired, answer correct
+   - Q6 (Entry class methods): PASS -- RM34 prompt hardening + verifier, no invented methods
+   - Q1 (orient/overview): FAIL -- model emits `<file.py>` placeholder NEED, zero facts. Filed RM36.
+   - Q2 (blast-radius linker.py): PARTIAL -- RM31 routing improved, answer reads a DB error finding
+     rather than doing caller analysis. Acceptable for now.
+   - Q5 (traversal web-to-db): FAIL -- "path" word triggers traversal heuristic but extracts
+     "path" as symbol name, runs dead searches. Filed RM37.
 
    **Remaining techniques (2-6):** Constrained decoding, prompt chaining, MCTS,
    speculative verification, large-model fallback. Build only after Technique 1
