@@ -320,7 +320,14 @@ RM22. **[DONE 2026-07-08] Phase 0 bootstrap: new corpus from blank directory**
 
 ---
 
-RM20. **[FILED 2026-07-07] design_note deduplication: LLM pass re-extracts rules the deterministic pass already stored**
+RM20. **[DONE 2026-07-10] design_note deduplication: LLM pass re-extracts rules the deterministic pass already stored**
+
+   Done 2026-07-10 (session 134, commit 89bc6d5). Embed-at-store-time dedup wired into
+   doc_extractor.py: each candidate rule embedded, cosine-compared against existing
+   design_notes (threshold 0.85), skipped if duplicate. Also tracks within-run embeddings
+   to catch back-to-back similar rules in one ingest pass.
+
+   ~~Original description below (preserved for context):~~
 
    Discovered during RM15 Walk 2 Step 4 (Commonplace DESIGN.md ingest).
 
@@ -604,7 +611,7 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
 
 ---
 
-RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined iteratively**
+RM15. **[DONE 2026-07-08] Commonplace guided journey: run it for real, fix Determined iteratively**
 
    The next active work arc. Full description in docs/COMMONPLACE_VISION.md.
    Synthesized user-facing journey (actuals from all walks): docs/COMMONPLACE_USER_JOURNEY.md
