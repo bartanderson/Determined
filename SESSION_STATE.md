@@ -38,9 +38,15 @@ are separate stores -- both must be updated together when adding card content. N
 
 ## NEXT SESSION -- start here
 
-Active open items in priority order: RM31, RM32, RM33, RM34 (deferred), RM28 Stage 5 (deferred), RM29, RM30.
+Active open items in priority order: RM35 (design reconciliation), RM31, RM32, RM33, RM34 (deferred), RM28 Stage 5 (deferred), RM29, RM30.
 
-**RM31** -- next thing to build. Two routing fixes in `local_agent.py`:
+**RM35** -- do this first. Design reconciliation pass before any RM31 code work.
+- Read DESIGN.md, compare against current code architecture
+- Key additions not in design: pattern executor, guide/training layer, claim verifier,
+  semantic reconciliation arc, two-tier LLM, corpus phase injection
+- Rewrite affected sections in place; flag implicit decisions made without design coverage
+
+**RM31** -- next thing to build after RM35. Two routing fixes in `local_agent.py`:
 1. Blast-radius pattern: "what would break if X were removed?" → list symbols in X → list_callers on each → assess criticality. Add as named pattern in pattern_executor or heuristic in _answer().
 2. Traversal pattern: "path from A to B" → walk call edges from A's layer toward B's layer. May need a new tool or decomposition that hops edge by edge.
 

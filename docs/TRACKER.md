@@ -160,6 +160,30 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM35. **[FILED 2026-07-10] Design reconciliation pass: bring DESIGN.md current**
+
+   The tool has evolved from oracle (answer queries) to assistant (pattern executor,
+   guide layer, claim verification, semantic reconciliation, training mode, two-tier
+   LLM). DESIGN.md was written for the earlier architecture and has not been updated
+   to reflect these structural additions.
+
+   **What to do:**
+   1. `git log --oneline` to find commits that added new layers (not just tools)
+   2. Read current DESIGN.md against what the code actually is
+   3. Note gaps: things in the design that no longer exist, things in the code
+      with no design coverage
+   4. Rewrite affected sections in place -- not a new doc
+   5. Flag any drift that reveals an implicit decision that should be made explicit
+
+   **Trigger for future passes:** any commit that adds a new layer or changes how
+   the agent reasons (not just adds a tool). Cadence: after structural shifts,
+   not on a fixed step count.
+
+   **Do this before RM31** -- RM31 touches local_agent.py (core architecture) and
+   should be grounded in an accurate design picture.
+
+---
+
 RM31. **[FILED 2026-07-10] Agent routing failures: wrong pattern match on multi-hop questions**
 
    Discovered during RM21 probe (6 queries against Commonplace complete corpus).
