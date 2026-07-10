@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-10, session 138):** RM36 + RM37 done. RM36: `_corpus_index()` injects hot files + entry points into Phase 1 DECOMPOSE prompt when grounding is empty -- eliminates `<file.py>` placeholder NEEDs. RM37: negative lookahead on survey heuristic's `what is` branch prevents "path" from being extracted as a symbol name. Also fixed `blast_radius` OperationalError (functions table has no `symbol_type` column -- queried as real column instead of literal). RM21 probe re-run: all 6 queries pass. 533 passed, 1 skipped.
+**Last session (2026-07-10, session 139):** RM28 Stage 5 done. guide_general.json (13 entries keyed by tab/tab:mode) + guideUpdateCard() branch on _isCommonplace in console.html. Non-Commonplace path uses GUIDE_GENERAL with element-only keys and hides the phase picker row. Also ran RM21 6-question probe against Determined corpus: fixed Q6 method confabulation (DECOMPOSE_SYSTEM tip), Q2 blast-radius wrong symbol (pattern_executor detect rule + heuristic past-tense verbs), Q2 blast_radius TypeError (set() cast before subtraction), Q2 OperationalError (functions table literal). All 6 probe queries pass. 533 passed, 1 skipped.
+
+**Session 138 (2026-07-10):** RM36 + RM37 done. RM36: `_corpus_index()` injects hot files + entry points into Phase 1 DECOMPOSE prompt when grounding is empty -- eliminates `<file.py>` placeholder NEEDs. RM37: negative lookahead on survey heuristic's `what is` branch prevents "path" from being extracted as a symbol name. Also fixed `blast_radius` OperationalError (functions table has no `symbol_type` column -- queried as real column instead of literal). RM21 probe re-run: all 6 queries pass. 533 passed, 1 skipped.
 
 **Session 117 (2026-07-08):** RM27 done. GRASP 9 principles baked as JSON (determined/data/grasp_principles.json + grasp_loader.py), wired into _check_design_violations_core alongside SOTS tenets. check_design_violations now surfaces named GRASP violations (e.g. GRASP-9 Protected Variations on check_design_violations itself). 481 passed, 1 skipped. RM23 also done this session: Phase 3 walk completed on complete Commonplace corpus (25 files, 64 functions). DB reingested 3 Walk 4 files (linker.py, searcher.py, search.py) before walking. Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct fresh-corpus state). Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs. step_queue.md corrected (session 116 claimed advancement but didn't actually write it). No engine files changed; tests not re-run.
 
@@ -308,7 +310,7 @@ RM28. **[STAGES 1-4 DONE 2026-07-10] Training mode: adaptive guided exploration*
 
    Stage 4: Completion state. All green â†’ auto-dismiss message.
 
-   Stage 5 (deferred): General guide layer for non-Commonplace corpora.
+   Stage 5 **[DONE 2026-07-10]**: General guide layer for non-Commonplace corpora.
             guide_general.json keyed to element only (no corpus phase).
 
    ---
