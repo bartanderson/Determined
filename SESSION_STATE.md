@@ -19,7 +19,16 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 - Browser-verified against Determined corpus: Knowledge tab showed correct card.
   Phase picker row hidden. Card switches correctly on tab change.
 
-**RM21 probe against Determined corpus -- all 6 pass [V]**
+**RM21 probe against Determined corpus -- 3 pass, 2 partial, 1 improved [V]**
+- Q1: PARTIAL -- describes ui_server.py correctly but says "ML platform" (stale
+  semantic summary in DB -- data issue, not engine bug)
+- Q2: PASS -- correctly identifies run_question and _answer as dependents
+- Q3: PASS -- correct
+- Q4: PARTIAL -- correctly uncertain given facts don't show import relationships
+  (structural gap, not engine bug)
+- Q5: IMPROVED -- traces route_query -> run_query path; still uncertain on DB leg
+- Q6: PASS -- lists all 30 DBOracle methods correctly
+
 Four bugs found and fixed (committed 3052381):
 - Q6 method confabulation: added tip to DECOMPOSE_SYSTEM in local_agent.py
   ("NEED: symbols in the_file.py" not "symbols named ClassName")
@@ -29,6 +38,11 @@ Four bugs found and fixed (committed 3052381):
 - Q2 blast-radius heuristic: agent_resolver.py _HEURISTICS past-tense verb forms added
 - Q2 blast_radius TypeError: agent_tools.py blast_radius() -- set() cast before
   set subtraction (subgraph_around returns sorted list, not set)
+
+Remaining gaps (not bugs -- structural/data limits):
+- Q1: stale semantic summary for ui_server.py says "ML platform"; regenerate to fix
+- Q4: import relationships not surfaced by current fact layer
+- Q5: DB leg of route_query -> DB path not traced; graph may not have edge
 
 **533 tests passed, 1 skipped [V]**
 
