@@ -62,6 +62,9 @@ Important:
 - To check which modules/libraries a file depends on, or whether two files share a
   dependency, use "NEED: imports of <file.py>" for each file.
 - Extract all symbol and file names explicitly from the question.
+- If the corpus context contains a [design_note] or ARCHITECTURE NOTE for a symbol,
+  follow its guidance: use the symbol names it mentions, not the grounding symbols.
+  If it contains NEED: lines, include those in your output.
 - Output only NEED: lines, nothing else."""
 
 
@@ -454,6 +457,18 @@ def _answer(
             for f in facts:
                 print(f"  [tool={f['tool']} args={f['args']}] {f['result'][:120]}", flush=True)
         facts_text = facts_to_text(facts)
+        # Inject architecture design_notes from grounding so ASSEMBLE sees them
+        design_notes = [
+            line.strip() for line in grounding.splitlines()
+            if "[design_note]" in line
+        ]
+        if design_notes:
+            facts_text = (
+                "ARCHITECTURE NOTES (treat as authoritative):\n"
+                + "\n".join(design_notes)
+                + "\n\n"
+                + facts_text
+            )
     else:
         facts_text = "(no structured needs identified - answering from general knowledge)"
 
