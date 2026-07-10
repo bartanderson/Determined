@@ -1,4 +1,4 @@
-Written at commit: da81931
+Written at commit: 3c81160
 # SESSION STATE - session 137 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
@@ -8,20 +8,22 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 **RM33: comparative synthesis hint in _assembly_hint() -- DONE [V]**
 - Committed fc0e843
-- Added `_COMPARATIVE_RE` regex to `local_agent.py` (module level).
-  Detects multi-condition question shapes ("is there any function that does X and Y?",
-  "which function has both X and Y?"). Requires explicit conjunction (and/both, or also+and).
-- Threaded `question` param into `_assembly_hint(needs, question="")`.
+- Added `_COMPARATIVE_RE` regex to `local_agent.py`. Detects multi-condition question shapes.
+- Threaded `question` param into `_assembly_hint(needs, question="")` via `_assemble_prompt`.
 - When matched, ASSEMBLE prompt says: answer YES/NO first, name symbols, cite facts.
-- 5 new tests in test_local_agent.py. [V]
 
-**RM34: method confabulation detection in claim_verifier -- DONE [V]**
-- Committed da81931
-- Added `HAS_METHOD` claim kind to `claim_verifier.py`.
-- 4 regex patterns detect "X has a Y method", "X.Y()", "class X implements Y", "X's Y method".
+**RM34: method confabulation detection -- DONE [V]**
+- Committed da81931 (claim verifier) + 3c81160 (prompt hardening)
+- Added `HAS_METHOD` claim kind to `claim_verifier.py`. 4 regex patterns.
 - `verify_claim` queries `classes.methods_json`, emits correction if method absent.
-  Unknown classes silently skipped (can't refute what's not in DB).
-- 7 new tests in test_claim_verifier.py; 529 passed, 1 skipped. [V]
+- Also added "Do not name any method, attribute, or symbol not in facts" to `_ASSEMBLE_SYSTEM`.
+
+**TRACKER cleanup -- DONE [V]**
+- Committed 3704d69 + 209788a
+- Pruned RM29-RM35 (all done) from open items. Updated RM21 Technique 1 status.
+- Marked RM15 and RM20 done (both completed in earlier sessions, stale [ACTIVE] tags).
+
+**529 tests passed, 1 skipped [V]**
 
 ## Known issues (carried forward)
 
@@ -36,11 +38,23 @@ are separate stores -- both must be updated together when adding card content. N
 
 ## NEXT SESSION -- start here
 
-Active open items: RM28 Stage 5 (deferred), RM29, RM30.
+**True open items as of this session:**
+- RM21 Techniques 2-6 (gated: probe first to see if RM31-34 fixed the original failures)
+- RM28 Stage 5 (deferred: general guide layer for non-Commonplace corpora)
+- RM10 (FUTURE: DeRe-CoT recomposition pass)
 
-**RM29** -- duplicate symbol detection / surfacing. Two functions with the same name
-  in different files appear as two graph nodes; nothing says WHY one appears as orphan.
-  See HISTORY.md entry 2026-07-09.
-  Entry point: TBD -- likely agent_tools.py or a new tool.
+**Best next move: run a live RM21 probe.**
+Re-run the 6 queries from the original RM21 probe against the Commonplace complete corpus
+to see if RM31-34 actually improved answers. If yes, close RM21 Technique 1 arc as validated.
+If answers still fail on specific queries, those failures point to which Technique (2-6) to build.
 
-**RM30** -- (check TRACKER.md for details).
+Original probe queries (from session 134, HISTORY.md):
+- Q1: orient (routed to corpus_synthesis -- was this fixed by RM31?)
+- Q2: blast-radius (was incorrectly routed to corpus_synthesis -- RM31 fixed)
+- Q3: name collision search (RM32 fixed)
+- Q4: boolean/comparative (RM33 fixed)
+- Q5: traversal (RM31 fixed)
+- Q6: method confabulation Entry (RM34 fixed)
+
+Requires: LLM server running (llama-server on port 8081 with Qwen3-8B or 27B model).
+Start server: check docs/DESIGN.md or run `llama-server.exe -m models/gguf/... --port 8081`
