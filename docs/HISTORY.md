@@ -8,6 +8,10 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-10: RM28 Stage 2/3: GUIDE_DATA JS object in console.html and guide_commonplace.json are separate stores with identical content. JSON file is the source of truth for docs/future tooling; inline JS object is what the browser actually uses. Both must be updated together when adding new card content. No auto-sync mechanism.
+
+2026-07-10: RM28 Stage 3: phase detection uses "_seed" in DB filename to identify skeleton phase; "_phaseDbs" companion lookup strips/appends "_seed" from the path. Works for the current two-DB setup; will need revision if more phases or different naming conventions are introduced.
+
 2026-07-09: RM28 Stage 1 CSS color debugging trap: `.guide-on .rail-dot[data-state="green"]` CSS attribute-selector approach was correct in markup but `getComputedStyle` returned `rgba(0,0,0,0)` in eval even with inline `!important`. Root cause unclear (eval context oddity or override). Fix: set `dot.style.background` directly in `guideUpdateDots()` JS. Avoids the ambiguity entirely; CSS data-state attr kept for potential future use.
 
 2026-07-09: Overriding a function declaration with another function declaration in the same script causes hoisting conflict: both get hoisted, the later one replaces the earlier, and `const _orig = fn` captures the overrider not the original. Fix: add a second `addEventListener` on the rail icon buttons for the visit-tracking side effect instead of wrapping `railShowSection`.

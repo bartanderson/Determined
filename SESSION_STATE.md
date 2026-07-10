@@ -1,30 +1,36 @@
-Written at commit: 626a2ed
-# SESSION STATE - session 131 handoff
+Written at commit: 35dc19c
+# SESSION STATE - session 132 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 131, 2026-07-09)
+## What happened this session (session 132, 2026-07-10)
 
-**RM28 Stage 1: Guide toggle + localStorage scaffold + rail color dots -- DONE [V]**
-- Added Guide toggle button to topbar (amber when on, neutral when off)
-- Permanent dismiss: X button stores `det_guide_dismissed=1` in localStorage, toggle disappears
-- Restore: tiny "Guide" link in sidebar panel footer clears flag and shows toggle again
-- `.rail-dot` span added to each of the 4 rail icon buttons (corpus/navigate/tools/ask)
-- `guideMarkVisited(key)` / `guideIsVisited(key)` -- localStorage `det:visited:<key>` pattern
-- `guideUpdateDots()` -- sets dot color via inline `dot.style.background` (NOT CSS attr-selector;
-  see HISTORY.md for the two traps hit this session)
-- Stage 1 color grammar: unvisited=transparent, first-visit=green (one-action elements)
-- Red/amber progression deferred to Stage 2 with guide card content
-- Only `console.html` changed; no Python files touched
-- 506 passed, 1 skipped [V] (confirmed this session)
-- Committed 626a2ed [V]
+**RM28 Stage 2: Guide card panel + guide_commonplace.json content -- DONE [V]**
+- Guide card (`#guide-card`) appears below topbar when guide is on + Commonplace corpus loaded
+- Card keyed to `(active_tab + fg_mode + phase)`, updates on tab switch / fg-mode change
+- `determined/data/guide_commonplace.json` created (13 tab keys, skeleton phase)
+- Inline `GUIDE_DATA` JS object in console.html mirrors the JSON (two separate stores -- see HISTORY.md)
+- `is_commonplace` flag added to `corpus_ready` payload (detects "commonplace" in `_db_path`)
+- Committed bda6d29 [V]
+
+**RM28 Stage 3: Corpus phase picker + phase switching -- DONE [V]**
+- Phase picker pills (Skeleton / Complete) appear inside guide card when is_commonplace
+- Active phase highlighted blue; pills disabled if companion DB not found on disk
+- Clicking a pill emits `load_db` → corpus reloads → card updates to new phase content
+- Server: `_corpus_phase()` (detects "seed" in DB name) + `_phase_dbs()` (computes companion paths)
+- `corpus_phase` + `phase_dbs` added to `corpus_ready` payload
+- Complete-phase content added to both JSON and inline JS (13 more keys, all tabs covered)
+- Card key now uses `_activePhase` instead of hardcoded "skeleton"
+- 506 passed, 1 skipped [V]
+- Committed 35dc19c [V]
 
 ## Current state of seed/ [V]
 17 files, original baseline. No additions staged or tracked.
 
 ## Known issues (carried forward)
 
+**GUIDE_DATA sync trap [V]:** `guide_commonplace.json` and inline `GUIDE_DATA` in console.html are separate stores -- both must be updated together when adding card content. No auto-sync.
 **ingest_design_docs project root mismatch [V]:** Must call with explicit path.
 **Seed DB carries developer artifacts [?]:** Clear design_notes + semantic_summaries before clean demo.
 **UI Re-analyze does NOT use reingest_file [V]:** Call reingest_file() from Python CLI for single file.
@@ -36,22 +42,18 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 Active open items in TRACKER.md: RM28, RM21, RM20.
 
-**RM28 Stage 2** -- next thing to build.
-- Guide card panel: appears below topbar when guide is on, keyed to (active_tab + corpus_phase)
-- Content file: `determined/data/guide_commonplace.json`
-  Shape: `{ "tab:frontier:skeleton": { "headline": "...", "body": "...", "what_to_notice": "..." }, ... }`
-- Commonplace detection: key off `_db_path` containing "commonplace" (case-insensitive);
-  serve flag from Python to JS (e.g. add to corpus_ready payload or a new socket event)
-- Card updates as user clicks tabs / changes Frontier sub-mode (Direct/Orphan/ABC)
-- No phase picker yet (Stage 3); for Stage 2 default phase = "skeleton"
-- Files: `determined/ui/templates/console.html` (card HTML + JS),
-         `determined/data/guide_commonplace.json` (content),
-         `determined/ui/ui_server.py` (emit is_commonplace flag)
-- Content source: `docs/COMMONPLACE_USER_JOURNEY.md` -- distill each phase/tab into card text
+**RM28 Stage 4** -- next thing to build (~30 min).
+- Completion state: when all colorable elements are green, guide card shows "You've explored
+  everything. The guide will step back." then calls `guidePermanentDismiss()`.
+- Requires counting total colorable elements vs. visited, detecting all-green state.
+- File: `determined/ui/templates/console.html` only.
 
-**RM20** (~1 hour, good warmup if Stage 2 feels large)
-- File: `determined/agent/doc_extractor.py` -- store step inside `ingest_design_docs`
-- Embed candidate rule; skip if cosine similarity >= 0.85 to any existing design_note before INSERT
-- Reuses `embed_text` from `determined/oracle/embedding_model.py`
+**RM28 Stage 5 (deferred)** -- general guide layer for non-Commonplace corpora.
+- `guide_general.json` keyed to element only (no corpus phase). Build after Commonplace proves pattern.
+
+**RM20** (~1 hour, good next after Stage 4)
+- File: `determined/agent/doc_extractor.py` -- embed candidate rule at store time; skip INSERT
+  if cosine similarity >= 0.85 to any existing design_note. Reuses `embed_text` from
+  `determined/oracle/embedding_model.py`.
 
 **RM21** -- build only after Technique 1 proves insufficient on real multi-hop queries.
