@@ -1,0 +1,67 @@
+{
+  "chat": {
+    "headline": "Ask: natural language over your corpus",
+    "body": "Type any question about the codebase. Determined assembles relevant facts from the call graph, embeddings, and knowledge layer before answering. Works best on structural questions: who calls what, where does X live, what's hot, what depends on Y.",
+    "what_to_notice": "The answer comes from your DB, not from the model's training data. If the model hedges heavily, it means the corpus hasn't been explored yet -- run discovery or describe a few key files first."
+  },
+  "call_tree": {
+    "headline": "Call tree: trace who calls what",
+    "body": "Enter a symbol name and trace upward (callers) or downward (callees). Callers show who depends on a symbol -- changing it breaks those callers. Callees show what a symbol orchestrates.",
+    "what_to_notice": "Hot symbols (many callers) are change-risky. Symbols with no callers are either entry points (called externally) or orphaned implementations (written but not yet wired)."
+  },
+  "graph": {
+    "headline": "Graph: the call graph as a visual map",
+    "body": "Nodes are symbols, edges are calls. Hot symbols appear larger. Isolated clusters are code that isn't connected to the main graph -- often orphaned implementations or test fixtures.",
+    "what_to_notice": "Look for clusters with no inbound edges. Those are the orphans Frontier mode surfaces. The main connected component is the live codebase."
+  },
+  "imports": {
+    "headline": "Imports: file-level dependency graph",
+    "body": "Shows which files import which other files. High in-degree files are shared utilities -- changing them has wide impact. Circular imports appear as cycles in the graph.",
+    "what_to_notice": "Files with many importers are the hardest to safely refactor. Files that import widely but have few importers are orchestrators -- good candidates for decomposition."
+  },
+  "frontier": {
+    "headline": "Frontier: find where the codebase is incomplete",
+    "body": "Three modes: Direct (callers of unimplemented stubs), Orphan (implemented but uncalled code), ABC (abstract methods with no concrete override). Pick the mode that matches what you're hunting.",
+    "what_to_notice": "Direct mode shows what's blocking. Orphan mode shows what's ready but not wired. ABC mode shows interface contracts that haven't been fulfilled."
+  },
+  "frontier:direct": {
+    "headline": "Direct mode: find stubs that are called but unimplemented",
+    "body": "A stub is a function whose body is a placeholder -- pass, raise NotImplementedError, or a single TODO comment. Direct mode shows callers of stubs: code that depends on something not yet built.",
+    "what_to_notice": "Stubs with many callers are blocking more of the codebase. Stubs in chain-tail position (nothing after them) are the next thing to implement -- no downstream dependencies to manage."
+  },
+  "frontier:orphan": {
+    "headline": "Orphan mode: find code that's ready but not yet wired",
+    "body": "An orphaned implementation is a complete function with no callers. It's written and presumably tested -- just not connected yet. 'Anticipatory' means it was built ahead of its callers.",
+    "what_to_notice": "Orphans are safe to examine and wire -- they don't break anything if left alone. The question is: is this code latent (waiting to be used) or stranded (intended caller was deleted)?"
+  },
+  "frontier:abc": {
+    "headline": "ABC mode: find abstract methods with no concrete override",
+    "body": "When a class inherits from ABC and defines abstract methods, every subclass must override them. ABC mode finds gaps -- abstract methods that have no concrete implementation in any subclass.",
+    "what_to_notice": "ABC gaps are architectural contracts that haven't been fulfilled. If there are no subclasses at all, the ABC itself may be speculative. If subclasses exist but don't override, that's a real gap."
+  },
+  "bag": {
+    "headline": "Bag: your session context",
+    "body": "The bag accumulates symbols and facts touched this session. It's context for the Ask bar -- explored symbols improve the quality of answers. The more you trace and explore, the better the Ask bar knows what you're working on.",
+    "what_to_notice": "After tracing a call tree or running a frontier query, check the bag. Symbols with risk badges (HOT/WARM) mean those areas need care when changing."
+  },
+  "editor": {
+    "headline": "Editor: read any file in the corpus",
+    "body": "Click a symbol anywhere in the tool to open it here, or type a file path directly. The editor shows the source with docstrings, risk annotations, and structural facts from the DB alongside the code.",
+    "what_to_notice": "Hot files (many call edges) show structural weight at a glance. The editor is read-only -- make changes in your regular editor, then run reingest_file to update the DB."
+  },
+  "dochealth": {
+    "headline": "Doc health: find missing and stale docstrings",
+    "body": "Surfaces functions and classes with no docstring, and flags existing docstrings that have drifted from the distilled summary (staleness detection via cosine similarity). Can propose fills from distilled summaries.",
+    "what_to_notice": "Staleness detection needs distillation to run first. On a fresh corpus, run describe_file or extract_design_facts before doc health proposals become useful."
+  },
+  "knowledge": {
+    "headline": "Knowledge: design facts, distilled summaries, and stored findings",
+    "body": "The knowledge layer stores what Determined has learned beyond the call graph: distilled file summaries, design rules extracted from docs, risk findings, and workflow proposals. It's built incrementally by running analysis tools.",
+    "what_to_notice": "A fresh corpus has an empty knowledge layer. Run extract_design_facts for structural findings, ingest_design_docs for design constraints, and distill_corpus for compressed file summaries."
+  },
+  "build_queue": {
+    "headline": "Build queue: where analysis becomes action",
+    "body": "When Determined proposes a fix, docstring fill, or gap closure, it lands here. The queue is the hand-off from 'what Determined found' to 'what you write next'. Accept an item to mark it done; defer to dismiss it.",
+    "what_to_notice": "Populate the queue by running gap_analysis, docstring_health with propose=true, or check_design_violations after ingesting design docs. An empty queue means no proposals have been generated yet."
+  }
+}
