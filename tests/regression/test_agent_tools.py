@@ -529,6 +529,8 @@ def test_dispatch_all_tools_registered():
         "list_reconciliation_findings",
         "classify_duplicates",
         "find_primitive_gaps",
+        # RM31: blast-radius routing fix
+        "blast_radius",
     }
 
     assert set(TOOLS.keys()) == expected

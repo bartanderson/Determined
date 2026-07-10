@@ -49,6 +49,14 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Assessing impact of changing a symbol; tracing who depends on it.",
         "category": "discovery",
     },
+    "blast_radius": {
+        "purpose": "What would break if a symbol or file were removed. Lists direct callers and extended impact zone.",
+        "args": {"target": "symbol name or file path (e.g. 'search' or 'searcher.py')"},
+        "output": "caller list per symbol, extended impact zone, risk badge",
+        "feeds": ["risk_profile", "list_callers"],
+        "use_when": "User asks 'what would break if X were removed/deleted' or 'impact of removing X'.",
+        "category": "discovery",
+    },
     "list_callees": {
         "purpose": "Show all functions a given symbol calls.",
         "args": {"symbol": "exact symbol name"},
@@ -843,6 +851,13 @@ TASK_PATTERNS: dict[str, dict] = {
         "description": "Two-pass architectural analysis: pass 1 maps all files into subsystems, pass 2 finds structural gaps and broken connections.",
         "steps": [
             {"tool": "corpus_synthesis", "args_hint": {}, "why": "pass 1 builds subsystem map, pass 2 reasons over it for gaps"},
+        ],
+    },
+
+    "blast_radius": {
+        "description": "What would break if a symbol or file were removed: enumerate its dependents and assess their criticality.",
+        "steps": [
+            {"tool": "blast_radius", "args_hint": {"target": "<name>"}, "why": "list all callers/dependents and assess criticality"},
         ],
     },
 }

@@ -109,6 +109,82 @@ def list_callers(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def blast_radius(oracle: "DBOracle", args: dict) -> str:
+    """
+    blast_radius(target) - what would break if target (file or symbol) were removed.
+    If target ends in .py or contains a path separator, treats as a file and lists callers
+    of each symbol in that file. Otherwise treats as a symbol and lists its callers + risk.
+    """
+    target = args.get("target", "").strip()
+    if not target:
+        return "ERROR: target argument required"
+
+    is_file = target.endswith(".py") or "/" in target or "\\" in target
+
+    if is_file:
+        # File-level blast radius: enumerate symbols, list callers of each
+        rows = oracle.conn.execute(
+            "SELECT name, symbol_type FROM functions WHERE file_path LIKE ? "
+            "UNION SELECT name, 'class' AS symbol_type FROM classes WHERE file_path LIKE ?",
+            (f"%{target}%", f"%{target}%"),
+        ).fetchall()
+        if not rows:
+            return f"No symbols found in '{target}' (file not found or empty)"
+
+        lines = [f"Blast radius of '{target}' ({len(rows)} symbols):"]
+        total_callers = 0
+        no_callers = []
+        for row in rows[:15]:
+            name = row[0]
+            callers = _list_callers_raw(oracle, name)
+            if callers:
+                total_callers += len(callers)
+                caller_names = [c["caller"] for c in callers[:3]]
+                suffix = f" (+{len(callers)-3} more)" if len(callers) > 3 else ""
+                lines.append(f"  {name}: called by {', '.join(caller_names)}{suffix}")
+            else:
+                no_callers.append(name)
+
+        if no_callers:
+            lines.append(f"  No callers: {', '.join(no_callers[:8])}" + (f" (+{len(no_callers)-8} more)" if len(no_callers) > 8 else ""))
+
+        if total_callers == 0:
+            lines.append("\nNo external callers found — file appears safe to remove.")
+        else:
+            lines.append(f"\n{total_callers} total caller dependencies. Removing this file would break those callers.")
+        return "\n".join(lines)
+
+    else:
+        # Symbol-level blast radius: list callers + risk profile
+        callers = _list_callers_raw(oracle, target)
+        from determined.agent.risk_annotator import score_risk, risk_badge
+        try:
+            risk = score_risk(oracle, target)
+            badge = risk_badge(risk["level"])
+        except Exception:
+            risk = {"level": "UNKNOWN", "reasons": []}
+            badge = ""
+
+        lines = [f"Blast radius of '{target}' {badge}:".strip()]
+        if not callers:
+            lines.append("  No direct callers found — removing this symbol appears safe.")
+        else:
+            caller_names = [c["caller"] for c in callers[:5]]
+            suffix = f" (+{len(callers)-5} more)" if len(callers) > 5 else ""
+            lines.append(f"  Direct callers ({len(callers)}): {', '.join(caller_names)}{suffix}")
+
+        # Extended impact via subgraph
+        sg = _graph_subgraph_raw(oracle, target, radius=2)
+        extended = sorted(sg.get("nodes", set()) - {target})
+        if extended:
+            lines.append(f"  Extended impact ({len(extended)} symbols): {', '.join(extended[:5])}" + (f" ..." if len(extended) > 5 else ""))
+
+        if risk.get("reasons"):
+            lines.append(f"  Risk factors: {'; '.join(risk['reasons'][:3])}")
+
+        return "\n".join(lines)
+
+
 def list_callees(oracle: "DBOracle", args: dict) -> str:
     """
     list_callees(symbol) - what this symbol calls, from graph_edges.
@@ -4903,6 +4979,7 @@ TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
     "list_callers":      (list_callers,      "oracle"),
+    "blast_radius":      (blast_radius,      "oracle"),
     "list_callees":      (list_callees,      "oracle"),
     "symbols_in_file":   (symbols_in_file,   "oracle"),
     "files_in_directory":(files_in_directory,"oracle"),

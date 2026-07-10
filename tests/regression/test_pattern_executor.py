@@ -70,6 +70,34 @@ def test_detect_no_match():
     assert name is None
     assert subject is None
 
+def test_detect_blast_radius_remove():
+    name, subject = detect_pattern("what would break if search.py were removed")
+    assert name == "blast_radius"
+    assert subject == "search.py"
+
+def test_detect_blast_radius_if_i_removed():
+    name, subject = detect_pattern("what would break if I removed searcher")
+    assert name == "blast_radius"
+    assert subject == "searcher"
+
+def test_detect_blast_radius_impact():
+    name, subject = detect_pattern("impact of removing linker.py")
+    assert name == "blast_radius"
+    assert subject == "linker.py"
+
+def test_detect_blast_radius_not_corpus_synthesis():
+    # "what would break if X were removed" must route to blast_radius, not corpus_synthesis
+    name, subject = detect_pattern("what would break if I deleted the search function")
+    assert name == "blast_radius", f"expected blast_radius, got {name}"
+
+def test_detect_traversal_with_articles():
+    # "path from the X to the Y" must route to trace_data_flow, not be caught by survey heuristic
+    name, subject = detect_pattern("what is the path from the api to the database")
+    assert name == "trace_data_flow"
+    assert isinstance(subject, tuple)
+    assert subject[0] == "api"
+    assert subject[1] == "database"
+
 
 # ------------------------------------------------------------------
 # _fill_args

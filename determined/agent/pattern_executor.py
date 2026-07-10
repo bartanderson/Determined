@@ -59,7 +59,7 @@ _DETECT_RULES: list[tuple] = [
      "explore_file", 1),
 
     # trace_data_flow
-    (re.compile(r"(?:trace|how does|path from)\s+['\"]?(\S+)['\"]?\s+(?:to|reach)\s+['\"]?(\S+)['\"]?", re.I),
+    (re.compile(r"(?:trace|how does|path from)\s+(?:a\s+|an\s+|the\s+)?['\"]?(\S+)['\"]?\s+(?:to|reach)\s+(?:a\s+|an\s+|the\s+)?['\"]?(\S+)['\"]?", re.I),
      "trace_data_flow", (1, 2)),
 
     # orient_to_codebase - no subject
@@ -86,8 +86,27 @@ _DETECT_RULES: list[tuple] = [
     (re.compile(r"gap\s+analysis|what(?:'s| is)\s+missing|what\s+could\s+bridge|analyze\s+(?:the\s+)?gaps?", re.I),
      "gap_analysis", None),
 
+    # blast_radius (1): "what would break if X were removed/deleted/gone"
+    (re.compile(
+        r"what\s+(?:would\s+|will\s+)?breaks?\s+"
+        r"(?:if|when|by\s+removing|by\s+deleting)\s+"
+        r"(?:I\s+)?(?:remove[ds]?\s+|delete[ds]?\s+|eliminat\w*\s+)?"
+        r"(?:a\s+|an\s+|the\s+)?"
+        r"['\"]?([A-Za-z_][\w./\\]*)['\"]?",
+        re.I,
+    ), "blast_radius", 1),
+
+    # blast_radius (2): "impact of removing/deleting X"
+    (re.compile(
+        r"impact\s+of\s+(?:removing?|deleting?|eliminat\w+)\s+"
+        r"(?:a\s+|the\s+)?"
+        r"['\"]?([A-Za-z_][\w./\\]*)['\"]?",
+        re.I,
+    ), "blast_radius", 1),
+
     # corpus_synthesis - two-pass architectural analysis
-    (re.compile(r"corpus\s+synthesis|synthesize\s+(?:the\s+)?corpus|architectural?\s+gaps?|full\s+(?:system\s+)?analysis|what\s+(?:is\s+)?broken|what\s+(?:would\s+)?break", re.I),
+    # Note: "what would break if X" is handled above by blast_radius
+    (re.compile(r"corpus\s+synthesis|synthesize\s+(?:the\s+)?corpus|architectural?\s+gaps?|full\s+(?:system\s+)?analysis|what\s+(?:is\s+)?broken", re.I),
      "corpus_synthesis", None),
 ]
 
