@@ -2253,7 +2253,34 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
     conflicted = sum(1 for r in all_rules if r.confidence == "conflicted")
     all_rules = deduplicate(all_rules)
 
+    # Build embedding index of all design_notes already in DB for semantic dedup.
+    # Compared against each candidate rule; skip if cosine similarity >= 0.85.
+    import re
+    _SEM_DUP_THRESHOLD = 0.85
+    _bracket_re = re.compile(r"^\[[^\]]+\]\s*")
+    _sem_vecs: list[np.ndarray] = []
+    try:
+        from determined.oracle.embedding_model import embed_text as _embed, cosine_similarity as _cos_sim
+        _embedding_ready = True
+        for (_nc,) in oracle.conn.execute(
+            "SELECT content FROM knowledge_artifacts WHERE kind='design_note'"
+        ).fetchall():
+            _sem_vecs.append(_embed(_bracket_re.sub("", _nc)))
+    except Exception:
+        _embedding_ready = False
+
+    def _is_semantic_dup(rule_text: str) -> bool:
+        if not _embedding_ready or not _sem_vecs:
+            return False
+        vec = _embed(rule_text)
+        return any(_cos_sim(vec, e) >= _SEM_DUP_THRESHOLD for e in _sem_vecs)
+
     for rule in all_rules:
+        # Semantic dedup: skip if this rule is too similar to an existing design_note
+        if _is_semantic_dup(rule.rule):
+            skipped += 1
+            continue
+        # Legacy prefix-match dedup (fast, catches exact re-runs without embedding cost)
         existing = assessor.get_artifacts(rule.subject)
         already = any(
             a["kind"] == "design_note" and rule.rule[:60] in (a.get("content") or "")
@@ -2269,6 +2296,8 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
         # Encode confidence + source in content so it is queryable later
         content = f"[{rule.kind.upper()}|{rule.confidence}|{rule.source_file}] {rule.rule}"
         assessor.add_artifact(rule.subject, "design_note", content, provenance=prov)
+        if _embedding_ready:
+            _sem_vecs.append(_embed(rule.rule))  # track within-run to catch run-internal dups
         stored += 1
 
     # Extract and store structured layer rules from all processed docs
