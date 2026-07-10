@@ -1,3 +1,3 @@
-PREVIOUS: RM30 done (filter class methods from dupe count, committed ac746b7)
-CURRENT:  RM28 designed and documented in TRACKER.md -- ready to build Stage 1
-NEXT:     RM28 Stage 1: header toggle + localStorage scaffold + color indicators on tab rail
+PREVIOUS: RM28 Stage 1 done (guide toggle + localStorage scaffold + rail color dots, committed 626a2ed)
+CURRENT:  RM28 Stage 2: guide card panel + guide_commonplace.json content
+NEXT:     RM28 Stage 3: corpus phase picker + code injection

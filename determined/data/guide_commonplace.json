@@ -1,0 +1,67 @@
+{
+  "corpus:skeleton": {
+    "headline": "Orient: what Determined found in the skeleton",
+    "body": "17 files, 0 stubs, 1 hot symbol. capture is the heaviest entry point (13 outbound calls) — that's where the application's work happens. validate_entry and the ABC classes surface as roots even with no callers.",
+    "what_to_notice": "get_db (storage/db.py) is hot — 7 callers means the DB connection is a shared bottleneck. EntryProcessor and its 3 subclasses appear as roots because they have no callers yet, not because they're entry points."
+  },
+  "frontier:direct:skeleton": {
+    "headline": "Direct mode: empty — and that's correct",
+    "body": "Direct mode finds callers that call a stub (unimplemented function). The skeleton has 0 stubs, so there's nothing to show here. This means the codebase is implemented at this scale — nothing is definitively broken.",
+    "what_to_notice": "Try Orphan mode next. 'Implemented but not broken' doesn't mean 'fully wired.' Orphan mode finds code that works but has no callers yet."
+  },
+  "frontier:orphan:skeleton": {
+    "headline": "Orphan mode: validate_entry is written but unwired",
+    "body": "validate_entry exists in validator.py and works, but nothing calls it yet. 'Anticipatory' means it was written ahead of its callers — a common pattern when building incrementally.",
+    "what_to_notice": "The action is clear: wire validate_entry into the capture route. This is what Determined is for — not just finding bugs, but finding where the next connection belongs."
+  },
+  "frontier:abc:skeleton": {
+    "headline": "ABC mode: no gaps — all overrides are in place",
+    "body": "EntryProcessor has 3 subclasses (CleanupProcessor, DeduplicateProcessor, EnrichmentProcessor), and all have concrete overrides. The abstract interface is fully covered at skeleton scale.",
+    "what_to_notice": "ABC gaps appear when a subclass exists but hasn't implemented a required method. An empty ABC view means the hierarchy is complete — check this again after adding new abstract methods."
+  },
+  "topology:skeleton": {
+    "headline": "Topology: the whole corpus in one view",
+    "body": "0 stubs means nothing is broken. 2 orphaned-impl means there's code that's ready but not yet called. The action queue says it plainly: 'Write callers: orphaned-impl (2).'",
+    "what_to_notice": "Chain positions (head/tail/middle) are empty at skeleton scale — not enough code to form a chain. The complete corpus shows these shapes clearly."
+  },
+  "knowledge:skeleton": {
+    "headline": "Knowledge: empty by design on a fresh corpus",
+    "body": "No distilled summaries, 0 design notes, 9/31 functions missing docstrings. This is the expected state — structural facts (entry points, hot, stubs) came from the ingest pass; the knowledge layer needs a separate pass.",
+    "what_to_notice": "Next steps to populate: run extract_design_facts for structural findings, then ingest_design_docs with the path to examples/commonplace/docs/DESIGN.md to get layer rules and constraints."
+  },
+  "editor:skeleton": {
+    "headline": "Editor: read any file in the corpus",
+    "body": "Click a symbol anywhere in the tool to open it here, or type a file path directly. The editor shows docstrings, risk annotations, and lets you propose docstring fills.",
+    "what_to_notice": "Try opening storage/db.py — it's the hot file (7 callers). See why get_db is the bottleneck."
+  },
+  "call_tree:skeleton": {
+    "headline": "Call tree: trace who calls what",
+    "body": "Enter a symbol name and trace up (callers) or down (callees). capture is the richest starting point — 13 outbound calls from the main entry point.",
+    "what_to_notice": "Trace get_db upward to see all 7 callers. That's the dependency fan-in that makes it hot."
+  },
+  "graph:skeleton": {
+    "headline": "Graph: the call graph as a visual map",
+    "body": "Nodes are symbols, edges are calls. Hot symbols appear larger. The graph shows the skeleton's structure at a glance — capture at the top, get_db as the hub.",
+    "what_to_notice": "Look for isolated clusters — those are the orphaned symbols that don't connect to the main graph yet."
+  },
+  "chat:skeleton": {
+    "headline": "Ask: natural language queries over the corpus",
+    "body": "Type any question about the codebase. Determined assembles relevant facts from the call graph, knowledge layer, and embeddings before answering. Works best on structural questions: who calls what, where does X live, what's hot.",
+    "what_to_notice": "Try: 'What are the entry points?' or 'Who calls get_db?' The answer comes from the DB, not from an LLM hallucinating."
+  },
+  "bag:skeleton": {
+    "headline": "Bag: your session context",
+    "body": "The bag accumulates symbols and facts you've touched this session. It's context for the Ask bar — the more you explore, the better the answers get.",
+    "what_to_notice": "After tracing a call tree or running a frontier query, check the bag to see what was accumulated."
+  },
+  "dochealth:skeleton": {
+    "headline": "Doc health: 9 functions need docstrings",
+    "body": "The skeleton has 22/31 functions documented. Doc health finds the gaps and can propose fills based on distilled summaries — once distillation has run.",
+    "what_to_notice": "Distillation coverage is 0% on a fresh skeleton. Run describe_file or extract_design_facts first to get distilled summaries, then doc health proposals become useful."
+  },
+  "build_queue:skeleton": {
+    "headline": "Build queue: proposed work items",
+    "body": "When Determined proposes a fix, docstring fill, or gap closure, it lands here. The build queue is the hand-off between Determined's analysis and your next coding action.",
+    "what_to_notice": "The queue is empty on a fresh skeleton — it fills as you run gap_analysis, docstring_health with propose=true, and similar tools."
+  }
+}

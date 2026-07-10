@@ -317,6 +317,7 @@ def _emit_corpus_ready(switched=False):
             "gap_summary": _gap_summary_data(),
             "queue_count": _queue_count(),
             "design_doc_hint": _design_doc_hint(),
+            "is_commonplace": "commonplace" in _db_path.lower(),
         })
 
 
