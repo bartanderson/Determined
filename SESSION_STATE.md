@@ -1,29 +1,24 @@
-Written at commit: a502d83
-# SESSION STATE - session 136 handoff
+Written at commit: fc0e843
+# SESSION STATE - session 137 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 136, 2026-07-10)
+## What happened this session (session 137, 2026-07-10)
 
-**RM32: fact assembly name-collision fix -- DONE [V]**
-- Committed a502d83
-- Problem: `symbol_context` picked `sym_rows[0]` and used header `=== symbol_context: search ===`
-  with no file qualifier. When 3 files each have a "search" function, the model saw 3 identical
-  headers and collapsed them into one symbol.
-- `list_callers` returned callers of all "search" definitions merged, with no note.
-- Fix 1 (`symbol_context` in agent_tools.py):
-  - Header now includes file: `=== symbol_context: search (api.py) ===` for single file,
-    or `=== symbol_context: search (defined in 3 files: api.py, search.py, searcher.py) ===`
-    for multi-file.
-  - `[DECLARATION]` block now shows ALL file declarations, each tagged with short filename.
-  - `[DOCSTRING]` shows per-file docstrings when multiple definitions exist.
-- Fix 2 (`list_callers` in agent_tools.py):
-  - Multi-file check moved before the no-callers early return.
-  - When multiple definitions: header says `[NOTE: 'search' is defined in 3 files (...) - callers of all definitions combined]:`
-  - When no callers + multiple files: no-callers message also includes the NOTE.
-  - Single-file case: header includes file tag `Direct callers of 'search' (api.py):`.
-- 5 new tests in test_agent_tools.py; 516 passed, 1 skipped. [V]
+**RM33: comparative synthesis hint in _assembly_hint() -- DONE [V]**
+- Committed fc0e843
+- Problem: when question asks "is there any function that does both X and Y?",
+  the model summarizes facts individually instead of cross-referencing them.
+- Fix: added `_COMPARATIVE_RE` regex to `local_agent.py` (module level) that
+  detects multi-condition question shapes (requires explicit conjunction: and/both,
+  or also+and).
+- Threaded `question` param into `_assembly_hint(needs, question="")` and
+  `_assemble_prompt` now passes `question` to it.
+- When matched, injects: "Cross-reference the facts above to find symbols that
+  satisfy ALL stated conditions. Answer YES or NO first. If YES, name the
+  specific symbol(s) and cite which facts support each condition."
+- 5 new tests in test_local_agent.py (12 total in that file). 522 passed, 1 skipped. [V]
 
 ## Known issues (carried forward)
 
@@ -38,16 +33,16 @@ are separate stores -- both must be updated together when adding card content. N
 
 ## NEXT SESSION -- start here
 
-Active open items in priority order: RM33, RM34 (deferred), RM28 Stage 5 (deferred), RM29, RM30.
+Active open items in priority order: RM34 (deferred), RM28 Stage 5 (deferred), RM29, RM30.
 
-**RM33** -- next thing to build. Synthesis gap in `_assembly_hint()` in `local_agent.py`.
-  When the question is comparative/boolean ("is there any function that does both X and Y?",
-  "which X has both Y and Z?"), the model summarizes facts rather than cross-referencing them.
-  The ASSEMBLE prompt says "answer using ONLY the facts below" but doesn't steer toward
-  comparison reasoning.
-  Fix: detect comparative/boolean question shapes in `_assembly_hint()` and inject a
-  synthesis instruction: "Compare the behaviors of the symbols above. Answer YES/NO first,
-  then name the specific symbol if YES."
-  Entry point: `determined/agent/local_agent.py` -- `_assembly_hint()`.
+**RM34** -- next. Method confabulation via claim_verifier extension.
+  The claim_verifier (RM21 Technique 1) currently checks CALLS/NO_CALLERS claims.
+  RM34: extend to also catch method confabulation -- when the model claims a method
+  exists on a class that doesn't have it.
+  Entry point: `determined/agent/claim_verifier.py`.
 
-**RM34** -- deferred. Method confabulation via claim_verifier extension. Do after RM33.
+**RM29** -- duplicate symbol detection / surfacing. Two functions with the same name
+  in different files appear as two graph nodes; nothing says WHY one appears as orphan.
+  See HISTORY.md entry 2026-07-09.
+
+**RM30** -- (check TRACKER.md for details).
