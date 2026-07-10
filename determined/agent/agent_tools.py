@@ -140,7 +140,7 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
     if is_file:
         # File-level blast radius: enumerate symbols, list callers of each
         rows = oracle.conn.execute(
-            "SELECT name, symbol_type FROM functions WHERE file_path LIKE ? "
+            "SELECT name, 'function' AS symbol_type FROM functions WHERE file_path LIKE ? "
             "UNION SELECT name, 'class' AS symbol_type FROM classes WHERE file_path LIKE ?",
             (f"%{target}%", f"%{target}%"),
         ).fetchall()
