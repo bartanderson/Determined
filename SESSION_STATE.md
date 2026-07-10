@@ -1,4 +1,4 @@
-Written at commit: fc0e843
+Written at commit: da81931
 # SESSION STATE - session 137 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
@@ -8,17 +8,20 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 **RM33: comparative synthesis hint in _assembly_hint() -- DONE [V]**
 - Committed fc0e843
-- Problem: when question asks "is there any function that does both X and Y?",
-  the model summarizes facts individually instead of cross-referencing them.
-- Fix: added `_COMPARATIVE_RE` regex to `local_agent.py` (module level) that
-  detects multi-condition question shapes (requires explicit conjunction: and/both,
-  or also+and).
-- Threaded `question` param into `_assembly_hint(needs, question="")` and
-  `_assemble_prompt` now passes `question` to it.
-- When matched, injects: "Cross-reference the facts above to find symbols that
-  satisfy ALL stated conditions. Answer YES or NO first. If YES, name the
-  specific symbol(s) and cite which facts support each condition."
-- 5 new tests in test_local_agent.py (12 total in that file). 522 passed, 1 skipped. [V]
+- Added `_COMPARATIVE_RE` regex to `local_agent.py` (module level).
+  Detects multi-condition question shapes ("is there any function that does X and Y?",
+  "which function has both X and Y?"). Requires explicit conjunction (and/both, or also+and).
+- Threaded `question` param into `_assembly_hint(needs, question="")`.
+- When matched, ASSEMBLE prompt says: answer YES/NO first, name symbols, cite facts.
+- 5 new tests in test_local_agent.py. [V]
+
+**RM34: method confabulation detection in claim_verifier -- DONE [V]**
+- Committed da81931
+- Added `HAS_METHOD` claim kind to `claim_verifier.py`.
+- 4 regex patterns detect "X has a Y method", "X.Y()", "class X implements Y", "X's Y method".
+- `verify_claim` queries `classes.methods_json`, emits correction if method absent.
+  Unknown classes silently skipped (can't refute what's not in DB).
+- 7 new tests in test_claim_verifier.py; 529 passed, 1 skipped. [V]
 
 ## Known issues (carried forward)
 
@@ -33,16 +36,11 @@ are separate stores -- both must be updated together when adding card content. N
 
 ## NEXT SESSION -- start here
 
-Active open items in priority order: RM34 (deferred), RM28 Stage 5 (deferred), RM29, RM30.
-
-**RM34** -- next. Method confabulation via claim_verifier extension.
-  The claim_verifier (RM21 Technique 1) currently checks CALLS/NO_CALLERS claims.
-  RM34: extend to also catch method confabulation -- when the model claims a method
-  exists on a class that doesn't have it.
-  Entry point: `determined/agent/claim_verifier.py`.
+Active open items: RM28 Stage 5 (deferred), RM29, RM30.
 
 **RM29** -- duplicate symbol detection / surfacing. Two functions with the same name
   in different files appear as two graph nodes; nothing says WHY one appears as orphan.
   See HISTORY.md entry 2026-07-09.
+  Entry point: TBD -- likely agent_tools.py or a new tool.
 
 **RM30** -- (check TRACKER.md for details).
