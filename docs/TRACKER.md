@@ -1,8 +1,8 @@
-tools/analysis - TRACKER (consolidated)
+﻿tools/analysis - TRACKER (consolidated)
 =========================================
 
 This file is the canonical open-items list and at-a-glance status for the
-Determined analysis tool. Active open items only. Closed items are deleted —
+Determined analysis tool. Active open items only. Closed items are deleted â€”
 for historical context use git log. For architecture/intent, see DESIGN.md.
 
 Per CLAUDE.md's working agreement: update this file in place as part of
@@ -14,13 +14,13 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-08, session 118):** RM21 Technique 1 done. claim_verifier.py added: regex claim extraction (CALLS, NO_CALLERS), DB verification against graph_edges, correction block fed back into one re-assembly pass. Wired into local_agent._answer() ASSEMBLE path. 12 new tests. 493 passed, 1 skipped.
+**Last session (2026-07-10, session 137):** RM33 + RM34 done. RM33: `_assembly_hint()` now detects comparative/boolean question shapes and injects YES/NO-first cross-reference instruction into ASSEMBLE prompt. RM34: `claim_verifier` extended with HAS_METHOD claim kind â€” detects "X has a Y method" patterns, verifies against `classes.methods_json`, emits corrections on confabulation. 529 passed, 1 skipped.
 
 **Session 117 (2026-07-08):** RM27 done. GRASP 9 principles baked as JSON (determined/data/grasp_principles.json + grasp_loader.py), wired into _check_design_violations_core alongside SOTS tenets. check_design_violations now surfaces named GRASP violations (e.g. GRASP-9 Protected Variations on check_design_violations itself). 481 passed, 1 skipped. RM23 also done this session: Phase 3 walk completed on complete Commonplace corpus (25 files, 64 functions). DB reingested 3 Walk 4 files (linker.py, searcher.py, search.py) before walking. Actuals: 0 stubs, 0 ABC gaps, 16 anticipatory orphans, knowledge layer empty (correct fresh-corpus state). Phase 3 section of COMMONPLACE_USER_JOURNEY.md updated with tool outputs. step_queue.md corrected (session 116 claimed advancement but didn't actually write it). No engine files changed; tests not re-run.
 
 **Session 81 (2026-07-05):** Sidebar icon-nav shipped. 4-icon rail (Corpus/Navigate/Tools/Ask) replaces flat sidebar. Corpus panel: analyze + corpus map + gaps. Navigate panel: 6 start-here shortcuts only. Collapse to rail-only on active icon click. 436 passed, 1 skipped.
 
-**Session 67 (2026-07-04):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose → DB → evaluate() → Synthesize). launch.json fixed. 399 tests pass.
+**Session 67 (2026-07-04):** Item 28 confirmed already done. RM6 + RM7 benchmarked with live 8B. ABC Frontier mode verified in browser (8 classes, 35 methods). reason_about full pipeline fired end-to-end (Decompose â†’ DB â†’ evaluate() â†’ Synthesize). launch.json fixed. 399 tests pass.
 
 **Session 60 (2026-07-03):** Item 27 executed (self-review). Item 28 filed.
 infer_behavior refactored to delegate to _infer_behavior_for_symbol (70 lines removed).
@@ -160,162 +160,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM35. **[FILED 2026-07-10] Design reconciliation pass: bring DESIGN.md current**
-
-   The tool has evolved from oracle (answer queries) to assistant (pattern executor,
-   guide layer, claim verification, semantic reconciliation, training mode, two-tier
-   LLM). DESIGN.md was written for the earlier architecture and has not been updated
-   to reflect these structural additions.
-
-   **What to do:**
-   1. `git log --oneline` to find commits that added new layers (not just tools)
-   2. Read current DESIGN.md against what the code actually is
-   3. Note gaps: things in the design that no longer exist, things in the code
-      with no design coverage
-   4. Rewrite affected sections in place -- not a new doc
-   5. Flag any drift that reveals an implicit decision that should be made explicit
-
-   **Trigger for future passes:** any commit that adds a new layer or changes how
-   the agent reasons (not just adds a tool). Cadence: after structural shifts,
-   not on a fixed step count.
-
-   **Do this before RM31** -- RM31 touches local_agent.py (core architecture) and
-   should be grounded in an accurate design picture.
-
----
-
-RM31. **[FILED 2026-07-10] Agent routing failures: wrong pattern match on multi-hop questions**
-
-   Discovered during RM21 probe (6 queries against Commonplace complete corpus).
-   Two query types misfire badly before any reasoning happens:
-
-   **Blast-radius queries** ("what would break if X were removed?"): matched to
-   `corpus_synthesis` pattern, which builds a whole-codebase subsystem map. Never
-   looks up callers of X's symbols. Answer is vague hedging. Correct tool sequence:
-   list all symbols in X → `list_callers` on each → assess their criticality.
-
-   **Traversal queries** ("what is the path from A to B?"): heuristic matched "path"
-   as a symbol name, ran dead symbol/file searches, returned empty. Needs a
-   directed-traversal query (follow call edges from A's entry point toward B's layer).
-
-   **Fix:** extend the pattern-matching / heuristic layer in `local_agent.py` to
-   recognize these query shapes and route to the right tool sequence. Blast-radius
-   needs a new named pattern. Traversal needs either a new tool or a decomposition
-   that walks call edges hop by hop.
-
----
-
-RM32. **[FILED 2026-07-10] Name collision in fact assembly: same symbol name in multiple files**
-
-   Discovered during RM21 probe Q3 (centrality of search feature). Commonplace has
-   a `search` function in api.py, search.py, and searcher.py. The facts block labels
-   all three identically (`search`) and the model collapses them into one symbol,
-   producing a confused answer that claims `search` calls itself.
-
-   **Fix:** when assembling the facts block, tag every symbol with its file:
-   `search (api.py)`, `search (search.py)`, `search (searcher.py)`. The grounding
-   step already finds the file — it just doesn't carry through to the facts text.
-   Change is in `resolve_and_expand` or the facts-text formatting step in
-   `local_agent.py`.
-
----
-
-RM33. **[FILED 2026-07-10] Synthesis gap: model summarizes facts instead of answering**
-
-   Discovered during RM21 probe Q4 ("is there any function that both creates entries
-   and searches for them?"). The model was given facts about api.py and queries.py
-   and responded by describing those files rather than cross-referencing their
-   behaviors to answer the boolean question.
-
-   The model received the right facts but no instruction to synthesize across them.
-   The ASSEMBLE prompt says "answer the question using ONLY the facts below" but
-   doesn't steer toward comparison/boolean reasoning when the question calls for it.
-
-   **Fix:** `_assembly_hint()` in `local_agent.py` detects query shapes and injects
-   focus instructions. Add a heuristic for comparative/boolean questions ("is there
-   any X that does both Y and Z?", "which X has both Y and Z?") that instructs the
-   model to compare symbol behaviors rather than summarize them.
-
----
-
-RM34. **[FILED 2026-07-10] Confabulation of class methods not in the facts**
-
-   Discovered during RM21 probe Q6 (Entry class transitive deps). The model
-   correctly read that Entry has no outbound call edges, but then invented plausible
-   method names (`__repr__`, `from_dict`, `get_date`, `get_id`, `get_type`) that
-   were not in the facts block. Verifier (Technique 1) didn't fire because these
-   weren't CALLS/NO_CALLERS claims.
-
-   **Fix options:**
-   1. Extend claim_verifier to detect METHOD_EXISTS claims ("X has method Y") and
-      verify against the `functions` table (symbol + class_name + file_path).
-   2. Strengthen the ASSEMBLE system prompt: "Do not name any method, attribute, or
-      symbol that does not appear in the facts below."
-   3. Both — prompt first (cheap), verifier as backstop.
-
-   **Deferred until RM31-33 are resolved** — routing and fact-quality failures are
-   higher impact. Revisit after those are in.
-
----
-
-RM30. **[FILED 2026-07-09] Duplicate name detection: filter intentional patterns**
-
-   The current duplicate-names count (`COUNT(DISTINCT file_path) > 1 per name`) fires
-   on common non-bug patterns: method names shared across model classes (`validate` on
-   Entry/Connection/Tag), matching route+query pairs (`get_entry` in api.py and queries.py),
-   layered service names (`search` in route/service/searcher). These are intentional
-   conventions, not collisions. The badge is noisy as a result.
-
-   **What's needed:** filter out names where all occurrences are class methods (functions
-   defined inside a class body) — those share a name by design. A real collision is two
-   module-level functions with the same name in different files, or a module-level function
-   masking a same-named function in another module.
-
-   **Implementation sketch:**
-   - `functions` table has `class_name` (populated if the function is a method). If
-     `COUNT(DISTINCT file_path) > 1` but all rows have non-null `class_name`, it's
-     likely intentional. Filter: require at least one row with `class_name IS NULL` to
-     count as a real duplicate.
-   - Further refinement: if the two files are in a route layer and a storage layer
-     (matching naming convention), that's also intentional. Harder to detect without
-     layer metadata.
-
-   **Current state:** tooltip updated to warn "may be intentional." Badge fires but
-   user is told to check manually. Good enough until this is implemented.
-
----
-
-RM29. **[FILED 2026-07-09] Duplicate symbol detection — automatic and prominent**
-
-   Discovered during GETTING_STARTED.md walk: when two functions with the same name
-   exist in different files, Determined has no way to surface this. One will appear
-   as an orphan (if uncalled), but the tool doesn't say WHY it's orphaned or that a
-   same-named function already exists elsewhere. The user has to connect those dots
-   manually — which they won't.
-
-   **The gap:** `url.py::validate_url` and `validator.py::validate_url` can both
-   exist in a corpus. Determined sees two graph nodes. It doesn't know they might be
-   the same function twice. No existing mode surfaces the collision.
-
-   **What's needed:**
-   - Automatic detection: when a function name appears in more than one file, flag it
-   - Surface it prominently: corpus panel alongside hot/stubs, or inline in Orphan view
-     ("this orphan shares a name with `validator.py::validate_url`")
-   - Should not require the user to ask — if duplicates exist, they should see it
-
-   **Why it matters:** duplicate implementations are one of the most common real-world
-   problems — copy-paste logic, parallel evolution, someone writing a function without
-   knowing one already existed. A comprehension tool that misses this is missing a core
-   use case.
-
-   **Implementation sketch:** graph query on function name — `SELECT name, COUNT(DISTINCT
-   file_path) FROM functions GROUP BY name HAVING COUNT > 1`. Surface result in corpus
-   panel as "N duplicate symbols" and in Orphan mode as inline annotation.
-
----
-
-RM28. **[DESIGNED 2026-07-09] Training mode: adaptive guided exploration**
-
+RM28. **[STAGES 1-4 DONE 2026-07-10] Training mode: adaptive guided exploration**
    Replaces the three-mode UX concept (Tour/Discovery/Workbench) with a lighter,
    more elegant design that emerged from a full design discussion session 130.
 
@@ -372,8 +217,8 @@ RM28. **[DESIGNED 2026-07-09] Training mode: adaptive guided exploration**
    red and amber and turn it green. When everything is green, training mode has
    nothing left to offer.
 
-   **Completion state:** all elements green → guide card shows "You've explored
-   everything. The guide will step back." → toggle permanently auto-dismisses.
+   **Completion state:** all elements green â†’ guide card shows "You've explored
+   everything. The guide will step back." â†’ toggle permanently auto-dismisses.
 
    ---
 
@@ -419,10 +264,10 @@ RM28. **[DESIGNED 2026-07-09] Training mode: adaptive guided exploration**
    Stage 2: Guide card panel + guide_commonplace.json content for all tab/mode
             combinations. Card updates as user navigates.
 
-   Stage 3: Corpus phase picker + code injection. Skeleton → complete → enhanced
+   Stage 3: Corpus phase picker + code injection. Skeleton â†’ complete â†’ enhanced
             live in the browser.
 
-   Stage 4: Completion state. All green → auto-dismiss message.
+   Stage 4: Completion state. All green â†’ auto-dismiss message.
 
    Stage 5 (deferred): General guide layer for non-Commonplace corpora.
             guide_general.json keyed to element only (no corpus phase).
@@ -463,14 +308,14 @@ RM22. **[DONE 2026-07-08] Phase 0 bootstrap: new corpus from blank directory**
 
    **What was built:**
    - 0-file scan: modal shows 3-step bootstrap guide (write first file, Analyze, then reingest_file)
-   - Non-zero scan: modal shows "Analyze this project? N files · M MB · ~Xs" + confirm
+   - Non-zero scan: modal shows "Analyze this project? N files Â· M MB Â· ~Xs" + confirm
    - Phase 0 walk: 17 seed files written to blank dir, Analyze produced DB in ~30s
    - Actuals: 17 files, 1 hot (storage/db.py), 0 stubs, 31 functions, 137 edges
    - Walk directory: C:\Users\bartl\dev\commonplace-walk (not in repo)
 
    **Key finding from walk:** 0 stubs in current seed (Walk 4 extras implemented
    extractor + processor functions). Phase 1 journey doc (which shows 2 stubs) was
-   from an earlier seed state. Phase 0 → seed shows a clean 0-stub codebase as
+   from an earlier seed state. Phase 0 â†’ seed shows a clean 0-stub codebase as
    starting point. ABC class hierarchy (EntryProcessor) surfaces immediately.
 
 ---
@@ -509,7 +354,7 @@ RM20. **[FILED 2026-07-07] design_note deduplication: LLM pass re-extracts rules
    If similarity >= 0.85 to any stored rule, skip storage. Fast, local, uses
    existing infrastructure. No schema change needed.
 
-   **Where to implement:** `determined/agent/doc_extractor.py` — the store step
+   **Where to implement:** `determined/agent/doc_extractor.py` â€” the store step
    inside `ingest_design_docs`. Check before INSERT.
 
    **Estimated effort:** ~1 hour. Small, self-contained.
@@ -518,13 +363,13 @@ RM20. **[FILED 2026-07-07] design_note deduplication: LLM pass re-extracts rules
 
 RM19. **[DONE 2026-07-07] Semantic Reconciliation Arc: duplicate detection, intent differencing, primitive discovery**
 
-   All three passes implemented (confirmed session 118 — was marked FILED but code already exists):
-   - Pass 1: `find_duplicates` — embed "{name}: {docstring}", pairwise cosine similarity matrix, pairs above threshold stored as `reconciliation_finding` artifacts.
-   - Pass 2: `classify_duplicates` — feeds each stored pair to Qwen3-8B, classifies divergence from fixed taxonomy (accidental copy, historical evolution, performance optimization, platform-specific behavior, security reason, genuinely different abstraction). Stores classification as `reconciliation_finding`.
-   - Pass 3: `find_primitive_gaps` — mines call graph for callee pairs that appear together across multiple callers; surfaces as `primitive_gap` artifacts.
+   All three passes implemented (confirmed session 118 â€” was marked FILED but code already exists):
+   - Pass 1: `find_duplicates` â€” embed "{name}: {docstring}", pairwise cosine similarity matrix, pairs above threshold stored as `reconciliation_finding` artifacts.
+   - Pass 2: `classify_duplicates` â€” feeds each stored pair to Qwen3-8B, classifies divergence from fixed taxonomy (accidental copy, historical evolution, performance optimization, platform-specific behavior, security reason, genuinely different abstraction). Stores classification as `reconciliation_finding`.
+   - Pass 3: `find_primitive_gaps` â€” mines call graph for callee pairs that appear together across multiple callers; surfaces as `primitive_gap` artifacts.
    All three wired into TOOLS, tool_registry.py, and `list_reconciliation_findings`.
 
-   Passes 4 (canonicalization) and 5 (architectural drift) deferred — require evidence from 1-3 first.
+   Passes 4 (canonicalization) and 5 (architectural drift) deferred â€” require evidence from 1-3 first.
 
 
 
@@ -554,7 +399,7 @@ RM19. **[DONE 2026-07-07] Semantic Reconciliation Arc: duplicate detection, inte
    Store classification as knowledge_artifact (kind=reconciliation_finding).
 
    **Pass 3 -- Primitive Discovery (novel, highest value)**
-   Mine the call graph for repeated compositions: sequences A→B→C→D that appear across
+   Mine the call graph for repeated compositions: sequences Aâ†’Bâ†’Câ†’D that appear across
    multiple independent call chains. A composition appearing N times is evidence that a
    missing abstraction exists. Surface: "this 4-step pattern appears 12 times -- no shared
    primitive exists." Store as gap proposal in workflow_items.
@@ -568,7 +413,7 @@ RM19. **[DONE 2026-07-07] Semantic Reconciliation Arc: duplicate detection, inte
    from intended architecture. Requires DB snapshot mechanism -- file as separate item
    when 1-3 are shipped.
 
-   **Tractability order:** Pass 1 (one session) → Pass 2 (one session) → Pass 3 (two sessions).
+   **Tractability order:** Pass 1 (one session) â†’ Pass 2 (one session) â†’ Pass 3 (two sessions).
    Passes 4 and 5 get their own items after the first three prove out.
 
    **What to build on:** `determined/oracle/embedding_model.py` (embed_text, cosine_similarity),
@@ -579,7 +424,7 @@ RM19. **[DONE 2026-07-07] Semantic Reconciliation Arc: duplicate detection, inte
 
 RM18. **[DONE 2026-07-07] Act on RM17 gaps**
 
-   Priority order from RM17 findings: Gap 2 → Gap 10 → Gap 1.
+   Priority order from RM17 findings: Gap 2 â†’ Gap 10 â†’ Gap 1.
 
    **Gap 2 [DONE 2026-07-07]:** Flask @route decorator = entry point heuristic.
    `parse_ast._classify_role` now detects `@<name>.route(` pattern, classifies
@@ -613,7 +458,7 @@ RM17. **[DONE 2026-07-05] Two-pass cold analysis of Commonplace: find tool blind
 
    Root causes: (1) no auto-discovery/ingest of design docs; (2) Flask decorator pattern invisible to static analysis.
 
-   **Next:** RM18 -- act on gaps. Priority order: Gap 2 (Flask entry-point heuristic, easy) → Gap 10 (auto-discover design docs on corpus load) → Gap 1 (structured layer-rule violations).
+   **Next:** RM18 -- act on gaps. Priority order: Gap 2 (Flask entry-point heuristic, easy) â†’ Gap 10 (auto-discover design docs on corpus load) â†’ Gap 1 (structured layer-rule violations).
 
 ---
 
@@ -622,16 +467,16 @@ RM17_archive. **[ACTIVE text below, archived]** Two-pass cold analysis of Common
    Two-pass examination of the Commonplace corpus to find what Determined gets
    right, wrong, and can't see at all. Output is a ranked list of gaps.
 
-   **Pass 1 — cold read (tool output only):**
-   Load Commonplace full corpus. Walk orient → frontier → topology → spotlight
-   queries → knowledge. Write down exactly what Determined says the codebase is.
+   **Pass 1 â€” cold read (tool output only):**
+   Load Commonplace full corpus. Walk orient â†’ frontier â†’ topology â†’ spotlight
+   queries â†’ knowledge. Write down exactly what Determined says the codebase is.
    No looking at source. Pure tool output.
 
-   **Pass 2 — adversarial read (source truth):**
+   **Pass 2 â€” adversarial read (source truth):**
    Read the actual Commonplace source files directly. Independently form a picture
    of what the codebase is and does. Do not reference Pass 1 output while reading.
 
-   **Compare — rub them together:**
+   **Compare â€” rub them together:**
    - False positives: tool reported X, X isn't real or isn't important
    - False negatives: code clearly does Y, tool never surfaced it
    - Blind spots: whole categories the tool has no way to see (design-level gaps)
@@ -685,11 +530,13 @@ RM16. **[DONE 2026-07-05] UI concept documentation: explain what each panel/mode
 
 RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its natural ceiling**
 
-   **Technique 1 DONE (2026-07-08):** Verification loop wired into `_answer()` in
-   `local_agent.py`. After ASSEMBLE, `claim_verifier.py` extracts structural claims
-   (CALLS, NO_CALLERS) via regex, checks each against `graph_edges`, and builds a
-   correction block if any are wrong. One re-assembly pass with corrections prepended
-   to facts. 12 new regression tests. 493 passed, 1 skipped.
+   **Technique 1 DONE (2026-07-08 + extended 2026-07-10):** Verification loop wired into
+   `_answer()` in `local_agent.py`. After ASSEMBLE, `claim_verifier.py` extracts structural
+   claims (CALLS, NO_CALLERS, HAS_METHOD) via regex, checks each against `graph_edges` /
+   `classes.methods_json`, and builds a correction block if any are wrong. One re-assembly
+   pass with corrections prepended to facts. RM31-34 also done as part of this arc:
+   blast-radius and traversal routing fixed (RM31), name-collision tagging in facts (RM32),
+   comparative synthesis hint in ASSEMBLE (RM33), method confabulation detection (RM34).
 
    **Remaining techniques (2-6):** Constrained decoding, prompt chaining, MCTS,
    speculative verification, large-model fallback. Build only after Technique 1
@@ -702,13 +549,13 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    architecture built incrementally.
 
    **Why this matters:** Qwen3-8B can call one tool fine but degrades on multi-step
-   reasoning chains (A→B→C→D). Each technique below attacks a different part of that
+   reasoning chains (Aâ†’Bâ†’Câ†’D). Each technique below attacks a different part of that
    failure mode. Determined's deterministic fact layer is the key enabler -- the model
    doesn't need to *know* facts, it needs to *accept corrections* from the DB.
 
    **Technique 1 -- Verification loops (highest leverage, do first)**
-   Model generates a claim → Determined checks it against the DB → if wrong, feed
-   the correction back → model revises. Pure tool-call pattern, no new infrastructure.
+   Model generates a claim â†’ Determined checks it against the DB â†’ if wrong, feed
+   the correction back â†’ model revises. Pure tool-call pattern, no new infrastructure.
    Qwen3-8B is already good enough at accepting corrections. Start here.
 
    **Technique 2 -- Constrained decoding**
@@ -741,7 +588,7 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    Determined already selects relevant context; bridge just needs a target URL and
    the packaged context string. Copy bridge/ into Determined when ready to wire.
 
-   **Tractability order:** 1 → 3 → 2 → 5 → 4 → 6. Each depends on the prior being
+   **Tractability order:** 1 â†’ 3 â†’ 2 â†’ 5 â†’ 4 â†’ 6. Each depends on the prior being
    proven on a real RM15-style query before adding the next layer. Technique 6 is
    the escape hatch -- available now, use only when local techniques are exhausted.
 
@@ -786,7 +633,7 @@ RM15. **[ACTIVE] Commonplace guided journey: run it for real, fix Determined ite
 
 RM14. **[DONE 2026-07-05] Sidebar icon-nav**
 
-   4-icon vertical rail (🗄 Corpus / 🧭 Navigate / 🔧 Tools / 💬 Ask) replaces
+   4-icon vertical rail (ðŸ—„ Corpus / ðŸ§­ Navigate / ðŸ”§ Tools / ðŸ’¬ Ask) replaces
    the flat 6-section sidebar. Corpus panel: analyze/switch + corpus map + gaps
    at a glance. Navigate panel: 6 start-here shortcuts only. Tools panel: query
    shortcuts. Ask icon toggles query bar independently. Clicking active icon
@@ -828,14 +675,14 @@ RM13. **[DONE 2026-07-05] UI redesign pass: close remaining delta, fold DISCOVER
    - For each abstract method, check whether any subclass overrides it.
    - Surface: abstract methods with zero overrides = true unimplemented frontier.
 
-   **Implementation (session 66):** `find_abc_gaps()` in agent_tools.py — queries classes
+   **Implementation (session 66):** `find_abc_gaps()` in agent_tools.py â€” queries classes
    with base_classes_json containing 'ABC'/'Abstract', joins to functions to find stub methods,
    checks for non-stub overrides elsewhere. No new schema needed: existing `classes.base_classes_json`
    + `functions.is_stub` + `functions.file_path` are sufficient. Proxy heuristic (stub on ABC class
    = abstract) works well in practice. On dj2: 35 unimplemented abstract methods across 8 classes.
    Wired as agent tool `find_abc_gaps`, registry entry, test file (5 tests). Frontier tab gains
-   "ABC (interface gaps)" mode — purple diamond nodes for abstract classes, red stubs for methods.
-   Multi-level inheritance not handled (deferred — not needed for current corpora).
+   "ABC (interface gaps)" mode â€” purple diamond nodes for abstract classes, red stubs for methods.
+   Multi-level inheritance not handled (deferred â€” not needed for current corpora).
 
 ---
 
@@ -910,7 +757,7 @@ RM13. **[DONE 2026-07-05] UI redesign pass: close remaining delta, fold DISCOVER
 
 ---
 
-28. **[DONE — already implemented, confirmed session 67] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
+28. **[DONE â€” already implemented, confirmed session 67] SOTS XI: separate "decide to call LLM" from "call LLM" in evaluate()**
 
    **Source:** Self-review 2026-07-03. check_design_violations flagged SOTS XI on
    `determined.agent.evaluator.evaluate` (score 0.30).
@@ -1082,13 +929,13 @@ RM13. **[DONE 2026-07-05] UI redesign pass: close remaining delta, fold DISCOVER
 
 ---
 
-RM11. **[DONE 2026-07-05] edit_file agent tool: close the read→reason→write loop**
+RM11. **[DONE 2026-07-05] edit_file agent tool: close the readâ†’reasonâ†’write loop**
 
    `edit_file(assessor, args)` in `agent_tools.py`. Three ops: `read_file`,
    `write_file`, `replace_in_file`. Path-boundary guard against project root.
    Wired into TOOLS dict and tool_registry.py. 12 regression tests pass.
-   Full agentic loop now closed: goal_intake → evaluate → propose → edit_file →
-   reingest_file → check_design_violations.
+   Full agentic loop now closed: goal_intake â†’ evaluate â†’ propose â†’ edit_file â†’
+   reingest_file â†’ check_design_violations.
 
 ---
 
@@ -1161,15 +1008,15 @@ RM10. **[FUTURE] DeRe-CoT recomposition pass in goal_intake**
 ### LLAMA-SERVER MIGRATION (session 36, 2026-06-29)
 
 Ollama is ethically compromised (early exploiter of llama.cpp open source project).
-Replacing it with llama-server — the OpenAI-compatible server built directly into
+Replacing it with llama-server â€” the OpenAI-compatible server built directly into
 llama.cpp itself. No wrapper, no company, pure llama.cpp output.
 
 **Infrastructure already in place:**
 - `llama-server.exe` (b9842, CPU): `C:\Users\bartl\models\llama-server\llama-server.exe`
 - Model: `C:\Users\bartl\models\gguf\llama3.2-3b.gguf` (2.02 GB, extracted from Ollama blob,
-  same GGUF format — no conversion needed)
+  same GGUF format â€” no conversion needed)
 - Start: `llama-server.exe -m C:\Users\bartl\models\gguf\llama3.2-3b.gguf --port 8080 --ctx-size 2048`
-- Health: `http://localhost:8080/health` → `{"status":"ok"}` (verified)
+- Health: `http://localhost:8080/health` â†’ `{"status":"ok"}` (verified)
 - API: `/v1/chat/completions` and `/v1/completions` (OpenAI-compatible)
 
 **After item 25 is done and tested:** uninstall Ollama, delete `~/.ollama/models/blobs/` (~50GB).
@@ -1185,7 +1032,7 @@ llama.cpp itself. No wrapper, no company, pure llama.cpp output.
 
     **Two Ollama API shapes in use (with their llama-server equivalents):**
 
-    Shape 1 — `/api/generate` → `/v1/completions`:
+    Shape 1 â€” `/api/generate` â†’ `/v1/completions`:
     ```python
     # OLD
     requests.post(OLLAMA_URL, json={"model": MODEL, "prompt": prompt, "stream": False})
@@ -1195,7 +1042,7 @@ llama.cpp itself. No wrapper, no company, pure llama.cpp output.
     resp.json()["choices"][0]["text"]
     ```
 
-    Shape 2 — `/api/chat` → `/v1/chat/completions`:
+    Shape 2 â€” `/api/chat` â†’ `/v1/chat/completions`:
     ```python
     # OLD
     requests.post(OLLAMA_URL, json={"model": MODEL, "messages": [...], "stream": False})
@@ -1213,31 +1060,31 @@ llama.cpp itself. No wrapper, no company, pure llama.cpp output.
     LLM_TIMEOUT = 60
 
     def generate(prompt: str, timeout: int = LLM_TIMEOUT) -> str | None:
-        """Shape 1 — single prompt, returns text or None on failure."""
+        """Shape 1 â€” single prompt, returns text or None on failure."""
 
     def chat(messages: list[dict], timeout: int = LLM_TIMEOUT) -> str | None:
-        """Shape 2 — message list, returns content string or None on failure."""
+        """Shape 2 â€” message list, returns content string or None on failure."""
     ```
 
     **Six files to update (search-replace OLLAMA_URL/OLLAMA_MODEL/OLLAMA_TIMEOUT
     imports and response parsing):**
-    - `determined/intent/semantic_summary.py` — Shape 1, `_generate()`
-    - `determined/agent/agent_tools.py` — Shape 1, `_distill_one()` (line 372) and
+    - `determined/intent/semantic_summary.py` â€” Shape 1, `_generate()`
+    - `determined/agent/agent_tools.py` â€” Shape 1, `_distill_one()` (line 372) and
       `_synthesize_with_ollama()` (line 1787)
-    - `determined/agent/stub_projector.py` — Shape 1, `_call_ollama()` (line 179)
-    - `determined/agent/doc_extractor.py` — Shape 2, line 370
-    - `determined/agent/local_agent.py` — Shape 2, `_call_ollama()` (line 327);
+    - `determined/agent/stub_projector.py` â€” Shape 1, `_call_ollama()` (line 179)
+    - `determined/agent/doc_extractor.py` â€” Shape 2, line 370
+    - `determined/agent/local_agent.py` â€” Shape 2, `_call_ollama()` (line 327);
       also update `PatternExecutor` init at line 371 and health/warmup refs
-    - `determined/ui/ui_server.py` — Shape 2 (line 232), `_check_ollama()`,
-      `_warmup_ollama()` — rename to `_check_llm()`, `_warmup_llm()`
+    - `determined/ui/ui_server.py` â€” Shape 2 (line 232), `_check_ollama()`,
+      `_warmup_ollama()` â€” rename to `_check_llm()`, `_warmup_llm()`
 
-    **Also update:** `determined/assessor/query_compiler.py` — Shape 1,
-    `_compile_via_ollama()` (line 251) → `_compile_via_llm()`.
-    `determined/agent/pattern_executor.py` — remove `ollama_url/model/timeout`
+    **Also update:** `determined/assessor/query_compiler.py` â€” Shape 1,
+    `_compile_via_ollama()` (line 251) â†’ `_compile_via_llm()`.
+    `determined/agent/pattern_executor.py` â€” remove `ollama_url/model/timeout`
     constructor args; import from `llm_client` instead.
 
     **Health check update in `ui_server.py`:** replace Ollama model-list check
-    (`/api/tags`) with llama-server health check (`GET /health` → `{"status":"ok"}`).
+    (`/api/tags`) with llama-server health check (`GET /health` â†’ `{"status":"ok"}`).
 
     **Test:** run full regression suite after swap. All 323 tests should still pass
     (most don't hit the LLM; the ones that mock it stay mocked). Manual smoke test:
@@ -1250,30 +1097,30 @@ llama.cpp itself. No wrapper, no company, pure llama.cpp output.
     Ollama managed model downloads and storage. With llama-server we own the files
     directly. This item covers the transition and ongoing model management.
 
-    **Immediate:** after item 25 verified working end-to-end — uninstall Ollama,
+    **Immediate:** after item 25 verified working end-to-end â€” uninstall Ollama,
     delete `C:\Users\bartl\.ollama\` (reclaims ~50GB of blob storage).
 
     **Current GGUF library:** `C:\Users\bartl\models\gguf\`
-    - `llama3.2-3b.gguf` — primary inference model (item 25)
+    - `llama3.2-3b.gguf` â€” primary inference model (item 25)
 
     **Other models from Ollama library** (blobs exist, not yet extracted):
-    Extract same way — read manifest, copy blob, rename `.gguf`.
+    Extract same way â€” read manifest, copy blob, rename `.gguf`.
     Manifests at `~/.ollama/models/manifests/registry.ollama.ai/library/`:
-    - `llama3.2/latest` — same as 3b
-    - `llama3.1/latest` — 8B model (~4.7GB blob)
+    - `llama3.2/latest` â€” same as 3b
+    - `llama3.1/latest` â€” 8B model (~4.7GB blob)
     - `codellama/7b`, `codellama/13b`
     - `mistral/7b`
     - `qwen2.5/7b`, `qwen2.5-coder/1.5b`, `qwen2.5-coder/latest`
-    - `qwen3.5/35b` — large model
+    - `qwen3.5/35b` â€” large model
     - `gemma3/4b`
 
     **Model management going forward:** download GGUF files directly from
     HuggingFace (TheBloke / bartowski quantizations are standard sources).
-    No model manager needed — files are just files.
+    No model manager needed â€” files are just files.
 
     **llm_client.py config:** `LLM_MODEL` should match the GGUF filename stem
     OR be ignored entirely (llama-server serves whichever model it was started
-    with — the model param in the request is advisory, not a selector).
+    with â€” the model param in the request is advisory, not a selector).
     Simplest: remove model name from request payload since llama-server ignores it.
 
 ---
@@ -1284,20 +1131,20 @@ The tool has matured from an oracle (answer queries) to an assistant (surface ga
 propose changes, support review). These four items build the assistant capability
 layer on top of the existing structural knowledge foundation.
 
-**What these build on (concrete infrastructure — read before building any of 21-24):**
+**What these build on (concrete infrastructure â€” read before building any of 21-24):**
 
-Embedding: `determined/oracle/embedding_model.py` — `embed_text(str) -> np.ndarray`,
+Embedding: `determined/oracle/embedding_model.py` â€” `embed_text(str) -> np.ndarray`,
 `cosine_similarity(a, b) -> float`. Lazy-loads `all-MiniLM-L6-v2` on first call.
 In agent_tools.py the model is cached as `_get_embed_model()`; batch encode via
 `model.encode([...], normalize_embeddings=True)`, dot product gives cosine similarity.
 
 Design frame pattern: `_get_design_frame(assessor, symbol, file_path)` at
-agent_tools.py:394 — builds query string from symbol+file stem+docstring, calls
+agent_tools.py:394 â€” builds query string from symbol+file stem+docstring, calls
 `search_tenets(query, threshold=0.32, top_n=3)` from `determined/data/sots_loader.py`.
 This is the reusable pattern for "embed context, cosine-search a knowledge surface."
 
 Design violations pattern: `_check_design_violations_core(assessor, symbol, file_path)`
-at agent_tools.py:504 — same embed+cosine-search pattern but richer query
+at agent_tools.py:504 â€” same embed+cosine-search pattern but richer query
 (symbol+docstring+callee names+file stem) and searches `design_notes` at threshold 0.30.
 
 Distilled summaries: stored in `semantic_summaries` table, `distilled` column.
@@ -1309,9 +1156,9 @@ is the primary one used by `symbol_brief` and `goal_intake`.
 Goal intake semantic search pattern (agent_tools.py:1454-1484): loads all symbols
 with docstrings via `_search_symbols_raw(oracle, "", limit=600)`, enriches each
 with distilled file summary, batch-encodes all + the goal query together, ranks by
-dot product. Threshold 0.28. This is the reusable pattern for concept→symbol matching.
+dot product. Threshold 0.28. This is the reusable pattern for conceptâ†’symbol matching.
 
-Review queue: `determined/intent/workflow_store.py` — `add_item(conn, kind, subject,
+Review queue: `determined/intent/workflow_store.py` â€” `add_item(conn, kind, subject,
 content, provenance="human")`. Use `provenance="llm-proposed"` for machine-generated
 proposals. `kind="next_up"` for actionable items. `update_item(conn, id, status="done")`
 to accept. `status="deferred"` to dismiss. Table is `workflow_items` in the corpus DB.
@@ -1322,33 +1169,33 @@ Symbol references: `symbols` table has `symbol_type` values `function`/`class`
 table has `caller`, `callee`, `file_path`, `line_number`. All three needed for
 find-references (item 21): declarations from `symbols`, usages from `symbol_references`.
 
-Class attributes: `class_attributes` table — `(file_path, class_name, attribute,
+Class attributes: `class_attributes` table â€” `(file_path, class_name, attribute,
 inferred_type)`. Added in item 20. Used in item 21 for class attribute listing.
 
-Risk scoring: `determined/agent/risk_annotator.py` — `score_risk(oracle, symbol)`
+Risk scoring: `determined/agent/risk_annotator.py` â€” `score_risk(oracle, symbol)`
 returns dict with `level` (HOT/WARM/SAFE), `reasons` list. Already used in `goal_intake`
 and `risk_profile`. Import: `from determined.agent.risk_annotator import score_risk`.
 
 ---
 
-21. **[DONE 2026-06-30] Symbol context view** — `symbol_context(assessor, args)` in agent_tools.py.
+21. **[DONE 2026-06-30] Symbol context view** â€” `symbol_context(assessor, args)` in agent_tools.py.
     Single call returns declaration, docstring, risk badge, find-references, callers/callees,
     class attributes, design frame, and stored findings. understand_symbol task pattern
     updated to single step. Wired into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern.
 
 ---
 
-22. **[DONE 2026-06-30] Wide concept search** — `concept_search(assessor, args)` in agent_tools.py.
+22. **[DONE 2026-06-30] Wide concept search** â€” `concept_search(assessor, args)` in agent_tools.py.
     Searches symbol names, docstrings, behavioral contracts, design notes, distilled summaries.
     Semantic re-ranking via all-MiniLM-L6-v2 at threshold 0.25. Grouped output by surface.
     Wired into TOOLS, REGISTRY, TASK_PATTERNS, detect_pattern.
 
 ---
 
-23. **[DONE 2026-06-30] Docstring health — campaign tool** — surfaces missing and stale docstrings,
+23. **[DONE 2026-06-30] Docstring health â€” campaign tool** â€” surfaces missing and stale docstrings,
     proposes fills, supports editor write-back. New function `docstring_health(assessor, args)`
     in agent_tools.py. Optional args: `file` (scope to one file), `module` (scope to
-    path prefix), `propose` (bool, default True — generate proposals and store in queue).
+    path prefix), `propose` (bool, default True â€” generate proposals and store in queue).
 
     **Missing detection:**
     ```sql
@@ -1362,7 +1209,7 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
     **Staleness detection:** for symbols WITH docstrings, retrieve `distilled` from
     `semantic_summaries` for their file. Embed both the existing docstring and the
     distilled summary using `embed_text()` from `determined/oracle/embedding_model.py`.
-    `cosine_similarity(embed_text(docstring), embed_text(distilled))` — low score
+    `cosine_similarity(embed_text(docstring), embed_text(distilled))` â€” low score
     (< 0.55, tune empirically) = potentially stale. Report score alongside each flagged
     symbol so developer can judge. High distance = docstring and code diverged.
 
@@ -1373,21 +1220,21 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
     provenance="llm-proposed")`. Store file_path and line_number in content as JSON
     so write-back knows where to go.
 
-    **Editor-launch (UI layer):** `ui_server.py` — when user clicks a proposed docstring
+    **Editor-launch (UI layer):** `ui_server.py` â€” when user clicks a proposed docstring
     item in the work queue, open an inline editor pre-filled with the proposed text.
     On accept: write the text as a docstring to the source file at the stored line_number,
     call `workflow_store.update_item(conn, id, status="done")`. On reject: status="deferred".
 
     **Confidence display:** show cosine distance score alongside each stale flag.
     Score >= 0.80: likely fine. 0.55-0.80: review. < 0.55: flag as stale.
-    Missing symbols get no score (N/A — no existing docstring to compare).
+    Missing symbols get no score (N/A â€” no existing docstring to compare).
 
     **UI tab:** add `"docstring_health"` to `_TAB_TOOLS` in `ui_server.py` alongside
     the existing `"docstrings"` tab (which can be retired or repurposed as a summary).
 
 ---
 
-24. **[DONE 2026-06-30] On-demand gap analysis with standing summary** — two-tier capability:
+24. **[DONE 2026-06-30] On-demand gap analysis with standing summary** â€” two-tier capability:
     a fast standing summary always available, and a deep on-demand analysis.
 
     **Gap summary (fast, DB-only, no LLM):** new section in `knowledge_status` output
@@ -1399,7 +1246,7 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
     - Design note coverage: count `knowledge_artifacts` where `kind='design_note'` per module.
       Modules with 0 design notes flagged as undocumented.
     - Pattern gaps (hardcoded heuristics for now): e.g. check if `files` table has any
-      non-NULL `role` values (item 1 just landed — verify it's populating).
+      non-NULL `role` values (item 1 just landed â€” verify it's populating).
     Output: short text block "GAPS AT A GLANCE" with module-level counts and flags.
     No LLM. Fast enough to include in session startup output.
 
@@ -1421,8 +1268,8 @@ and `risk_profile`. Import: `from determined.agent.risk_annotator import score_r
 
     **Key constraints:**
     - NOT automatic. User-initiated. Menu option in UI sidebar or agent command.
-    - Output is idea-mode — explicitly framed as possibilities, not prescriptions.
-      Prefix output: "GAP ANALYSIS (generative — proposals may be off target):"
+    - Output is idea-mode â€” explicitly framed as possibilities, not prescriptions.
+      Prefix output: "GAP ANALYSIS (generative â€” proposals may be off target):"
     - Ollama call uses 3B model (fast), not 8B. This is brainstorming, not reasoning.
     - Gap summary is the navigation layer: read it first to know where to focus the
       full analysis. Full analysis on a well-covered area will produce noise.
