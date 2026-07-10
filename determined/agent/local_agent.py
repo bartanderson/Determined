@@ -54,10 +54,13 @@ Use only these patterns (copy exactly):
   NEED: intent of <symbol>
   NEED: findings for <symbol>
   NEED: brief for <symbol>
+  NEED: imports of <file.py>
 
 Important:
 - To list all methods/functions of a class, use "NEED: symbols in the_file.py"
   (not "symbols named ClassName" -- that only finds the class declaration, not its methods)
+- To check which modules/libraries a file depends on, or whether two files share a
+  dependency, use "NEED: imports of <file.py>" for each file.
 - Extract all symbol and file names explicitly from the question.
 - Output only NEED: lines, nothing else."""
 

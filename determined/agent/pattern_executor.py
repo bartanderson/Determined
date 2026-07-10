@@ -38,6 +38,21 @@ from determined.agent.agent_tools import dispatch
 # ------------------------------------------------------------------
 
 _DETECT_RULES: list[tuple] = [
+    # orient_to_codebase - must come before understand_symbol/explain/describe rules
+    # to prevent "explain this codebase" from being captured as understand_symbol("this")
+    (re.compile(
+        r"orient"
+        r"|where (?:do I|should I) start"
+        r"|what is this (?:project|codebase|repo|code)"
+        r"|give me (?:a\s+)?(?:\w+\s+)?overview"
+        r"|(?:\w+\s+)?overview of (?:what )?this"
+        r"|what does this (?:codebase|project|repo|code|tool) do"
+        r"|explain (?:this\s+)?(?:the\s+)?(?:codebase|project|repo|code|tool)"
+        r"|describe (?:this\s+|the\s+)?(?:system|codebase|project|repo)"
+        r"|(?:i(?:'m| am) new|just (?:joined|started)|never seen this)",
+        re.I,
+    ), "orient_to_codebase", None),
+
     # symbol_context (direct single-tool path)
     (re.compile(r"(?:context for|everything about|show me|what do you know about)\s+(?:the\s+)?(?:symbol\s+)?['\"]?(\S+)['\"]?", re.I),
      "understand_symbol", 1),
@@ -61,10 +76,6 @@ _DETECT_RULES: list[tuple] = [
     # trace_data_flow
     (re.compile(r"(?:trace|how does|path from)\s+(?:a\s+|an\s+|the\s+)?['\"]?(\S+)['\"]?\s+(?:to|reach)\s+(?:a\s+|an\s+|the\s+)?['\"]?(\S+)['\"]?", re.I),
      "trace_data_flow", (1, 2)),
-
-    # orient_to_codebase - no subject
-    (re.compile(r"orient|where (?:do I|should I) start|what is this (?:project|codebase)|give me an overview", re.I),
-     "orient_to_codebase", None),
 
     # find_dead_code - no subject
     (re.compile(r"find (?:dead|unused) code|what(?:'s| is) dead|unused (?:functions?|code)", re.I),

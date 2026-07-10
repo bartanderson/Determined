@@ -77,17 +77,20 @@ def ground_question(question: str, oracle: "DBOracle", assessor: "Assessor") -> 
     seen_files: set[str] = set()
 
     for kw in keywords:
-        # Search symbols
+        # Search symbols (exclude test files — they pollute grounding for production questions)
         try:
             rows = oracle.find_symbols(kw, limit=10)
             for r in rows:
                 if r["name"] not in found_symbols:
+                    fp_lower = r["file_path"].replace("\\", "/").lower()
+                    if "/test" in fp_lower or fp_lower.split("/")[-1].startswith("test_"):
+                        continue
                     file_short = r["file_path"].replace("\\", "/").split("/")[-1]
                     found_symbols[r["name"]] = file_short
         except Exception:
             pass
 
-        # Search files
+        # Search files (exclude test files — they pollute grounding for production questions)
         try:
             rows = oracle.find_files(pattern=kw)
             root = oracle.get_project_root().replace("\\", "/")
@@ -95,6 +98,10 @@ def ground_question(question: str, oracle: "DBOracle", assessor: "Assessor") -> 
                 fp = r["file_path"].replace("\\", "/")
                 if root and fp.startswith(root + "/"):
                     fp = fp[len(root) + 1:]
+                # Skip test files from grounding suggestions
+                fp_lower = fp.lower()
+                if "/test" in fp_lower or fp_lower.startswith("test"):
+                    continue
                 if fp not in seen_files:
                     seen_files.add(fp)
                     found_files.append(fp)
@@ -271,6 +278,10 @@ _PATTERNS = [
     # "trace data flow of/for <symbol>" / "trace flow of <symbol>"
     (re.compile(r"trace\s+(?:data\s+)?flow\s+(?:of|for)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "trace_data_flow", "symbol", 1),
+
+    # "imports of <file>" / "what does <file> import" / "dependencies of <file>"
+    (re.compile(r"(?:imports?\s+of|what\s+does\s+['\"]?(.+?)['\"]?\s+import|dependencies\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
+     "list_import_deps", "file_path", None),  # special: multi-group
 
     # "search <query>" / "find <query>" - fallback to search_symbols
     (re.compile(r"(?:search|find)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
@@ -1008,6 +1019,13 @@ def resolve_need(need: str) -> tuple[str, dict] | None:
                 groups = [g for g in m.groups() if g is not None]
                 if len(groups) >= 2:
                     return tool_name, {"src": groups[0].strip(), "dst": groups[1].strip()}
+                continue
+
+            # Special case: list_import_deps - extract file_path from whichever group matched
+            if tool_name == "list_import_deps":
+                groups = [g for g in m.groups() if g is not None]
+                if groups:
+                    return tool_name, {"file_path": groups[-1].strip()}
                 continue
 
             # No-arg tools (entry points, clusters)
