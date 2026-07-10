@@ -1,3 +1,3 @@
-PREVIOUS: RM28 Stage 3 done (corpus phase picker + phase switching, committed 35dc19c)
-CURRENT:  RM28 Stage 4: completion state (all green → auto-dismiss)
-NEXT:     RM20: design_note dedup via embedding similarity at store time
+PREVIOUS: RM21 probe done -- Technique 1 ceiling identified, RM31-34 filed
+CURRENT:  RM31: fix blast-radius and traversal routing in local_agent.py
+NEXT:     RM32: tag symbols with file name in fact assembly block

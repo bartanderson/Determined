@@ -160,6 +160,80 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM31. **[FILED 2026-07-10] Agent routing failures: wrong pattern match on multi-hop questions**
+
+   Discovered during RM21 probe (6 queries against Commonplace complete corpus).
+   Two query types misfire badly before any reasoning happens:
+
+   **Blast-radius queries** ("what would break if X were removed?"): matched to
+   `corpus_synthesis` pattern, which builds a whole-codebase subsystem map. Never
+   looks up callers of X's symbols. Answer is vague hedging. Correct tool sequence:
+   list all symbols in X → `list_callers` on each → assess their criticality.
+
+   **Traversal queries** ("what is the path from A to B?"): heuristic matched "path"
+   as a symbol name, ran dead symbol/file searches, returned empty. Needs a
+   directed-traversal query (follow call edges from A's entry point toward B's layer).
+
+   **Fix:** extend the pattern-matching / heuristic layer in `local_agent.py` to
+   recognize these query shapes and route to the right tool sequence. Blast-radius
+   needs a new named pattern. Traversal needs either a new tool or a decomposition
+   that walks call edges hop by hop.
+
+---
+
+RM32. **[FILED 2026-07-10] Name collision in fact assembly: same symbol name in multiple files**
+
+   Discovered during RM21 probe Q3 (centrality of search feature). Commonplace has
+   a `search` function in api.py, search.py, and searcher.py. The facts block labels
+   all three identically (`search`) and the model collapses them into one symbol,
+   producing a confused answer that claims `search` calls itself.
+
+   **Fix:** when assembling the facts block, tag every symbol with its file:
+   `search (api.py)`, `search (search.py)`, `search (searcher.py)`. The grounding
+   step already finds the file — it just doesn't carry through to the facts text.
+   Change is in `resolve_and_expand` or the facts-text formatting step in
+   `local_agent.py`.
+
+---
+
+RM33. **[FILED 2026-07-10] Synthesis gap: model summarizes facts instead of answering**
+
+   Discovered during RM21 probe Q4 ("is there any function that both creates entries
+   and searches for them?"). The model was given facts about api.py and queries.py
+   and responded by describing those files rather than cross-referencing their
+   behaviors to answer the boolean question.
+
+   The model received the right facts but no instruction to synthesize across them.
+   The ASSEMBLE prompt says "answer the question using ONLY the facts below" but
+   doesn't steer toward comparison/boolean reasoning when the question calls for it.
+
+   **Fix:** `_assembly_hint()` in `local_agent.py` detects query shapes and injects
+   focus instructions. Add a heuristic for comparative/boolean questions ("is there
+   any X that does both Y and Z?", "which X has both Y and Z?") that instructs the
+   model to compare symbol behaviors rather than summarize them.
+
+---
+
+RM34. **[FILED 2026-07-10] Confabulation of class methods not in the facts**
+
+   Discovered during RM21 probe Q6 (Entry class transitive deps). The model
+   correctly read that Entry has no outbound call edges, but then invented plausible
+   method names (`__repr__`, `from_dict`, `get_date`, `get_id`, `get_type`) that
+   were not in the facts block. Verifier (Technique 1) didn't fire because these
+   weren't CALLS/NO_CALLERS claims.
+
+   **Fix options:**
+   1. Extend claim_verifier to detect METHOD_EXISTS claims ("X has method Y") and
+      verify against the `functions` table (symbol + class_name + file_path).
+   2. Strengthen the ASSEMBLE system prompt: "Do not name any method, attribute, or
+      symbol that does not appear in the facts below."
+   3. Both — prompt first (cheap), verifier as backstop.
+
+   **Deferred until RM31-33 are resolved** — routing and fact-quality failures are
+   higher impact. Revisit after those are in.
+
+---
+
 RM30. **[FILED 2026-07-09] Duplicate name detection: filter intentional patterns**
 
    The current duplicate-names count (`COUNT(DISTINCT file_path) > 1 per name`) fires

@@ -1,25 +1,29 @@
-Written at commit: 6406dd6
-# SESSION STATE - session 133 handoff
+Written at commit: 89bc6d5
+# SESSION STATE - session 134 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 133, 2026-07-10)
+## What happened this session (session 134, 2026-07-10)
 
-**RM28 Stage 4: completion state -- DONE [V]**
-- `COLORABLE_KEYS` const defined: `["rail:corpus", "rail:navigate", "rail:tools", "rail:ask"]`
-- `guideAllGreen()`: returns true when all 4 keys visited
-- `guideCheckCompletion()`: idempotent -- shows completion card every call while all-green;
-  schedules `guidePermanentDismiss()` once after 4s via `_completionScheduled` flag
-- `guideUpdateCard()` restructured: checks `!_guideOn` first, then `guideCheckCompletion()`,
-  then `!_isCommonplace` guard -- completion fires regardless of corpus
-- Verified in browser via Chrome MCP: card showed "You've explored everything. / The guide
-  will step back.", auto-dismiss fired after 4s, toggle hidden, footer restore visible [V]
-- Committed 6406dd6 [V]
-- No Python files changed; tests not re-run (not needed)
+**RM20: design_note semantic dedup -- DONE [V]**
+- `ingest_design_docs` in `agent_tools.py` now embeds each candidate rule before INSERT
+- Cosine-compares against all existing design_notes in corpus (threshold 0.85); skips if dup
+- Tracks within-run embeddings to catch back-to-back similar rules in one ingest pass
+- Graceful degradation: falls back to prefix-match if embedding model unavailable
+- 506 passed, 1 skipped. Committed 89bc6d5 [V]
 
-## Current state of seed/ [V]
-17 files, original baseline. No additions staged or tracked.
+**RM21 probe: 6 multi-hop queries against Commonplace complete corpus -- DONE [V]**
+- Technique 1 (claim verifier) never fired across all 6 queries
+- Probe script: scratchpad/rm21_probe.py (verbose output captured)
+- Failures are upstream of reasoning -- filed as RM31-34 (see TRACKER.md)
+- RM21 Techniques 2-6 deferred: not the right next move given what probe revealed
+
+**New items filed in TRACKER.md [V]:**
+- RM31: wrong pattern routing (blast-radius → corpus_synthesis; traversal → symbol search)
+- RM32: name collision in fact assembly (same symbol name in multiple files collapsed to one)
+- RM33: synthesis gap (model summarizes facts instead of answering boolean/cross questions)
+- RM34: method confabulation (model invents plausible method names not in facts) -- deferred until RM31-33 done
 
 ## Known issues (carried forward)
 
@@ -34,16 +38,14 @@ are separate stores -- both must be updated together when adding card content. N
 
 ## NEXT SESSION -- start here
 
-Active open items in TRACKER.md: RM28 Stage 5 (deferred), RM21, RM20, RM29, RM30.
+Active open items in priority order: RM31, RM32, RM33, RM34 (deferred), RM28 Stage 5 (deferred), RM29, RM30.
 
-**RM20** -- next thing to build (~1 hour).
-- File: `determined/agent/doc_extractor.py` -- embed candidate rule at store time; skip INSERT
-  if cosine similarity >= 0.85 to any existing design_note. Reuses `embed_text` from
-  `determined/oracle/embedding_model.py`.
-- Entry point: find the store step inside `ingest_design_docs` in doc_extractor.py.
-  Check before INSERT. No schema change needed.
+**RM31** -- next thing to build. Two routing fixes in `local_agent.py`:
+1. Blast-radius pattern: "what would break if X were removed?" → list symbols in X → list_callers on each → assess criticality. Add as named pattern in pattern_executor or heuristic in _answer().
+2. Traversal pattern: "path from A to B" → walk call edges from A's layer toward B's layer. May need a new tool or decomposition that hops edge by edge.
 
-**RM28 Stage 5 (deferred)** -- general guide layer for non-Commonplace corpora.
-- `guide_general.json` keyed to element only (no corpus phase). Build after Commonplace proves pattern.
+**RM32** -- fact assembly fix. In `resolve_and_expand` or the facts-text formatter in `local_agent.py`: tag every symbol with its file when assembling facts block. "search (api.py)" not "search". Grounding already finds the file -- just doesn't carry through to facts text.
 
-**RM21** -- build only after Technique 1 proves insufficient on real multi-hop queries.
+**RM33** -- ASSEMBLE prompt fix. In `_assembly_hint()` in `local_agent.py`: detect comparative/boolean question shapes and inject a synthesis instruction ("compare symbol behaviors, don't summarize files").
+
+**RM34** -- deferred. Extend claim_verifier for METHOD_EXISTS claims OR strengthen ASSEMBLE system prompt. Do after RM31-33.

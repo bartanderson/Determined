@@ -8,6 +8,10 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-10: RM21 probe finding: Technique 1 (claim verifier) never fired across 6 multi-hop queries against Commonplace. The ceiling isn't wrong CALLS claims -- it's upstream: wrong pattern routing (Q2 blast-radius → corpus_synthesis, Q5 traversal → symbol search), name collision collapsing same-named symbols from different files, synthesis gap (model summarizes facts instead of answering), and method confabulation. Filed as RM31-34. Techniques 2-6 (constrained decoding, MCTS, etc.) are not the right next move.
+
+2026-07-10: RM20 done: design_note semantic dedup at store time. Embeds candidate rule, cosine-compares against all existing design_notes (threshold 0.85), skips if duplicate. Catches LLM paraphrases the old 60-char prefix check missed. Also tracks within-run embeddings to catch back-to-back similar rules in one ingest pass.
+
 2026-07-10: RM28 Stage 2/3: GUIDE_DATA JS object in console.html and guide_commonplace.json are separate stores with identical content. JSON file is the source of truth for docs/future tooling; inline JS object is what the browser actually uses. Both must be updated together when adding new card content. No auto-sync mechanism.
 
 2026-07-10: RM28 Stage 3: phase detection uses "_seed" in DB filename to identify skeleton phase; "_phaseDbs" companion lookup strips/appends "_seed" from the path. Works for the current two-DB setup; will need revision if more phases or different naming conventions are introduced.
