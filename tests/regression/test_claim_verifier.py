@@ -132,3 +132,78 @@ def test_build_correction_block_format(db):
     block = build_correction_block([correction])
     assert "CORRECTION" in block
     assert "run_engine" in block
+
+
+# ---------------------------------------------------------------------------
+# RM34: HAS_METHOD claim extraction and verification
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def db_with_classes():
+    """In-memory DB with graph_edges + classes tables."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE graph_edges "
+        "(caller TEXT, callee TEXT, caller_file TEXT, line_number INTEGER, resolved INTEGER)"
+    )
+    conn.execute(
+        "CREATE TABLE classes "
+        "(id INTEGER PRIMARY KEY, file_path TEXT, name TEXT, line_number INTEGER, "
+        "methods_json TEXT, base_classes_json TEXT, docstring TEXT)"
+    )
+    import json
+    conn.executemany(
+        "INSERT INTO classes (name, methods_json) VALUES (?, ?)",
+        [
+            ("SearchEngine", json.dumps(["search", "index", "reset"])),
+            ("EmptyClass", json.dumps([])),
+        ],
+    )
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+def test_extract_has_method_basic():
+    claims = extract_claims("SearchEngine has a search method for querying.")
+    hm = [c for c in claims if c.kind == "HAS_METHOD"]
+    assert any(c.subject == "SearchEngine" and c.object_ == "search" for c in hm)
+
+
+def test_extract_has_method_dotcall():
+    claims = extract_claims("The engine calls SearchEngine.index() to build the index.")
+    hm = [c for c in claims if c.kind == "HAS_METHOD"]
+    assert any(c.subject == "SearchEngine" and c.object_ == "index" for c in hm)
+
+
+def test_extract_has_method_class_implements():
+    claims = extract_claims("class Searcher implements a fetch method.")
+    hm = [c for c in claims if c.kind == "HAS_METHOD"]
+    assert any(c.subject == "Searcher" and c.object_ == "fetch" for c in hm)
+
+
+def test_verify_has_method_correct(db_with_classes):
+    claim = Claim(text="", kind="HAS_METHOD", subject="SearchEngine", object_="search")
+    result = verify_claim(claim, db_with_classes)
+    assert result is None  # method exists, no correction needed
+
+
+def test_verify_has_method_wrong(db_with_classes):
+    claim = Claim(text="", kind="HAS_METHOD", subject="SearchEngine", object_="flush")
+    result = verify_claim(claim, db_with_classes)
+    assert result is not None
+    assert "flush" in result.correction_text
+    assert "SearchEngine" in result.correction_text
+
+
+def test_verify_has_method_unknown_class(db_with_classes):
+    # Class not in DB — should not emit a false correction
+    claim = Claim(text="", kind="HAS_METHOD", subject="UnknownClass", object_="run")
+    result = verify_claim(claim, db_with_classes)
+    assert result is None
+
+
+def test_verify_answer_catches_method_confabulation(db_with_classes):
+    answer = "SearchEngine has a flush method to clear the cache."
+    corrections = verify_answer(answer, db_with_classes)
+    assert any("flush" in c.correction_text for c in corrections)

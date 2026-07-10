@@ -6,11 +6,12 @@
 # claims and check them against the corpus DB.  If any claim is wrong, return
 # corrections so the caller can re-assemble once with the facts corrected.
 #
-# Only checks deterministic structural facts (call edges, callers).
+# Only checks deterministic structural facts (call edges, callers, class methods).
 # Design-constraint claims are handled by evaluate_claim / check_design_violations.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -24,9 +25,9 @@ from typing import Optional
 @dataclass
 class Claim:
     text: str       # the phrase in the answer that asserts the claim
-    kind: str       # CALLS | NO_CALLERS
+    kind: str       # CALLS | NO_CALLERS | HAS_METHOD
     subject: str    # symbol the claim is about
-    object_: str = ""  # for CALLS: the callee being asserted
+    object_: str = ""  # for CALLS: callee; for HAS_METHOD: the method name
 
 
 @dataclass
@@ -54,6 +55,15 @@ _NO_CALLER_PATS = [
     re.compile(r'no\s+(?:direct\s+)?callers?\s+(?:of|for)\s+(\w+)', re.I),
     re.compile(r'nothing\s+calls?\s+(\w+)', re.I),
     re.compile(r'\b(\w+)\s+(?:has\s+)?no\s+callers?\b', re.I),
+]
+
+# "X has a `search` method"  /  "X's `search` method"  /  "class X implements search"
+# Returns (class_name, method_name) groups.
+_HAS_METHOD_PATS = [
+    re.compile(r'\b(\w+)\s+has\s+(?:a\s+)?[`\'"]?(\w+)[`\'"]?\s+method\b', re.I),
+    re.compile(r"\b(\w+)'s\s+[`'\"]?(\w+)[`'\"]?\s+method\b", re.I),
+    re.compile(r'\bclass\s+(\w+)\s+(?:implements|defines|provides)\s+(?:a\s+)?[`\'"]?(\w+)[`\'"]?\b', re.I),
+    re.compile(r'\b(\w+)\.(\w+)\s*\(\)', re.I),  # "X.method()" in prose
 ]
 
 # Short common words the model uses as connectors — skip these as symbol names
@@ -96,6 +106,12 @@ def extract_claims(answer: str) -> list[Claim]:
             sym = m.group(1)
             if _is_valid_symbol(sym):
                 _add("NO_CALLERS", sym)
+
+    for pat in _HAS_METHOD_PATS:
+        for m in pat.finditer(answer):
+            cls_name, method_name = m.group(1), m.group(2)
+            if _is_valid_symbol(cls_name) and _is_valid_symbol(method_name):
+                _add("HAS_METHOD", cls_name, method_name)
 
     return claims
 
@@ -149,6 +165,31 @@ def verify_claim(claim: Claim, conn: sqlite3.Connection) -> Optional[Correction]
             correction_text=(
                 f"CORRECTION: '{claim.subject}' IS called. "
                 f"Direct callers: {', '.join(callers[:3])}."
+            ),
+        )
+
+    elif claim.kind == "HAS_METHOD":
+        row = conn.execute(
+            "SELECT methods_json FROM classes WHERE name = ? LIMIT 1",
+            (claim.subject,),
+        ).fetchone()
+        if row is None:
+            return None  # class not in DB — can't refute
+
+        try:
+            methods = json.loads(row[0] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            return None  # unparseable — don't emit a false correction
+
+        if claim.object_.lower() in [m.lower() for m in methods]:
+            return None  # method exists
+
+        return Correction(
+            original_claim=f"{claim.subject} has method {claim.object_}",
+            actual_fact=f"{claim.subject} methods: {', '.join(methods[:6]) or '(none recorded)'}",
+            correction_text=(
+                f"CORRECTION: '{claim.subject}' does not have a '{claim.object_}' method. "
+                f"Recorded methods: {', '.join(methods[:5]) or '(none)'}."
             ),
         )
 
