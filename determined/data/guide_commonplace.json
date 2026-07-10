@@ -63,5 +63,71 @@
     "headline": "Build queue: proposed work items",
     "body": "When Determined proposes a fix, docstring fill, or gap closure, it lands here. The build queue is the hand-off between Determined's analysis and your next coding action.",
     "what_to_notice": "The queue is empty on a fresh skeleton — it fills as you run gap_analysis, docstring_health with propose=true, and similar tools."
+  },
+
+  "corpus:complete": {
+    "headline": "Orient: the complete corpus",
+    "body": "25 files, 2 intentional stubs, 16 orphaned implementations. Compare to the skeleton: 8 more files, chain positions now visible, and the orphan count jumped from 1 to 16 — mostly model layer and utility functions awaiting wiring.",
+    "what_to_notice": "The 2 remaining stubs (enrich_entry, semantic_search) are documented as intentional — 'STUB:' in the docstring. That's different from an accidental gap: the app runs, the stub just returns a fallback."
+  },
+  "frontier:direct:complete": {
+    "headline": "Direct mode: 2 intentional stubs",
+    "body": "enrich_entry (services/pipeline.py) and semantic_search (services/searcher.py) are stub_by_doc — they have real bodies but the docstring marks them incomplete. These are the 'what to implement next' targets.",
+    "what_to_notice": "Both have functional fallbacks: semantic_search delegates to search(), enrich_entry returns early. The app works without them — they're improvements waiting to be built, not blockers."
+  },
+  "frontier:orphan:complete": {
+    "headline": "Orphan mode: 16 orphaned implementations",
+    "body": "The orphan count jumped from 1 (skeleton) to 16 (complete). Most are model classes (Entry, Connection, Tag), HTML parser internals (extractor.py), and utility functions — all implemented but not yet called from routing code.",
+    "what_to_notice": "These are 'anticipatory' — built ahead of their callers. The exception: create_app is possibly-stranded (Flask factory, invisible to static analysis). The 15 others are real latent code waiting to be wired."
+  },
+  "frontier:abc:complete": {
+    "headline": "ABC mode: hierarchy still complete",
+    "body": "EntryProcessor's 3 subclasses all have concrete overrides in the complete corpus too. Adding 8 files didn't break the ABC contract — the hierarchy scaled cleanly.",
+    "what_to_notice": "This is what good incremental extension looks like: new files added, interface coverage unchanged. ABC mode is the check that this held."
+  },
+  "topology:complete": {
+    "headline": "Topology: chain positions now visible",
+    "body": "Chain-tail and chain-head positions appear in the complete corpus — the call graph is dense enough to form real chains. The action queue now distinguishes 'implement now' (chain-tail stubs) from 'write callers' (orphaned-impl).",
+    "what_to_notice": "In the skeleton, the queue was simple: write callers for 2 orphans. In the complete corpus it's prioritized: implement chain-tails first (they're blocking callers), then wire the remaining orphans."
+  },
+  "knowledge:complete": {
+    "headline": "Knowledge: still empty on a fresh complete corpus",
+    "body": "42/64 functions missing docstrings, 0 design notes, 0 distilled summaries. The knowledge layer doesn't auto-populate — it needs explicit runs of extract_design_facts and ingest_design_docs.",
+    "what_to_notice": "Running ingest_design_docs on examples/commonplace/docs/DESIGN.md is the first step to unlocking check_design_violations. Without design notes, violations can't be detected."
+  },
+  "editor:complete": {
+    "headline": "Editor: 8 new files to explore",
+    "body": "The complete corpus added models/ (Entry, Connection, Tag), routes/api.py, routes/browse.py, and utils/text.py and url.py. These are the wiring targets for the 16 orphaned implementations.",
+    "what_to_notice": "Try opening models/entry.py — its validate() method is one of the orphaned impls. It's complete code waiting for a route to call it."
+  },
+  "call_tree:complete": {
+    "headline": "Call tree: deeper chains to trace",
+    "body": "The complete corpus has longer call chains. Trace capture downward to see the full pipeline: capture -> enrich_entry -> suggest_tags -> _call_llm (the stub chain).",
+    "what_to_notice": "The stub chain from capture to _call_llm is exactly what Direct mode surfaces. Tracing it here shows the shape of what needs implementing — and where each function sits in the chain."
+  },
+  "graph:complete": {
+    "headline": "Graph: the full corpus structure",
+    "body": "25 nodes, 8 more than the skeleton. The model layer (Entry, Connection, Tag) forms a cluster that connects to storage/queries.py but not yet to the routing layer — that's the orphan story made visual.",
+    "what_to_notice": "Look for the isolated model cluster. Those nodes have edges to storage but no edges from routes — the missing wiring is visible as a gap in the graph."
+  },
+  "chat:complete": {
+    "headline": "Ask: richer answers with more corpus",
+    "body": "The complete corpus gives the Ask bar more to work with: 25 files, real chain positions, documented stubs. Try asking about specific stubs or orphaned implementations.",
+    "what_to_notice": "Try: 'Why is semantic_search a stub?' or 'What calls enrich_entry?' The call graph and stub metadata make these answerable from the DB, not from guesswork."
+  },
+  "bag:complete": {
+    "headline": "Bag: session context across a richer corpus",
+    "body": "The bag accumulates symbols across your exploration. In the complete corpus, traces and frontier queries pull in more symbols — the bag gets richer faster.",
+    "what_to_notice": "After tracing the stub chain (capture -> enrich_entry -> suggest_tags), check the bag. Those symbols plus their risk scores are context the Ask bar uses for follow-up questions."
+  },
+  "dochealth:complete": {
+    "headline": "Doc health: 42 functions need docstrings",
+    "body": "The complete corpus jumped from 9 to 42 missing docstrings. The model layer (Entry, Connection, Tag) and most utility functions have no documentation yet.",
+    "what_to_notice": "Run with propose=true to generate fill candidates from distilled summaries. But distillation must run first — the complete corpus starts at 0% distilled, same as the skeleton."
+  },
+  "build_queue:complete": {
+    "headline": "Build queue: where analysis becomes action",
+    "body": "The complete corpus gives the build queue more material: gap proposals, docstring fills for 42 functions, and design violations once ingest_design_docs has run.",
+    "what_to_notice": "Start with docstring_health and gap_analysis to populate the queue. Each accepted item becomes a concrete coding action — the queue is the bridge from 'what Determined found' to 'what you write next'."
   }
 }

@@ -296,6 +296,30 @@ def _design_doc_hint():
         return None
 
 
+def _corpus_phase() -> str | None:
+    """Detect which commonplace phase is loaded based on DB path."""
+    if not _db_path or "commonplace" not in _db_path.lower():
+        return None
+    return "skeleton" if "seed" in Path(_db_path).name.lower() else "complete"
+
+
+def _phase_dbs() -> dict:
+    """Return absolute paths to each phase DB when commonplace is loaded."""
+    phase = _corpus_phase()
+    if not phase:
+        return {}
+    if phase == "skeleton":
+        skeleton = _db_path
+        complete = _db_path.replace("_seed.db", ".db")
+    else:
+        complete = _db_path
+        skeleton = _db_path.replace(".db", "_seed.db")
+    return {
+        "skeleton": skeleton if Path(skeleton).exists() else None,
+        "complete": complete if Path(complete).exists() else None,
+    }
+
+
 def _emit_corpus_ready(switched=False):
     if _oracle:
         s = _corpus_status()
@@ -318,6 +342,8 @@ def _emit_corpus_ready(switched=False):
             "queue_count": _queue_count(),
             "design_doc_hint": _design_doc_hint(),
             "is_commonplace": "commonplace" in _db_path.lower(),
+            "corpus_phase": _corpus_phase(),
+            "phase_dbs": _phase_dbs(),
         })
 
 
