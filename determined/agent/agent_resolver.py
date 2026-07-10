@@ -762,13 +762,14 @@ _HEURISTICS: list[tuple] = [
 
     # "if I change X what breaks" / "what depends on X" / "impact of changing X"
     # "what would break if I modify X" / "blast radius of X" / "ripple effect of X"
+    # also past tense: "changed", "modified", "refactored", etc.
     (
         re.compile(
-            r"(?:if\s+I\s+(?:change|modify|refactor|rename|remove|delete)\s+"
+            r"(?:if\s+I\s+(?:change[sd]?|modif(?:y|ie[sd])|refactor(?:ed)?|rename[sd]?|remove[sd]?|delete[sd]?)\s+"
             r"(?:a\s+|an\s+|the\s+)?['\"]?([A-Za-z_]\w*)['\"]?|"
             r"(?:what|which)\s+(?:breaks?|depends?\s+on|is\s+affected\s+by|would\s+break)\s+"
-            r"(?:if\s+I\s+(?:change|modify)?\s*)?(?:a\s+|an\s+|the\s+)?['\"]?([A-Za-z_]\w*)['\"]?|"
-            r"what\s+would\s+break\s+if\s+I\s+(?:change|modify|refactor)\s+"
+            r"(?:if\s+I\s+(?:change[sd]?|modif(?:y|ie[sd])?)?\s*)?(?:a\s+|an\s+|the\s+)?['\"]?([A-Za-z_]\w*)['\"]?|"
+            r"what\s+would\s+break\s+if\s+I\s+(?:change[sd]?|modif(?:y|ie[sd])|refactor(?:ed)?)\s+"
             r"(?:a\s+|an\s+|the\s+)?['\"]?([A-Za-z_]\w*)['\"]?|"
             r"impact\s+of\s+(?:changing\s+)?(?:a\s+|an\s+|the\s+)?['\"]?([A-Za-z_]\w*)['\"]?|"
             r"(?:ripple(?:\s+effect)?|blast\s+radius)\s+(?:of\s+|from\s+)?(?:a\s+|an\s+|the\s+)?['\"]?([A-Za-z_]\w*)['\"]?)",

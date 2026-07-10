@@ -191,7 +191,7 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
 
         # Extended impact via subgraph
         sg = _graph_subgraph_raw(oracle, target, radius=2)
-        extended = sorted(sg.get("nodes", set()) - {target})
+        extended = sorted(set(sg.get("nodes", [])) - {target})
         if extended:
             lines.append(f"  Extended impact ({len(extended)} symbols): {', '.join(extended[:5])}" + (f" ..." if len(extended) > 5 else ""))
 

@@ -39,7 +39,7 @@ from determined.agent.claim_verifier import verify_answer as _verify_claims, bui
 
 _DECOMPOSE_SYSTEM = """\
 You are a code analysis assistant. Your job is to list what information
-you need to answer a question about a game codebase. Do NOT answer the
+you need to answer a question about a codebase. Do NOT answer the
 question yet. Just list your needs.
 
 Output exactly one NEED: line per piece of information needed.
@@ -55,8 +55,11 @@ Use only these patterns (copy exactly):
   NEED: findings for <symbol>
   NEED: brief for <symbol>
 
-Extract all symbol and file names explicitly from the question.
-Output only NEED: lines, nothing else."""
+Important:
+- To list all methods/functions of a class, use "NEED: symbols in the_file.py"
+  (not "symbols named ClassName" -- that only finds the class declaration, not its methods)
+- Extract all symbol and file names explicitly from the question.
+- Output only NEED: lines, nothing else."""
 
 
 def _corpus_index(oracle: DBOracle) -> str:

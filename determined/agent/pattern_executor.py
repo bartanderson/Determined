@@ -86,11 +86,11 @@ _DETECT_RULES: list[tuple] = [
     (re.compile(r"gap\s+analysis|what(?:'s| is)\s+missing|what\s+could\s+bridge|analyze\s+(?:the\s+)?gaps?", re.I),
      "gap_analysis", None),
 
-    # blast_radius (1): "what would break if X were removed/deleted/gone"
+    # blast_radius (1): "what would break if X were removed/deleted/gone/changed"
     (re.compile(
         r"what\s+(?:would\s+|will\s+)?breaks?\s+"
-        r"(?:if|when|by\s+removing|by\s+deleting)\s+"
-        r"(?:I\s+)?(?:remove[ds]?\s+|delete[ds]?\s+|eliminat\w*\s+)?"
+        r"(?:if|when|by\s+removing|by\s+deleting|by\s+changing)\s+"
+        r"(?:I\s+)?(?:change[sd]?\s+|modif\w*\s+|refactor\w*\s+|remove[ds]?\s+|delete[ds]?\s+|eliminat\w*\s+)?"
         r"(?:a\s+|an\s+|the\s+)?"
         r"['\"]?([A-Za-z_][\w./\\]*)['\"]?",
         re.I,
