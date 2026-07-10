@@ -98,10 +98,26 @@ def list_callers(oracle: "DBOracle", args: dict) -> str:
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
+    # Check if symbol is defined in multiple files (do before callers lookup)
+    decl_rows = oracle.conn.execute(
+        "SELECT DISTINCT file_path FROM symbols WHERE name = ?", (symbol,)
+    ).fetchall()
+    decl_files = [r[0].replace("\\", "/").split("/")[-1] for r in decl_rows]
     rows = _list_callers_raw(oracle, symbol)
     if not rows:
+        if len(decl_files) > 1:
+            return (f"No direct callers found for '{symbol}' "
+                    f"[NOTE: '{symbol}' is defined in {len(decl_files)} files: "
+                    f"{', '.join(decl_files)}]")
         return f"No direct callers found for '{symbol}'"
-    lines = [f"Direct callers of '{symbol}':"]
+    if len(decl_files) > 1:
+        header = (f"Direct callers of '{symbol}' "
+                  f"[NOTE: '{symbol}' is defined in {len(decl_files)} files "
+                  f"({', '.join(decl_files)}) — callers of all definitions combined]:")
+    else:
+        file_tag = f" ({decl_files[0]})" if decl_files else ""
+        header = f"Direct callers of '{symbol}'{file_tag}:"
+    lines = [header]
     for r in rows:
         file_short = (r["file_path"] or "?").replace("\\", "/").split("/")[-1]
         tag = " (annotation-resolved)" if r.get("resolved") else ""
@@ -2902,8 +2918,6 @@ def symbol_context(assessor: "Assessor", args: dict) -> str:
     oracle = assessor.oracle
     conn = oracle.conn
 
-    lines = [f"=== symbol_context: {symbol} ===\n"]
-
     # 1. Declaration
     sym_rows = conn.execute(
         "SELECT name, file_path, line_number, symbol_type FROM symbols WHERE name = ?",
@@ -2911,13 +2925,27 @@ def symbol_context(assessor: "Assessor", args: dict) -> str:
     ).fetchall()
     if file_hint:
         sym_rows = [r for r in sym_rows if file_hint in r[1]] or sym_rows
+
+    # Build file-qualified header so the model can distinguish same-named symbols
+    distinct_files = list(dict.fromkeys(r[1] for r in sym_rows))  # order-preserving dedup
+    if len(distinct_files) > 1:
+        short_files = [f.replace("\\", "/").split("/")[-1] for f in distinct_files]
+        header = f"=== symbol_context: {symbol} (defined in {len(distinct_files)} files: {', '.join(short_files)}) ===\n"
+    elif distinct_files:
+        short_file = distinct_files[0].replace("\\", "/").split("/")[-1]
+        header = f"=== symbol_context: {symbol} ({short_file}) ===\n"
+    else:
+        header = f"=== symbol_context: {symbol} ===\n"
+    lines = [header]
+
     if sym_rows:
-        r = sym_rows[0]
         lines.append(f"[DECLARATION]")
-        lines.append(f"  file:  {r[1]}")
-        lines.append(f"  line:  {r[2]}")
-        lines.append(f"  type:  {r[3]}")
-        # class container
+        if len(distinct_files) > 1:
+            lines.append(f"  NOTE: '{symbol}' exists in {len(distinct_files)} files — each is a distinct symbol.")
+        for r in sym_rows:
+            short = r[1].replace("\\", "/").split("/")[-1]
+            lines.append(f"  {symbol} ({short}):  line {r[2]}, type {r[3]}, file {r[1]}")
+        # class container (use first row)
         cls_row = conn.execute(
             "SELECT class_name FROM class_attributes WHERE attribute = ? LIMIT 1",
             (symbol,),
@@ -2927,17 +2955,31 @@ def symbol_context(assessor: "Assessor", args: dict) -> str:
     else:
         lines.append("[DECLARATION] not found in symbols table")
 
-    # 2. Docstring
-    doc = None
-    for table in ("functions", "classes"):
-        row = conn.execute(
-            f"SELECT docstring FROM {table} WHERE name = ?", (symbol,)
-        ).fetchone()
-        if row and row[0]:
-            doc = row[0]
-            break
+    # 2. Docstring — when symbol appears in multiple files, show each separately
     lines.append(f"\n[DOCSTRING]")
-    lines.append(f"  {doc[:300] if doc else '(none)'}")
+    if len(distinct_files) > 1:
+        for file_path in distinct_files:
+            short = file_path.replace("\\", "/").split("/")[-1]
+            doc = None
+            for table in ("functions", "classes"):
+                row = conn.execute(
+                    f"SELECT docstring FROM {table} WHERE name = ? AND file_path = ?",
+                    (symbol, file_path),
+                ).fetchone()
+                if row and row[0]:
+                    doc = row[0]
+                    break
+            lines.append(f"  {symbol} ({short}): {doc[:200] if doc else '(none)'}")
+    else:
+        doc = None
+        for table in ("functions", "classes"):
+            row = conn.execute(
+                f"SELECT docstring FROM {table} WHERE name = ?", (symbol,)
+            ).fetchone()
+            if row and row[0]:
+                doc = row[0]
+                break
+        lines.append(f"  {doc[:300] if doc else '(none)'}")
 
     # 3. Risk badge
     from determined.agent.risk_annotator import score_risk

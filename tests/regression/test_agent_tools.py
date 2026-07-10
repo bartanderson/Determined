@@ -845,6 +845,100 @@ def test_string_tools_derive_from_raw():
 
 
 # ------------------------------------------------------------------
+# RM32: name-collision disambiguation tests
+# ------------------------------------------------------------------
+
+def _make_multifile_fixture():
+    """
+    In-memory DB where a function named 'search' exists in three files:
+    api.py, search.py, and searcher.py. Used to test RM32 disambiguation.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=MEMORY")
+    ensure_schema(conn)
+    from determined.intent.semantic_summary import ensure_semantic_summaries_table
+    from determined.intent.knowledge_artifact import ensure_knowledge_artifacts_table
+    cur = conn.cursor()
+    ensure_semantic_summaries_table(cur)
+    ensure_knowledge_artifacts_table(cur)
+    conn.commit()
+
+    for fname, doc in [
+        ("api.py", "Route-level search dispatcher."),
+        ("search.py", "Core search logic."),
+        ("searcher.py", "Low-level searcher implementation."),
+    ]:
+        fp = f"{PROJECT_ROOT}/{fname}"
+        conn.execute(
+            "INSERT INTO files (file_path, line_count, role, is_hot) VALUES (?, ?, ?, ?)",
+            (fp, 30, "module", 0),
+        )
+        conn.execute(
+            "INSERT INTO symbols (file_path, symbol_type, name, line_number, signature, canonical_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (fp, "function", "search", 5, "", f"{fp}:function:search:5"),
+        )
+        conn.execute(
+            "INSERT INTO functions (file_path, name, line_number, docstring) VALUES (?, ?, ?, ?)",
+            (fp, "search", 5, doc),
+        )
+
+    conn.commit()
+    return FakeOracle(conn)
+
+
+def test_symbol_context_multi_file_header():
+    """When symbol exists in multiple files, header names the files."""
+    oracle = _make_multifile_fixture()
+    assessor = FakeAssessor(oracle)
+    from determined.agent.agent_tools import symbol_context
+    result = symbol_context(assessor, {"symbol": "search"})
+    assert "3 files" in result or "api.py" in result
+    assert "search.py" in result or "searcher.py" in result
+
+
+def test_symbol_context_multi_file_declaration():
+    """All file declarations are listed, not just the first."""
+    oracle = _make_multifile_fixture()
+    assessor = FakeAssessor(oracle)
+    from determined.agent.agent_tools import symbol_context
+    result = symbol_context(assessor, {"symbol": "search"})
+    assert "api.py" in result
+    assert "search.py" in result
+    assert "searcher.py" in result
+
+
+def test_symbol_context_multi_file_docstrings():
+    """Per-file docstrings are shown when multiple definitions exist."""
+    oracle = _make_multifile_fixture()
+    assessor = FakeAssessor(oracle)
+    from determined.agent.agent_tools import symbol_context
+    result = symbol_context(assessor, {"symbol": "search"})
+    assert "Route-level search dispatcher" in result
+    assert "Core search logic" in result
+    assert "Low-level searcher implementation" in result
+
+
+def test_list_callers_multi_file_note():
+    """list_callers notes when symbol is defined in multiple files."""
+    oracle = _make_multifile_fixture()
+    from determined.agent.agent_tools import list_callers
+    result = list_callers(oracle, {"symbol": "search"})
+    # Either a caller was found or "No direct callers" — but header must note multiplicity
+    assert "3 files" in result or "NOTE" in result or "defined in" in result
+
+
+def test_list_callers_single_file_tag():
+    """list_callers includes file name in header for unambiguous symbols."""
+    oracle = _make_fixture()
+    from determined.agent.agent_tools import list_callers
+    result = list_callers(oracle, {"symbol": "generate_encounter"})
+    assert "engine.py" in result
+    assert "handle_movement" in result
+
+
+# ------------------------------------------------------------------
 # infer_behavior_batch — no LLM required
 # ------------------------------------------------------------------
 
