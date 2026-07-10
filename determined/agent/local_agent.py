@@ -59,6 +59,39 @@ Extract all symbol and file names explicitly from the question.
 Output only NEED: lines, nothing else."""
 
 
+def _corpus_index(oracle: DBOracle) -> str:
+    """Build a brief corpus map for the DECOMPOSE prompt when grounding is empty.
+
+    Returns a short block listing the top hot files and known entry points so the
+    model emits real file/symbol names instead of <placeholder> tokens.
+    """
+    try:
+        rows = oracle.conn.execute(
+            "SELECT file_path FROM files WHERE is_hot = 1 LIMIT 8"
+        ).fetchall()
+        hot = [r[0].replace("\\", "/").split("/")[-1] for r in rows]
+    except Exception:
+        hot = []
+
+    try:
+        ep_rows = oracle.conn.execute(
+            "SELECT file_path FROM files WHERE role = 'entry_point' LIMIT 6"
+        ).fetchall()
+        entries = [r[0].replace("\\", "/").split("/")[-1] for r in ep_rows]
+    except Exception:
+        entries = []
+
+    if not hot and not entries:
+        return ""
+
+    lines = ["Corpus map (use these real names in your NEED: lines):"]
+    if hot:
+        lines.append("  Key files: " + ", ".join(hot))
+    if entries:
+        lines.append("  Entry points: " + ", ".join(entries))
+    return "\n".join(lines)
+
+
 def _decompose_prompt(
     question: str,
     history: list[dict],
@@ -396,7 +429,9 @@ def _answer(
         heuristic_matched = True
     else:
         heuristic_matched = False
-        decompose_msgs = _decompose_prompt(user_input, history, grounding=grounding)
+        # If grounding found nothing, inject corpus index so model has real names to use
+        effective_grounding = grounding or _corpus_index(oracle)
+        decompose_msgs = _decompose_prompt(user_input, history, grounding=effective_grounding)
         needs_text = _call_ollama(decompose_msgs, verbose=verbose, label="phase1-decompose")
         if needs_text.startswith("ERROR:"):
             return needs_text, history

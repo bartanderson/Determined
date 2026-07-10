@@ -199,6 +199,67 @@ def test_assembly_hint_similar_pattern_unaffected():
     assert "structurally similar" in hint
 
 
+# ------------------------------------------------------------------
+# _corpus_index tests
+# ------------------------------------------------------------------
+
+def _make_corpus_oracle():
+    """Minimal oracle with files table for _corpus_index testing."""
+    import sqlite3
+    from determined.agent.local_agent import _corpus_index
+
+    class _O:
+        conn = sqlite3.connect(":memory:")
+    o = _O()
+    o.conn.executescript("""
+        CREATE TABLE files (
+            file_path TEXT PRIMARY KEY,
+            role TEXT,
+            is_hot INTEGER,
+            line_count INTEGER
+        );
+        INSERT INTO files VALUES ('app/routes.py',   'entry_point', 1, 100);
+        INSERT INTO files VALUES ('app/models.py',   'model',       1, 200);
+        INSERT INTO files VALUES ('app/utils.py',    'utility',     0,  50);
+    """)
+    return o, _corpus_index
+
+
+def test_corpus_index_hot_files_appear():
+    oracle, _corpus_index = _make_corpus_oracle()
+    result = _corpus_index(oracle)
+    assert "routes.py" in result
+    assert "models.py" in result
+
+
+def test_corpus_index_entry_points_appear():
+    oracle, _corpus_index = _make_corpus_oracle()
+    result = _corpus_index(oracle)
+    assert "routes.py" in result  # entry_point role
+
+
+def test_corpus_index_empty_db_returns_empty():
+    import sqlite3
+    from determined.agent.local_agent import _corpus_index
+
+    class _O:
+        conn = sqlite3.connect(":memory:")
+    o = _O()
+    o.conn.execute("CREATE TABLE files (file_path TEXT, role TEXT, is_hot INTEGER, line_count INTEGER)")
+    result = _corpus_index(o)
+    assert result == ""
+
+
+def test_corpus_index_no_files_table_returns_empty():
+    import sqlite3
+    from determined.agent.local_agent import _corpus_index
+
+    class _O:
+        conn = sqlite3.connect(":memory:")
+    result = _corpus_index(_O())
+    assert result == ""
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
