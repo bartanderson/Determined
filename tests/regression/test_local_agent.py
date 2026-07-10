@@ -155,6 +155,50 @@ def test_answer_multiple_needs_deduped():
     assert call_log.count("phase3-assemble") == 1
 
 
+
+# ------------------------------------------------------------------
+# RM33: _assembly_hint comparative/boolean detection
+# ------------------------------------------------------------------
+
+def test_assembly_hint_comparative_is_there_any():
+    from determined.agent.local_agent import _assembly_hint
+    hint = _assembly_hint(["symbols named search"], "is there any function that handles both search and filter?")
+    assert "YES" in hint or "yes/no" in hint.lower() or "YES or NO" in hint
+
+
+def test_assembly_hint_comparative_which_has_both():
+    from determined.agent.local_agent import _assembly_hint
+    hint = _assembly_hint(["symbols named query"], "which function has both pagination and sorting?")
+    assert "YES" in hint or "yes/no" in hint.lower() or "YES or NO" in hint
+
+
+def test_assembly_hint_boolean_with_also():
+    from determined.agent.local_agent import _assembly_hint
+    # "does X also do Y?" -- has "also" + implicit AND condition
+    hint = _assembly_hint(["symbols named save"], "does save also handle validation and logging?")
+    assert "YES" in hint or "yes/no" in hint.lower() or "YES or NO" in hint
+
+
+def test_assembly_hint_no_hint_plain_boolean():
+    from determined.agent.local_agent import _assembly_hint
+    # Simple yes/no without multiple conditions should not get comparative hint
+    hint = _assembly_hint(["symbols named save"], "does save handle validation?")
+    assert hint == ""
+
+
+def test_assembly_hint_no_hint_for_plain_what_question():
+    from determined.agent.local_agent import _assembly_hint
+    hint = _assembly_hint(["symbols named search"], "what does search do?")
+    assert hint == ""
+
+
+def test_assembly_hint_similar_pattern_unaffected():
+    from determined.agent.local_agent import _assembly_hint
+    needs = ["callees of foo", "what calls bar", "findings for baz", "symbols named x"]
+    hint = _assembly_hint(needs, "what symbols are similar to foo?")
+    assert "structurally similar" in hint
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

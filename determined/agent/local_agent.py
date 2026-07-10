@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 
@@ -117,13 +118,33 @@ def _required_elements(facts: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _assembly_hint(needs: list[str]) -> str:
+# Matches questions asking whether any symbol satisfies multiple conditions.
+# Requires an explicit conjunction (and/both) or comparative marker (also).
+_COMPARATIVE_RE = re.compile(
+    r"\b(is there any|does any|are there any|can any|do any"
+    r"|which \w+ (has|have|does|handles?|supports?))\b"
+    r".*\b(and|both)\b"
+    r"|"
+    r"\b(does|is|can|are|do)\b.+\balso\b.+\b(and|both)\b",
+    re.I,
+)
+
+
+def _assembly_hint(needs: list[str], question: str = "") -> str:
     """
     Per-heuristic focus instruction injected into the ASSEMBLE prompt. Steers LLM
     on genuine synthesis cases (deterministic cases bypass assembly entirely).
     In-code for now; could migrate to knowledge.db for data-level tuning once stable.
     """
     has = lambda p: any(n.startswith(p) for n in needs)
+    # comparative: cross-reference facts to find symbols satisfying multiple conditions
+    if _COMPARATIVE_RE.search(question):
+        return (
+            "This is a comparative or yes/no question. "
+            "Cross-reference the facts above to find symbols that satisfy ALL stated conditions. "
+            "Answer YES or NO first. If YES, name the specific symbol(s) and cite which facts support each condition. "
+            "If NO, state which condition no symbol satisfies. Do not summarize facts individually."
+        )
     # pattern_similar: callees + what-calls + findings + symbols-named, no intent, no brief
     if (has("callees of") and has("what calls") and has("findings for")
             and has("symbols named") and not has("intent of") and not has("brief for")):
@@ -143,7 +164,7 @@ def _assemble_prompt(question: str, facts_text: str, history: list[dict],
         messages.append({"role": turn["role"], "content": turn["content"]})
     required = _required_elements(facts) if facts else ""
     required_block = f"\nMust include in answer:\n{required}\n" if required else ""
-    hint = _assembly_hint(needs) if needs else ""
+    hint = _assembly_hint(needs, question) if needs else ""
     hint_block = f"\nFocus for this question type:\n{hint}\n" if hint else ""
     content = (
         f"Question: {question}\n"
