@@ -31,16 +31,22 @@ def to_text_tree(
     Render a call tree rooted at `root` as indented ASCII text.
     Shows what root calls, what those call, etc.
     """
+    from determined.agent.graph_utils import _has_id_columns
+    from determined.identity.symbol_identity import normalize_symbol
+    use_ids = _has_id_columns(oracle.conn)
+    root_id = normalize_symbol(root) if use_ids else root
+    if use_ids:
+        _next_q = "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ? ORDER BY target_id"
+    else:
+        _next_q = "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? ORDER BY callee"
+
     lines = [root]
-    visited: set[str] = {root}
+    visited: set[str] = {root_id}
 
     def _walk(symbol: str, depth: int, prefix: str) -> None:
         if depth > max_depth or len(lines) >= max_nodes:
             return
-        rows = oracle.conn.execute(
-            "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? ORDER BY callee",
-            (symbol,)
-        ).fetchall()
+        rows = oracle.conn.execute(_next_q, (symbol,)).fetchall()
         for i, row in enumerate(rows):
             if len(lines) >= max_nodes:
                 lines.append(f"{prefix}... (truncated)")
@@ -55,7 +61,7 @@ def to_text_tree(
             extension = "    " if i == len(rows) - 1 else "│   "
             _walk(callee, depth + 1, prefix + extension)
 
-    _walk(root, 1, "")
+    _walk(root_id, 1, "")
     return "\n".join(lines)
 
 

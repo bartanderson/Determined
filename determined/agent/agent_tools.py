@@ -2683,14 +2683,18 @@ def _project_status_data(oracle: "DBOracle", assessor: "Assessor") -> dict:
         "SELECT name, file_path, is_stub FROM functions"
     ).fetchall()
 
+    from determined.agent.graph_utils import _has_id_columns as _hic
+    _use_ids = _hic(oracle.conn)
     callee_set = {
         r[0] for r in oracle.conn.execute(
-            "SELECT DISTINCT callee FROM graph_edges"
+            "SELECT DISTINCT target_id FROM graph_edges" if _use_ids
+            else "SELECT DISTINCT callee FROM graph_edges"
         ).fetchall()
     }
     caller_set = {
         r[0] for r in oracle.conn.execute(
-            "SELECT DISTINCT caller FROM graph_edges"
+            "SELECT DISTINCT source_id FROM graph_edges" if _use_ids
+            else "SELECT DISTINCT caller FROM graph_edges"
         ).fetchall()
     }
 
@@ -4911,15 +4915,24 @@ def find_primitive_gaps(assessor: "Assessor", args: dict) -> str:
         conn.commit()
 
     builtin_names = set(dir(_bi))
+    from determined.agent.graph_utils import _has_id_columns
+    use_ids = _has_id_columns(conn)
 
-    # For each caller, collect its unique project callees (exclude builtins/externals)
-    rows = conn.execute(
-        """
-        SELECT DISTINCT caller, callee FROM graph_edges
-        WHERE callee NOT LIKE '%.%'
-        ORDER BY caller
-        """
-    ).fetchall()
+    # For each caller, collect its unique project callees (exclude builtins/externals).
+    # Use source_id/target_id (canonical bare names) so FQ callees like "module.fn"
+    # are counted under their bare name rather than filtered out.
+    if use_ids:
+        rows = conn.execute(
+            "SELECT DISTINCT source_id, target_id FROM graph_edges ORDER BY source_id"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT caller, callee FROM graph_edges
+            WHERE callee NOT LIKE '%.%'
+            ORDER BY caller
+            """
+        ).fetchall()
 
     # Group callees by caller
     caller_to_callees: dict[str, list[str]] = {}
