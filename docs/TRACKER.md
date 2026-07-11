@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-11, session 145):** RM39 prerequisite (dj2 path analysis) done. BFS from all socket/HTTP handlers documented in HISTORY.md. Four new items filed: RM40 (source attribution bug), RM41 (HTTP fetch/HTMX cross-language edges), RM42 (investigation context panel), RM43 (canned reasoning lenses). RM38 scope revised -- dj2 has no client-side socket.emit; reframed as fetch/HTMX mapping. 545 passed, 1 skipped.
+**Last session (2026-07-11, session 145+):** RM39 prerequisite (dj2 path analysis) done. BFS from all socket/HTTP handlers documented in HISTORY.md. Nine new items filed this arc: RM40 (target resolution collision), RM41 (HTTP fetch/HTMX edges), RM42 (clue board + pass 2 persistence), RM43 (canned reasoning lenses), RM44 (implementation ordering), RM45 (completion contract), RM46 (scaffold from pattern), RM47 (readiness gate), RM48 (design-to-code delta). RM38 scope revised -- dj2 has no client-side socket.emit; reframed as fetch/HTMX mapping. 545 passed, 1 skipped.
 
 **Session 140 (2026-07-10):** RM21 adversarial probe follow-up against Determined corpus. Corrected prior handoff (Q1/Q4/Q5 were partial, not all-pass). Fixed Q4 (imports of <file.py> NEED pattern + list_import_deps resolver + DECOMPOSE_SYSTEM tip) -- now PASS. Fixed Q1 (orient_to_codebase regex expanded to 16 phrasings, moved before understand_symbol in detect rules to prevent false capture) -- now PASS. Fixed grounding pollution (test files/symbols filtered from phase0 suggestions). Known orient misses documented: "how does this work", "summarize the codebase", "tell me about this codebase" -- boundary, not bugs. Q5 still confabulates (model invents query_router/query_session pipeline that doesn't exist); deferred to next session. 533 passed, 1 skipped.
 
@@ -163,6 +163,482 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
+
+---
+
+RM44. **[OPEN] Implementation ordering: topological sort of stubs and ABC gaps into a dependency-ordered work plan**
+
+   **The gap:** `frontier_coverage`, `list_stubs`, and `find_abc_gaps` surface what is
+   incomplete but give no guidance on what order to implement it. If `fn_a` is a stub
+   and `fn_b` (also a stub) calls `fn_a`, you must implement `fn_a` first or `fn_b`
+   cannot be tested. The user has to reason about this ordering manually by cross-referencing
+   call graph output with the stub list. That reasoning is pure graph topology -- the DB
+   already has everything needed to compute it.
+
+   **The concept:** A `implementation_order` tool that takes the full set of incomplete
+   symbols (stubs + ABC gap methods) and returns them sorted leaves-first: symbols with
+   no incomplete callees come first; symbols whose callees are all complete or scheduled
+   earlier come later. Output is a numbered list, each entry annotated with why it is at
+   that position ("no incomplete dependencies" / "depends on: fn_x, fn_y above").
+
+   **Algorithm (pure SQL + Python, no LLM needed):**
+
+   1. **Collect the incomplete set** S: union of
+      - `SELECT name, file_path FROM functions WHERE is_stub = 1`
+      - ABC gap methods from `_get_abc_gap_set(conn)` (already exists in agent_tools.py:1283)
+
+   2. **Build the restricted call graph** G: for each symbol in S, collect its callees
+      that are also in S. This is the subgraph of "incomplete depends on incomplete."
+      Query: `SELECT caller, callee FROM graph_edges WHERE caller IN S AND callee IN S`.
+      Use `resolved = 1` filter (RM40) once that lands to reduce noise; fall back to
+      unfiltered if RM40 not yet done.
+
+   3. **Topological sort** of G using Kahn's algorithm (standard BFS-based topo sort).
+      Pure Python on the adjacency list. If cycles exist (mutual recursion between stubs),
+      report the cycle as a group with a note: "these must be implemented together."
+
+   4. **Format output:** numbered list, grouped by "wave" (symbols with no remaining
+      incomplete dependencies in earlier waves). Each entry:
+      ```
+      1. fn_name  (file_path:line)
+         Ready: no incomplete callees
+      2. fn_other  (file_path:line)
+         Ready: no incomplete callees
+      3. fn_depends  (file_path:line)
+         After: fn_name (wave 1)
+      ```
+
+   **What already exists to build on:**
+   - `_get_abc_gap_set(conn)` at agent_tools.py:1283 -- returns set of ABC gap method names
+   - `list_stubs` at agent_tools.py:1093 -- already queries `functions WHERE is_stub = 1`
+   - `graph_utils.bfs_callees` at graph_utils.py:140 -- BFS over graph_edges
+   - `graph_edges` table has `caller`, `callee`, `resolved` columns
+
+   **Entry points for implementation:**
+   - New function `implementation_order(oracle, args)` in `determined/agent/agent_tools.py`
+     after `frontier_priority` (~line 1678). Takes optional `scope` arg (file path or
+     prefix to restrict to a subsystem).
+   - Wire into `TOOLS` dict at the bottom of agent_tools.py.
+   - Wire into `tool_registry.py` with category `"frontier"` (alongside `frontier_coverage`,
+     `frontier_priority`, `find_abc_gaps`).
+   - New regression test: `tests/regression/test_implementation_order.py`. Fixture needs
+     at least 3 stubs in a chain (A calls B calls C, all stubs) to verify the ordering.
+
+   **SOTS tensions:**
+   - I (locality): this moves reasoning about ordering from the user's head into the tool.
+   - XXI (don't over-engineer): Kahn's algorithm on an adjacency list is ~20 lines. No
+     graph library needed. The query for S is two SELECTs and a union. Total new code
+     is ~80 lines including output formatting.
+   - XIV (one source of truth): reads only from `graph_edges` and `functions`; does not
+     maintain its own ordering state.
+
+   **Estimated effort:** 0.5 days. Pure DB query + standard algorithm + formatting.
+   No LLM, no schema changes, no new infrastructure.
+
+---
+
+RM45. **[OPEN] Completion contract: unified "what do I need to satisfy to implement X?" summary**
+
+   **The gap:** When a developer picks a stub to implement, they need to know: what types
+   come in, what type must come out, what the callers expect the behavior to be, and what
+   the function is allowed to touch (design constraints). Right now this requires 4+ separate
+   queries: `symbol_context`, `list_callers`, `check_design_violations`, and reading
+   `param_types_json` from the DB manually. There is no single tool that assembles the
+   implementation contract.
+
+   **The concept:** A `completion_contract(symbol)` tool that returns a structured summary
+   of everything a developer needs before writing the first line of a stub implementation.
+   Output is deterministic (no LLM) except for an optional "suggested approach" line if
+   `project_stub` already has context for the symbol.
+
+   **Output shape (one call, no follow-up queries needed):**
+   ```
+   Completion contract for 'process'  (adjudication_engine.py:42)
+
+   SIGNATURE
+     process(self, player_action: PlayerAction, state: DungeonStateNeo) -> Dict
+
+   CALLERS (must satisfy these)
+     - execute_mutation_phase  (mutation_runner.py:88)  -- calls process() and passes
+       return value to apply_mutations()
+     - run_turn  (game_loop.py:201)  -- calls process() and checks return['success']
+
+   CALLEES AVAILABLE (already implemented in this file/module)
+     - _validate_action, _compute_effects, _check_constraints
+
+   CONTRACTS (from behavioral_contracts table)
+     - Returns dict with keys: success (bool), effects (list), message (str)
+     - Raises ValueError if player_action.type is unknown
+
+   DESIGN CONSTRAINTS (from check_design_violations_core)
+     - SOTS XI: process() must not decide AND execute -- return a plan, let caller apply it
+     - GRASP Information Expert: only process() should interpret PlayerAction intent
+
+   STUBS THIS DEPENDS ON (implement those first -- see RM44)
+     - _validate_action is a stub  (same file)
+   ```
+
+   **What already exists to build on (do not rewrite these, call them):**
+   - `param_types_json` column on `functions` table (parse_ast.py:171, persisted at
+     persistence_engine.py:428) -- already stores `{param_name: type_str}` as JSON
+   - `return_type` column on `functions` table (persistence_engine.py:105, parse_ast.py:190)
+     -- already stores the return annotation as a string
+   - `_list_callers_raw(oracle, symbol)` at agent_tools.py:383 -- returns list of dicts
+     with caller name and file_path
+   - `_list_callees_raw(oracle, symbol)` at agent_tools.py:426 -- returns callees
+   - `_check_design_violations_core(conn, symbol, file_path)` at agent_tools.py:758 --
+     returns violation dicts; call this directly, don't go through the string wrapper
+   - `behavioral_contracts` table (populated by parse_ast._extract_behavioral_contracts,
+     written at persistence_engine.py) -- stores pre/post conditions from docstrings
+   - `gather_context(conn, stub_name)` in stub_projector.py:110 -- already assembles
+     callers, contracts, sibling callees; reuse this rather than re-querying
+
+   **New code needed (only the assembly layer):**
+   - Query `functions WHERE name = symbol` for `param_types_json`, `return_type`,
+     `file_path`, `line_number`, `is_stub`, `docstring`
+   - Call `_list_callers_raw` → format as "CALLERS" block, show what each caller does
+     with the return value (needs one extra query per caller: what does caller pass
+     return value to? This is a simple `graph_edges WHERE caller=<caller>` scan)
+   - Call `_list_callees_raw` → split into "already implemented" vs "also stubs" using
+     `functions.is_stub`; list stubs as "implement first" warnings
+   - Call `_check_design_violations_core` → format as "DESIGN CONSTRAINTS" block
+   - Query `behavioral_contracts WHERE function_name = symbol` → format as "CONTRACTS"
+   - If `is_stub = 1`: optionally call `gather_context` from stub_projector and append
+     "SUGGESTED APPROACH" block (LLM call; gate behind `include_projection=False` arg
+     so the tool is fast by default)
+
+   **Entry points for implementation:**
+   - New function `completion_contract(oracle_or_assessor, args)` in
+     `determined/agent/agent_tools.py`. Needs `assessor` (not just `oracle`) because
+     `_check_design_violations_core` requires the assessor's connection and context.
+     Place after `symbol_context` (~line 614).
+   - Wire into `TOOLS` dict and `tool_registry.py` with category `"understanding"`.
+   - New regression test: `tests/regression/test_completion_contract.py`. Verify:
+     param types appear, callers listed, stubs-in-callees flagged, violations surface.
+
+   **SOTS tensions:**
+   - I (locality): replaces 4-query workflow with one call. The implementer's working
+     memory is the scarce resource; this reclaims it.
+   - XI (separate decide from do): tool returns a contract (decide), not code (do).
+     The optional `include_projection` flag keeps LLM suggestion opt-in.
+   - XXI (don't over-engineer): all data already exists in the DB. This is assembly
+     and formatting only. No new schema, no new ingestion pass.
+
+   **Estimated effort:** 0.5 days. All source data exists; this is glue + formatting.
+
+---
+
+RM46. **[OPEN] Scaffold from pattern: generate a skeleton for an incomplete implementation based on similar complete ones**
+
+   **The gap:** `project_stub` (agent_tools.py:1840, stub_projector.py) generates an
+   implementation for a single stub using its callers, contracts, and sibling callees.
+   What it does NOT do is find similar complete implementations elsewhere in the codebase
+   and use their structure as the scaffold. The result is that `project_stub` generates
+   from scratch each time, missing the most reliable signal available: how the developer
+   already solved the same pattern three files over.
+
+   **The concept:** A `scaffold_from_pattern(symbol)` tool that:
+   1. Finds N complete (non-stub) functions in the codebase that are structurally similar
+      to the target (same callee types, same parameter shape, same role/behavior class)
+   2. Extracts the structural skeleton of each: import patterns, guard clauses, return
+      shape, error handling idioms -- NOT the specific logic
+   3. Presents the skeleton as a fill-in-the-blanks template with the most common
+      structural choices pre-selected and the variation points called out
+
+   This is the complement to `project_stub`: `project_stub` reasons from the stub's
+   own context (callers, contracts); `scaffold_from_pattern` reasons from the corpus
+   (what similar complete code looks like). Use both together for the fullest picture.
+
+   **Algorithm:**
+
+   Step 1 -- Find structural siblings:
+   - Get the target symbol's `param_types_json`, `return_type`, `file_path` (same module
+     is a strong prior), and `infer_behavior` role (COORDINATOR / INTERFACER / etc.)
+   - Query: non-stub functions where `return_type` matches AND function is in the same
+     file OR same directory. This is the "same module family" set.
+   - Supplement with embedding similarity: embed `"{name}: {docstring}"` for the target
+     and compare against pre-embedded functions (reuse `find_duplicates` infrastructure
+     from agent_tools.py:4553 which already does pairwise cosine). Threshold 0.50
+     (looser than find_duplicates's 0.85 -- we want structural cousins, not near-copies).
+   - Combine: union of module-family set and embedding-similar set, deduplicated, limit 5.
+
+   Step 2 -- Extract structural skeleton from each match:
+   - Read source lines for each matched function (use `_get_source_lines` from
+     stub_projector.py:100, which already does this).
+   - Use `_source_skeleton` from agent_tools.py:540 -- already extracts signatures and
+     class/def lines without bodies. Extend it to also capture:
+     - First statement type (guard clause? type check? DB query? delegation call?)
+     - Return statement structure (dict literal? named result? early return?)
+     - Error handling pattern (try/except? if/raise? return None?)
+     These are extractable with simple AST pattern matching on the function body.
+
+   Step 3 -- Synthesize the template:
+   - If all 5 matches share a structural pattern (e.g., all start with a guard clause,
+     all return a dict with the same keys), call that out as "canonical pattern."
+   - If matches diverge (some guard, some don't), call that a "variation point" and
+     show both options with which matches use each.
+   - Output is a Python code block with `# FILL IN:` comments at variation points and
+     the canonical choices pre-filled. No LLM needed for this if the AST extraction
+     is reliable; use LLM only to generate the variation-point comment text.
+
+   **What already exists to build on:**
+   - `_source_skeleton(source_text, max_chars)` at agent_tools.py:540 -- extract
+     signatures without bodies. Extend to extract first-statement and return-shape.
+   - `_get_source_lines(file_path, around_line, window)` at stub_projector.py:100 --
+     read source around a function.
+   - `find_duplicates` embedding infrastructure at agent_tools.py:4553 -- cosine
+     similarity over embedded docstrings. Reuse `_get_embed_model()` at agent_tools.py:22.
+   - `match_structural_pattern` at agent_tools.py:3847 -- already compares subgraph
+     shapes. Review before building new similarity; may be partially reusable.
+   - `gather_context(conn, stub_name)` at stub_projector.py:110 -- callers + contracts
+     + siblings. Reuse the context building; add the pattern-finding on top.
+
+   **Entry points for implementation:**
+   - New helper `_extract_structural_skeleton(source: str, fn_name: str) -> dict` in
+     `determined/agent/stub_projector.py`. Returns:
+     `{first_stmt_type, return_shape, error_handling, has_guard, body_skeleton_lines}`
+   - New function `scaffold_from_pattern(assessor, args)` in `determined/agent/agent_tools.py`
+     after `project_stub` (~line 1863). Takes `symbol` arg; optional `limit=5` for
+     how many pattern matches to extract.
+   - Wire into `TOOLS` dict and `tool_registry.py` with category `"frontier"`.
+   - New regression test: `tests/regression/test_scaffold_from_pattern.py`. Verify
+     that for a stub in a file with similar complete functions, the scaffold references
+     at least one of those functions. Do not test the LLM output -- test the pattern
+     discovery and skeleton extraction only (mark LLM portions with `--slow`).
+
+   **SOTS tensions:**
+   - I (locality): the developer needs to find and read similar functions manually today;
+     this surfaces them automatically.
+   - XXI (don't over-engineer): Step 3 (template synthesis) should start with simple
+     frequency counting ("N of 5 matches start with a guard clause"). Only add LLM
+     synthesis for variation-point comments after the structural extraction is proven
+     to find real siblings reliably.
+   - XI (separate decide from do): scaffold is a reading tool. It proposes a template;
+     the developer decides what to write. It does not write files.
+
+   **Dependency:** RM45 (`completion_contract`) is a natural prerequisite -- run it
+   first to understand what the function must satisfy, then `scaffold_from_pattern` to
+   see how similar functions are structured. The two tools are complementary, not
+   redundant.
+
+   **Estimated effort:** 2 days. Step 1 (sibling finding) is 0.5d. Step 2 (skeleton
+   extraction from AST) is 1d. Step 3 (template synthesis) is 0.5d. LLM variation-
+   point text is a fast follow-on once the structural pieces work.
+
+---
+
+RM47. **[OPEN] Readiness gate: "is this safe to start implementing?"**
+
+   **The gap:** Before starting an implementation, a developer needs to know whether the
+   thing they are about to build has everything it depends on already in place. If upstream
+   dependencies are also stubs, or if the types the function receives are not yet defined,
+   implementing it now means implementing against a moving target. There is no tool that
+   answers "is X ready to implement?" with a clear yes/no and a list of blockers.
+
+   **The concept:** A `readiness_check(symbol)` tool that runs a fast, deterministic
+   gate check and returns either `READY` or `BLOCKED` with a specific list of what must
+   be resolved first. No LLM. Pure DB queries.
+
+   **Checks to run (in order; stop and report at first blocker tier):**
+
+   Tier 1 -- Symbol exists and is actually incomplete:
+   - Query `functions WHERE name = symbol`. If not found: NOT FOUND.
+   - If `is_stub = 0` AND no ABC gap: ALREADY COMPLETE (not a blocker, just informational).
+
+   Tier 2 -- Callees this function will need are ready:
+   - Query `graph_edges WHERE caller = symbol` to get callees.
+   - For each callee, check `functions.is_stub`. If any callee is also a stub: BLOCKED,
+     list the stub callees.
+   - Exception: if a callee is in the "standard library / external" set (no file_path
+     in the corpus, or file_path outside project root), skip it -- only project-internal
+     stubs are blockers.
+
+   Tier 3 -- Parameter types are resolvable:
+   - Parse `param_types_json` for the symbol.
+   - For each type annotation, check whether a class or function by that name exists
+     in the corpus (`SELECT name FROM functions UNION SELECT name FROM classes WHERE name = ?`).
+   - If a type is annotated but not found in the corpus, report it as an UNKNOWN TYPE
+     (possible external dep, possible not-yet-implemented class).
+
+   Tier 4 -- No open design constraints that block implementation:
+   - Run `_check_design_violations_core(conn, symbol, file_path)` (agent_tools.py:758).
+   - If any violation has confidence >= 0.4 (the threshold used by `check_design_violations`),
+     surface it as a DESIGN BLOCKER. These are not hard blockers (the developer may
+     disagree) but they should be seen before starting.
+
+   Tier 5 -- Dependencies not in a cycle with this symbol:
+   - Run a lightweight cycle check: BFS from this symbol over the "incomplete stubs only"
+     subgraph (same data as RM44). If the symbol appears in its own BFS reachability
+     set, report CYCLE with the path.
+
+   **Output shapes:**
+   ```
+   READY: process  (adjudication_engine.py:42)
+   All dependencies resolved. Implementation can start.
+   Types: PlayerAction (found), DungeonStateNeo (found)
+   Callees: _validate_action (complete), _compute_effects (complete)
+   ```
+   ```
+   BLOCKED: handle_move  (world_app.py:88)
+   1. STUB CALLEE: validate_move (movement.py:34) -- implement first (see RM44)
+   2. UNKNOWN TYPE: MoveResult -- not found in corpus (external or not yet defined)
+   3. DESIGN NOTE: SOTS XI score 0.42 -- handle_move may be mixing decide and execute
+   ```
+
+   **What already exists to build on:**
+   - `functions.is_stub`, `functions.param_types_json`, `functions.return_type` --
+     all already in the DB
+   - `_list_callees_raw(oracle, symbol)` at agent_tools.py:426 -- returns callees
+   - `_check_design_violations_core(conn, symbol, file_path)` at agent_tools.py:758
+   - `_get_abc_gap_set(conn)` at agent_tools.py:1283 for ABC gap membership check
+   - BFS subgraph for cycle detection: use `bfs_callees(oracle, symbol, max_depth=10)`
+     from graph_utils.py:140 on the incomplete-stubs-only subgraph
+
+   **Entry points for implementation:**
+   - New function `readiness_check(oracle_or_assessor, args)` in
+     `determined/agent/agent_tools.py`. Needs assessor for design violation check.
+     Place after `completion_contract` (RM45).
+   - Wire into `TOOLS` dict and `tool_registry.py` with category `"frontier"`.
+   - New regression test: `tests/regression/test_readiness_check.py`. Test cases:
+     - Symbol with no stub callees → READY
+     - Symbol with at least one stub callee → BLOCKED (lists it)
+     - Symbol with an unknown type annotation → surfaces UNKNOWN TYPE
+     - Complete symbol (is_stub=0) → ALREADY COMPLETE message
+
+   **SOTS tensions:**
+   - I (locality): the readiness gate is currently in the developer's head. Moving it
+     into the tool means a developer never starts implementing into a broken dependency
+     chain because they forgot to check.
+   - XI (separate decide from do): the tool checks and reports; it does not prevent
+     the developer from proceeding. BLOCKED is advisory, not a lock.
+   - XXI (don't over-engineer): five tier checks, all DB queries, no LLM. The design
+     violation check (Tier 4) is the most expensive (cosine search) and could be made
+     opt-in via `include_design_check=True` if it proves too slow for routine use.
+
+   **Estimated effort:** 0.5 days. All checks are existing queries assembled in a new
+   order with a new output formatter.
+
+---
+
+RM48. **[OPEN] Design-to-code delta: surface what the design says should exist that the code does not yet implement**
+
+   **The gap:** `check_design_violations` finds where code *violates* design intent --
+   code that exists and does something the design forbids. The inverse question is unasked:
+   what does the design say SHOULD exist (features, behaviors, boundaries, authority flows)
+   that the code does not yet implement? This is the most important question for a project
+   actively building toward a documented architecture.
+
+   For dj2 specifically: the architectural constitution describes phases, authority
+   boundaries, AI-layer responsibilities, and world-state invariants. Many of these are
+   only partially implemented. Right now there is no way to ask "what did we commit to
+   architecturally that we haven't built yet?"
+
+   **The concept:** A `design_gaps(scope?)` tool that:
+   1. Reads all `kind='requirement'` design_note artifacts from the corpus DB (these are
+      the "MUST", "SHALL", "is required to" rules already extracted by doc_extractor.py)
+   2. For each requirement, attempts to locate evidence of implementation in the corpus:
+      named symbols, file patterns, import relationships
+   3. Reports requirements with no detectable implementation as "design gaps" -- things
+      the architecture commits to that the code doesn't appear to satisfy yet
+
+   **What "evidence of implementation" means (in priority order):**
+   - Level A: A function or class whose name or docstring semantically matches the
+     requirement's subject (cosine similarity >= 0.45 against the requirement text).
+     Use `embed_text` from `determined/oracle/embedding_model.py`.
+   - Level B: A file path that matches the subject keyword (e.g., requirement about
+     "auth boundary" → look for `auth*.py` or `*_auth.py`).
+   - Level C: An import dependency that matches (e.g., requirement about "LLM must go
+     through ai_boundary" → check whether llm_client.py imports from ai_boundary.py
+     via `graph_edges`).
+   - No match at any level → GAP.
+   - Match at Level B or C only (not Level A) → PARTIAL (file exists but no clear
+     implementing function found).
+
+   **Output shape:**
+   ```
+   Design gaps for corpus: C_Users_bartl_dev_dj2.db
+   (14 requirements extracted from 3 design docs)
+
+   GAPS (no implementation found):
+   1. [MUST] "The intent layer must classify player input before it reaches game state"
+      Source: 00A ARCHITECTURAL_CONSTITUTION.md > Intent Layer
+      No function or file matching 'intent classification' or 'IntentLayer' found.
+      Suggested search: search_symbols('intent') / search_symbols('classify')
+
+   2. [SHALL] "AI DM shall never write directly to DungeonStateNeo"
+      Source: 00B SYSTEM_CONSTRAINTS.md > AI Boundary
+      No enforcement mechanism (guard/assert/layer rule) found.
+      Note: check_design_violations may catch violations but no enforcer detected.
+
+   PARTIAL (file exists, no clear implementing function):
+   3. [MUST] "Authority hierarchy must be enforced at mutation time"
+      Source: 00A ARCHITECTURAL_CONSTITUTION.md > Authority
+      File: mutation_runner.py exists. No function matching 'authority check' found.
+      Check: symbols_in_file('mutation_runner.py')
+
+   SATISFIED (skipped unless --show-all):
+   4. [MUST] "Session state must persist across reconnects"
+      Matched: get_session() in session_manager.py (similarity 0.61)
+   ```
+
+   **What already exists to build on:**
+   - `kind='requirement'` design_note artifacts are already extracted and stored by
+     `doc_extractor.py` (`_MUST_RE` at line 319 classifies "must/shall/required to" as
+     `kind='requirement'`). Query: `SELECT content, source_file FROM knowledge_artifacts
+     WHERE kind = 'design_note' AND content LIKE '%must%' OR content LIKE '%shall%'`
+     -- but better: store `kind` in the JSON body at extract time and query on it.
+     Alternatively, re-run `_MUST_RE` over the stored content at query time (no schema
+     change needed).
+   - `embed_text(text)` from `determined/oracle/embedding_model.py` -- already used
+     by concept_search, find_duplicates, check_design_violations.
+   - `_search_symbols_raw(oracle, query, limit)` at agent_tools.py:358 -- semantic
+     symbol search. Use this for Level A matching.
+   - `knowledge_artifacts` table already holds all ingested design rules. Design docs
+     must be ingested first via `ingest_design_docs` -- the tool should check and warn
+     if no design_note artifacts exist yet.
+
+   **Schema note:** `knowledge_artifacts.content` stores the rule text. The `kind`
+   field in the DesignRule dataclass (doc_extractor.py:66: constraint / requirement /
+   permission / intent) is stored in `content` as a prefix or in the provenance string.
+   Before implementing, verify exactly how `kind` is persisted: run
+   `SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 5` against
+   a corpus with ingested design docs and inspect the format. If `kind` is not a
+   separate column, add it to the JSON body or use regex over `content` at query time.
+
+   **Entry points for implementation:**
+   - New function `design_gaps(assessor, args)` in `determined/agent/agent_tools.py`.
+     Takes optional `scope` arg (filename prefix or subject keyword to filter which
+     requirements to check). Place after `check_design_violations` (~line 854).
+   - Wire into `TOOLS` dict and `tool_registry.py` with category `"knowledge"`.
+   - New regression test: `tests/regression/test_design_gaps.py`. Use a fixture DB
+     with at least one ingested design_note of kind='requirement' and one stub that
+     clearly does not match it. Verify the stub's subject appears in GAP output.
+     Also test the SATISFIED case: a requirement whose subject matches an existing
+     non-stub function.
+
+   **Prerequisite:** Design docs must be ingested (`ingest_design_docs`) before
+   `design_gaps` has anything to query. The tool should emit a clear message if
+   `knowledge_artifacts WHERE kind='design_note'` returns zero rows:
+   "No design notes found. Run ingest_design_docs first."
+
+   **SOTS tensions:**
+   - I (locality): the design-to-code gap is currently implicit and invisible. This
+     makes it explicit and queryable on demand.
+   - XI (separate decide from do): the tool surfaces gaps; it does not propose fixes.
+     The developer decides whether a gap is real, already handled by untraceable code,
+     or irrelevant to the current phase.
+   - XIV (one source of truth): requirements come from knowledge_artifacts (ingested
+     from design docs); implementation evidence comes from the call graph and functions
+     table. The tool reads both sources but does not merge or modify them.
+   - XXI (don't over-engineer): Level A (embedding similarity) is the main match
+     mechanism. Levels B and C are fallbacks that add recall at low cost. Do not add
+     a fourth level (e.g., full-text contract matching) until A/B/C prove insufficient
+     on a real corpus query.
+
+   **Estimated effort:** 1 day. Embedding similarity is already wired; the new code
+   is the requirement-extraction query, the three-level match loop, and the output
+   formatter. The schema note above must be resolved before starting -- budget 30
+   minutes to inspect the live DB format.
 
 ---
 
@@ -345,9 +821,8 @@ RM42. **[OPEN] Investigation context panel: accumulate query results as a clue b
 
    ---
 
-   **Storage:** session-only JS (no DB write in pass 1). Cards live in a JS array; they
-   survive tab switches within the session but not page reload. If Bart finds himself
-   wanting persistence after a session, add workflow_items kind='investigation_clue' then.
+   **Storage (pass 1):** session-only JS (no DB write). Cards live in a JS array; they
+   survive tab switches within the session but not page reload.
 
    **Entry points:**
    - `determined/ui/templates/console.html`: add rail icon, panel div, JS clue array,
@@ -355,6 +830,52 @@ RM42. **[OPEN] Investigation context panel: accumulate query results as a clue b
    - `determined/ui/ui_server.py`: no changes needed for pass 1
 
    **Estimated effort:** 1 day for pass 1 (rail icon + panel + pin buttons + reason button).
+
+   ---
+
+   **Pass 2 -- persistent investigation storage (file after pass 1 ships)**
+
+   Investigations span sessions: a developer rarely closes a feature analysis in one
+   sitting. Pass 1 cards are lost on page reload. Pass 2 persists them to the corpus DB
+   so an investigation survives across days.
+
+   **Schema extension:** add `kind='investigation_clue'` to `workflow_items`. The table
+   already exists (created by `ensure_workflow_items_table` in
+   `determined/intent/workflow_store.py`, called from `persistence_engine.py:291`).
+   Extend with the clue card fields:
+
+   ```sql
+   -- workflow_items already has: id, corpus, kind, title, body, status, priority, created_at
+   -- Pass 2 adds a JSON blob in body:
+   --   { "tool": "bfs_callees", "subject": "handle_move", "summary": "...",
+   --     "full_result": "...", "pinned": true, "session_id": "2026-07-12T14:30" }
+   ```
+   No schema migration needed: `body` is already TEXT; store the JSON there.
+   `kind = 'investigation_clue'`, `status = 'active'` while pinned, `'archived'` when
+   cleared.
+
+   **Backend endpoints (new in `determined/ui/ui_server.py`):**
+   - `POST /api/clue/save` -- receives `{tool, subject, summary, full_result, pinned}`,
+     writes to `workflow_items`, returns `{id}`.
+   - `GET /api/clue/list` -- returns all `kind='investigation_clue'` items for the active
+     corpus, ordered by `created_at DESC`.
+   - `POST /api/clue/delete` -- marks a card `status='archived'` (soft delete).
+   - `POST /api/clue/clear` -- archives all unpinned cards.
+
+   **Frontend changes (console.html):**
+   - On panel open: call `GET /api/clue/list`, populate JS clue array from DB.
+   - On pin: call `POST /api/clue/save` in addition to pushing to the JS array.
+   - On X/remove: call `POST /api/clue/delete`.
+   - "Clear unpinned": call `POST /api/clue/clear`, then reload list from DB.
+   - Session ID: generated at page load (`new Date().toISOString()`), stored in a
+     `const SESSION_ID` at top of the clue JS block. Included in every save call so
+     you can filter to "this session's cards" vs. "prior session cards" in the UI.
+
+   **Migration path:** pass 1 ships the JS-only panel. Pass 2 adds persistence by
+   wiring the existing JS events to the new API calls. The panel UI does not change.
+
+   **Estimated effort (pass 2):** 0.5 days. Three API endpoints + four frontend event
+   hooks. No new schema migration (body column already TEXT).
 
 ---
 

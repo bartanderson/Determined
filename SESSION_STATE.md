@@ -70,6 +70,11 @@ this session).
 | HTTP | fetch/HTMX -> Flask route edges | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
 | LNS | Canned reasoning lenses (clues -> answers) | OPEN (RM43) |
+| ORD | Implementation ordering (topo sort stubs) | OPEN (RM44) |
+| CTR | Completion contract (param/return/design summary) | OPEN (RM45) |
+| SCF | Scaffold from pattern (skeleton from similar complete fns) | OPEN (RM46) |
+| RDY | Readiness gate (is X safe to implement?) | OPEN (RM47) |
+| DGP | Design-to-code delta (design says should exist, doesn't) | OPEN (RM48) |
 
 ## Known issues (carried forward)
 
