@@ -69,6 +69,7 @@ this session).
 | TR | Target resolution collision (bare names) | OPEN (RM40) |
 | HTTP | fetch/HTMX -> Flask route edges | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
+| LNS | Canned reasoning lenses (clues -> answers) | OPEN (RM43) |
 
 ## Known issues (carried forward)
 
