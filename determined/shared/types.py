@@ -159,3 +159,5 @@ class FileAnalysis:
     mutations: List[MutationEvent] = field(default_factory=list)
 
     phase_violations: List[Any] = field(default_factory=list)
+
+    source_text: str = ""  # raw file content; used for cross-language edge detection

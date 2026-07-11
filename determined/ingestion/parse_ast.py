@@ -848,6 +848,7 @@ def parse_ast(
         runtime_bindings=runtime_bindings,
 
         behavioral_contracts=_extract_behavioral_contracts(tree),
+        source_text=source,
     )
 
 def _extract_attribute_chains(tree: ast.AST):

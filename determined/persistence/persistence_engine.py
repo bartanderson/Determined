@@ -783,7 +783,7 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
 
     for analysis in (file_analyses or []):
         fp = getattr(analysis, 'file_path', '') or ''
-        src = getattr(analysis, '_source', None)  # may not be stored; skip if absent
+        src = getattr(analysis, 'source_text', None) or None
         if src is None:
             continue
         if fp.endswith('.py'):
