@@ -1,148 +1,134 @@
-Written at commit: 87ac266
-# SESSION STATE - session 146 handoff
+Written at commit: 57c380e
+# SESSION STATE - session 147 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 146, 2026-07-11)
+## What happened this session (session 147, 2026-07-11)
 
 ### Commits this session [V]
 
-- `3063da2` File RM43: canned reasoning lenses on top of clue board
-- `87ac266` File RM44-RM48 and RM42 pass 2: analysis-to-code action arc
+- `57c380e` File RM49-RM51: corpus enrichment arc to fix annotation sparsity
 
 ### Changes made [V]
 
-**No code written this session.** Pure planning/design work.
+**No code written this session.** Two pure design/planning passes.
 
-**Design projection: analysis-to-action capability gap [V]**
-Reviewed all open TRACKER items + current capabilities. Identified that Determined
-has a solid floor for orientation, gap-finding, and design-violation detection, but
-is entirely missing the transition from "found incomplete work" to "act on it."
+**Pass 1 -- Devil's advocate on RM44-RM48 [V]**
+Three failure modes that would cause the analysis-to-action arc to produce empty/wrong output:
+1. `param_types_json` <1% populated in dj2 (11 annotated fns out of 1321) -- RM45 completion
+   contract's core value (signature block) would be empty for almost every query.
+2. Stubs have no docstrings -- RM46 scaffold's embedding match degrades to name-only signal,
+   finds structurally unrelated functions.
+3. Design notes absent in fresh corpus -- RM47 Tier 4 (design violation check) silently passes,
+   giving READY when it simply didn't check.
+Additional issues: RM40 improvement is opt-in (downstream tools won't use it unless explicitly
+wired), RM48 schema is a blocking unknown, RM43 lenses operate on empty clue board by default,
+implement_stub TASK_PATTERN will collide with existing project_stub routing.
 
-Six new items filed to close that gap (all in TRACKER.md with full detail):
+**Pass 2 -- Corpus enrichment arc (RM49-RM51) filed [V]**
+Three new items close the annotation sparsity gap:
 
-- RM43 (filed prior commit): Canned reasoning lenses on top of RM42 clue board.
-  7 named lenses (next action, not ready, wiring gaps, template fill, blast radius,
-  convergence check, open questions). Prompt templates in reasoning_lenses.py.
-  Lens selector UI at bottom of RM42 panel. Dep: RM42 must ship first.
+- **RM50** (0.5 days): Inline comment extraction in parse_ast.py. Scan function body
+  line range for `#` comments, store as kind='inline_note' in knowledge_artifacts. No LLM.
+  Feeds RM49's context assembly. Full regression suite required before commit.
 
-- RM44: Implementation ordering. Topo sort of all stubs + ABC gap methods into
-  dependency-ordered waves using Kahn's algorithm over graph_edges. Pure DB query,
-  no LLM. Reuses _get_abc_gap_set (agent_tools.py:1283) and list_stubs. ~80 lines.
+- **RM49** (1.5 days): annotate_function tool. Context assembly (source + callers + callees
+  + inline notes + design notes) + LLM inference of param types, return type, behavioral
+  contract. Stores as kind='inferred_annotation' with inference_basis evidence trail.
+  RM45 and RM47 get a second read path, labeled (inferred). Integration test: run on
+  process() (30 callers) and verify inferred types match actual PlayerAction/DungeonStateNeo.
 
-- RM45: Completion contract. Single call returning: param types (param_types_json),
-  return type (return_type column), callers + what they do with the return value,
-  callees split into complete vs stub, behavioral contracts, design violations,
-  and stub-callee blockers. Assembles existing data via _list_callers_raw,
-  _list_callees_raw, _check_design_violations_core, gather_context. No new schema.
+- **RM51** (1 day): Annotation pass driver. Priority queue via workflow_items by caller count
+  descending. Propagates upward after each annotation. Convergence stop when delta < N.
 
-- RM46: Scaffold from pattern. Finds structurally similar complete functions using
-  module-family match + embedding similarity (threshold 0.50, looser than find_duplicates).
-  Extracts structural skeleton (first-stmt type, return shape, error handling) via AST.
-  Synthesizes fill-in-the-blanks template with variation points called out. Extends
-  _source_skeleton (agent_tools.py:540) and stub_projector.py. This is the inflection
-  point: first tool that produces output (a template) rather than just analysis.
+**Step 0 action added to RM48 [V]:** Run ingest_design_docs on dj2's 4 design docs before
+implementing RM48. Zero code. Immediately populates requirement store and resolves the schema
+unknown (SELECT to verify how 'kind' is stored in knowledge_artifacts).
 
-- RM47: Readiness gate. Five-tier deterministic check before starting an impl:
-  (1) symbol exists and is incomplete, (2) callees not stubs, (3) param types resolvable,
-  (4) no design violations above threshold, (5) no cycle in incomplete-stub subgraph.
-  Returns READY or BLOCKED with specific blockers listed. No LLM. ~0.5 days.
-
-- RM48: Design-to-code delta. Reads kind='requirement' design_note artifacts (already
-  extracted by doc_extractor._MUST_RE). For each requirement, attempts three-level match:
-  embedding similarity (level A), file-path keyword (level B), import graph (level C).
-  Unmatched = GAP. Requires design docs ingested first. 1 day. NOTE: verify how 'kind'
-  is persisted in knowledge_artifacts before implementing (may be in content JSON, not
-  a separate column -- run SELECT to check).
-
-- RM42 pass 2: Persist clue board cards to workflow_items (kind='investigation_clue',
-  body=JSON blob). Three new API endpoints in ui_server.py (save/list/delete/clear).
-  Four frontend hooks in console.html. No schema migration (body is already TEXT).
-  0.5 days after pass 1 ships.
+**Strategic direction clarified [V]**
+- Commonplace is now a regression corpus only -- too clean to stress new capabilities.
+- dj2 is the primary validation target from here forward.
+- Two reference tools identified for ground-truth measurement:
+  - **pyan3** (pip install pyan3): independent call graph generator. Compare its edge set
+    against Determined's graph_edges to get precision/recall for call graph completeness.
+    Run against dj2 BEFORE RM40 to establish baseline, then after to measure delta.
+  - **pyright** (pyright --outputjson): type inference ground truth. Compare against
+    Determined's param_types_json and RM49's inferred_annotation store.
+- Endgame metric: Determined can answer "what should I implement next in dj2, and what do
+  I need to know before I start?" without the user already knowing the answer.
 
 ### Tests [V]
-545 passed, 1 skipped, 18 deselected -- no code changed this session, count unchanged.
+545 passed, 1 skipped -- no code changed, count unchanged.
 
 ## Gap taxonomy (cumulative) [V]
 
 | Gap | Pattern | Status |
 |-----|---------|--------|
-| 1 | Module-qualified callee names break BFS | FIXED (sessions 142, 144) |
-| 2 | dict-of-callables dispatch (TOOLS) | FIXED (session 142) |
-| 3 | Thread(target=fn) implicit calls | FIXED (session 142) |
-| 4 | @socketio.on / @app.route decorators | FIXED (session 142) |
-| 7 | JS socket.emit -> Python handler | FIXED (session 143) |
-| 8 | ABC/subclass polymorphic dispatch | FIXED (Item 20) |
-| JS | DOM controls -> socket.emit | REVISED: no emit in dj2 (RM38) |
-| DF | Data flow / return value chains | OPEN (RM39 Level 1 next) |
-| TR | Target resolution collision (bare names) | OPEN (RM40) |
-| HTTP | fetch/HTMX -> Flask route edges | OPEN (RM41) |
+| 1-4,7,8 | Various call graph gaps | FIXED |
+| JS | DOM->socket.emit | REVISED: no emit in dj2 |
+| DF | Data flow edges | OPEN (RM39) |
+| TR | Target resolution collision | OPEN (RM40) |
+| HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
-| LNS | Canned reasoning lenses (clues -> answers) | OPEN (RM43) |
-| ORD | Implementation ordering (topo sort stubs) | OPEN (RM44) |
-| CTR | Completion contract (param/return/design summary) | OPEN (RM45) |
-| SCF | Scaffold from pattern (skeleton from similar complete fns) | OPEN (RM46) |
-| RDY | Readiness gate (is X safe to implement?) | OPEN (RM47) |
-| DGP | Design-to-code delta (design says should exist, doesn't) | OPEN (RM48) |
+| LNS | Canned reasoning lenses | OPEN (RM43) |
+| ORD | Implementation ordering | OPEN (RM44) |
+| CTR | Completion contract | OPEN (RM45) |
+| SCF | Scaffold from pattern | OPEN (RM46) |
+| RDY | Readiness gate | OPEN (RM47) |
+| DGP | Design-to-code delta | OPEN (RM48) |
+| ANN | Annotation sparsity | OPEN (RM49) |
+| ICX | Inline comment extraction | OPEN (RM50) |
+| APD | Annotation pass driver | OPEN (RM51) |
 
 ## Known issues (carried forward)
 
-**RM21 probes not re-run [?]:** 545 tests pass. Live LLM probe not re-run --
-requires llama-server + loaded corpus. Low risk. Fold into RM39 Level 1 session.
+**RM21 probes not re-run [?]:** Live LLM probe not re-run.
 
-**find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
+**find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
 
 **GUIDE_DATA sync trap [V]:** guide_commonplace.json and console.html GUIDE_DATA are
 separate stores -- both must be updated together.
 
 **Determined corpus DB path [V]:** C_Users_bartl_dev_Determined.db
 
-**test_graph_viz.py fixture [?]:** still uses old schema. Fine until FQ-callee test needed.
+**RM48 schema check needed [V]:** Step 0 resolves this -- run before implementing RM48.
 
-**cross_language edges = 0 in dj2 [V]:** Not a bug -- no client-side socket.emit in dj2.
+**RM40 opt-in trap [V]:** resolved_only defaults False. RM44 and RM47 must explicitly
+pass resolved_only=True or they silently use the polluted graph. Wire it explicitly.
 
-**RM48 schema check needed [V]:** Before implementing design_gaps, run:
-`SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 5`
-against a corpus with ingested design docs. Verify whether 'requirement' kind is a
-separate column or buried in the content JSON. Doc_extractor.py DesignRule.kind exists
-in Python but may not be a separate DB column -- check persistence_engine.py ~line 428.
+**RM43 empty-board trap [V]:** Lenses produce nothing on an empty clue board. RM42 must
+ship and user must have pinned cards before lenses are useful.
 
 ## NEXT SESSION -- start here
 
-**Recommended order (from TRACKER):**
+**Recommended order:**
 
-1. **RM40 (0.5 days) -- target resolution collision fix [HIGHEST PRIORITY]:**
-   Add resolved_only=False param to bfs_callees/subgraph_around in
-   determined/agent/graph_utils.py. Filter WHERE resolved=1 when True.
-   Expose in agent_tools.py bfs_callees args. Add regression test verifying
-   BFS from handle_connect with resolved_only=True excludes bestiary.get().
-   This unblocks accurate BFS for RM39, RM44, RM47 (all depend on graph accuracy).
+1. **Step 0 (0 days, do first):** Run ingest_design_docs on dj2's 4 design docs against
+   C_Users_bartl_dev_dj2.db. Validate with SELECT COUNT(*) before/after. Run schema check:
+   `SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 5`
+   Docs: docs/design/00A, 00B, 00E, 00F in dj2 repo.
 
-2. **RM44 (0.5 days) -- implementation ordering:**
-   New function implementation_order(oracle, args) in agent_tools.py after
-   frontier_priority (~line 1678). Algorithm: collect stubs + ABC gaps into set S,
-   build subgraph of S->S edges from graph_edges, Kahn's topo sort, format as waves.
-   Wire into TOOLS + tool_registry.py category "frontier". New test file.
+2. **pyan3 baseline (0.5 days):** pip install pyan3, run against dj2, compare edge count
+   against Determined's graph_edges. Establishes call graph precision/recall baseline BEFORE
+   RM40 lands. Command: `pyan3 C:\Users\bartl\dev\dj2\**\*.py --dot > dj2_pyan3.dot`
 
-3. **RM47 (0.5 days) -- readiness gate:**
-   New function readiness_check(assessor, args) in agent_tools.py after completion_contract.
-   Five-tier check (see TRACKER RM47 for exact queries). Wire into TOOLS + registry.
+3. **RM40 (0.5 days) -- HIGHEST PRIORITY code item:**
+   Add resolved_only=False to bfs_callees/subgraph_around in graph_utils.py.
+   Filter WHERE resolved=1 when True. Expose in agent_tools.py bfs_callees args.
+   Regression test: BFS from handle_connect with resolved_only=True excludes bestiary.get().
+   After: re-run pyan3 comparison to measure delta.
 
-4. **RM45 (0.5 days) -- completion contract:**
-   New function completion_contract(assessor, args) in agent_tools.py after symbol_context
-   (~line 614). Assemble: param_types_json + return_type + _list_callers_raw +
-   _list_callees_raw + _check_design_violations_core + behavioral_contracts + gather_context.
-   Wire into TOOLS + registry category "understanding".
+4. **RM50 (0.5 days):** Inline comment extraction in parse_ast.py _extract_functions.
+   Scan raw source lines [lineno:end_lineno] for # comments. Store as kind='inline_note'.
+   Run full 545-test suite before commit (parse_ast.py is high blast-radius).
 
-5. **RM39 Level 1 (2 days) -- data_flow edges:**
-   Entry point: determined/ingestion/parse_ast.py Visitor.visit_Call.
-   Emit edge_type='data_flow' when call arg is itself a call (fn_b(fn_a())).
-   Also annotation-matched return-type -> param-type edges.
+5. **RM49 (1.5 days):** annotate_function in agent_tools.py after docstring_health.
+   Extend RM45 + RM47 to read inferred store when param_types_json is empty.
+   Manual integration test: annotate process() in adjudication_engine.py.
 
-6. **RM42 (1 day) -- investigation context panel:**
-   Entry point: determined/ui/templates/console.html.
-   5th rail icon, clue card JS array, pin button on tool results,
-   "Ask about this" button composing Ask bar query from card summaries.
+6. **RM51 (1 day):** run_annotation_pass driver in agent_tools.py after annotate_function.
+
+7. **RM44 (0.5 days):** implementation_order topo sort. Needs RM40 first for accuracy.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
