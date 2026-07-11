@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-10, session 140):** RM21 adversarial probe follow-up against Determined corpus. Corrected prior handoff (Q1/Q4/Q5 were partial, not all-pass). Fixed Q4 (imports of <file.py> NEED pattern + list_import_deps resolver + DECOMPOSE_SYSTEM tip) -- now PASS. Fixed Q1 (orient_to_codebase regex expanded to 16 phrasings, moved before understand_symbol in detect rules to prevent false capture) -- now PASS. Fixed grounding pollution (test files/symbols filtered from phase0 suggestions). Known orient misses documented: "how does this work", "summarize the codebase", "tell me about this codebase" -- boundary, not bugs. Q5 still confabulates (model invents query_router/query_session pipeline that doesn't exist); deferred to next session. 533 passed, 1 skipped.
+**Last session (2026-07-11, session 145):** RM39 prerequisite (dj2 path analysis) done. BFS from all socket/HTTP handlers documented in HISTORY.md. Three new items filed: RM40 (source attribution bug), RM41 (HTTP fetch/HTMX cross-language edges), RM42 (investigation context panel). RM38 scope revised -- dj2 has no client-side socket.emit; reframed as fetch/HTMX mapping. 545 passed, 1 skipped.
+
+**Session 140 (2026-07-10):** RM21 adversarial probe follow-up against Determined corpus. Corrected prior handoff (Q1/Q4/Q5 were partial, not all-pass). Fixed Q4 (imports of <file.py> NEED pattern + list_import_deps resolver + DECOMPOSE_SYSTEM tip) -- now PASS. Fixed Q1 (orient_to_codebase regex expanded to 16 phrasings, moved before understand_symbol in detect rules to prevent false capture) -- now PASS. Fixed grounding pollution (test files/symbols filtered from phase0 suggestions). Known orient misses documented: "how does this work", "summarize the codebase", "tell me about this codebase" -- boundary, not bugs. Q5 still confabulates (model invents query_router/query_session pipeline that doesn't exist); deferred to next session. 533 passed, 1 skipped.
 
 **Session 139 (2026-07-10):** RM28 Stage 5 done. guide_general.json (13 entries keyed by tab/tab:mode) + guideUpdateCard() branch on _isCommonplace in console.html. Non-Commonplace path uses GUIDE_GENERAL with element-only keys and hides the phase picker row. Also ran RM21 6-question probe against Determined corpus: fixed Q6 method confabulation (DECOMPOSE_SYSTEM tip), Q2 blast-radius wrong symbol (pattern_executor detect rule + heuristic past-tense verbs), Q2 blast_radius TypeError (set() cast before subtraction), Q2 OperationalError (functions table literal). 533 passed, 1 skipped.
 
@@ -292,6 +294,137 @@ RM38. **[OPEN, SCOPE REVISED 2026-07-11] JS/HTML event chain analysis: map DOM c
    - Implementation (good external tool found): 1-2 days
    - Implementation (custom regex/AST): 2-3 days
    - New regression tests: 0.5 days
+
+---
+
+RM42. **[OPEN] Investigation context panel: accumulate query results as a clue board**
+
+   **The gap:** Every tool query produces a result that disappears when the user moves to
+   the next query. There is no way to accumulate findings across a session and reason about
+   them together. Each query is a fresh window into one corner of the codebase; the user
+   has to hold the emerging picture in their head. SOTS I (locality of reasoning) says the
+   tool should carry that context, not the user.
+
+   **The concept:** A persistent "investigation" panel that accumulates tool outputs as
+   named clue cards. Cards from list_callers, bfs_callees, check_design_violations, etc.
+   pile up. Then the user asks "what does this tell me?" and the AI reasons across the
+   full board -- same pattern as a Cluedo investigation: gather clues independently, then
+   fit the pattern together.
+
+   **SOTS tensions:**
+   - I (locality): accumulating context reduces cognitive load -- the point.
+   - XXI (don't over-engineer): session-only storage (no DB write) is sufficient to start.
+     If the pattern proves out, add workflow_items persistence in a second pass.
+   - XI (separate decide from do): collecting clues and reasoning about them are two distinct
+     steps. The panel holds collected evidence; the Ask bar reasons about it on demand.
+   - XIV (one source of truth): the panel IS the context store; Ask bar reads from it,
+     doesn't duplicate it.
+
+   ---
+
+   **Design (minimal first pass):**
+
+   1. **Clue card model:** `{id, tool, subject, summary, timestamp, pinned}`.
+      Summary is the first 200 chars of the tool result (truncated) plus subject name.
+      Pin keeps it when "clear old" is triggered. Max 20 cards before oldest unpinned drops.
+
+   2. **Collection:** every tool result panel gets a small "📌" pin button. Clicking it
+      adds the result to the investigation. Auto-add option for starred tools (off by default).
+
+   3. **Investigation panel:** 5th rail icon (🔍 or 🧩). Shows stacked cards, newest first.
+      Each card: tool name badge, subject, summary, timestamp, X to remove.
+      Collapse/expand each card. "Clear all unpinned" button.
+
+   4. **Reason button:** "Ask about this" button at the bottom of the panel. Composes a
+      pre-filled Ask bar query: "Given these findings: [card summaries]... what do they
+      suggest?" User can edit before submitting.
+
+   5. **Context injection:** When reasoning, the Ask bar receives the card summaries as
+      prepended context. The agent sees them as additional facts alongside the normal DB
+      query results. No new agent infrastructure needed -- just prepend to the query.
+
+   ---
+
+   **Storage:** session-only JS (no DB write in pass 1). Cards live in a JS array; they
+   survive tab switches within the session but not page reload. If Bart finds himself
+   wanting persistence after a session, add workflow_items kind='investigation_clue' then.
+
+   **Entry points:**
+   - `determined/ui/templates/console.html`: add rail icon, panel div, JS clue array,
+     pin button injection into tool result panels, "Ask about this" composer
+   - `determined/ui/ui_server.py`: no changes needed for pass 1
+
+   **Estimated effort:** 1 day for pass 1 (rail icon + panel + pin buttons + reason button).
+
+---
+
+RM41. **[OPEN] HTTP fetch/HTMX → Flask route cross-language edges**
+
+   **The gap:** Gap 7 wired JS socket.emit → Python @socketio.on via cross_language edges.
+   The same pattern applies to the HTTP boundary: `fetch('/api/route', {method:'POST'})` in
+   JS and `hx-post="/route"` HTMX attributes in HTML both call Python `@app.route('/route')`.
+   These chains are invisible. dj2 uses fetch + HTMX exclusively (no socket.emit from client)
+   so the entire client-to-server boundary is currently untracked.
+
+   **What to detect (in priority order):**
+   1. JS `fetch(url, {method:'POST'/'GET'})` and `fetch(url)` → extract url and method
+   2. HTMX `hx-post="url"`, `hx-get="url"`, `hx-delete="url"` attributes → extract url, method
+   3. Match extracted url+method to `@app.route(url, methods=[...])` in Python source
+   4. Store as `cross_language` edge: `source_id='__js_client__'`, `target_id=handler_fn_name`,
+      `edge_type='http_fetch'` (new subtype, or reuse 'cross_language' with callee='HTTP:url')
+
+   **What already exists:**
+   - `extract_socketio_handler_map(src)` pattern: already parses Python @decorator -> fn map.
+      Extend to parse `@app.route(url, methods=[...])` with same approach.
+   - `extract_cross_language_edges(html_src, handler_map)` pattern: regex over source text.
+      Extend with `_FETCH_RE` and `_HTMX_RE` patterns alongside existing `_EMIT_RE`.
+   - `_persist_cross_boundary_edges` in persistence_engine.py: already the right hook.
+
+   **Entry points:**
+   - `determined/ingestion/dynamic_edges.py`: add `extract_flask_route_map(py_src)`,
+     `extract_http_fetch_edges(html_src, route_map)`, `extract_htmx_edges(html_src, route_map)`
+   - `determined/persistence/persistence_engine.py`: extend Gap 7 block to also call new extractors
+
+   **Estimated effort:** 1 day. Same regex/structural pattern as Gap 7 -- well-worn path.
+
+---
+
+RM40. **[OPEN] Target resolution collision: bare method names resolve to wrong project functions**
+
+   **The gap:** BFS from world_app.py socket handlers returns callee sets polluted with
+   unrelated project functions. Verified: `handle_connect` calls `auth.get()` and
+   `request.cookies.get()` (dict/Flask methods). The graph stores target_id=`get` for these
+   calls. BFS then finds `bestiary.get() -> Optional['Monster']` as a match because it's
+   the project function named `get`. The handler never touches bestiary data. Same collision
+   happens for `emit`, `all`, `execute`, `get_connection` -- generic names shared between
+   stdlib/Flask internals and project-level functions.
+
+   **Root cause:** Method calls on unannotated receiver objects (e.g. `auth.get()`,
+   `session.get()`, `obj.all()`) store only the bare method name as target_id, with no
+   type context. BFS resolves bare names to project functions by name match alone. When
+   a project function shares a name with a stdlib/Flask method, the edge incorrectly
+   traverses into project code.
+
+   **The existing `resolved` column** (Item 20, done) was meant for this: annotation-resolved
+   edges get `resolved=1`, heuristic-name edges get `resolved=0`. The fix is to make BFS
+   optionally filter to `resolved=1` edges (or at least surface the distinction), so
+   high-confidence traversal is possible. Alternatively: filter out target_ids that
+   match known generic names (`get`, `set`, `all`, `execute`, `emit`, `run`, `close`, etc.)
+   when no annotation supports the resolution.
+
+   **Two-part fix:**
+   1. In `graph_utils.py` BFS functions: add `resolved_only=False` parameter. When True,
+      filter `WHERE resolved = 1`. Surface this in agent tools as a traversal flag.
+   2. In `agent_tools.py` `bfs_callees`: expose `resolved_only` in the tool args. Default
+      off for backward compat; document when to use it (accuracy-vs-coverage tradeoff).
+
+   **Entry points:**
+   - `determined/agent/graph_utils.py`: `bfs_callees`, `subgraph_around` -- add resolved filter
+   - `determined/agent/agent_tools.py`: `bfs_callees` tool args
+   - `tests/regression/test_graph_utils.py` or new test: verify that a method call on an
+     unannotated receiver does NOT traverse into a same-named project function
+
+   **Estimated effort:** 0.5 days.
 
 ---
 
