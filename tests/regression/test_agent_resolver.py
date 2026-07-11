@@ -374,7 +374,7 @@ def test_expand_facts_produces_callers_and_intent():
             self.conn = sqlite3.connect(":memory:")
             self.conn.row_factory = sqlite3.Row
             self.conn.execute(
-                "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER)"
+                "CREATE TABLE graph_edges (source_id TEXT, target_id TEXT, caller TEXT, callee TEXT, line_number INTEGER)"
             )
             self.conn.execute(
                 "CREATE TABLE symbol_references (caller TEXT, callee TEXT)"
@@ -440,7 +440,7 @@ def test_expand_facts_deduplicates():
             self.conn = sqlite3.connect(":memory:")
             self.conn.row_factory = sqlite3.Row
             self.conn.execute(
-                "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER)"
+                "CREATE TABLE graph_edges (source_id TEXT, target_id TEXT, caller TEXT, callee TEXT, line_number INTEGER)"
             )
             self.conn.execute("CREATE TABLE symbol_references (caller TEXT, callee TEXT)")
             self.conn.execute(

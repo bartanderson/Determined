@@ -3,6 +3,32 @@
 # Graph traversal utilities for the discovery agent.
 # Pure DB operations - no AI calls. All functions take an oracle and
 # return plain Python data structures.
+#
+# TWO-TIER NAMING CONTRACT (mirrors graph_edges schema in persistence_engine.py)
+# -------------------------------------------------------------------------------
+# graph_edges has two distinct name columns:
+#
+#   source_id / target_id  — canonical bare name (last segment after last dot).
+#       Always a simple identifier like "ground_question".
+#       Computed at store time by edge_identity() → normalize_symbol().
+#       USE THESE for all graph traversal, degree counting, and connectivity
+#       queries. They are stable keys regardless of how the caller imported
+#       the symbol.
+#
+#   caller / callee  — raw surface name as emitted by parse_ast.
+#       May be bare ("ground_question"), fully-qualified
+#       ("determined.agent.agent_resolver.ground_question"), or dotted-attr
+#       ("obj.method"). The form depends on how the call was written in source:
+#       same-file calls get bare names; `from X import fn` calls get FQ names.
+#       USE THESE for display, debugging, and blame — not for traversal.
+#
+# symbol_names table  — multi-form index: canonical_id → (surface, bare).
+#       Used by _resolve_to_canonical() to go from any name form to canonical.
+#
+# RULE: traverse via source_id/target_id; display via caller/callee.
+# Functions that query callee= by raw string will silently miss cross-module
+# edges stored as FQ names. shortest_path() is the reference implementation
+# of the correct pattern.
 
 from __future__ import annotations
 
@@ -11,6 +37,29 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from determined.oracle.db_oracle import DBOracle
+
+
+# ------------------------------------------------------------------
+# Schema compatibility helper
+# ------------------------------------------------------------------
+
+def _has_id_columns(conn) -> bool:
+    """
+    Return True if graph_edges has source_id/target_id traversal columns.
+
+    Real corpus DBs always have them (added by ensure_schema / _persist_graph_edges).
+    Some test fixtures create a minimal graph_edges without these columns because they
+    predate the two-tier naming system. This check lets traversal functions degrade
+    gracefully for those fixtures rather than raising OperationalError.
+
+    Callers: use source_id/target_id when this returns True; caller/callee otherwise.
+    The RULE remains: prefer source_id/target_id for traversal in production code.
+    """
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(graph_edges)").fetchall()}
+        return "source_id" in cols and "target_id" in cols
+    except Exception:
+        return False
 
 
 # ------------------------------------------------------------------
@@ -98,10 +147,25 @@ def bfs_callees(
     BFS down the call graph from root.
     Returns list of {symbol, depth, callers} in visit order.
     Stops at max_depth or max_nodes, whichever comes first.
+
+    Uses source_id/target_id (canonical bare names) for traversal so that
+    cross-module calls stored as FQ callees are reachable. root is normalized
+    to its canonical id before the walk begins.
     """
-    visited: set[str] = {root}
-    queue: deque[tuple[str, int]] = deque([(root, 0)])
+    from determined.identity.symbol_identity import normalize_symbol
+    use_ids = _has_id_columns(oracle.conn)
+    root_id = normalize_symbol(root) if use_ids else root
+    visited: set[str] = {root_id}
+    queue: deque[tuple[str, int]] = deque([(root_id, 0)])
     results = []
+
+    if use_ids:
+        callers_q = "SELECT DISTINCT source_id FROM graph_edges WHERE target_id = ? AND source_id IN ({ph})"
+        callees_q = "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ?"
+    else:
+        # Compatibility: test fixtures that predate source_id/target_id columns.
+        callers_q = "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? AND caller IN ({ph})"
+        callees_q = "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?"
 
     while queue and len(results) < max_nodes:
         node, depth = queue.popleft()
@@ -109,7 +173,7 @@ def bfs_callees(
             placeholders = ",".join("?" * len(visited))
             callers = [
                 r[0] for r in oracle.conn.execute(
-                    f"SELECT DISTINCT caller FROM graph_edges WHERE callee = ? AND caller IN ({placeholders})",
+                    callers_q.format(ph=placeholders),
                     (node, *visited),
                 ).fetchall()
             ]
@@ -118,14 +182,10 @@ def bfs_callees(
         if depth >= max_depth:
             continue
 
-        callees = oracle.conn.execute(
-            "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?", (node,)
-        ).fetchall()
-        for row in callees:
-            callee = row[0]
-            if callee not in visited:
-                visited.add(callee)
-                queue.append((callee, depth + 1))
+        for (callee_id,) in oracle.conn.execute(callees_q, (node,)).fetchall():
+            if callee_id not in visited:
+                visited.add(callee_id)
+                queue.append((callee_id, depth + 1))
 
     return results
 
@@ -189,11 +249,17 @@ def most_connected(oracle: "DBOracle", n: int = 20, filter_substr: str = "") -> 
     Top N symbols by total call degree (in + out edges).
     Optional filter_substr limits to symbols whose name or file contains the string.
     Returns list of {symbol, file_path, in_degree, out_degree, total}.
+
+    Uses source_id/target_id (canonical bare names) for degree counting so that
+    cross-module edges stored as FQ callees contribute to the correct symbol's
+    in-degree. The caller/callee surface columns are not used here.
     """
     in_deg: dict[str, int] = defaultdict(int)
     out_deg: dict[str, int] = defaultdict(int)
 
-    for row in oracle.conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
+    use_ids = _has_id_columns(oracle.conn)
+    edge_q = "SELECT source_id, target_id FROM graph_edges" if use_ids else "SELECT caller, callee FROM graph_edges"
+    for row in oracle.conn.execute(edge_q).fetchall():
         out_deg[row[0]] += 1
         in_deg[row[1]] += 1
 
@@ -248,8 +314,10 @@ def find_clusters(oracle: "DBOracle", min_edges: int = 2) -> list[dict]:
     ).fetchall():
         file_map[row[0]] = row[1]
 
+    # Use source_id/target_id (canonical bare names) so that cross-module edges
+    # stored as FQ callees resolve correctly via file_map (which is keyed on bare names).
     edge_counts: dict[frozenset, int] = defaultdict(int)
-    for row in oracle.conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
+    for row in oracle.conn.execute("SELECT source_id, target_id FROM graph_edges").fetchall():
         src_file = file_map.get(row[0], "")
         dst_file = file_map.get(row[1], "")
         if src_file and dst_file and src_file != dst_file:
@@ -272,37 +340,45 @@ def find_clusters(oracle: "DBOracle", min_edges: int = 2) -> list[dict]:
 def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
     """
     Pull all nodes and edges within `radius` hops of `symbol` in either direction.
-    Returns {nodes: [str], edges: [(caller, callee)],
+    Returns {nodes: [str], edges: [(source_id, target_id)],
              reasons: {node: reason_string}}.
+
+    Uses source_id/target_id (canonical bare names) for traversal so that
+    cross-module edges stored as FQ callees are included. The returned edge
+    tuples are canonical ids, not surface names.
     """
-    reasons: dict[str, str] = {symbol: "root (queried symbol)"}
-    visited: set[str] = {symbol}
-    frontier = {symbol}
+    from determined.identity.symbol_identity import normalize_symbol
+    use_ids = _has_id_columns(oracle.conn)
+    root_id = normalize_symbol(symbol) if use_ids else symbol
+    reasons: dict[str, str] = {root_id: "root (queried symbol)"}
+    visited: set[str] = {root_id}
+    frontier = {root_id}
+
+    if use_ids:
+        out_q  = "SELECT target_id FROM graph_edges WHERE source_id = ?"
+        in_q   = "SELECT source_id FROM graph_edges WHERE target_id = ?"
+        edge_q = "SELECT DISTINCT source_id, target_id FROM graph_edges"
+    else:
+        out_q  = "SELECT callee FROM graph_edges WHERE caller = ?"
+        in_q   = "SELECT caller FROM graph_edges WHERE callee = ?"
+        edge_q = "SELECT DISTINCT caller, callee FROM graph_edges"
 
     for hop in range(1, radius + 1):
         next_frontier: set[str] = set()
         for node in frontier:
-            for row in oracle.conn.execute(
-                "SELECT callee FROM graph_edges WHERE caller = ?", (node,)
-            ).fetchall():
-                callee = row[0]
-                if callee not in visited:
-                    visited.add(callee)
-                    next_frontier.add(callee)
-                    reasons[callee] = f"called by {node} (hop {hop}, outbound)"
-            for row in oracle.conn.execute(
-                "SELECT caller FROM graph_edges WHERE callee = ?", (node,)
-            ).fetchall():
-                caller = row[0]
-                if caller not in visited:
-                    visited.add(caller)
-                    next_frontier.add(caller)
-                    reasons[caller] = f"calls {node} (hop {hop}, inbound)"
+            for (tgt,) in oracle.conn.execute(out_q, (node,)).fetchall():
+                if tgt not in visited:
+                    visited.add(tgt)
+                    next_frontier.add(tgt)
+                    reasons[tgt] = f"called by {node} (hop {hop}, outbound)"
+            for (src,) in oracle.conn.execute(in_q, (node,)).fetchall():
+                if src not in visited:
+                    visited.add(src)
+                    next_frontier.add(src)
+                    reasons[src] = f"calls {node} (hop {hop}, inbound)"
         frontier = next_frontier
 
-    edges = oracle.conn.execute(
-        "SELECT DISTINCT caller, callee FROM graph_edges"
-    ).fetchall()
+    edges = oracle.conn.execute(edge_q).fetchall()
     edges = [(r[0], r[1]) for r in edges if r[0] in visited and r[1] in visited]
 
     return {"nodes": sorted(visited), "edges": edges, "reasons": reasons}

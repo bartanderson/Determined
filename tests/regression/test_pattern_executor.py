@@ -141,7 +141,7 @@ class _FakeOracle:
             "CREATE TABLE classes (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
         )
         self.conn.execute(
-            "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER)"
+            "CREATE TABLE graph_edges (source_id TEXT, target_id TEXT, caller TEXT, callee TEXT, line_number INTEGER)"
         )
         self.conn.execute(
             "INSERT INTO functions VALUES ('process_message', '/proj/main.py', 10, 'Handles messages.', 0)"

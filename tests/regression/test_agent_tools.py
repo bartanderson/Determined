@@ -149,11 +149,14 @@ def _make_fixture():
         (f"{PROJECT_ROOT}/world/engine.py", "EncounterState", 1, None),
     )
 
-    # graph edges: qualified callee and bare callee
+    # graph edges: FQ callee in the display column, normalized bare name in target_id.
+    # This matches what _persist_graph_edges produces via edge_identity():
+    #   source_id/target_id = normalize_symbol() = bare name (last segment)
+    #   caller/callee       = raw surface name (may be FQ for cross-module imports)
     conn.execute(
         "INSERT INTO graph_edges (source_id, target_id, caller, callee, line_number) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("handle_movement", "world.engine.generate_encounter",
+        ("handle_movement", "generate_encounter",
          "handle_movement", "world.engine.generate_encounter", 12),
     )
     conn.execute(

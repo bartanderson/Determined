@@ -9,13 +9,17 @@ def _make_env(edges=None, functions=None, files=None):
         def __init__(self):
             self.conn = sqlite3.connect(":memory:")
             self.conn.row_factory = sqlite3.Row
-            for t in ["graph_edges (caller TEXT, callee TEXT, line_number INTEGER)",
-                       "functions (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)",
-                       "classes (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)",
-                       "files (file_path TEXT, line_count INTEGER)"]:
+            for t in [
+                # source_id/target_id are canonical bare names (traversal keys);
+                # caller/callee are surface names (display only). See graph_utils.py header.
+                "graph_edges (source_id TEXT, target_id TEXT, caller TEXT, callee TEXT, line_number INTEGER)",
+                "functions (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)",
+                "classes (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)",
+                "files (file_path TEXT, line_count INTEGER)"]:
                 self.conn.execute(f"CREATE TABLE {t}")
             for c, e in (edges or []):
-                self.conn.execute("INSERT INTO graph_edges VALUES (?,?,0)", (c, e))
+                # These test edges use bare names, so source_id=caller, target_id=callee.
+                self.conn.execute("INSERT INTO graph_edges VALUES (?,?,?,?,0)", (c, e, c, e))
             for n, fp, doc in (functions or []):
                 self.conn.execute("INSERT INTO functions VALUES (?,?,0,?)", (n, fp, doc))
             for fp in (files or []):

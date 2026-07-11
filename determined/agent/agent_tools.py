@@ -384,18 +384,42 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
     """
     Direct callers of symbol from graph_edges.
     Returns list[dict]: caller, file_path, line_number, resolved.
+
+    Queries target_id (canonical bare name) rather than the callee surface column.
+    The callee column may store fully-qualified names for cross-module imports
+    (e.g. "determined.agent.agent_resolver.ground_question") while target_id is
+    always the bare name ("ground_question"). See graph_utils.py header for the
+    full two-tier naming contract.
     """
-    rows = oracle.conn.execute(
-        """
-        SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
-        FROM graph_edges ge
-        LEFT JOIN symbol_references sr
-            ON ge.caller = sr.caller AND ge.callee = sr.callee
-        WHERE ge.callee = ? OR ge.callee LIKE ?
-        ORDER BY sr.file_path, ge.line_number
-        """,
-        (symbol, f"%.{symbol}"),
-    ).fetchall()
+    from determined.identity.symbol_identity import normalize_symbol
+    from determined.agent.graph_utils import _has_id_columns
+    canonical = normalize_symbol(symbol)
+    if _has_id_columns(oracle.conn):
+        rows = oracle.conn.execute(
+            """
+            SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
+            FROM graph_edges ge
+            LEFT JOIN symbol_references sr
+                ON ge.caller = sr.caller AND ge.callee = sr.callee
+            WHERE ge.target_id = ?
+            ORDER BY sr.file_path, ge.line_number
+            """,
+            (canonical,),
+        ).fetchall()
+    else:
+        # Compatibility: test fixtures that predate source_id/target_id columns.
+        # Fall back to callee surface column with bare-name and FQ-name match.
+        rows = oracle.conn.execute(
+            """
+            SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
+            FROM graph_edges ge
+            LEFT JOIN symbol_references sr
+                ON ge.caller = sr.caller AND ge.callee = sr.callee
+            WHERE ge.callee = ? OR ge.callee LIKE ?
+            ORDER BY sr.file_path, ge.line_number
+            """,
+            (canonical, f"%.{canonical}"),
+        ).fetchall()
     return [{"caller": r[0], "file_path": r[1], "line_number": r[2], "resolved": bool(r[3])} for r in rows]
 
 

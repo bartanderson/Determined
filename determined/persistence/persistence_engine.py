@@ -171,11 +171,19 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     CREATE TABLE IF NOT EXISTS graph_edges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-        /* semantic identity layer (NEW PRIMARY MODEL) */
+        /* TRAVERSAL KEYS — canonical bare names (last segment after last dot).
+           Computed by edge_identity() → normalize_symbol() at store time.
+           ALWAYS use these for graph traversal, degree counting, and
+           connectivity queries. They are stable regardless of import form. */
         source_id TEXT NOT NULL,
         target_id TEXT NOT NULL,
 
-        /* legacy observational trace (optional but useful) */
+        /* DISPLAY / AUDIT — raw surface names as emitted by parse_ast.
+           caller is always a bare name (parse_ast tracks current_function by
+           node.name). callee may be bare ("fn"), fully-qualified
+           ("pkg.module.fn" for `from pkg.module import fn` calls), or
+           dotted-attr ("obj.method"). Use for display and blame only —
+           never for traversal or existence checks. */
         caller TEXT,
         callee TEXT,
 
