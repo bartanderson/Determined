@@ -98,6 +98,7 @@ class EngineRunner:
                     bucket=getattr(ref, "bucket", "unknown"),
                     caller_file=analysis.file_path,
                     resolved=getattr(ref, "resolved", False),
+                    edge_type=getattr(ref, "edge_type", "static"),
                 )
 
         graph = builder.build()

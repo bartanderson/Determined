@@ -13,6 +13,7 @@ class GraphEdge:
     line_number: int
     caller_file: str = ""
     resolved: bool = False
+    edge_type: str = "static"
 
 
 @dataclass
@@ -34,7 +35,7 @@ class GraphBuilder:
         self.edges = []
         self.bucket_counts = defaultdict(int)
 
-    def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = "", resolved: bool = False):
+    def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = "", resolved: bool = False, edge_type: str = "static"):
         self.edges.append(
             GraphEdge(
                 caller=caller,
@@ -42,6 +43,7 @@ class GraphBuilder:
                 line_number=line_number,
                 caller_file=caller_file,
                 resolved=resolved,
+                edge_type=edge_type,
             )
         )
 
