@@ -177,13 +177,15 @@ RM39. **[OPEN] Data flow tracking: parameter-passing and return-value edges**
 
    ---
 
-   **Prerequisite -- dj2 path analysis (do first, 1 session):**
-   Re-ingest dj2 corpus. Run `bfs_callees` from every socket handler. Document:
-   (a) where control flow chains terminate and why (dead ends that should continue),
-   (b) which functions take the game state object as a parameter,
-   (c) which functions return values consumed by their callers.
-   File findings as a session note in HISTORY.md before implementing anything.
-   This produces the target pattern list -- Level 1 gets scoped to those patterns only.
+   **Prerequisite -- dj2 path analysis [DONE 2026-07-11]:**
+   Re-ingested dj2 corpus (153 files, 1321 fns, 8199 edges). Full BFS from all socket handlers
+   and HTTP route handlers. Findings in HISTORY.md 2026-07-11 entry. Key scoping results:
+   - Level 1 priority targets: process()->Dict (adjudication_engine, 30 callers),
+     execute()->Any (tool_system, 46 callers), generate()->str (llm_client, 21 callers),
+     get_session()->SessionState (21 callers), move_party()->dict (21 callers).
+   - fn_b(fn_a()) nested-call pattern is less common than result=fn(); use(result). Level 1
+     captures some cases; Level 2 (variable binding) needed for full coverage.
+   - State carriers: DungeonStateNeo, Character, PlayerAction (annotated params, 11 fns total).
 
    ---
 
@@ -222,17 +224,25 @@ RM39. **[OPEN] Data flow tracking: parameter-passing and return-value edges**
 
 ---
 
-RM38. **[OPEN] JS/HTML event chain analysis: map DOM controls to socket emissions**
+RM38. **[OPEN, SCOPE REVISED 2026-07-11] JS/HTML event chain analysis: map DOM controls to HTTP routes**
 
-   **The gap:** Gap 7 (JS socket.emit -> Python handler) was fixed: we detect
-   `socket.emit("event")` in HTML/JS and store a `cross_language` virtual edge to the
-   Python `@socketio.on("event")` handler. But the source is synthetic (`__js_client__`)
-   -- there is no record of *which user control* triggered the emit. We know the
-   socket boundary was crossed but not what the user did to cause it.
+   **Scope revision (2026-07-11):** dj2 has no client-side socket.emit calls. The socket.io
+   connection is server-to-client push only. The @socketio.on handlers in world_app.py are
+   unreachable from the current browser client. RM38's original framing (DOM controls ->
+   socket.emit -> Python handler) has no current instances in dj2.
+   The real gap is: DOM controls -> fetch()/HTMX -> HTTP route -> business logic.
+   world.html and static/js/*.js use addEventListener + fetch() and HTMX hx-post/hx-get
+   attributes. These chains are invisible to the static analyzer.
+   Defer RM38 until: (a) dj2 adds client-side socket.emit, OR (b) we want to map HTTP
+   route chains (fetch POST -> flask @route -> service call). File (b) as RM38b if needed.
 
-   **Goal:** map {DOM control -> event_type -> JS handler -> socket.emit event name}
-   and store as `js_event_binding` virtual edges. This closes the full chain:
-   button_click -> js_handler -> socket.emit -> python_handler (already have last link).
+   **Original gap (still valid for other corpora):** detect `socket.emit("event")` in
+   HTML/JS and map to Python `@socketio.on("event")` handler via `cross_language` edges.
+   This works correctly in Determined; dj2 just has no emit calls to detect.
+
+   **Goal (revised):** map {DOM control -> event_type -> JS handler -> fetch(url, method)}
+   and store as `js_event_binding` virtual edges. Then match fetch URL to Flask @route.
+   This closes the actual chain in dj2: button_click -> fetchHandler -> HTTP route.
 
    ---
 

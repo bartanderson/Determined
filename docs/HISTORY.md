@@ -8,6 +8,42 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-11: RM39 prerequisite -- dj2 path analysis (verified, 153 files, 1321 functions, 8199 edges).
+Edge types in DB: static=8098, decorator=100, thread=1. No cross_language edges (see next entry).
+Socket handlers in world_app.py: handle_connect, handle_disconnect, handle_player_register,
+handle_assign_character, handle_character_move, handle_join_party, handle_request_world_state.
+BFS findings (static edges, project-fn filter):
+- handle_disconnect: ISOLATED - 0 project-function callees (the handler body calls no project fns).
+- All other handlers: depth 3-4, 10-18 nodes. Their chains converge on the same node set:
+  dnd_data.get(), bestiary.get(), _get_*_data() family, _safe_callback, _load_og_json.
+  This convergence is suspicious - likely a graph accuracy issue where shared module imports
+  get attributed to all handlers rather than reflecting actual per-handler call paths.
+- handle_request_world_state has the most distinct callees: get_character, get_active_parties_helper,
+  get_location (real game-state reads).
+- handle_join_party uniquely calls create_session -> _save_player_to_db/_save_session_to_db -> DB ops.
+HTTP route handlers are richer: create_character (25 nodes, depth 3), move/move_character (19-26 nodes,
+depth 4), execute_mutation_phase (30 nodes, depth 5). Adjudication engine is the deepest chain.
+Game state carriers (annotated params): DungeonStateNeo (4 fns, dungeon_neo + world), Character (3 fns,
+ai_dungeon_master + dm_chat_handler), PlayerAction (1 fn), DungeonAI/SessionManager (__init__ only).
+Return-value consumers (called by 2+ callers, non-None return): process()->Dict[str,Any] from
+adjudication_engine (30 callers), execute()->Any from tool_system (46), generate()->str from LLM clients
+(21 each, two separate clients in dungeon_neo/ and world/), get_session()->SessionState (21),
+move_party()->dict (21), get_location()->Location (23), get_event_log()->EventLog (89).
+RM39 Level 1 priority targets: process() (adjudication_engine), execute() (tool_system),
+generate() (llm_client), get_session() (session_system). These are called frequently and return
+typed objects that gate downstream logic. The fn_b(fn_a()) nested-call pattern (RM39 Level 1 spec)
+is less common in Python than result=fn_a(); fn_b(result) - Level 1 will capture some but Level 2
+(variable binding tracking) needed for full coverage. Build Level 1 anyway as a foundation.
+
+2026-07-11: RM38 scope revision -- dj2 has NO client-side socket.emit calls. The socket.io connection
+is server-to-client push only (world.js calls socket.on only, never socket.emit). Client communicates
+via HTMX attributes and fetch() calls to HTTP routes, not WebSocket events. The 7 @socketio.on
+handlers in world_app.py are unreachable from the current browser client. RM38 premise (DOM controls
+-> socket.emit -> Python handler) has no current instances to analyze. Reframe RM38 as: map
+DOM controls -> fetch/HTMX POST -> HTTP route handler. Or defer until multiplayer socket events
+are added to the game client. cross_language edges are 0 because dynamic_edges.py's regex finds
+no socket.emit in the HTML/JS source -- not a bug in the extractor, a gap in the corpus.
+
 2026-07-10: RM21 probe finding: Technique 1 (claim verifier) never fired across 6 multi-hop queries against Commonplace. The ceiling isn't wrong CALLS claims -- it's upstream: wrong pattern routing (Q2 blast-radius → corpus_synthesis, Q5 traversal → symbol search), name collision collapsing same-named symbols from different files, synthesis gap (model summarizes facts instead of answering), and method confabulation. Filed as RM31-34. Techniques 2-6 (constrained decoding, MCTS, etc.) are not the right next move.
 
 2026-07-10: RM20 done: design_note semantic dedup at store time. Embeds candidate rule, cosine-compares against all existing design_notes (threshold 0.85), skips if duplicate. Catches LLM paraphrases the old 60-char prefix check missed. Also tracks within-run embeddings to catch back-to-back similar rules in one ingest pass.
