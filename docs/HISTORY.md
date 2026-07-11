@@ -8,6 +8,17 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-11: Design projection session -- filed RM43-RM48 and RM42 pass 2. No code written;
+pure planning. The projection identified that Determined's floor (orientation, gap-finding,
+design-violation detection) is solid but the transition from "found it" to "act on it" is
+missing entirely. Six items close that gap in order: RM44 (topo sort stubs into work order),
+RM45 (completion contract: what must the impl satisfy?), RM46 (scaffold from similar complete
+fns), RM47 (readiness gate: is it safe to start?), RM48 (design-to-code delta: what does the
+architecture require that doesn't exist yet?), RM42 pass 2 (persist clue board to DB across
+sessions). All items written with exact entry points, reuse targets, and output shapes so they
+can be implemented cold without refiguring the design. RM46 (scaffold) is the inflection point:
+first tool that produces output rather than just analysis.
+
 2026-07-11: RM39 prerequisite -- dj2 path analysis (verified, 153 files, 1321 functions, 8199 edges).
 Edge types in DB: static=8098, decorator=100, thread=1. No cross_language edges (see next entry).
 Socket handlers in world_app.py: handle_connect, handle_disconnect, handle_player_register,
