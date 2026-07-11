@@ -121,9 +121,9 @@ def ground_question(question: str, oracle: "DBOracle", assessor: "Assessor") -> 
         lines.append(f"  Files found: {', '.join(found_files[:8])}")
 
     # Pull pre-built findings from knowledge.db for matched symbols and files
-    known = _ground_findings(list(found_symbols.keys())[:10], assessor)
+    known = _ground_findings(list(found_symbols.keys())[:5], assessor)
     # Also pull file-level findings (subject is bare filename)
-    file_subjects = [fp.replace("\\", "/").split("/")[-1] for fp in found_files[:5]]
+    file_subjects = [fp.replace("\\", "/").split("/")[-1] for fp in found_files[:3]]
     known += _ground_findings(file_subjects, assessor)
     if known:
         lines.append(f"  Known findings:")
@@ -150,8 +150,7 @@ def _ground_findings(symbols: list[str], assessor: "Assessor") -> list[str]:
                 (sym, f"%::{sym}"),
             ).fetchall()
             for row in rows:
-                limit = 400 if row[0] == "design_note" else 120
-                lines.append(f"[{row[0]}] {sym}: {row[1][:limit]}")
+                lines.append(f"[{row[0]}] {sym}: {row[1][:120]}")
         return lines
     except Exception:
         return []
