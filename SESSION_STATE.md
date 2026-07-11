@@ -1,93 +1,107 @@
-Written at commit: e242815
-# SESSION STATE - session 141 handoff
+Written at commit: 16f6f6d
+# SESSION STATE - session 142 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 141, 2026-07-10)
+## What happened this session (session 142, 2026-07-10)
 
-**Q5 fixed -- PASS [V]** (committed e242815)
+**Rich graph + virtual edge system** -- committed 16f6f6d, 545 tests pass [V]
 
-Root cause confirmed: grounding for "UI query to database" finds query_router.py,
-QueryExecutor, query_session.py etc. (a real but WRONG subsystem). Model followed
-those grounding symbols and confabulated a pipeline around them.
+Started from problem.odt documenting two Q5 graph traversal gaps, then expanded
+to survey and close all dynamic/unlinked paths in the call graph.
 
-Three code changes + one data change:
+### Changes made [V]
 
-**Code changes (agent_resolver.py):**
-- `_ground_findings` slice widened: symbols [:5]->[:10], files [:3]->[:5]
-  so route_query (symbol #8) gets its design_note surfaced
-- design_note truncation: 120->400 chars so embedded NEED lines aren't cut off
+**`determined/identity/symbol_identity.py`**
+- `normalize_symbol`: strips module prefix -- `pkg.mod.fn` -> `fn` (was just strip())
+- `all_name_forms(name)`: returns (name, name_type) pairs for all known name forms
 
-**Code change (local_agent.py):**
-- `_answer()`: design_notes from grounding block now injected into facts_text
-  before ASSEMBLE as "ARCHITECTURE NOTES (treat as authoritative)"
-  (they were visible in Phase 0/1 but never passed to Phase 3 before)
-- `_DECOMPOSE_SYSTEM`: added instruction to follow [design_note] guidance
-  and include any embedded NEED lines in output
+**`determined/shared/types.py`**
+- `SymbolReference`: added `resolved: bool = False` and `edge_type: str = 'static'`
 
-**Data change (Determined corpus DB):**
-- Inserted design_note with subject `route_query`:
-  "route_query is NOT the entry point... actual path: handle_query (ui_server.py)
-  -> _answer (local_agent.py) -> resolve_and_expand (agent_resolver.py) ->
-  dispatch (agent_tools.py) -> DBOracle (db_oracle.py). Use these NEEDs:
-  NEED: brief for handle_query / NEED: callees of _answer / ..."
+**`determined/persistence/persistence_engine.py`**
+- `graph_edges` schema: added `edge_type TEXT DEFAULT 'static'` column
+- `symbol_names` table: new -- (canonical_id, name, name_type) -- all known name forms
+- Indexes on symbol_names(canonical_id) and symbol_names(name)
+- Migration: adds `edge_type` to existing DBs
+- `_persist_graph_edges`: populates symbol_names; includes edge_type in INSERT
+- `_persist_cross_boundary_edges`: new -- Gap 7 cross-language + annotation edges
+- `_persist_polymorphic_edges`: new -- auto-generates ABC polymorphic edges from Item 20 data
+- `persist_all`: calls both new functions after graph layer
 
-Result: Phase 1 now correctly emits NEEDs for handle_query/_answer/resolve_and_expand,
-Phase 3 sees the architecture note and synthesizes the correct chain.
+**`determined/ingestion/reingest_file.py`**
+- INSERT includes edge_type; populates symbol_names after each edge insert
 
-**533 tests passed, 1 skipped [V]**
+**`determined/agent/graph_utils.py`**
+- `_resolve_to_canonical`: resolves any name form to canonical_id via symbol_names
+- `shortest_path`: traverses by source_id/target_id not caller/callee strings
 
-## Probe scorecard (Determined corpus, as of e242815) [V]
+**`determined/ingestion/parse_ast.py`**
+- Calls `extract_all_dynamic_edges(source)` after symbol extraction;
+  appends results as SymbolReferences with correct edge_type
 
-- Q1 orient ("give me a quick overview"): PASS
-- Q2 blast-radius ("what would break if I changed resolve_and_expand"): PASS
-- Q3 name-search ("what does ground_question do"): PASS
-- Q4 comparative ("does local_agent use the same LLM client as ui_server"): PASS
-- Q5 traversal ("path from UI query to database"): PASS -- handle_query->_answer->resolve_and_expand->dispatch->DBOracle
-- Q6 method-confab ("what methods does DBOracle have"): PASS
+**`determined/ingestion/dynamic_edges.py`** (new)
+- `extract_dispatch_dict_edges`: Gap 2 -- TOOLS/TASK_PATTERNS dict dispatch
+- `extract_thread_target_edges`: Gap 3 -- Thread(target=fn)
+- `extract_decorator_entry_edges`: Gap 4 -- @socketio.on / @app.route
+- `extract_socketio_handler_map`: event_name -> handler_fn from Python source
+- `extract_cross_language_edges`: Gap 7 -- JS socket.emit -> Python handler
+- `load_virtual_edge_annotations`: Gap 8+ -- reads virtual_edges.json
+- `extract_all_dynamic_edges`: runs all Python-side detectors
 
-**All 6 probes pass.**
+**`tests/regression/test_graph_utils.py`**
+- _make_oracle updated with source_id/target_id/edge_type/symbol_names
+- Added test_shortest_path_module_qualified_callee (Gap 1 regression)
 
-## Architecture: design_note as grounding redirect [V]
+**`tests/regression/test_dynamic_edges.py`** (new, 11 tests) [V]
 
-Pattern established this session: when grounding surfaces WRONG symbols (real but
-misleading), attach a design_note to one of those symbols that:
-1. Explains why the symbol is NOT the right answer
-2. Names the actual symbols via embedded NEED lines (using correct pattern syntax)
+### Gap taxonomy [V]
 
-Phase 1 decompose follows the embedded NEEDs (via new DECOMPOSE_SYSTEM instruction).
-Phase 3 sees the note injected into facts_text as ARCHITECTURE NOTES.
+| Gap | Pattern | Status |
+|-----|---------|--------|
+| 1 | Module-qualified callee names break BFS | FIXED |
+| 2 | dict-of-callables dispatch (TOOLS) | FIXED |
+| 3 | Thread(target=fn) implicit calls | FIXED |
+| 4 | @socketio.on / @app.route decorators | FIXED |
+| 7 | JS socket.emit -> Python handler | FIXED |
+| 8 | ABC/subclass polymorphic dispatch | FIXED (auto from Item 20 data) |
+| manual | Anything else cross-boundary | virtual_edges.json |
 
-Key constraint: embedded NEED lines must use exact resolver patterns:
-- "NEED: brief for <symbol>" (not "what does X do" -- that's for files)
-- "NEED: callees of <symbol>"
-- "NEED: what does <file.py> do" (with .py extension for files)
+Synthetic caller nodes: `__js_client__`, `__http_client__` (auto-generated).
+`__abc_base__`, `__annotation__` available in virtual_edges.json.
+
+## Probe scorecard (Determined corpus) [?]
+
+Not re-run this session. Last known: all 6 RM21 probes pass (commit e242815).
 
 ## Known issues (carried forward)
 
-**Determined corpus DB path [V]:**
-`C_Users_bartl_dev_Determined.db` (183 files). Prior SESSION_STATEs incorrectly
-listed the commonplace example DB. TRACKER.md is correct.
+**Corpus DB not re-ingested [V]:**
+symbol_names table and all virtual edges only populate on next ingest.
+Re-ingest from UI or:
+`.venv\Scripts\python -m determined.agent.local_agent --source C:\Users\bartl\dev\Determined`
+
+**Gap 7 _source availability [?]:**
+`_persist_cross_boundary_edges` reads `analysis._source` for HTML content.
+FileAnalysis may not store source text -- cross-language matching silently skips if absent.
+Verify on next re-ingest; fix if needed.
 
 **GUIDE_DATA sync trap [V]:** guide_commonplace.json and inline GUIDE_DATA in
-console.html are separate stores -- both must be updated together. No auto-sync.
+console.html are separate stores -- both must be updated together.
 
 **ingest_design_docs project root mismatch [?]:** Must call with explicit path.
 
 **find_abc_gaps same-file blind spot [V]:** ABC base + subclasses in same file = false gap.
 
+**Determined corpus DB path [V]:**
+`C_Users_bartl_dev_Determined.db` (183 files).
+
 ## NEXT SESSION -- start here
 
-**All 6 RM21 probes pass. Options:**
-
-1. **Item 6 (live sync loop)** -- re-ingest single changed file without full corpus re-run
-   SOTS: XIV (one source of truth), X (idempotent per-file re-ingest), XXI (no daemon)
-2. **Item 20 (call graph accuracy)** -- type annotation exploitation + __init__ tracking
-   (do after item 6 since re-ingest needed to populate new columns)
-3. **dj2 corpus probe** -- run RM21 probe suite against dj2 to find gaps there
-
-Recommended: item 6.
+1. **Re-ingest Determined corpus** to populate symbol_names + all virtual/polymorphic edges
+2. **Verify Gap 7** -- check if FileAnalysis stores _source; fix if cross-language edges absent
+3. **Run RM21 probes** to confirm all 6 still pass after graph changes
+4. **dj2 corpus probe** -- run RM21 probe suite against dj2; find gaps there
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
-Started via UI (port 5050) or manually.
