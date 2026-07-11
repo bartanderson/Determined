@@ -824,6 +824,10 @@ def parse_ast(
         class_attr_map=class_attr_map,
     )
 
+    from determined.ingestion.dynamic_edges import extract_all_dynamic_edges
+    for caller, callee, etype in extract_all_dynamic_edges(source):
+        symbol_references.append(SymbolReference(caller=caller, callee=callee, line_number=0, edge_type=etype))
+
     mutations = _extract_mutations(tree)
 
     return FileAnalysis(

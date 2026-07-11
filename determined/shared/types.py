@@ -84,6 +84,8 @@ class SymbolReference:
 
     # A → B bridge field (non-breaking addition)
     identity: Optional[SymbolIdentity] = None
+    resolved: bool = False
+    edge_type: str = 'static'  # 'static' | 'dynamic'
 
     bucket: Optional[str] = None
     resolved: bool = False  # True = callee derived from type annotation, not heuristic

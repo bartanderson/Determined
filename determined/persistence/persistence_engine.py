@@ -21,6 +21,8 @@ def _migrate(connection):
     existing = {row[1] for row in cursor.execute("PRAGMA table_info(graph_edges)").fetchall()}
     if "resolved" not in existing:
         cursor.execute("ALTER TABLE graph_edges ADD COLUMN resolved INTEGER DEFAULT 0")
+    if "edge_type" not in existing:
+        cursor.execute("ALTER TABLE graph_edges ADD COLUMN edge_type TEXT DEFAULT 'static'")
     fn_existing = {row[1] for row in cursor.execute("PRAGMA table_info(functions)").fetchall()}
     if "decorators_json" not in fn_existing:
         cursor.execute("ALTER TABLE functions ADD COLUMN decorators_json TEXT")
@@ -179,7 +181,17 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         line_number INTEGER,
         caller_file TEXT,
-        resolved INTEGER DEFAULT 0
+        resolved INTEGER DEFAULT 0,
+        edge_type TEXT DEFAULT 'static'
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS symbol_names (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        canonical_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        name_type TEXT NOT NULL
     )
     """)
 
@@ -315,6 +327,8 @@ def create_indexes(connection: sqlite3.Connection, include_composite: bool = Tru
         "CREATE INDEX IF NOT EXISTS idx_file_edges_to_module ON file_edges(to_module);",
         "CREATE INDEX IF NOT EXISTS idx_graph_edges_source_id ON graph_edges(source_id);",
         "CREATE INDEX IF NOT EXISTS idx_graph_edges_target_id ON graph_edges(target_id);",
+        "CREATE INDEX IF NOT EXISTS idx_symbol_names_canonical ON symbol_names(canonical_id);",
+        "CREATE INDEX IF NOT EXISTS idx_symbol_names_name ON symbol_names(name);",
         "CREATE INDEX IF NOT EXISTS idx_graph_edges_caller ON graph_edges(caller);",
         "CREATE INDEX IF NOT EXISTS idx_graph_edges_callee ON graph_edges(callee);",
         "CREATE INDEX IF NOT EXISTS idx_graph_edges_line ON graph_edges(line_number);",
@@ -661,7 +675,7 @@ def create_database(database_path: str | Path) -> sqlite3.Connection:
 # ==================================================
 # PUBLIC ENTRY POINT (ONLY FUNCTION CALLED OUTSIDE)
 # ==================================================
-def persist_all(connection, file_analyses, graph, project_prefixes, logger=None, project_root=None):
+def persist_all(connection, file_analyses, graph, project_prefixes, logger=None, project_root=None, annotation_file=None):
     """
     Single persistence orchestrator.
 
@@ -709,9 +723,174 @@ def persist_all(connection, file_analyses, graph, project_prefixes, logger=None,
     _persist_graph_edges(connection, graph)
 
     # -----------------------------------------
+    # 5b. CROSS-LANGUAGE + ANNOTATION EDGES
+    # -----------------------------------------
+    _persist_cross_boundary_edges(connection, file_analyses, annotation_file)
+
+    # -----------------------------------------
     # 6. RECALCULATE is_hot FROM GRAPH
     # -----------------------------------------
     _recalculate_hot_files(connection)
+
+def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=None):
+    """
+    Inject virtual edges that cross boundaries static AST can't see:
+      - Gap 7: JS socket.emit → Python @socketio.on handler (cross_language)
+      - Gap 8+: manually declared edges from virtual_edges.json (annotation/polymorphic)
+
+    These are stored in graph_edges with synthetic source symbols
+    (__js_client__, __http_client__, __abc_base__, __annotation__) so they're
+    traversable and queryable alongside static edges.
+    """
+    from determined.ingestion.dynamic_edges import (
+        extract_socketio_handler_map,
+        extract_cross_language_edges,
+        load_virtual_edge_annotations,
+    )
+    from determined.identity.symbol_identity import normalize_symbol, all_name_forms
+
+    cursor = connection.cursor()
+    seen_names: set[tuple[str, str]] = set()
+
+    def _insert_virtual(src: str, tgt: str, etype: str):
+        src_id = normalize_symbol(src)
+        tgt_id = normalize_symbol(tgt)
+        cursor.execute("""
+        INSERT INTO graph_edges (source_id, target_id, caller, callee, edge_type)
+        VALUES (?, ?, ?, ?, ?)
+        """, (src_id, tgt_id, src, tgt, etype))
+        for name, ntype in all_name_forms(src):
+            key = (src_id, name)
+            if key not in seen_names:
+                seen_names.add(key)
+                cursor.execute(
+                    "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
+                    (src_id, name, ntype),
+                )
+        for name, ntype in all_name_forms(tgt):
+            key = (tgt_id, name)
+            if key not in seen_names:
+                seen_names.add(key)
+                cursor.execute(
+                    "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
+                    (tgt_id, name, ntype),
+                )
+
+    # --- Gap 7: match JS socket.emit to Python @socketio.on handlers ---
+    # Find the Python server file and any HTML templates in the analyzed files
+    py_handler_map: dict[str, str] = {}
+    html_sources: list[str] = []
+
+    for analysis in (file_analyses or []):
+        fp = getattr(analysis, 'file_path', '') or ''
+        src = getattr(analysis, '_source', None)  # may not be stored; skip if absent
+        if src is None:
+            continue
+        if fp.endswith('.py'):
+            py_handler_map.update(extract_socketio_handler_map(src))
+        elif fp.endswith(('.html', '.js')):
+            html_sources.append(src)
+
+    if py_handler_map and html_sources:
+        # Delete stale cross_language edges before reinserting
+        cursor.execute("DELETE FROM graph_edges WHERE edge_type = 'cross_language'")
+        for html_src in html_sources:
+            for src, tgt, etype in extract_cross_language_edges(html_src, py_handler_map):
+                _insert_virtual(src, tgt, etype)
+
+    # --- Gap 8: auto-generate polymorphic edges from ABC/subclass data ---
+    # Uses Item 20 infrastructure: classes.base_classes_json, functions.decorators_json,
+    # classes.methods_json. For each abstract method on an ABC class, emit virtual edges
+    # to every concrete subclass override: AbstractBase.method → ConcreteSubclass.method
+    _persist_polymorphic_edges(connection, cursor, _insert_virtual)
+
+    # --- Gap 8+: manually declared virtual edges ---
+    if annotation_file:
+        from determined.ingestion.dynamic_edges import load_virtual_edge_annotations
+        cursor.execute("DELETE FROM graph_edges WHERE edge_type = 'annotation'")
+        for src, tgt, etype in load_virtual_edge_annotations(annotation_file):
+            _insert_virtual(src, tgt, etype)
+
+    connection.commit()
+
+
+def _persist_polymorphic_edges(connection, cursor, insert_fn):
+    """
+    Auto-generate polymorphic virtual edges from ABC class hierarchy.
+
+    For each abstract method M on ABC class A, and each concrete subclass S of A
+    that overrides M, emit: A.M → S.M (edge_type='polymorphic').
+
+    This closes Gap 8: callers of abstract methods now have a traversable path
+    to concrete implementations without needing manual annotation.
+    Uses Item 20 columns: classes.base_classes_json, classes.methods_json,
+    functions.decorators_json.
+    """
+    import json as _json
+
+    cursor.execute("DELETE FROM graph_edges WHERE edge_type = 'polymorphic'")
+
+    # Step 1: find all ABC classes and their abstract methods
+    abc_rows = connection.execute(
+        "SELECT name, methods_json, file_path FROM classes "
+        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+    ).fetchall()
+
+    if not abc_rows:
+        return
+
+    # abc_method_map: {abc_class_name: set of abstract method names}
+    abc_method_map: dict[str, set[str]] = {}
+    for cls_name, methods_json, file_path in abc_rows:
+        try:
+            methods = _json.loads(methods_json or "[]")
+        except Exception:
+            continue
+        abstract: set[str] = set()
+        for method in methods:
+            row = connection.execute(
+                "SELECT decorators_json FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if row:
+                try:
+                    decs = _json.loads(row[0] or "[]")
+                except Exception:
+                    decs = []
+                if any("abstractmethod" in d for d in decs):
+                    abstract.add(method)
+        if abstract:
+            abc_method_map[cls_name] = abstract
+
+    if not abc_method_map:
+        return
+
+    # Step 2: find concrete subclasses
+    all_classes = connection.execute(
+        "SELECT name, base_classes_json, methods_json FROM classes"
+    ).fetchall()
+
+    for sub_name, bases_json, sub_methods_json in all_classes:
+        try:
+            bases = _json.loads(bases_json or "[]")
+        except Exception:
+            bases = []
+        try:
+            sub_methods = set(_json.loads(sub_methods_json or "[]"))
+        except Exception:
+            sub_methods = set()
+
+        for base in bases:
+            abstract_methods = abc_method_map.get(base)
+            if not abstract_methods:
+                continue
+            for method in abstract_methods:
+                if method in sub_methods:
+                    # Concrete override found — emit polymorphic edge
+                    src = f"{base}.{method}"
+                    tgt = f"{sub_name}.{method}"
+                    insert_fn(src, tgt, 'polymorphic')
+
 
 def _recalculate_hot_files(connection):
     """
@@ -811,8 +990,21 @@ def _persist_graph_edges(connection, graph):
         # legacy path: no caller_file info, fall back to full reset
         cursor.execute("DELETE FROM graph_edges")
 
+    from determined.identity.symbol_identity import all_name_forms
+    symbol_names_batch: list[tuple[str, str, str]] = []
+
+    if files_in_run:
+        placeholders = ",".join("?" * len(files_in_run))
+        cursor.execute(
+            f"DELETE FROM symbol_names WHERE canonical_id IN ("
+            f"  SELECT DISTINCT source_id FROM graph_edges WHERE caller_file IN ({placeholders})"
+            f")",
+            list(files_in_run),
+        )
+
     for edge in edges:
         source_id, target_id = edge_identity(edge.caller, edge.callee)
+        etype = getattr(edge, "edge_type", "static")
         cursor.execute("""
         INSERT INTO graph_edges (
             source_id,
@@ -821,8 +1013,9 @@ def _persist_graph_edges(connection, graph):
             callee,
             line_number,
             caller_file,
-            resolved
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            resolved,
+            edge_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             source_id,
             target_id,
@@ -831,6 +1024,22 @@ def _persist_graph_edges(connection, graph):
             getattr(edge, "line_number", None),
             getattr(edge, "caller_file", None),
             1 if getattr(edge, "resolved", False) else 0,
+            etype,
         ))
+        for name, ntype in all_name_forms(edge.caller):
+            symbol_names_batch.append((source_id, name, ntype))
+        for name, ntype in all_name_forms(edge.callee):
+            symbol_names_batch.append((target_id, name, ntype))
+
+    # Deduplicate and insert symbol_names
+    seen_names: set[tuple[str, str]] = set()
+    for canonical_id, name, ntype in symbol_names_batch:
+        key = (canonical_id, name)
+        if key not in seen_names:
+            seen_names.add(key)
+            cursor.execute(
+                "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?, ?, ?)",
+                (canonical_id, name, ntype),
+            )
 
     connection.commit()

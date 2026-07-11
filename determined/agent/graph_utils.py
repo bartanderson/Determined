@@ -134,32 +134,48 @@ def bfs_callees(
 # Shortest path between two symbols
 # ------------------------------------------------------------------
 
+def _resolve_to_canonical(oracle: "DBOracle", name: str) -> str:
+    """Resolve a name (any form) to its canonical_id via symbol_names, or normalize directly."""
+    try:
+        row = oracle.conn.execute(
+            "SELECT canonical_id FROM symbol_names WHERE name = ? LIMIT 1", (name,)
+        ).fetchone()
+        if row:
+            return row[0]
+    except Exception:
+        pass
+    from determined.identity.symbol_identity import normalize_symbol
+    return normalize_symbol(name)
+
+
 def shortest_path(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
     """
     Shortest call path from src to dst through graph_edges.
-    Returns ordered list of symbol names [src, ..., dst], or None if unreachable.
-    BFS forward from src.
+    Traverses by source_id/target_id (canonical bare names) so module-qualified
+    callee names don't break BFS. Returns [src, ..., dst] as bare names, or None.
     """
-    if src == dst:
-        return [src]
+    src_id = _resolve_to_canonical(oracle, src)
+    dst_id = _resolve_to_canonical(oracle, dst)
 
-    visited: set[str] = {src}
-    queue: deque[list[str]] = deque([[src]])
+    if src_id == dst_id:
+        return [src_id]
+
+    visited: set[str] = {src_id}
+    queue: deque[list[str]] = deque([[src_id]])
 
     while queue:
         path = queue.popleft()
-        node = path[-1]
+        node_id = path[-1]
 
-        callees = oracle.conn.execute(
-            "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?", (node,)
+        rows = oracle.conn.execute(
+            "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ?", (node_id,)
         ).fetchall()
-        for row in callees:
-            callee = row[0]
-            if callee == dst:
-                return path + [dst]
-            if callee not in visited:
-                visited.add(callee)
-                queue.append(path + [callee])
+        for (target_id,) in rows:
+            if target_id == dst_id:
+                return path + [dst_id]
+            if target_id not in visited:
+                visited.add(target_id)
+                queue.append(path + [target_id])
 
     return None
 

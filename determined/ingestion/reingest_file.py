@@ -265,15 +265,34 @@ def apply_file_delta(
     graph = builder.build()
     # Pass a sentinel-file graph so _persist_graph_edges skips its own delete.
     # We already deleted; just insert whatever edges the builder produced.
+    from determined.identity.symbol_identity import all_name_forms
+    seen_names: set[tuple[str, str]] = set()
     for edge in graph.edges:
         source_id, target_id = edge_identity(edge.caller, edge.callee)
+        etype = getattr(edge, "edge_type", "static")
         conn.execute("""
         INSERT INTO graph_edges (source_id, target_id, caller, callee,
-                                 line_number, caller_file, resolved)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+                                 line_number, caller_file, resolved, edge_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (source_id, target_id, edge.caller, edge.callee,
               getattr(edge, "line_number", None), edge.caller_file,
-              1 if getattr(edge, "resolved", False) else 0))
+              1 if getattr(edge, "resolved", False) else 0, etype))
+        for name, ntype in all_name_forms(edge.caller):
+            key = (source_id, name)
+            if key not in seen_names:
+                seen_names.add(key)
+                conn.execute(
+                    "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?, ?, ?)",
+                    (source_id, name, ntype),
+                )
+        for name, ntype in all_name_forms(edge.callee):
+            key = (target_id, name)
+            if key not in seen_names:
+                seen_names.add(key)
+                conn.execute(
+                    "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?, ?, ?)",
+                    (target_id, name, ntype),
+                )
 
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()

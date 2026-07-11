@@ -15,7 +15,12 @@ def _make_oracle(edges, functions=None, classes=None):
             self.conn = sqlite3.connect(":memory:")
             self.conn.row_factory = sqlite3.Row
             self.conn.execute(
-                "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER)"
+                "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER, "
+                "source_id TEXT, target_id TEXT, caller_file TEXT, resolved INTEGER DEFAULT 0, "
+                "edge_type TEXT DEFAULT 'static')"
+            )
+            self.conn.execute(
+                "CREATE TABLE symbol_names (id INTEGER PRIMARY KEY, canonical_id TEXT, name TEXT, name_type TEXT)"
             )
             self.conn.execute(
                 "CREATE TABLE functions (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
@@ -23,10 +28,29 @@ def _make_oracle(edges, functions=None, classes=None):
             self.conn.execute(
                 "CREATE TABLE classes (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
             )
+            from determined.identity.symbol_identity import normalize_symbol, all_name_forms
+            seen: set[tuple] = set()
             for caller, callee in edges:
+                src_id = normalize_symbol(caller)
+                tgt_id = normalize_symbol(callee)
                 self.conn.execute(
-                    "INSERT INTO graph_edges VALUES (?,?,0)", (caller, callee)
+                    "INSERT INTO graph_edges (caller, callee, line_number, source_id, target_id) VALUES (?,?,0,?,?)",
+                    (caller, callee, src_id, tgt_id)
                 )
+                for name, ntype in all_name_forms(caller):
+                    if (src_id, name) not in seen:
+                        seen.add((src_id, name))
+                        self.conn.execute(
+                            "INSERT INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
+                            (src_id, name, ntype)
+                        )
+                for name, ntype in all_name_forms(callee):
+                    if (tgt_id, name) not in seen:
+                        seen.add((tgt_id, name))
+                        self.conn.execute(
+                            "INSERT INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
+                            (tgt_id, name, ntype)
+                        )
             for name, fp in (functions or []):
                 self.conn.execute(
                     "INSERT INTO functions VALUES (?,?,0,NULL)", (name, fp)
@@ -110,6 +134,20 @@ def test_shortest_path_same_symbol():
     from determined.agent.graph_utils import shortest_path
     oracle = _make_oracle(edges=[])
     assert shortest_path(oracle, "A", "A") == ["A"]
+
+
+def test_shortest_path_module_qualified_callee():
+    """BFS must traverse edges where callee is module-qualified (Gap 1 fix)."""
+    from determined.agent.graph_utils import shortest_path
+    # Simulates: _answer → pkg.mod.resolve_and_expand → pkg.mod2.dispatch
+    oracle = _make_oracle(edges=[
+        ("_answer", "pkg.mod.resolve_and_expand"),
+        ("resolve_and_expand", "pkg.mod2.dispatch"),
+    ])
+    path = shortest_path(oracle, "_answer", "dispatch")
+    assert path is not None, "BFS should traverse module-qualified callee edges"
+    assert path[0] == "_answer"
+    assert path[-1] == "dispatch"
 
 
 def test_most_connected_ordering():
