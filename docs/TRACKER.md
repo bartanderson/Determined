@@ -164,6 +164,127 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM39. **[OPEN] Data flow tracking: parameter-passing and return-value edges**
+
+   **The gap:** The graph tracks control flow (which function calls which) but not data
+   flow (what values move between functions). We can say "handler A calls validate_move
+   calls apply_move" but not "the player_action dict from the socket message reaches
+   validate_move, and validate_move's bool return gates whether apply_move runs."
+   For UI-to-output chain reasoning this is the missing half.
+
+   **Design constraint (SOTS XXI):** Build Level 1 only after the prerequisite analysis
+   identifies the specific patterns that matter in the real corpus. Do not build speculatively.
+
+   ---
+
+   **Prerequisite -- dj2 path analysis (do first, 1 session):**
+   Re-ingest dj2 corpus. Run `bfs_callees` from every socket handler. Document:
+   (a) where control flow chains terminate and why (dead ends that should continue),
+   (b) which functions take the game state object as a parameter,
+   (c) which functions return values consumed by their callers.
+   File findings as a session note in HISTORY.md before implementing anything.
+   This produces the target pattern list -- Level 1 gets scoped to those patterns only.
+
+   ---
+
+   **Level 1 -- parameter-passing edges (~2 days after prerequisite):**
+   In `parse_ast.py` `Visitor.visit_Call`, when a call argument is itself a call
+   (`fn_b(fn_a())`), emit a `data_flow` edge: `fn_a -> fn_b`, via='return_value'.
+   Also: when a param is annotated and the annotation matches a known function's
+   return annotation, emit a typed data edge.
+
+   Storage: extend `graph_edges` with `edge_type='data_flow'` (Option B -- traversal
+   functions already handle all edge types; existing tools get data flow edges for free).
+   Alternative Option A (new `data_edges` table) is cleaner for queries but splits the
+   graph. Decide at implementation time based on query patterns needed.
+
+   **Level 2 -- variable binding tracking (~2 weeks, defer):**
+   Track `result = fn_a()` then `fn_b(result)` across statements within a function body.
+   Requires per-function variable binding map in the AST visitor. Higher accuracy, much
+   more complex. Build only after Level 1 proves insufficient on real queries.
+
+   ---
+
+   **Tooling to investigate before building:**
+   - `libCST` (Meta): concrete syntax tree with better assignment tracking than stdlib ast
+   - `astroid` (pylint's AST): has inference support, may give type-propagation for free
+   - `pyright` type inference API: typed parameter->return chains without writing inference
+   Grep existing Determined code first: `determined/ingestion/parse_ast.py` and
+   `determined/agent/graph_utils.py` are the entry points.
+
+   **Entry points for implementation:**
+   - `determined/ingestion/parse_ast.py` -- `Visitor.visit_Call` (add data_flow emission)
+     and new `visit_Assign` (for Level 2 variable tracking)
+   - `determined/persistence/persistence_engine.py` -- store data_flow edges in graph_edges
+     (extend `_persist_graph_edges` or add to `_persist_cross_boundary_edges`)
+
+   **Estimated effort:** prerequisite 1 session; Level 1 2 days; Level 2 2 weeks (defer).
+
+---
+
+RM38. **[OPEN] JS/HTML event chain analysis: map DOM controls to socket emissions**
+
+   **The gap:** Gap 7 (JS socket.emit -> Python handler) was fixed: we detect
+   `socket.emit("event")` in HTML/JS and store a `cross_language` virtual edge to the
+   Python `@socketio.on("event")` handler. But the source is synthetic (`__js_client__`)
+   -- there is no record of *which user control* triggered the emit. We know the
+   socket boundary was crossed but not what the user did to cause it.
+
+   **Goal:** map {DOM control -> event_type -> JS handler -> socket.emit event name}
+   and store as `js_event_binding` virtual edges. This closes the full chain:
+   button_click -> js_handler -> socket.emit -> python_handler (already have last link).
+
+   ---
+
+   **First: investigate existing JS analysis tools (0.5 days):**
+   Before writing custom extraction, evaluate:
+   - `js-callgraph` (npm): builds JS call graphs from source; may give handler->emit chains
+   - `acorn` or `esprima` with Python subprocess: JS AST parsers, can find addEventListener
+     and onclick patterns; subprocess call from Python is fine (no Python binding needed)
+   - `CodeQL` for JS: GitHub semantic analysis, free for open source, queries for
+     addEventListener patterns; overkill if the JS is simple but worth a look
+   - `pyjsparser` / `calmjs.parse`: pure-Python JS parsers (no Node.js dependency)
+   Decision criterion: if a tool can be called from Python and returns structured event
+   binding data in under 1 day of integration work, use it. Otherwise write targeted
+   regex/AST extraction -- the JS in dj2 is not complex.
+
+   ---
+
+   **What to extract (priority order):**
+   1. HTML inline handlers: `<button onclick="fn()">`, `<form onsubmit="fn()">`
+      -> extract element type, id/class, event_type, handler_name
+   2. JS `addEventListener('click', fn)` and jQuery `.on('click', fn)` patterns
+      -> extract selector, event_type, handler_name
+   3. Within each JS handler function: trace calls until `socket.emit("event")` found
+      -> gives handler_name -> emitted_event_name
+   4. Combine: control -> event_type -> js_handler -> socket_event -> python_handler
+
+   **Output schema** (extend `_persist_cross_boundary_edges` in persistence_engine.py):
+   - Edge 1: `source_id = "<element_type>_<id_or_class>"`, `target_id = "js_handler_name"`,
+     `edge_type = 'js_event_binding'`, `caller = element description`, `callee = handler`
+   - Edge 2 (existing, improve): intermediate `js_handler_name -> socket_event_name` node
+     so the full chain is traversable without special-casing `__js_client__`
+
+   **Entry points:**
+   - `determined/ingestion/dynamic_edges.py`: add `extract_js_event_bindings(html_src)` and
+     `extract_js_call_chain(js_src, handler_name) -> socket_event` alongside existing
+     `extract_socketio_handler_map` and `extract_cross_language_edges`
+   - `determined/persistence/persistence_engine.py`: `_persist_cross_boundary_edges`,
+     the Gap 7 block (~line 787) -- extend to also call the new extractor
+
+   **What already exists to build on:**
+   - `extract_socketio_handler_map(src)` in dynamic_edges.py: finds Python @socketio.on handlers
+   - `extract_cross_language_edges(html_src, py_handler_map)`: finds socket.emit in HTML/JS
+   - Both use regex over source text. Same approach works for addEventListener and onclick.
+
+   **Estimated effort:**
+   - Tool investigation: 0.5 days
+   - Implementation (good external tool found): 1-2 days
+   - Implementation (custom regex/AST): 2-3 days
+   - New regression tests: 0.5 days
+
+---
+
 RM37. **[DONE 2026-07-10] Traversal heuristic false-fires on "path" as symbol name**
 
    Discovered in RM21 probe re-run. Q5: "what is the path from the web route to the
