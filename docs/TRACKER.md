@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-11, session 145+):** RM39 prerequisite (dj2 path analysis) done. BFS from all socket/HTTP handlers documented in HISTORY.md. Nine new items filed this arc: RM40 (target resolution collision), RM41 (HTTP fetch/HTMX edges), RM42 (clue board + pass 2 persistence), RM43 (canned reasoning lenses), RM44 (implementation ordering), RM45 (completion contract), RM46 (scaffold from pattern), RM47 (readiness gate), RM48 (design-to-code delta). RM38 scope revised -- dj2 has no client-side socket.emit; reframed as fetch/HTMX mapping. 545 passed, 1 skipped.
+**Last session (2026-07-11, session 147):** Corpus enrichment arc filed. Devil's advocate analysis of RM44-RM48 exposed three failure modes: param_types_json sparsity (<1% annotated in dj2), stubs having no docstrings (undermines RM46 embedding), and design notes not existing for fresh corpus (RM47 Tier 4 false-READY). Three new items close these gaps: RM49 (annotate_function: infer types/contracts from call context + LLM), RM50 (inline comment extraction from parse_ast.py), RM51 (annotation pass driver: priority queue + convergence loop). Step 0 action added to RM48: run ingest_design_docs on dj2 design docs before implementing -- costs zero code. 545 passed, 1 skipped (no code changed this session).
 
 **Session 140 (2026-07-10):** RM21 adversarial probe follow-up against Determined corpus. Corrected prior handoff (Q1/Q4/Q5 were partial, not all-pass). Fixed Q4 (imports of <file.py> NEED pattern + list_import_deps resolver + DECOMPOSE_SYSTEM tip) -- now PASS. Fixed Q1 (orient_to_codebase regex expanded to 16 phrasings, moved before understand_symbol in detect rules to prevent false capture) -- now PASS. Fixed grounding pollution (test files/symbols filtered from phase0 suggestions). Known orient misses documented: "how does this work", "summarize the codebase", "tell me about this codebase" -- boundary, not bugs. Q5 still confabulates (model invents query_router/query_session pipeline that doesn't exist); deferred to next session. 533 passed, 1 skipped.
 
@@ -639,6 +639,252 @@ RM48. **[OPEN] Design-to-code delta: surface what the design says should exist t
    is the requirement-extraction query, the three-level match loop, and the output
    formatter. The schema note above must be resolved before starting -- budget 30
    minutes to inspect the live DB format.
+
+   **Step 0 action (no code needed, do before implementing RM48):**
+   Run `ingest_design_docs` on dj2's existing design docs:
+   - `docs/design/00A ARCHITECTURAL_CONSTITUTION.md`
+   - `docs/design/00B SYSTEM_CONSTRAINTS.md`
+   - `docs/design/00E AI_LAYER_OPPORTUNITIES.md`
+   - `docs/design/00F ASPIRATIONAL_DESIGN_INTENT.md`
+   Validation: `SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note'`
+   before and after. Expect significant count increase. Also run the schema check:
+   `SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 5`
+   to confirm whether 'requirement' kind is a top-level field or buried in content JSON.
+   This unblocks RM48 query design and costs zero implementation time.
+
+---
+
+RM51. **[OPEN] Annotation pass driver: prioritized queue and convergence loop for corpus enrichment**
+
+   **The gap:** `annotate_function` (RM49) works on a single function. To enrich a
+   corpus with 1300+ unannotated functions, there must be a driver that processes them
+   in the right order, propagates improvements to callers after each annotation, and
+   stops when the marginal gain drops below a threshold. Without this, RM49 is a
+   one-off tool rather than a corpus enrichment loop.
+
+   **The concept:** A `run_annotation_pass(scope=None)` tool that:
+   1. Builds a priority queue of unannotated functions in `workflow_items`
+      (kind='annotation_todo'), ordered by caller count descending (most-called first)
+   2. Pops the top item, calls `annotate_function`, stores the result
+   3. After each annotation, queues the annotated function's direct callers for
+      re-annotation (they now have richer callee context)
+   4. Tracks convergence: stops when a full pass produces fewer than N new inferences
+      (default N=5) or the queue is empty
+   5. Reports: functions annotated, types inferred, contracts stored, passes run
+
+   **Why most-called first:** `process()` (30 callers), `execute()` (46 callers),
+   `generate()` (21 callers) -- these have the richest call context for inference AND
+   their annotations cascade to the largest number of downstream callers. Annotating
+   them first gives the highest leverage per LLM call.
+
+   **Propagation rule:** after annotating function A, query
+   `graph_edges WHERE callee = A` to find A's callers. For each caller not yet in
+   the queue (or whose last annotation predates A's), add to workflow_items with
+   priority = caller's own caller count. This is a BFS-upward propagation, one hop
+   at a time per pass.
+
+   **Convergence check:** track `inferred_count` per pass. If pass N produces fewer
+   new `knowledge_artifacts WHERE kind='inferred_annotation'` than pass N-1 by more
+   than 50%, stop. The corpus has reached diminishing-returns state.
+
+   **What already exists to build on:**
+   - `workflow_items` table with `kind`, `priority`, `status` columns -- already the
+     right queue structure
+   - `annotate_function` (RM49) -- the per-function worker this driver calls
+   - `_list_callers_raw(oracle, symbol)` at agent_tools.py:383 -- get callers for
+     propagation step
+   - `graph_edges` table with `resolved` column -- filter to project functions only
+
+   **Entry points for implementation:**
+   - New function `run_annotation_pass(assessor, args)` in `determined/agent/agent_tools.py`
+     after `annotate_function` (RM49). Args: `scope` (optional file prefix to restrict
+     the pass), `max_functions` (cap per run, default 50), `convergence_threshold` (default 5).
+   - New function `_build_annotation_queue(oracle, scope=None)` -- populates workflow_items
+     from functions WHERE `param_types_json IS NULL OR param_types_json = '{}'` AND
+     `is_stub = 0` (stubs get annotated via RM49 directly; this pass covers complete functions).
+   - Wire into TOOLS dict and tool_registry.py with category `"knowledge"`.
+
+   **Validation (regression tests):**
+   - Queue build: fixture DB with 3 unannotated functions at different caller counts.
+     Verify queue order is by caller count descending.
+   - Propagation: annotate function A in a 2-function chain (A calls B). Verify that after
+     A is annotated, B appears in the queue (caller of A gets queued).
+   - Convergence: fixture where all functions are already annotated. Verify pass exits
+     after 1 pass with 0 new inferences.
+   - Scope filter: verify `scope='world/'` restricts queue to world/ files only.
+   - No LLM needed for queue/propagation/convergence tests; mark LLM inference tests --slow.
+
+   **Dependencies:** RM49 (annotate_function) must ship first.
+
+   **Estimated effort:** 1 day. Queue build is a simple query. Propagation is one
+   _list_callers_raw call per annotated function. Convergence is a count comparison.
+   The driver itself is glue around RM49.
+
+---
+
+RM50. **[OPEN] Inline comment extraction: capture body comments as behavioral notes during parse**
+
+   **The gap:** `parse_ast.py` reads function docstrings but ignores inline comments
+   in function bodies. Comments like `# validates the move before applying`, `# state
+   must be clean here`, `# only called from authenticated handlers` are behavioral
+   notes written by the developer. They are the highest-quality documentation that
+   exists for functions that have no docstring -- and for the dj2 corpus, that is the
+   majority of functions. Currently this information is invisible to every Determined
+   tool.
+
+   **The concept:** Extend the AST visitor to capture inline comments (lines starting
+   with `#` in the function body, excluding shebangs and encoding declarations) and
+   store them as `knowledge_artifacts` with `kind='inline_note'`, `subject=function_name`,
+   `source_file=file_path`. Each comment stored as one artifact. The `annotate_function`
+   tool (RM49) reads these as part of its context assembly -- they are low-cost behavioral
+   signal that costs zero LLM calls to extract.
+
+   **What to capture:**
+   - Inline comments attached to statements in the function body (via `ast.get_source_segment`
+     or by scanning the raw source lines for the function's line range)
+   - Exclude: module-level comments, class-level comments, shebang lines (`#!`), encoding
+     declarations (`# -*- coding`), pure separator lines (`######`)
+   - Include: any comment line within the function body's line range that has substantive
+     content (len > 5 after stripping `# `)
+
+   **Implementation note:** Python's `ast` module strips comments. Use the raw source line
+   scan approach: for each function, get its line range from `lineno` and `end_lineno`
+   (Python 3.8+ provides `end_lineno` on all AST nodes). Scan those lines directly in the
+   source text for `#` prefixes. This avoids needing `libCST` or a separate tokenizer.
+
+   **What already exists to build on:**
+   - `parse_ast.py` `Visitor._extract_functions` -- already has `lineno` for each function;
+     `end_lineno` is available on Python 3.8+ AST nodes
+   - `persistence_engine.py` `_persist_knowledge_artifacts` -- already writes to
+     `knowledge_artifacts`; add inline_note kind alongside design_note and distilled
+   - `knowledge_artifacts` table -- no schema change needed; `kind`, `subject`,
+     `source_file`, `content` columns already exist
+
+   **Entry points for implementation:**
+   - In `parse_ast.py` `Visitor._extract_functions` (or a new post-pass): after extracting
+     each function, scan raw source lines `[lineno:end_lineno]` for comment lines.
+     Attach to the function's data dict as `inline_notes: list[str]`.
+   - In `persistence_engine.py` `_persist_functions` (or `_persist_knowledge_artifacts`):
+     for each function with non-empty `inline_notes`, write one `knowledge_artifact`
+     per comment, kind='inline_note'.
+   - No new schema. No new table. No LLM.
+
+   **Validation (regression tests):**
+   - Fixture source file with one function containing 2 inline comments and no docstring.
+     After ingest: verify 2 `knowledge_artifacts WHERE kind='inline_note' AND subject=fn_name`
+     exist with correct content.
+   - Fixture function with a docstring AND inline comments: verify both docstring (behavioral_contracts
+     or functions.docstring) and inline_notes are captured independently, no duplication.
+   - Fixture function with only separator comments (`######`): verify none stored (filtered out).
+   - Fixture function with shebang-style comment: verify not stored.
+   - Run full regression suite after change (parse_ast.py changes are high blast-radius;
+     all 545+ tests must pass before commit).
+
+   **Integration validation:**
+   After implementing and reingesting dj2 corpus: run
+   `SELECT COUNT(*), source_file FROM knowledge_artifacts WHERE kind='inline_note' GROUP BY source_file ORDER BY COUNT(*) DESC LIMIT 10`
+   Report the top-10 files by inline note count. Spot-check 3-5 notes against source to
+   confirm they are real behavioral comments, not noise.
+
+   **Estimated effort:** 0.5 days. Source line scan is straightforward. Persistence
+   is one new kind in an existing write path. Highest risk is blast-radius on parse_ast.py
+   -- run full regression suite before committing.
+
+---
+
+RM49. **[OPEN] annotate_function: infer and store docstrings, param types, and behavioral contracts for unannotated functions**
+
+   **The gap:** RM45 (completion contract) and RM47 (readiness gate) depend on
+   `param_types_json`, `return_type`, and `behavioral_contracts` being populated.
+   In dj2, fewer than 1% of functions have type annotations. `behavioral_contracts`
+   is empty for functions with no docstring. The tools ship but produce mostly-empty
+   output on the corpus they were built to analyze.
+
+   **The concept:** A `annotate_function(symbol)` tool that takes a single function,
+   assembles all available context (source code, callers, callees, inline notes, design
+   notes), runs LLM inference to produce: inferred param types, inferred return type,
+   behavioral contract (pre/post/raises), and a one-sentence docstring. Stores inferences
+   in `knowledge_artifacts` with `kind='inferred_annotation'` -- clearly labeled as
+   inferred, never written to source files without explicit user confirmation.
+
+   **RM45 and RM47 read from this store:** both tools should check
+   `knowledge_artifacts WHERE kind='inferred_annotation' AND subject=symbol`
+   when `param_types_json` is empty or `behavioral_contracts` has no rows for the symbol.
+   Output is labeled `(inferred, confidence: 0.7)` to distinguish from real annotations.
+   This makes the sparsity problem visible rather than silently producing empty output.
+
+   **Context assembly for inference (what to pass the LLM):**
+   1. Function source code (via `_get_source_lines` from stub_projector.py:100)
+   2. Callers: what they pass as arguments (from `_list_callers_raw` + one extra query
+      per caller: what literal or typed value do they pass?)
+   3. Callees: what the function calls and what those return (from `_list_callees_raw`
+      + `functions.return_type` for each callee)
+   4. Inline notes: `knowledge_artifacts WHERE kind='inline_note' AND subject=symbol`
+      (populated by RM50)
+   5. Existing design notes mentioning the symbol or its file (from
+      `knowledge_artifacts WHERE kind IN ('design_note','layer_rule') AND content LIKE '%symbol%'`)
+   6. `gather_context(conn, symbol)` from stub_projector.py:110 -- already assembles
+      callers + contracts + siblings; reuse rather than re-query
+
+   **Inference output shape (stored as JSON in knowledge_artifacts.content):**
+   ```json
+   {
+     "param_types": {"player_action": "PlayerAction", "state": "DungeonStateNeo"},
+     "return_type": "Dict[str, Any]",
+     "pre_conditions": ["player_action.type must be a valid ActionType"],
+     "post_conditions": ["returns dict with keys: success, effects, message"],
+     "raises": ["ValueError if player_action.type is unknown"],
+     "docstring": "Process a player action against current dungeon state and return result dict.",
+     "confidence": 0.72,
+     "inference_basis": ["30 callers pass PlayerAction typed arg", "return value checked for ['success'] key by 12 callers"]
+   }
+   ```
+   The `inference_basis` field is critical: it lets RM45 explain WHY the type was inferred,
+   not just assert it. This grounds the output in evidence rather than hallucination.
+
+   **What already exists to build on:**
+   - `gather_context(conn, stub_name)` at stub_projector.py:110 -- callers + contracts + siblings
+   - `_list_callers_raw`, `_list_callees_raw` at agent_tools.py:383, 426
+   - `_get_source_lines` at stub_projector.py:100
+   - `knowledge_artifacts` table -- kind='inferred_annotation' is a new kind, no schema change
+   - `behavioral_contracts` table -- also write inferred contracts here so RM45 reads them
+     from the existing path (subject=function_name, type='inferred')
+   - LLM infrastructure: `generate_quality()` from llm_client.py -- use this, not the 3B fallback
+
+   **Entry points for implementation:**
+   - New function `annotate_function(assessor, args)` in `determined/agent/agent_tools.py`
+     after `docstring_health` (~line 1700). Takes `symbol` arg; optional `write_back=False`
+     (when True, proposes a docstring edit via `edit_file` -- requires user confirmation).
+   - Extend `completion_contract` (RM45): after assembling param_types_json, if empty,
+     query `knowledge_artifacts WHERE kind='inferred_annotation' AND subject=symbol`.
+     If found, include with `(inferred)` label. Same for behavioral_contracts.
+   - Extend `readiness_check` (RM47) Tier 3: if param type not in real annotation,
+     check inferred_annotation store before reporting UNKNOWN TYPE.
+   - Wire into TOOLS dict and tool_registry.py with category `"knowledge"`.
+
+   **Validation (regression tests):**
+   - Core storage: `annotate_function` on a known unannotated fixture function stores
+     a `knowledge_artifacts` row with kind='inferred_annotation' and valid JSON content
+     (all keys present, confidence is a float). Mark as --slow (requires LLM).
+   - RM45 integration: after storing an inferred_annotation for a function, calling
+     `completion_contract` on that function shows the inferred types with `(inferred)` label.
+     Test this with a fixture annotation (no LLM needed for this assertion).
+   - RM47 integration: after storing an inferred_annotation that resolves a formerly
+     UNKNOWN TYPE, readiness_check no longer reports that type as unknown.
+   - Confidence field: verify inference_basis is non-empty (at least one grounding reason).
+   - write_back=False default: verify function source file is NOT modified when
+     write_back is omitted.
+
+   **Integration validation (manual, after RM50 ships):**
+   Run `annotate_function` on `process` (adjudication_engine.py) -- the function with
+   30 callers. Verify:
+   - Inferred param types match PlayerAction and DungeonStateNeo (the actual types)
+   - Return type correctly inferred as dict (30 callers check return['success'])
+   - Confidence >= 0.6 (rich caller context should produce high confidence)
+   - inference_basis lists the caller-count evidence
+
+   **Estimated effort:** 1.5 days. Context assembly is the hard part (0.5d). LLM prompt
+   design for structured JSON output (0.5d). RM45/RM47 integration reads (0.5d).
 
 ---
 

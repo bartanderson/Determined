@@ -8,6 +8,18 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-11: Corpus enrichment arc (RM49-RM51) filed after devil's advocate pass on RM44-RM48.
+Three failure modes identified: (1) param_types_json <1% populated in dj2 -- RM45 completion
+contract would produce mostly-empty output. (2) Stubs have no docstrings -- RM46 scaffold's
+embedding similarity match degrades to name-only, produces noise. (3) Design notes absent in
+fresh corpus -- RM47 Tier 4 silently passes (no violations = no design notes, not "checked and
+clean"). Fix: RM50 extracts inline body comments during parse (zero LLM, high-signal for
+undocumented functions). RM49 infers param types + contracts from call context + LLM, stores as
+kind='inferred_annotation' in knowledge_artifacts with inference_basis evidence trail. RM51
+drives the pass: priority queue by caller count, propagate upward after each annotation,
+converge when delta < N. Step 0 (ingest dj2 design docs) requires no code and immediately
+populates RM48's requirement store. All new items include full validation specs.
+
 2026-07-11: Design projection session -- filed RM43-RM48 and RM42 pass 2. No code written;
 pure planning. The projection identified that Determined's floor (orientation, gap-finding,
 design-violation detection) is solid but the transition from "found it" to "act on it" is
