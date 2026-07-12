@@ -321,9 +321,21 @@ REGISTRY: dict[str, dict] = {
             "include_projection": "(optional) if true, append LLM-generated suggested approach; default false",
         },
         "output": "SIGNATURE / CALLERS / CALLEES AVAILABLE / STUBS THIS DEPENDS ON / CONTRACTS / DESIGN CONSTRAINTS blocks",
-        "feeds": ["implementation_order", "project_stub", "score_stub"],
+        "feeds": ["implementation_order", "project_stub", "score_stub", "scaffold_from_pattern"],
         "use_when": "Developer is about to implement a stub and needs a complete implementation brief in one call.",
         "category": "understanding",
+    },
+
+    "scaffold_from_pattern": {
+        "purpose": "Find structurally similar complete implementations and extract a fill-in-the-blanks scaffold. Surfaces canonical structural patterns (first-statement type, return shape, error handling) and flags variation points. Complement to completion_contract: that tool reasons from the stub's own context; this one reasons from what similar complete functions look like.",
+        "args": {
+            "symbol": "target function name (required)",
+            "limit": "(optional) max sibling matches to analyze, default 5",
+        },
+        "output": "STRUCTURAL SIBLINGS list, STRUCTURAL ANALYSIS (canonical vs variation-point per structural axis), SCAFFOLD TEMPLATE (fill-in-the-blanks Python), REFERENCE IMPLEMENTATIONS",
+        "feeds": ["project_stub", "completion_contract"],
+        "use_when": "Before implementing a stub, to see how similar complete functions in the same codebase are structured. Run after completion_contract to get the what-to-implement brief, then scaffold_from_pattern to get the how-to-structure scaffold.",
+        "category": "frontier",
     },
 
     "concept_search": {

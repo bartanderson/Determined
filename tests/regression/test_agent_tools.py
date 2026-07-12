@@ -542,6 +542,8 @@ def test_dispatch_all_tools_registered():
         "implementation_order",
         # RM45: completion contract
         "completion_contract",
+        # RM46: scaffold from pattern
+        "scaffold_from_pattern",
     }
 
     assert set(TOOLS.keys()) == expected

@@ -2004,6 +2004,251 @@ def project_stub(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def scaffold_from_pattern(assessor: "Assessor", args: dict) -> str:
+    """
+    scaffold_from_pattern(symbol[, limit]) - find structurally similar complete
+    implementations in the corpus and extract a fill-in-the-blanks scaffold.
+
+    Finds siblings by: (1) same file/directory with matching return_type, and
+    (2) embedding similarity on "{name}: {docstring}" (threshold 0.50).
+    Extracts structural skeleton of each match (first-statement type, return
+    shape, error handling) and synthesizes a template showing canonical patterns
+    and variation points.
+
+    Args:
+        symbol: target function name (required)
+        limit:  max sibling matches to analyze (default 5)
+    """
+    import json as _json
+    import os
+
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    limit = int(args.get("limit", 5))
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    # 1. Fetch target function row
+    fn_row = conn.execute(
+        "SELECT name, file_path, line_number, is_stub, return_type, docstring, param_types_json "
+        "FROM functions WHERE name = ? LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if not fn_row:
+        return f"ERROR: symbol '{symbol}' not found in functions table"
+
+    fn_name, file_path, line_num, is_stub, return_type, docstring, param_json = fn_row
+    short_fp = (file_path or "").replace("\\", "/").split("/")[-1]
+    target_dir = os.path.dirname(file_path or "").replace("\\", "/") if file_path else ""
+
+    lines = [
+        f"Scaffold from pattern for '{fn_name}'  ({short_fp}:{line_num})",
+        "",
+    ]
+
+    # 2. Module-family siblings: same file or same directory, non-stub, matching return_type
+    family_rows = []
+    if file_path:
+        # Same file first (strongest signal)
+        same_file = conn.execute(
+            "SELECT name, file_path, line_number, return_type, docstring "
+            "FROM functions WHERE file_path = ? AND name != ? AND is_stub = 0 "
+            "AND (return_type = ? OR ? IS NULL) "
+            "ORDER BY line_number LIMIT ?",
+            (file_path, symbol, return_type, return_type, limit * 2),
+        ).fetchall()
+        family_rows.extend(same_file)
+
+        if len(family_rows) < limit and target_dir:
+            # Same directory, different file
+            same_dir = conn.execute(
+                "SELECT name, file_path, line_number, return_type, docstring "
+                "FROM functions WHERE file_path != ? AND is_stub = 0 "
+                "AND replace(replace(file_path,'\\\\','/'), '\\', '/') LIKE ? "
+                "AND (return_type = ? OR ? IS NULL) "
+                "ORDER BY file_path, line_number LIMIT ?",
+                (file_path, f"{target_dir}/%", return_type, return_type, limit * 2),
+            ).fetchall()
+            family_rows.extend(same_dir)
+
+    seen = {symbol}
+    family_candidates = []
+    for r in family_rows:
+        if r[0] not in seen:
+            seen.add(r[0])
+            family_candidates.append(dict(zip(
+                ["name", "file_path", "line_number", "return_type", "docstring"], r
+            )))
+        if len(family_candidates) >= limit:
+            break
+
+    # 3. Embedding-similarity siblings (threshold 0.50, looser than find_duplicates)
+    embed_candidates = []
+    if docstring:
+        try:
+            import numpy as np
+            from determined.agent.embed_utils import embed_text
+
+            target_text = f"{fn_name}: {docstring[:400]}"
+            target_vec = embed_text(target_text)
+
+            # Load non-stub functions with docstrings
+            candidate_rows = conn.execute(
+                "SELECT name, file_path, line_number, return_type, docstring "
+                "FROM functions WHERE is_stub = 0 AND name != ? "
+                "AND docstring IS NOT NULL AND trim(docstring) != '' "
+                "ORDER BY file_path, name LIMIT 2000",
+                (symbol,),
+            ).fetchall()
+
+            if candidate_rows:
+                model = _get_embed_model()
+                c_texts = [f"{r[0]}: {r[4][:400]}" for r in candidate_rows]
+                c_vecs = model.encode(c_texts, normalize_embeddings=True, show_progress_bar=False)
+                scores = np.dot(c_vecs, target_vec)
+                ranked = sorted(zip(scores, candidate_rows), key=lambda x: -x[0])
+                for score, r in ranked:
+                    if score < 0.50:
+                        break
+                    if r[0] not in seen:
+                        seen.add(r[0])
+                        embed_candidates.append({
+                            "name": r[0], "file_path": r[1], "line_number": r[2],
+                            "return_type": r[3], "docstring": r[4],
+                            "embed_score": float(score),
+                        })
+                    if len(embed_candidates) >= limit:
+                        break
+        except Exception:
+            pass  # embedding unavailable — fall back to module-family only
+
+    # 4. Merge: family first (stronger prior), then embedding, up to limit
+    all_siblings = []
+    for c in family_candidates:
+        all_siblings.append({**c, "source": "module-family"})
+    for c in embed_candidates:
+        if c["name"] not in {s["name"] for s in all_siblings}:
+            all_siblings.append({**c, "source": f"embedding({c['embed_score']:.2f})"})
+    all_siblings = all_siblings[:limit]
+
+    if not all_siblings:
+        lines.append("No structural siblings found.")
+        lines.append("  (No non-stub functions in the same module with matching return_type,")
+        lines.append("   and no embedding-similar functions above threshold 0.50)")
+        return "\n".join(lines)
+
+    lines.append(f"STRUCTURAL SIBLINGS  ({len(all_siblings)} found)")
+    for s in all_siblings:
+        s_fp = (s["file_path"] or "").replace("\\", "/").split("/")[-1]
+        lines.append(f"  - {s['name']}  ({s_fp}:{s['line_number']})  [{s['source']}]")
+    lines.append("")
+
+    # 5. Extract skeleton for each sibling
+    from determined.agent.stub_projector import _get_source_lines, _extract_structural_skeleton
+
+    skeletons = []
+    for s in all_siblings:
+        raw = _get_source_lines(s["file_path"], s["line_number"], window=60)
+        # Strip line-number prefixes to get plain source for AST parsing
+        plain_lines = []
+        for raw_line in raw.splitlines():
+            # format is "   N  <code>"
+            if len(raw_line) > 6 and raw_line[:6].strip().isdigit():
+                plain_lines.append(raw_line[6:])
+            else:
+                plain_lines.append(raw_line)
+        plain_source = "\n".join(plain_lines)
+        skel = _extract_structural_skeleton(plain_source, s["name"])
+        skeletons.append({**s, "skeleton": skel})
+
+    # 6. Synthesize template
+    lines.append("STRUCTURAL ANALYSIS")
+    field_labels = [
+        ("first_stmt_type", "First statement"),
+        ("return_shape", "Return shape"),
+        ("error_handling", "Error handling"),
+        ("has_guard", "Has guard clause"),
+    ]
+    for field, label in field_labels:
+        vals = [sk["skeleton"][field] for sk in skeletons]
+        counts: dict = {}
+        for v in vals:
+            counts[str(v)] = counts.get(str(v), 0) + 1
+        if len(counts) == 1:
+            lines.append(f"  {label}: {list(counts.keys())[0]}  [canonical — all {len(skeletons)} siblings agree]")
+        else:
+            options = ", ".join(f"{v}×{n}" for v, n in sorted(counts.items(), key=lambda x: -x[1]))
+            lines.append(f"  {label}: VARIATION POINT  [{options}]")
+    lines.append("")
+
+    # 7. Template scaffold
+    lines.append("SCAFFOLD TEMPLATE")
+    lines.append("```python")
+    # Reconstruct signature from target
+    try:
+        param_types = _json.loads(param_json or "{}")
+    except Exception:
+        param_types = {}
+    params_str = ", ".join(
+        f"{p}: {t}" if t else p for p, t in param_types.items()
+    ) if param_types else "..."
+    ret_str = f" -> {return_type}" if return_type else ""
+    lines.append(f"def {fn_name}({params_str}){ret_str}:")
+
+    # Determine canonical choices
+    first_stmt_vals = [sk["skeleton"]["first_stmt_type"] for sk in skeletons]
+    most_common_first = max(set(first_stmt_vals), key=first_stmt_vals.count)
+    err_vals = [sk["skeleton"]["error_handling"] for sk in skeletons]
+    most_common_err = max(set(err_vals), key=err_vals.count)
+    ret_vals = [sk["skeleton"]["return_shape"] for sk in skeletons]
+    most_common_ret = max(set(ret_vals), key=ret_vals.count)
+    guard_vals = [sk["skeleton"]["has_guard"] for sk in skeletons]
+    majority_guard = sum(1 for v in guard_vals if v) > len(guard_vals) / 2
+
+    if majority_guard and most_common_first == "if_guard":
+        lines.append("    if not <condition>:  # FILL IN: guard clause")
+        lines.append("        return <early_exit>")
+
+    if most_common_err == "try_except":
+        lines.append("    try:")
+        lines.append("        # FILL IN: main logic")
+        lines.append("        <result> = <operation>")
+        lines.append("    except Exception as e:")
+        lines.append("        # FILL IN: error handling")
+        lines.append("        raise")
+    elif most_common_err == "raise":
+        lines.append("    # FILL IN: main logic")
+        lines.append("    if not <check>:")
+        lines.append("        raise ValueError('...')")
+    else:
+        lines.append("    # FILL IN: main logic")
+
+    if most_common_ret == "dict":
+        lines.append("    return {")
+        lines.append("        # FILL IN: result keys")
+        lines.append("    }")
+    elif most_common_ret == "list":
+        lines.append("    return [  # FILL IN: result list  ]")
+    elif most_common_ret == "none":
+        lines.append("    return None  # or omit")
+    else:
+        lines.append("    return <result>  # FILL IN")
+    lines.append("```")
+    lines.append("")
+
+    # 8. Reference each sibling briefly for manual inspection
+    lines.append("REFERENCE IMPLEMENTATIONS")
+    for s in all_siblings:
+        s_fp = (s["file_path"] or "").replace("\\", "/").split("/")[-1]
+        snippet = (s.get("docstring") or "")[:80].replace("\n", " ")
+        lines.append(f"  {s['name']}  ({s_fp}:{s['line_number']})")
+        if snippet:
+            lines.append(f"    {snippet}")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------
 # QUALITY SWEEP TOOLS
 # ------------------------------------------------------------------
@@ -5791,6 +6036,7 @@ TOOLS = {
     "implementation_order":     (implementation_order,      "oracle"),
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),
     "project_stub":         (project_stub,          "oracle"),
+    "scaffold_from_pattern":    (scaffold_from_pattern,     "assessor"),
     "score_stub":           (score_stub,            "assessor"),
     # Doc tools
     "discover_docs":        (discover_docs_tool,    "oracle"),

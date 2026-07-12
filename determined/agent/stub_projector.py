@@ -97,6 +97,90 @@ def _strip_fences(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _extract_structural_skeleton(source: str, fn_name: str) -> dict:
+    """
+    Parse a single function's source and extract structural shape:
+    first_stmt_type, return_shape, error_handling, has_guard.
+    Returns a dict; all fields default to 'unknown' on parse failure.
+    """
+    import ast as _ast
+
+    result = {
+        "first_stmt_type": "unknown",
+        "return_shape": "unknown",
+        "error_handling": "none",
+        "has_guard": False,
+    }
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return result
+
+    fn_node = None
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)) and node.name == fn_name:
+            fn_node = node
+            break
+    if fn_node is None or not fn_node.body:
+        return result
+
+    body = fn_node.body
+
+    # First statement type
+    first = body[0]
+    if isinstance(first, _ast.If):
+        result["first_stmt_type"] = "if_guard"
+        result["has_guard"] = True
+    elif isinstance(first, _ast.Assign) or isinstance(first, _ast.AnnAssign):
+        result["first_stmt_type"] = "assignment"
+    elif isinstance(first, _ast.Expr) and isinstance(first.value, _ast.Call):
+        result["first_stmt_type"] = "call"
+    elif isinstance(first, _ast.Return):
+        result["first_stmt_type"] = "immediate_return"
+    elif isinstance(first, _ast.Try):
+        result["first_stmt_type"] = "try_block"
+    else:
+        result["first_stmt_type"] = type(first).__name__.lower()
+
+    # Error handling: any try/except in the body
+    for node in _ast.walk(fn_node):
+        if isinstance(node, _ast.Try) and node.handlers:
+            result["error_handling"] = "try_except"
+            break
+    if result["error_handling"] == "none":
+        for node in _ast.walk(fn_node):
+            if isinstance(node, _ast.Raise):
+                result["error_handling"] = "raise"
+                break
+
+    # Return shape: look at all Return nodes
+    returns = [n for n in _ast.walk(fn_node) if isinstance(n, _ast.Return)]
+    if not returns:
+        result["return_shape"] = "none"
+    else:
+        shapes = set()
+        for r in returns:
+            if r.value is None:
+                shapes.add("none")
+            elif isinstance(r.value, _ast.Dict):
+                shapes.add("dict")
+            elif isinstance(r.value, _ast.List):
+                shapes.add("list")
+            elif isinstance(r.value, _ast.Constant) and r.value.value is None:
+                shapes.add("none")
+            elif isinstance(r.value, _ast.Name) and r.value.id in ("True", "False", "None"):
+                shapes.add("scalar")
+            elif isinstance(r.value, _ast.Constant):
+                shapes.add("scalar")
+            elif isinstance(r.value, _ast.Tuple):
+                shapes.add("tuple")
+            else:
+                shapes.add("expr")
+        result["return_shape"] = "/".join(sorted(shapes))
+
+    return result
+
+
 def _get_source_lines(file_path: str, around_line: int, window: int = 30) -> str:
     try:
         lines = Path(file_path).read_text(encoding="utf-8", errors="ignore").splitlines()
