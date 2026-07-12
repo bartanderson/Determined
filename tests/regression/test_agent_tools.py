@@ -538,6 +538,8 @@ def test_dispatch_all_tools_registered():
         "annotate_function",
         # RM51: annotation pass driver
         "run_annotation_pass",
+        # RM44: implementation ordering
+        "implementation_order",
     }
 
     assert set(TOOLS.keys()) == expected

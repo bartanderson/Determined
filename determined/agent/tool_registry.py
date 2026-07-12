@@ -434,6 +434,16 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to find partial implementations that are hidden from stub detection — functions that look complete but fail on certain inputs.",
         "category": "knowledge",
     },
+    "implementation_order": {
+        "purpose": "Topological sort of all incomplete symbols (stubs + ABC gaps) into a dependency-ordered work plan. Wave 1 symbols have no incomplete callees — implement them first. Later waves depend on earlier ones. Cycles are reported as groups.",
+        "args": {
+            "scope": "(optional) file path substring to restrict to a subsystem",
+        },
+        "output": "Numbered wave list: each item shows name, file:line, and 'After: ...' dependency annotation. Cycles flagged explicitly.",
+        "feeds": ["frontier_priority", "list_stubs", "find_abc_gaps", "project_stub"],
+        "use_when": "You want a concrete implementation plan — which stubs to write first so that each one can be tested as soon as it is written.",
+        "category": "frontier",
+    },
     "frontier_priority": {
         "purpose": "Rank stubs by composite frontier score: caller count + shape-membership bonus (chain=+2, abc-interface=+3). Multi-shape stubs block more of the system and score higher.",
         "args": {

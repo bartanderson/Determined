@@ -1676,6 +1676,148 @@ def frontier_priority(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def implementation_order(oracle: "DBOracle", args: dict) -> str:
+    """
+    implementation_order(scope?) - topological sort of all incomplete symbols (stubs +
+    ABC gaps) into a dependency-ordered implementation plan.
+
+    Returns a numbered wave list: symbols in wave 1 have no incomplete callees (implement
+    first); symbols in later waves depend only on earlier waves. Cyclic groups are
+    reported as a set to implement together.
+
+    Args:
+        scope: optional file path prefix to restrict output (e.g. "movement.py")
+    """
+    from collections import deque
+
+    conn = oracle.conn
+    scope = args.get("scope", "")
+
+    # Step 1: collect incomplete set S (stubs + ABC gap methods)
+    stub_rows = conn.execute(
+        "SELECT name, file_path, line_number FROM functions WHERE is_stub = 1"
+    ).fetchall()
+
+    abc_names = _get_abc_gap_set(conn)
+
+    # Build S: name -> (file_path, line_number)
+    incomplete: dict[str, tuple] = {}
+    for name, fp, ln in stub_rows:
+        incomplete[name] = (fp or "", ln or 0)
+
+    # Add ABC gap methods (may not have their own stub row; look up best location)
+    for name in abc_names:
+        if name not in incomplete:
+            row = conn.execute(
+                "SELECT file_path, line_number FROM functions WHERE name = ? LIMIT 1",
+                (name,),
+            ).fetchone()
+            incomplete[name] = (row[0] or "", row[1] or 0) if row else ("", 0)
+
+    if not incomplete:
+        return "No incomplete symbols found (no stubs, no ABC gaps)."
+
+    # Apply scope filter
+    if scope:
+        incomplete = {n: v for n, v in incomplete.items() if scope in v[0]}
+        if not incomplete:
+            return f"No incomplete symbols found matching scope '{scope}'."
+
+    S = set(incomplete.keys())
+
+    # Step 2: build restricted call graph (S -> S edges only)
+    # Try resolved=1 first; fall back to all edges
+    resolved_rows = conn.execute(
+        "SELECT caller, callee FROM graph_edges WHERE resolved = 1 AND caller IN ({}) AND callee IN ({})".format(
+            ",".join("?" * len(S)), ",".join("?" * len(S))
+        ),
+        list(S) + list(S),
+    ).fetchall() if S else []
+
+    if resolved_rows:
+        edges = resolved_rows
+    else:
+        placeholders = ",".join("?" * len(S))
+        edges = conn.execute(
+            f"SELECT caller, callee FROM graph_edges WHERE caller IN ({placeholders}) AND callee IN ({placeholders})",
+            list(S) + list(S),
+        ).fetchall() if S else []
+
+    # Adjacency: caller -> set of callees in S (caller must implement after callee)
+    callees_of: dict[str, set] = {n: set() for n in S}
+    callers_of: dict[str, set] = {n: set() for n in S}
+    for caller, callee in edges:
+        if caller in S and callee in S and caller != callee:
+            callees_of[caller].add(callee)
+            callers_of[callee].add(caller)
+
+    # Step 3: Kahn's algorithm
+    in_degree = {n: len(callees_of[n]) for n in S}  # "must implement X first" count
+    queue = deque(n for n in S if in_degree[n] == 0)
+    waves: list[list[str]] = []
+    current_wave: list[str] = []
+    processed = set()
+    order_wave: dict[str, int] = {}
+
+    # Process wave by wave
+    remaining = set(S)
+    wave_num = 0
+    while remaining:
+        ready = [n for n in remaining if in_degree[n] == 0]
+        if not ready:
+            # Cycle: report remaining as a group
+            cycle_group = sorted(remaining)
+            waves.append(cycle_group)
+            for n in cycle_group:
+                order_wave[n] = wave_num
+            break
+        wave_num += 1
+        waves.append(sorted(ready))
+        for n in ready:
+            order_wave[n] = wave_num
+            remaining.remove(n)
+            for caller in callers_of[n]:
+                if caller in remaining:
+                    in_degree[caller] -= 1
+
+    # Step 4: format output
+    lines = [
+        "IMPLEMENTATION ORDER",
+        f"  {len(S)} incomplete symbols",
+        f"  {wave_num} wave(s) — implement wave 1 first",
+        "",
+    ]
+
+    item_num = 0
+    for w_idx, wave in enumerate(waves):
+        is_cycle = w_idx == len(waves) - 1 and any(n in callees_of and callees_of[n] & set(wave) for n in wave)
+        if is_cycle and len(wave) > 1:
+            lines.append(f"  [CYCLE — implement together]")
+            for name in wave:
+                item_num += 1
+                fp, ln = incomplete[name]
+                short = (fp or "").replace("\\", "/").split("/")[-1]
+                deps = sorted(callees_of[name] & set(wave))
+                dep_str = f"  mutually depends on: {', '.join(deps)}" if deps else ""
+                lines.append(f"  {item_num:>3}. {name}  ({short}:{ln}){dep_str}")
+        else:
+            wave_label = f"Wave {w_idx + 1}"
+            lines.append(f"  {wave_label}")
+            for name in wave:
+                item_num += 1
+                fp, ln = incomplete[name]
+                short = (fp or "").replace("\\", "/").split("/")[-1]
+                deps = sorted(callees_of[name])
+                if deps:
+                    dep_str = f"\n       After: {', '.join(deps)}"
+                else:
+                    dep_str = ""
+                lines.append(f"  {item_num:>3}. {name}  ({short}:{ln}){dep_str}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
     """
     find_orphaned_impls(limit?) - find implemented functions that are never called
@@ -5503,6 +5645,7 @@ TOOLS = {
     "frontier_coverage":    (frontier_coverage,     "oracle"),
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
     "frontier_priority":        (frontier_priority,         "oracle"),
+    "implementation_order":     (implementation_order,      "oracle"),
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),
     "project_stub":         (project_stub,          "oracle"),
     "score_stub":           (score_stub,            "assessor"),
