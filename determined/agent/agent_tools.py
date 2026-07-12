@@ -3350,6 +3350,268 @@ def docstring_health(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def annotate_function(assessor: "Assessor", args: dict) -> str:
+    """
+    annotate_function(symbol[, file_path][, write_back]) - infer param types,
+    return type, behavioral contract, and docstring for an unannotated function.
+
+    Assembles source + callers + callees + inline notes + design notes, calls
+    LLM to produce structured inference, stores result as kind='inferred_annotation'
+    in knowledge_artifacts. Labeled as inferred, never written to source without
+    explicit write_back=True and user confirmation.
+
+    Args:
+        symbol     - function name (required)
+        file_path  - disambiguates when name is shared across files (optional)
+        write_back - if True, also propose docstring edit via workflow queue (default False)
+    """
+    import json
+    from datetime import datetime, timezone
+
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    file_path_hint = args.get("file_path", "").strip()
+    write_back = str(args.get("write_back", "false")).lower() not in ("false", "0", "no")
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    # --- 1. Resolve function row ---
+    if file_path_hint:
+        row = conn.execute(
+            "SELECT name, file_path, line_number, docstring, arguments_json, return_type, param_types_json "
+            "FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
+            (symbol, file_path_hint),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT name, file_path, line_number, docstring, arguments_json, return_type, param_types_json "
+            "FROM functions WHERE name = ? LIMIT 1",
+            (symbol,),
+        ).fetchone()
+    if not row:
+        return f"ERROR: function '{symbol}' not found in corpus"
+
+    fn_name, fn_file, fn_line, fn_doc, fn_args_json, fn_return, fn_param_json = row
+    fn_args = json.loads(fn_args_json or "[]")
+    fn_param_types = json.loads(fn_param_json or "{}") if fn_param_json else {}
+
+    # --- 2. Source code ---
+    from determined.agent.stub_projector import _get_source_lines
+    source = _get_source_lines(fn_file, fn_line, window=50)
+
+    # --- 3. Callers (up to 20) ---
+    callers = _list_callers_raw(oracle, fn_name)[:20]
+    caller_names = [c["caller"] for c in callers]
+
+    # --- 4. Callees with return types ---
+    callees = _list_callees_raw(oracle, fn_name)
+    callee_info = []
+    for ce in callees[:15]:
+        ce_row = conn.execute(
+            "SELECT return_type FROM functions WHERE name = ? LIMIT 1",
+            (ce["callee"].rsplit(".", 1)[-1],),
+        ).fetchone()
+        callee_info.append({
+            "callee": ce["callee"],
+            "return_type": ce_row[0] if ce_row else None,
+        })
+
+    # --- 5. Inline notes for this function ---
+    inline_rows = conn.execute(
+        "SELECT content FROM knowledge_artifacts WHERE kind='inline_note' AND subject=?",
+        (fn_name,),
+    ).fetchall()
+    inline_notes = [r[0] for r in inline_rows]
+
+    # --- 6. Design notes mentioning this symbol or file ---
+    design_rows = conn.execute(
+        "SELECT content FROM knowledge_artifacts "
+        "WHERE kind IN ('design_note','layer_rule') AND (content LIKE ? OR content LIKE ?) LIMIT 5",
+        (f"%{fn_name}%", f"%{fn_file}%"),
+    ).fetchall()
+    design_notes = [r[0] for r in design_rows]
+
+    # --- 7. Build LLM prompt ---
+    sig = f"def {fn_name}({', '.join(fn_args)})"
+    if fn_return:
+        sig += f" -> {fn_return}"
+
+    prompt_parts = [
+        "You are a Python type inference assistant. Analyze the function below and infer:",
+        "  - param_types: dict mapping each parameter name to its Python type string",
+        "  - return_type: Python type string for the return value",
+        "  - pre_conditions: list of pre-conditions (what must be true before calling)",
+        "  - post_conditions: list of post-conditions (what the function guarantees)",
+        "  - raises: list of exception scenarios",
+        "  - docstring: one sentence describing the function's purpose",
+        "  - confidence: float 0.0-1.0 based on evidence quality",
+        "  - inference_basis: list of concrete reasons supporting the inferences",
+        "",
+        "Return ONLY a valid JSON object with exactly these keys. No explanation outside JSON.",
+        "",
+        f"FUNCTION SIGNATURE: {sig}",
+    ]
+
+    if fn_doc:
+        prompt_parts += ["", f'EXISTING DOCSTRING: """{fn_doc[:200]}"""']
+
+    if source:
+        prompt_parts += ["", "SOURCE CODE:", source[:2000]]
+
+    if callers:
+        prompt_parts += ["", f"CALLED BY ({len(callers)} callers):"]
+        for c in callers[:10]:
+            prompt_parts.append(f"  - {c['caller']}" + (f" ({c['file_path']})" if c["file_path"] else ""))
+
+    if callee_info:
+        prompt_parts += ["", "CALLS INTO:"]
+        for ce in callee_info:
+            rt = f" -> {ce['return_type']}" if ce["return_type"] else ""
+            prompt_parts.append(f"  - {ce['callee']}{rt}")
+
+    if inline_notes:
+        prompt_parts += ["", "INLINE NOTES FROM SOURCE:"]
+        for note in inline_notes[:5]:
+            prompt_parts.append(f"  {note[:150]}")
+
+    if design_notes:
+        prompt_parts += ["", "RELEVANT DESIGN CONTEXT:"]
+        for dn in design_notes[:3]:
+            prompt_parts.append(f"  {dn[:200]}")
+
+    prompt_parts += [
+        "",
+        "Respond with JSON only. Example structure:",
+        '{"param_types": {"x": "int"}, "return_type": "str", "pre_conditions": [], '
+        '"post_conditions": [], "raises": [], "docstring": "...", "confidence": 0.7, '
+        '"inference_basis": ["reason1"]}',
+    ]
+
+    prompt = "\n".join(prompt_parts)
+
+    # --- 8. Call LLM ---
+    try:
+        from determined.agent.llm_client import generate_quality as _llm_generate
+        raw = _llm_generate(prompt, max_tokens=600, temperature=0.1)
+    except Exception as e:
+        return f"ERROR: LLM call failed: {e}"
+
+    # Extract JSON from response
+    import re as _re
+    json_match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+    if not json_match:
+        return f"ERROR: LLM did not return valid JSON.\nRaw response:\n{raw[:500]}"
+    try:
+        result = json.loads(json_match.group(0))
+    except json.JSONDecodeError as e:
+        return f"ERROR: JSON parse failed: {e}\nRaw:\n{raw[:500]}"
+
+    # Validate required keys
+    required_keys = {"param_types", "return_type", "pre_conditions", "post_conditions",
+                     "raises", "docstring", "confidence", "inference_basis"}
+    missing_keys = required_keys - set(result.keys())
+    if missing_keys:
+        # Fill missing keys with empty defaults
+        for k in missing_keys:
+            if k in ("param_types",):
+                result[k] = {}
+            elif k in ("pre_conditions", "post_conditions", "raises", "inference_basis"):
+                result[k] = []
+            elif k == "confidence":
+                result[k] = 0.5
+            else:
+                result[k] = ""
+
+    # Ensure inference_basis is non-empty
+    if not result.get("inference_basis"):
+        basis = []
+        if callers:
+            basis.append(f"{len(callers)} caller(s) found in call graph")
+        if callee_info:
+            basis.append(f"{len(callee_info)} callee(s) analyzed")
+        if inline_notes:
+            basis.append(f"{len(inline_notes)} inline note(s) from source")
+        result["inference_basis"] = basis or ["inferred from source code structure"]
+
+    # --- 9. Store as inferred_annotation ---
+    content = json.dumps(result)
+    created_at = datetime.now(timezone.utc).isoformat()
+    # Delete stale annotation for this function first
+    conn.execute(
+        "DELETE FROM knowledge_artifacts WHERE kind='inferred_annotation' AND subject=?",
+        (fn_name,),
+    )
+    conn.execute(
+        "INSERT INTO knowledge_artifacts "
+        "(subject, kind, content, provenance, created_at, file_hash, needs_review, corpus) "
+        "VALUES (?, 'inferred_annotation', ?, 'llm-inferred', ?, NULL, 1, NULL)",
+        (fn_name, content, created_at),
+    )
+    conn.commit()
+
+    # --- 10. Optionally propose docstring via workflow queue ---
+    if write_back and result.get("docstring"):
+        from determined.intent.workflow_store import add_item
+        k_conn = assessor._knowledge_conn
+        add_item(k_conn, kind="next_up",
+                 subject=f"docstring::{fn_file}::{fn_name}",
+                 content=json.dumps({
+                     "proposed_docstring": result["docstring"],
+                     "file_path": fn_file,
+                     "line_number": fn_line,
+                 }),
+                 provenance="llm-inferred")
+
+    # --- 11. Format output ---
+    conf = result.get("confidence", 0.0)
+    lines = [
+        f"=== annotate_function: {fn_name} ===",
+        f"File: {fn_file}:{fn_line}",
+        f"Confidence: {conf:.2f}",
+        "",
+        "[INFERRED PARAM TYPES]",
+    ]
+    pt = result.get("param_types") or {}
+    if pt:
+        for param, typ in pt.items():
+            lines.append(f"  {param}: {typ}")
+    else:
+        lines.append("  (none inferred)")
+
+    rt = result.get("return_type") or ""
+    lines += ["", f"[INFERRED RETURN TYPE]  {rt or '(unknown)'}"]
+
+    doc = result.get("docstring") or ""
+    lines += ["", f"[INFERRED DOCSTRING]  {doc}"]
+
+    pre = result.get("pre_conditions") or []
+    post = result.get("post_conditions") or []
+    raises = result.get("raises") or []
+    if pre or post or raises:
+        lines.append("")
+        lines.append("[BEHAVIORAL CONTRACT]")
+        for p in pre:
+            lines.append(f"  PRE:    {p}")
+        for p in post:
+            lines.append(f"  POST:   {p}")
+        for r in raises:
+            lines.append(f"  RAISES: {r}")
+
+    basis = result.get("inference_basis") or []
+    if basis:
+        lines += ["", "[INFERENCE BASIS]"]
+        for b in basis:
+            lines.append(f"  - {b}")
+
+    lines += ["", f"[STORED] inferred_annotation saved to knowledge_artifacts (subject='{fn_name}')"]
+    if write_back:
+        lines.append("[WRITE_BACK] docstring proposal queued in workflow (use workflow_status to review)")
+
+    return "\n".join(lines)
+
+
 def evaluate_claim(assessor: "Assessor", args: dict) -> str:
     """
     evaluate_claim(claim, question[, surfaces][, top_n]) - evaluate one
@@ -5126,6 +5388,7 @@ TOOLS = {
     "concept_search":          (concept_search,          "assessor"),
     # Docstring health + gap analysis (items 23/24)
     "docstring_health":        (docstring_health,        "assessor"),
+    "annotate_function":       (annotate_function,       "assessor"),
     "gap_analysis":            (gap_analysis,            "assessor"),
     # Evaluate kernel + role inference
     "evaluate_claim":          (evaluate_claim,          "assessor"),

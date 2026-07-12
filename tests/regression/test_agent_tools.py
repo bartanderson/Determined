@@ -534,6 +534,8 @@ def test_dispatch_all_tools_registered():
         "find_primitive_gaps",
         # RM31: blast-radius routing fix
         "blast_radius",
+        # RM49: annotation inference
+        "annotate_function",
     }
 
     assert set(TOOLS.keys()) == expected

@@ -336,6 +336,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Docstring hygiene pass; finding undocumented or drifted surface area.",
         "category": "discovery",
     },
+    "annotate_function": {
+        "purpose": "Infer param types, return type, behavioral contract, and docstring for an unannotated function. Stores result as kind='inferred_annotation' in knowledge_artifacts.",
+        "args": {
+            "symbol": "function name (required)",
+            "file_path": "(optional) disambiguate when name appears in multiple files",
+            "write_back": "(optional, default false) also queue docstring proposal in workflow",
+        },
+        "output": "inferred param types, return type, behavioral contract, confidence, inference basis; stored in knowledge_artifacts",
+        "feeds": ["completion_contract", "readiness_check", "workflow_status"],
+        "use_when": "Function has no type annotations or behavioral contract. Run before completion_contract or readiness_check to fill sparse annotation coverage.",
+        "category": "knowledge",
+    },
     "corpus_synthesis": {
         "purpose": "Two-pass architectural analysis. Pass 1 (large context): maps all distilled file summaries into named subsystems. Pass 2 (quality reasoning): reasons over the subsystem map to find structural gaps, broken connections, and missing game features.",
         "args": {},

@@ -792,7 +792,7 @@ RM50. **[OPEN] Inline comment extraction: capture body comments as behavioral no
 
 ---
 
-RM49. **[OPEN] annotate_function: infer and store docstrings, param types, and behavioral contracts for unannotated functions**
+RM49. **[DONE] annotate_function: infer and store docstrings, param types, and behavioral contracts for unannotated functions**
 
    **The gap:** RM45 (completion contract) and RM47 (readiness gate) depend on
    `param_types_json`, `return_type`, and `behavioral_contracts` being populated.
