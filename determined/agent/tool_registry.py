@@ -289,6 +289,19 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── DATA FLOW ──────────────────────────────────────────────────
+    "data_flow_edges": {
+        "purpose": "Show data_flow edges for a symbol: which functions consume its return value as an argument (out), or which functions it consumes return values from (in).",
+        "args": {
+            "symbol": "function or method name to trace",
+            "direction": "(optional) 'out' (default), 'in', or 'both'",
+        },
+        "output": "CONSUMES and RETURN VALUE sections listing connected symbols via data_flow edges",
+        "feeds": ["bfs_callees", "bfs_callers", "symbol_context"],
+        "use_when": "After re-ingesting with RM39 data_flow edges. Use to find where a function's return value is actually used as input to another call.",
+        "category": "graph",
+    },
+
     # ── DISTILLATION ───────────────────────────────────────────────
     "distill_corpus": {
         "purpose": "Compress each semantic_summary and file_purpose artifact into a one-sentence distillation stored in knowledge.db.",

@@ -506,6 +506,7 @@ def test_dispatch_all_tools_registered():
         "distill_corpus",
         "check_design_violations",
         "design_gaps",
+        "data_flow_edges",
         "project_status",
         "reingest_file",
         "symbol_context",

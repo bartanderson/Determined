@@ -577,7 +577,57 @@ def _extract_symbol_references(
                 identity,
                 node.lineno,
                 annotation_resolved,
+                'static',
             ))
+
+            # data_flow edges: fn_b(fn_a()) means fn_b calls fn_a and uses its
+            # return value as an argument -- store as fn_b -> fn_a, edge_type='data_flow'
+            outer_fqdn = fqdn
+
+            def _extract_raw_name(func_node):
+                if isinstance(func_node, ast.Name):
+                    r = func_node.id
+                    return (
+                        alias_map.get(r)
+                        or runtime_bindings.get(r)
+                        or local_symbol_map.get(r)
+                        or (r if r in dir(builtins) else safe_resolve(module_name, r))
+                    )
+                elif isinstance(func_node, ast.Attribute):
+                    base = func_node.value
+                    if isinstance(base, ast.Name):
+                        base_name = alias_map.get(base.id)
+                        if base_name:
+                            return f"{base_name}.{func_node.attr}"
+                        if base.id == "self" and self.current_class:
+                            return f"{self.current_class}.{func_node.attr}"
+                        fn_params = _param_type_map.get(self.current_function, {})
+                        annotated_type = fn_params.get(base.id)
+                        if annotated_type:
+                            return f"{annotated_type}.{func_node.attr}"
+                        return f"{base.id}.{func_node.attr}"
+                return None
+
+            for arg in node.args:
+                if isinstance(arg, ast.Call):
+                    inner_raw = _extract_raw_name(arg.func)
+                    if inner_raw:
+                        inner_identity = SymbolIdentity(
+                            surface=inner_raw,
+                            normalized=inner_raw,
+                            fqdn=inner_raw,
+                            module=inner_raw,
+                            kind="unknown",
+                            provenance=["data_flow_arg"],
+                            confidence=0.5,
+                        )
+                        results.append((
+                            outer_fqdn,
+                            inner_identity,
+                            node.lineno,
+                            False,
+                            'data_flow',
+                        ))
 
             self.generic_visit(node)
 
@@ -590,8 +640,9 @@ def _extract_symbol_references(
             line_number=lineno,
             identity=identity,
             resolved=ann_resolved,
+            edge_type=etype,
         )
-        for (caller, identity, lineno, ann_resolved) in results
+        for (caller, identity, lineno, ann_resolved, etype) in results
     ]
 
 

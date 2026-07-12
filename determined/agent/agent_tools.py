@@ -1107,6 +1107,63 @@ def design_gaps(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def data_flow_edges(assessor: "Assessor", args: dict) -> str:
+    """
+    data_flow_edges(symbol, direction?) - show data_flow edges for a symbol.
+
+    direction: 'out' (default) = what functions consume this symbol's return value
+               'in'            = what functions this symbol consumes return values from
+               'both'          = both directions
+
+    Only data_flow edges (fn_b calls fn_a and uses its return value as an argument)
+    are shown. Use bfs_callees/bfs_callers for full control-flow traversal.
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+    symbol = args.get("symbol", "").strip()
+    direction = args.get("direction", "out")
+
+    if not symbol:
+        return "trace_data_flow requires a symbol argument."
+
+    lines = [f"Data flow edges for: {symbol}", ""]
+
+    if direction in ("in", "both"):
+        # what does this symbol consume? (symbol is fn_b, find fn_a's it calls)
+        rows = conn.execute(
+            "SELECT target_id FROM graph_edges WHERE source_id = ? AND edge_type = 'data_flow'",
+            (symbol,),
+        ).fetchall()
+        if rows:
+            lines.append(f"CONSUMES return values from ({len(rows)}):")
+            for (tgt,) in rows:
+                lines.append(f"  <- {tgt}")
+        else:
+            lines.append("CONSUMES: none detected")
+        lines.append("")
+
+    if direction in ("out", "both"):
+        # what consumes this symbol's return value? (symbol is fn_a, find fn_b's that call it)
+        rows = conn.execute(
+            "SELECT source_id FROM graph_edges WHERE target_id = ? AND edge_type = 'data_flow'",
+            (symbol,),
+        ).fetchall()
+        if rows:
+            lines.append(f"RETURN VALUE consumed by ({len(rows)}):")
+            for (src,) in rows:
+                lines.append(f"  -> {src}")
+        else:
+            lines.append("RETURN VALUE: not consumed as a direct argument in any detected call")
+        lines.append("")
+
+    total = conn.execute(
+        "SELECT COUNT(*) FROM graph_edges WHERE edge_type = 'data_flow'"
+    ).fetchone()[0]
+    lines.append(f"(Total data_flow edges in corpus: {total})")
+
+    return "\n".join(lines)
+
+
 def risk_profile(assessor: "Assessor", args: dict):
     """
     risk_profile(symbol) - structural change-risk rating for a symbol.
@@ -6511,6 +6568,8 @@ TOOLS = {
     # Design violation cross-reference and gap detection
     "check_design_violations": (check_design_violations, "assessor"),
     "design_gaps":             (design_gaps,             "assessor"),
+    # Data flow edges (return-value argument tracking)
+    "data_flow_edges":         (data_flow_edges,         "assessor"),
     # Project-wide synthesis
     "project_status":          (project_status,          "assessor"),
     # Incremental re-ingest
