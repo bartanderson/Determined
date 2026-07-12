@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 153+):** RM46 + RM47 done. scaffold_from_pattern: module-family + embedding siblings, AST skeleton extraction, canonical/variation-point synthesis, fill-in-the-blanks template, 16 tests. readiness_check: 5-tier pure-DB gate (stub callees, unknown types, design flags opt-in, cycle detection), READY/BLOCKED output with next-step hints, 14 tests. 643 passed, 1 skipped.
+**Last session (2026-07-12, session 155):** RM52 filed. Multi-method ingestion pre-pass: four structure-induction methods (FCA/Wille, MDL/Rissanen, LP² Wrapper Induction/Kushmerick, L*/Angluin) run serially over design docs, combined via D-S gate (Dempster/Shafer), tiered output: convergent/discriminant/review. Grounded in Campbell & Fiske 1959 (MTMM) and Kuncheva & Whitaker 2003. Pre-pass prerequisite for RM48.
+
+**Previous session (2026-07-12, session 153+):** RM46 + RM47 done. scaffold_from_pattern: module-family + embedding siblings, AST skeleton extraction, canonical/variation-point synthesis, fill-in-the-blanks template, 16 tests. readiness_check: 5-tier pure-DB gate (stub callees, unknown types, design flags opt-in, cycle detection), READY/BLOCKED output with next-step hints, 14 tests. 643 passed, 1 skipped.
 
 **Session 153 (2026-07-12):** RM46 done. scaffold_from_pattern: module-family + embedding-similarity sibling search (threshold 0.50), _extract_structural_skeleton (AST: first_stmt_type/return_shape/error_handling/has_guard), canonical vs variation-point synthesis, fill-in-the-blanks template. 16 tests. 629 passed, 1 skipped.
 
@@ -175,6 +177,109 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
+
+---
+
+
+RM52. **[OPEN] Multi-method ingestion pre-pass: structure-induction gate for design doc extraction**
+
+   **The gap:** `ingest_design_docs` uses a hardcoded `_MUST_RE` regex to find requirements
+   (modal verbs: must/shall/required to) plus an LLM fallback for sparse sections. It finds
+   what it knows to look for and misses requirements stated every other way a document might
+   state them -- numbered obligations, bullet constraints, prose invariants, implicit authority
+   rules. The extractor is narrow-but-reliable, not broad.
+
+   **The concept:** Run four independent structure-induction methods over each design document
+   before (or in place of) the current extraction pass. Each method uses a different grammar
+   assumption about what "a requirement" looks like structurally. Their outputs are combined
+   via set operations and a Dempster-Shafer gate. The existing extractor's output seeds two
+   of the four methods and anchors the gate, so there is no cold-start problem.
+
+   **Pipeline topology:**
+
+   ```
+   INPUT DOC
+       │
+       ▼
+   [EXISTING EXTRACTOR]  ← _MUST_RE regex + LLM pass
+       │
+       ├─ modal-verb requirements (seeds)
+       │
+       ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │                   MULTI-METHOD PASS                      │
+   │                                                          │
+   │  seeds ──► [LP² WRAPPER INDUCTION]          → S_C       │
+   │              Kushmerick et al. 1997                      │
+   │            [FORMAL CONCEPT ANALYSIS]        → S_A       │
+   │              Wille 1982                                  │
+   │            [MINIMUM DESCRIPTION LENGTH]     → S_B       │
+   │              Rissanen 1978                               │
+   │  seeds ──► [GRAMMATICAL INFERENCE L*]       → S_D       │
+   │              Angluin 1987                                │
+   └──────────────────────────────────────────────────────────┘
+       │
+       ▼
+   [SET OPERATIONS]                    Campbell & Fiske 1959 (MTMM)
+     S_A ∩ S_B ∩ S_C ∩ S_D            Kuncheva & Whitaker 2003
+     S_A △ S_B △ S_C △ S_D            (discriminant = signal, not noise)
+     S_A ∪ S_B ∪ S_C ∪ S_D
+       │
+       ▼
+   [DEMPSTER-SHAFER GATE]              Dempster 1967 / Shafer 1976
+       │
+       ├── existing agrees + convergent   → high trust  → store
+       ├── 2+ methods, existing missed    → medium trust → store + tag
+       └── 1 method only, existing missed → review queue
+   ```
+
+   **Execution model:** serial, not truly parallel. Methods run one after another, each
+   result compared against the accumulating evidence set. Set operations and D-S combination
+   are a single pass over the accumulated output. The existing extractor runs first and its
+   output seeds Wrapper Induction and L* -- no labeled examples required from outside the
+   system.
+
+   **Why pre-pass, not replacement:** Replacement has a bootstrapping problem -- Wrapper
+   Induction and L* need labeled seeds, and without the existing extractor there is no
+   source for them. Pre-pass uses the existing extractor's output as seeds automatically.
+   The existing extractor is the anchor: nothing clears the gate by beating it alone.
+
+   **Determinism:** FCA (Wille), MDL given a fixed prior (Rissanen), LP² given fixed seeds
+   (Kushmerick), and L* given an oracle (Angluin) are each deterministic. Set operations are
+   exact. Dempster-Shafer combination is exact given fixed evidence. An optional LLM
+   interpretation step may run after the deterministic core but is clearly separated and not
+   required for the pipeline to produce a result.
+
+   **What the gate produces (stored in knowledge_artifacts):**
+   - `convergent`: existing extractor + 2+ methods agree → high trust, stored immediately
+   - `discriminant`: 2+ methods found it, existing extractor missed → medium trust, stored
+     with tag identifying which methods found it and which missed it
+   - `review`: 1 method only, existing extractor missed → not stored until confirmed
+
+   **The discriminant tag is the new information.** Which method found something that others
+   missed tells you something structural about how the document expresses that requirement --
+   a property invisible to any single-method pass.
+
+   **Entry points for implementation:**
+   - New module `determined/ingestion/structure_induction.py`: one function per method
+     (`fca_pass`, `mdl_pass`, `wrapper_pass`, `grammar_pass`), plus `combine(results)`
+     that runs set ops and D-S gate.
+   - Modify `ingest_design_docs` in `agent_tools.py`: after existing extraction, call
+     `structure_induction.run(doc, seeds=existing_rules)` and merge results through the gate.
+   - Extend `knowledge_artifacts` content prefix: add `convergent` / `discriminant(methods)`
+     / `review` alongside existing `[KIND|confidence|source]` prefix.
+   - New regression tests: fixture doc with requirements in modal, bullet, and numbered forms.
+     Verify that modal form is found by existing extractor AND at least one method; that
+     bullet/numbered forms are found by multi-method pass but not existing extractor; that
+     gate correctly tiers them.
+
+   **Prerequisite for RM48:** RM52 should ship before RM48 (design-to-code delta) because
+   RM48 queries `kind='design_note'` artifacts -- richer extraction here means richer input
+   to RM48's gap analysis.
+
+   **Estimated effort:** 2 days. FCA and MDL implementations are the core work (1 day).
+   LP² and L* can be simplified for the restricted grammar class of design documents (0.5 day).
+   Gate logic and storage integration (0.5 day).
 
 ---
 
