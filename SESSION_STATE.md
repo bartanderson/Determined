@@ -1,12 +1,32 @@
-Written at commit: 356a06d
-# SESSION STATE - session 154 handoff
+Written at commit: 2f2c5ce
+# SESSION STATE - session 155 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 154, 2026-07-12)
+## What happened this session (session 155, 2026-07-12)
 
-Nothing new this session -- immediately handing off.
+**RM52 designed and filed [V]:** Multi-method ingestion pre-pass. Design discussion
+produced a grounded architecture for richer design doc extraction:
+- Four deterministic structure-induction methods (FCA/Wille 1982, MDL/Rissanen 1978,
+  LP² Wrapper Induction/Kushmerick 1997, L*/Angluin 1987) run serially over each doc
+- Existing `_MUST_RE` extractor runs first; its output seeds Wrapper Induction and L*
+  (no cold-start problem)
+- Set operations (∩ △ ∪) + Dempster-Shafer gate tier output into:
+  convergent (high trust) / discriminant (medium trust + tag) / review queue
+- Grounded in Campbell & Fiske 1959 (MTMM) and Kuncheva & Whitaker 2003
+- Pre-pass prerequisite for RM48; filed before it in TRACKER.md
+
+**RM48 Step 0 partially run [V]:** `ingest_design_docs` run against dj2 corpus --
+135 new design_notes stored, 00A + 00F now represented. 00E (AI_LAYER_OPPORTUNITIES)
+scored 0.04 (below default 0.05 threshold) and was NOT ingested. Interrupted before
+lowering threshold. Current count: ~1215 design_notes in C_Users_bartl_dev_dj2.db.
+
+**Schema finding [V]:** design_note content is stored as plain text -- no
+`[REQUIREMENT|...]` prefix in current DB rows. The `[KIND|confidence|source]` prefix
+format exists in code (agent_tools.py:2801) but the 1080 pre-existing rows predate it.
+Requirements must be found via `_MUST_RE` over content at query time, not a kind= column
+query. ~74 rows contain must/shall language.
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -21,11 +41,12 @@ Nothing new this session -- immediately handing off.
 | CTR | Completion contract | DONE (RM45) |
 | SFP | Scaffold from pattern | DONE (RM46) |
 | RDY | Readiness gate | DONE (RM47) |
+| MMP | Multi-method ingestion pre-pass | OPEN (RM52) |
+| DGP | Design-to-code delta | OPEN (RM48) |
 | DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
 | LNS | Canned reasoning lenses | OPEN (RM43) |
-| DGP | Design-to-code delta | OPEN (RM48) |
 
 ## Known issues (carried forward)
 
@@ -49,21 +70,28 @@ Module-family siblings still returned. Tests don't cover embedding path.
 **readiness_check T4 off by default [V]:** include_design_check=true required to enable
 design constraint tier. Embedding-based, can be slow.
 
+**00E not ingested [V]:** docs/design/00E AI_LAYER_OPPORTUNITIES.md scored 0.04,
+below default min_score=0.05. Needs min_score=0.01 to pick it up, or RM52 pre-pass
+will handle it more robustly anyway.
+
+**design_note content format [V]:** Pre-existing rows have no [KIND|...] prefix.
+Requirements found via _MUST_RE over content at query time. ~74 such rows in dj2 DB.
+
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **RM48 (1 day) -- design-to-code delta:**
-   `design_gaps(scope?)` -- which architectural requirements have no detectable
-   implementation? Reads `kind='design_note'` artifacts, matches against corpus
-   via embedding similarity (Level A), file path (Level B), import graph (Level C).
-   **Step 0 first (no code):** ingest dj2 design docs via `ingest_design_docs`, then
-   run `SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 5`
-   to confirm how 'requirement' kind is stored. See TRACKER.md RM48 spec for details.
+1. **RM52 (2 days) -- multi-method ingestion pre-pass:**
+   New module `determined/ingestion/structure_induction.py`. Four methods:
+   `fca_pass`, `mdl_pass`, `wrapper_pass`, `grammar_pass` + `combine(results)`.
+   Modify `ingest_design_docs` in agent_tools.py to call it after existing extraction.
+   See TRACKER.md RM52 for full spec and pipeline topology ASCII.
+   **Start here, before RM48** -- RM52 output enriches RM48's input.
 
-2. **Manual integration test:** With dj2 corpus loaded, run the full frontier workflow:
-   implementation_order -> readiness_check -> completion_contract -> scaffold_from_pattern
-   on a real stub to validate the end-to-end arc.
+2. **RM48 (1 day) -- design-to-code delta:**
+   After RM52 ships. Step 0 (ingest) is partially done (135 notes added this session).
+   Still need: 00E at min_score=0.01, then implement design_gaps() tool.
+   See TRACKER.md RM48 for full spec.
 
 3. **RM39 / RM41 / RM42 / RM43** -- defer unless Bart explicitly wants them.
 
