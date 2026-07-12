@@ -314,6 +314,18 @@ REGISTRY: dict[str, dict] = {
         "category": "understanding",
     },
 
+    "completion_contract": {
+        "purpose": "Assemble everything needed before implementing a stub: signature (param types + return type), callers and what they expect, available callees, behavioral contracts, design constraints (SOTS/GRASP), and stub dependencies. One call replaces symbol_context + list_callers + check_design_violations + behavioral_contracts query.",
+        "args": {
+            "symbol": "stub function name (required)",
+            "include_projection": "(optional) if true, append LLM-generated suggested approach; default false",
+        },
+        "output": "SIGNATURE / CALLERS / CALLEES AVAILABLE / STUBS THIS DEPENDS ON / CONTRACTS / DESIGN CONSTRAINTS blocks",
+        "feeds": ["implementation_order", "project_stub", "score_stub"],
+        "use_when": "Developer is about to implement a stub and needs a complete implementation brief in one call.",
+        "category": "understanding",
+    },
+
     "concept_search": {
         "purpose": "Search a term or concept across all text surfaces (symbol names, docstrings, contracts, design notes, distilled summaries), ranked by semantic similarity.",
         "args": {"query": "concept or term to search for"},

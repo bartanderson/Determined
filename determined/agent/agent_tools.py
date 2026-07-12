@@ -3224,6 +3224,149 @@ def symbol_context(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def completion_contract(assessor: "Assessor", args: dict) -> str:
+    """
+    completion_contract(symbol[, include_projection]) - everything needed before writing
+    the first line of a stub implementation: signature, callers, available callees,
+    behavioral contracts, design constraints, and stub dependencies.
+
+    Args:
+        symbol: function name (required)
+        include_projection: if true, append an LLM-generated "Suggested approach" block
+    """
+    import json as _json
+
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    include_projection = str(args.get("include_projection", "false")).lower() == "true"
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    # 1. Function row
+    fn_row = conn.execute(
+        "SELECT name, file_path, line_number, is_stub, param_types_json, return_type, docstring "
+        "FROM functions WHERE name = ? LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if not fn_row:
+        return f"ERROR: symbol '{symbol}' not found in functions table"
+
+    fn_name, file_path, line_num, is_stub, param_json, return_type, docstring = fn_row
+    short_fp = (file_path or "").replace("\\", "/").split("/")[-1]
+
+    lines = [
+        f"Completion contract for '{fn_name}'  ({short_fp}:{line_num})",
+        "",
+    ]
+
+    # 2. SIGNATURE
+    try:
+        param_types = _json.loads(param_json or "{}")
+    except Exception:
+        param_types = {}
+    if param_types or return_type:
+        params_str = ", ".join(
+            f"{p}: {t}" if t else p for p, t in param_types.items()
+        ) if param_types else "..."
+        ret_str = f" -> {return_type}" if return_type else ""
+        lines.append("SIGNATURE")
+        lines.append(f"  {fn_name}({params_str}){ret_str}")
+    else:
+        lines.append("SIGNATURE")
+        lines.append(f"  {fn_name}(...)  [no type annotations found]")
+    lines.append("")
+
+    # 3. CALLERS
+    caller_rows = _list_callers_raw(oracle, symbol)
+    if caller_rows:
+        lines.append(f"CALLERS ({len(caller_rows)}) — must satisfy these")
+        for r in caller_rows[:10]:
+            c_fp = (r["file_path"] or "").replace("\\", "/").split("/")[-1]
+            c_ln = r["line_number"] or ""
+            loc = f"({c_fp}:{c_ln})" if c_fp else ""
+            lines.append(f"  - {r['caller']}  {loc}")
+        if len(caller_rows) > 10:
+            lines.append(f"  ... and {len(caller_rows) - 10} more")
+    else:
+        lines.append("CALLERS")
+        lines.append("  (none — this function is uncalled or an entry point)")
+    lines.append("")
+
+    # 4. CALLEES — split into implemented vs stubs
+    callee_rows = _list_callees_raw(oracle, symbol)
+    if callee_rows:
+        callee_names = [r["callee"] for r in callee_rows]
+        stub_set = set()
+        if callee_names:
+            placeholders = ",".join("?" * len(callee_names))
+            stub_rows = conn.execute(
+                f"SELECT name FROM functions WHERE name IN ({placeholders}) AND is_stub = 1",
+                callee_names,
+            ).fetchall()
+            stub_set = {r[0] for r in stub_rows}
+
+        implemented = [r for r in callee_rows if r["callee"] not in stub_set]
+        stubs = [r for r in callee_rows if r["callee"] in stub_set]
+
+        if implemented:
+            lines.append("CALLEES AVAILABLE (already implemented)")
+            for r in implemented[:8]:
+                c_fp = (r["file_path"] or "").replace("\\", "/").split("/")[-1]
+                lines.append(f"  - {r['callee']}  ({c_fp})" if c_fp else f"  - {r['callee']}")
+        if stubs:
+            lines.append("STUBS THIS DEPENDS ON (implement those first — see implementation_order)")
+            for r in stubs:
+                c_fp = (r["file_path"] or "").replace("\\", "/").split("/")[-1]
+                lines.append(f"  - {r['callee']}  ({c_fp})" if c_fp else f"  - {r['callee']}")
+        lines.append("")
+
+    # 5. CONTRACTS (from behavioral_contracts table)
+    contract_rows = conn.execute(
+        "SELECT description FROM behavioral_contracts WHERE function_name = ? ORDER BY line_number",
+        (symbol,),
+    ).fetchall()
+    if contract_rows:
+        lines.append("CONTRACTS")
+        for (desc,) in contract_rows:
+            lines.append(f"  - {desc.strip()}")
+        lines.append("")
+    elif docstring:
+        # Fall back to docstring excerpt if no structured contracts
+        excerpt = docstring.strip().splitlines()[0][:120]
+        lines.append("CONTRACTS")
+        lines.append(f"  (from docstring) {excerpt}")
+        lines.append("")
+
+    # 6. DESIGN CONSTRAINTS (from check_design_violations_core)
+    try:
+        violations = _check_design_violations_core(assessor, symbol, file_path or "")
+        if violations:
+            lines.append("DESIGN CONSTRAINTS")
+            for v in violations[:5]:
+                subject = v.get("subject", "")
+                content = v.get("content", "")[:120]
+                lines.append(f"  - {subject}: {content}")
+            lines.append("")
+    except Exception:
+        pass  # embedding may be unavailable; skip gracefully
+
+    # 7. Optional LLM projection
+    if include_projection and is_stub:
+        try:
+            from determined.agent.stub_projector import gather_context
+            ctx = gather_context(conn, symbol)
+            if ctx:
+                lines.append("SUGGESTED APPROACH (LLM projection — use with caution)")
+                lines.append("  (run project_stub for full projection)")
+                lines.append("")
+        except Exception:
+            pass
+
+    return "\n".join(lines)
+
+
 def concept_search(assessor: "Assessor", args: dict) -> str:
     """
     concept_search(query) - search a term/concept across all text surfaces,
@@ -5664,6 +5807,7 @@ TOOLS = {
     "reingest_file":           (reingest_file,           "assessor"),
     # Symbol context + concept search (items 21/22)
     "symbol_context":          (symbol_context,          "assessor"),
+    "completion_contract":     (completion_contract,     "assessor"),
     "concept_search":          (concept_search,          "assessor"),
     # Docstring health + gap analysis (items 23/24)
     "docstring_health":        (docstring_health,        "assessor"),

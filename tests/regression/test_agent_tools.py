@@ -540,6 +540,8 @@ def test_dispatch_all_tools_registered():
         "run_annotation_pass",
         # RM44: implementation ordering
         "implementation_order",
+        # RM45: completion contract
+        "completion_contract",
     }
 
     assert set(TOOLS.keys()) == expected
