@@ -172,32 +172,50 @@ def _classify_doc(filename: str, text: str) -> str:
 # Rule extraction
 # ---------------------------------------------------------------------------
 
+def _downgrade_confidence(level: str) -> str:
+    rank = CONFIDENCE_RANK.get(level, 0)
+    for conf, r in sorted(CONFIDENCE_RANK.items(), key=lambda x: x[1]):
+        if r == rank - 1:
+            return conf
+    return "low"
+
+
 def extract_rules(doc_path: str, rel_path: str = "", source_confidence: str = "medium") -> list[DesignRule]:
     """
     Extract design rules from a single document.
-    Uses deterministic heading+constraint parsing — no model required.
+    Every headed section is extracted — constraint language elevates confidence,
+    absence of it doesn't discard the section. Sections with no heading are
+    grouped under the filename stem.
     Returns list of DesignRule objects with confidence and provenance populated.
     """
     text = Path(doc_path).read_text(encoding="utf-8", errors="ignore")
     src = rel_path or doc_path
+    stem = Path(doc_path).stem
     rules: list[DesignRule] = []
 
     sections = _split_by_headings(text)
     for heading, body in sections:
-        subject = _heading_to_subject(heading)
-        constraint_sentences = _extract_constraint_sentences(body)
-        if not constraint_sentences:
+        body = body.strip()
+        if not body:
             continue
-        # Group into one rule per heading section (keeps context intact)
-        rule_text = _compress_constraints(heading, constraint_sentences)
+        subject = _heading_to_subject(heading) if heading else stem
+        constraint_sentences = _extract_constraint_sentences(body)
 
-        # Classify kind from dominant signal
-        if _MUST_NOT_RE.search(rule_text):
-            kind = "constraint"
-        elif _MUST_RE.search(rule_text):
-            kind = "requirement"
+        if constraint_sentences:
+            # High-signal: lead with constraint sentences, append remaining context
+            rule_text = _compress_constraints(heading, constraint_sentences)
+            if _MUST_NOT_RE.search(rule_text):
+                kind = "constraint"
+            elif _MUST_RE.search(rule_text):
+                kind = "requirement"
+            else:
+                kind = "permission"
+            conf = source_confidence
         else:
-            kind = "permission"
+            # Low-signal prose: store full section body as design intent
+            rule_text = f"[{heading}] {body[:600]}" if heading else body[:600]
+            kind = "intent"
+            conf = _downgrade_confidence(source_confidence)
 
         rules.append(DesignRule(
             subject=subject,
@@ -205,8 +223,8 @@ def extract_rules(doc_path: str, rel_path: str = "", source_confidence: str = "m
             source_file=src,
             source_heading=heading,
             extraction="deterministic",
-            confidence=source_confidence,
-            provenance=f"{source_confidence}:{src}:deterministic",
+            confidence=conf,
+            provenance=f"{conf}:{src}:deterministic",
             kind=kind,
         ))
 
@@ -241,16 +259,23 @@ def _heading_to_subject(heading: str) -> str:
     'EscalationEngine authority boundary' -> 'EscalationEngine'
     '3. Visibility Contract: WorldController' -> 'WorldController'
     'B1. Mutation authority' -> 'mutation_authority'
+    'A. The Core Experience Goal' -> 'core_experience_goal'
     """
-    # Strip leading numbering like "3.", "B1.", "##"
-    h = re.sub(r"^[\dA-Za-z]+\.\s*", "", heading).strip()
+    # Strip leading section markers like "3.", "B1.", "A.", "##"
+    h = re.sub(r"^[A-Za-z]{0,2}\d*\.\s*", "", heading).strip()
     # Take up to the first colon or parenthesis
     h = re.split(r"[:(]", h)[0].strip()
-    # If it looks like a CamelCase class/system name, keep it
-    if re.match(r"^[A-Z][a-zA-Z]+$", h.split()[0] if h.split() else ""):
-        return h.split()[0]
-    # Otherwise slugify
-    return re.sub(r"[^a-zA-Z0-9]+", "_", h).strip("_").lower() or heading[:40]
+    words = h.split()
+    if not words:
+        return heading[:40]
+    # If first word is a CamelCase class/system name, use it
+    if re.match(r"^[A-Z][a-z]+[A-Z]", words[0]):
+        return words[0]
+    # Skip articles/prepositions at the start
+    skip = {"the", "a", "an", "of", "for", "in", "on", "at", "to", "and"}
+    meaningful = [w for w in words if w.lower() not in skip]
+    base = "_".join(meaningful[:3]) if meaningful else "_".join(words[:3])
+    return re.sub(r"[^a-zA-Z0-9]+", "_", base).strip("_").lower() or heading[:40]
 
 
 def _extract_constraint_sentences(body: str) -> list[str]:
@@ -319,14 +344,6 @@ _MUST_RE = re.compile(
     r"\b(must(?!\s+not)|shall(?!\s+not)|required\s+to|is\s+required)\b",
     re.IGNORECASE,
 )
-
-
-def _downgrade_confidence(level: str) -> str:
-    rank = CONFIDENCE_RANK.get(level, 0)
-    for conf, r in sorted(CONFIDENCE_RANK.items(), key=lambda x: x[1]):
-        if r == rank - 1:
-            return conf
-    return "low"
 
 
 def extract_rules_llm(

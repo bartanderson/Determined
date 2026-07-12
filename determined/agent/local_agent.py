@@ -803,7 +803,7 @@ def _summarize_all_files(src, oracle, assessor) -> None:
                        (subject, kind, content, provenance, corpus, created_at)
                        VALUES (?, 'design_note', ?, ?, ?, datetime('now'))""",
                     (rule.subject, rule.rule,
-                     f"{rule.provenance}", corpus),
+                     f"{rule.provenance}:{rule.kind}", corpus),
                 )
                 rules_written += 1
             except Exception:
