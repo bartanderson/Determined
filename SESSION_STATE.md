@@ -1,40 +1,35 @@
-Written at commit: fbef63d
-# SESSION STATE - session 152 handoff
+Written at commit: 4aa4412
+# SESSION STATE - session 153 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 152, 2026-07-12)
+## What happened this session (session 153, 2026-07-12)
 
 ### Commits this session [V]
 
-- `fc18a65` RM44: implementation_order -- topo sort of stubs + ABC gaps into wave plan
-- `072e42a` TRACKER: mark RM44 DONE, update dashboard and SESSION_STATE
-- `fbef63d` RM45: completion_contract -- one-call implementation brief for stubs
+- `4aa4412` RM46: scaffold_from_pattern -- find structural siblings and emit fill-in-the-blanks scaffold
 
 ### Changes made [V]
 
-**RM44 done [V]**
-- `determined/agent/agent_tools.py`: `implementation_order(oracle, args)` after
-  `frontier_priority`. Collects stubs (is_stub=1) + ABC gaps via `_get_abc_gap_set`,
-  builds S×S restricted call subgraph, runs Kahn's BFS topo sort into waves, detects
-  cycles. Optional `scope` file-prefix filter. Tries resolved=1 edges first, falls back.
-- `determined/agent/tool_registry.py`: implementation_order entry, category='frontier'.
-- `tests/regression/test_implementation_order.py`: 12 tests.
+**RM46 done [V]**
+- `determined/agent/stub_projector.py`: `_extract_structural_skeleton(source, fn_name) -> dict`
+  before `_get_source_lines`. AST walk of a single function: extracts first_stmt_type
+  (if_guard/assignment/call/try_block/immediate_return/...), return_shape (dict/list/tuple/
+  scalar/expr/none or slash-joined set), error_handling (try_except/raise/none), has_guard (bool).
+  Graceful on SyntaxError or fn_name not found (all fields return 'unknown').
+- `determined/agent/agent_tools.py`: `scaffold_from_pattern(assessor, args)` after `project_stub`.
+  Step 1: module-family siblings (same file matching return_type, then same dir). Step 2: embedding
+  similarity at threshold 0.50 on "{name}: {docstring}" using _get_embed_model(), gracefully
+  skipped if embedding unavailable. Step 3: canonical vs variation-point synthesis per axis,
+  fill-in-the-blanks Python template pre-filled with majority structural choices.
+  Output sections: STRUCTURAL SIBLINGS / STRUCTURAL ANALYSIS / SCAFFOLD TEMPLATE / REFERENCE IMPLEMENTATIONS.
+- `determined/agent/tool_registry.py`: scaffold_from_pattern entry, category='frontier',
+  feeds=['project_stub', 'completion_contract'].
+- `tests/regression/test_scaffold_from_pattern.py`: 16 tests (6 pure AST skeleton, 10 DB integration).
+- `tests/regression/test_agent_tools.py`: scaffold_from_pattern added to TOOLS set.
 
-**RM45 done [V]**
-- `determined/agent/agent_tools.py`: `completion_contract(assessor, args)` after
-  `symbol_context`. Assembles: SIGNATURE (param_types_json + return_type), CALLERS
-  (_list_callers_raw), CALLEES split into implemented vs stub (stub = "implement first"
-  warning), CONTRACTS (behavioral_contracts table with docstring fallback),
-  DESIGN CONSTRAINTS (_check_design_violations_core, silently skipped if embedding
-  unavailable), optional LLM projection gate (include_projection=false by default).
-- `determined/agent/tool_registry.py`: completion_contract entry, category='understanding'.
-- `tests/regression/test_completion_contract.py`: 11 tests.
-- `tests/regression/test_agent_tools.py`: both tools added to hardcoded TOOLS set.
-- `docs/TRACKER.md`: RM44 + RM45 deleted from open items, dashboard updated.
-
-**Tests [V]:** 613 passed, 1 skipped (full suite run this session).
+**Tests [V]:** 629 passed, 1 skipped (full suite run this session).
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -47,11 +42,11 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 | APD | Annotation pass driver | DONE (RM51) |
 | ORD | Implementation ordering | DONE (RM44) |
 | CTR | Completion contract | DONE (RM45) |
+| SFP | Scaffold from pattern | DONE (RM46) |
 | DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
 | LNS | Canned reasoning lenses | OPEN (RM43) |
-| SCF | Scaffold from pattern | OPEN (RM46) |
 | RDY | Readiness gate | OPEN (RM47) |
 | DGP | Design-to-code delta | OPEN (RM48) |
 
@@ -82,19 +77,23 @@ Driver processes static queue built at start only. Correct for single-pass use.
 **completion_contract design constraints block [V]:** Silently skipped if embedding
 unavailable (except block). Tests don't cover this path (requires embedding setup).
 
+**scaffold_from_pattern embedding path [V]:** Embedding sibling search silently skipped
+if embedding unavailable. Module-family siblings still returned. Tests don't cover
+embedding path (no embedding model in test environment).
+
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **RM46 (0.5-1 day) -- next code item:**
-   `scaffold_from_pattern(assessor, args)` -- find similar complete implementations
-   and use their structure as scaffold for a stub. See TRACKER.md RM46 spec.
-   Uses `concept_search` + `match_structural_pattern` + stub_projector.
+1. **RM47 (0.5 day) -- next code item:**
+   `readiness_check(symbol)` -- pure DB gate: READY or BLOCKED with blocker list.
+   No LLM. Checks: symbol exists + is stub, callees are ready (no stub callees),
+   param types annotated, behavioral contract exists. See TRACKER.md RM47 spec.
 
-2. **Manual integration test (RM49+RM51+RM44+RM45 validation):**
-   With llama-server on port 8081, run `run_annotation_pass` on dj2 corpus, then
-   `implementation_order` and `completion_contract` on a real stub (e.g. process()).
+2. **Manual integration test (RM46 validation):**
+   With llama-server on port 8081 and dj2 corpus loaded, run `scaffold_from_pattern`
+   on a real stub (e.g. process()) to verify module-family + embedding paths fire.
 
-3. **RM47, RM48** after RM46.
+3. **RM48** after RM47.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.

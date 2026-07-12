@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 152):** RM44 + RM45 done. implementation_order: Kahn's BFS topo sort, wave plan, cycle detection, scope filter, 12 tests. completion_contract: one-call impl brief (signature, callers, callees split impl/stub, behavioral contracts w/ docstring fallback, design constraints, optional LLM gate), 11 tests. 613 passed, 1 skipped.
+**Last session (2026-07-12, session 153):** RM46 done. scaffold_from_pattern: module-family + embedding-similarity sibling search (threshold 0.50), _extract_structural_skeleton (AST: first_stmt_type/return_shape/error_handling/has_guard), canonical vs variation-point synthesis, fill-in-the-blanks template. 16 tests. 629 passed, 1 skipped.
+
+**Session 152 (2026-07-12):** RM44 + RM45 done. implementation_order: Kahn's BFS topo sort, wave plan, cycle detection, scope filter, 12 tests. completion_contract: one-call impl brief (signature, callers, callees split impl/stub, behavioral contracts w/ docstring fallback, design constraints, optional LLM gate), 11 tests. 613 passed, 1 skipped.
 
 **Session 151 (2026-07-12):** RM51 done. run_annotation_pass driver: _build_annotation_queue (caller-count ordered, scope-filtered, excludes already-annotated) + run_annotation_pass (max_functions cap, convergence_threshold early stop on LLM failure). 9 regression tests. 590 passed, 1 skipped. RM50 tracker status corrected (was done session 149).
 
@@ -171,105 +173,6 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
-
----
-
-RM46. **[OPEN] Scaffold from pattern: generate a skeleton for an incomplete implementation based on similar complete ones**
-
-   **The gap:** `project_stub` (agent_tools.py:1840, stub_projector.py) generates an
-   implementation for a single stub using its callers, contracts, and sibling callees.
-   What it does NOT do is find similar complete implementations elsewhere in the codebase
-   and use their structure as the scaffold. The result is that `project_stub` generates
-   from scratch each time, missing the most reliable signal available: how the developer
-   already solved the same pattern three files over.
-
-   **The concept:** A `scaffold_from_pattern(symbol)` tool that:
-   1. Finds N complete (non-stub) functions in the codebase that are structurally similar
-      to the target (same callee types, same parameter shape, same role/behavior class)
-   2. Extracts the structural skeleton of each: import patterns, guard clauses, return
-      shape, error handling idioms -- NOT the specific logic
-   3. Presents the skeleton as a fill-in-the-blanks template with the most common
-      structural choices pre-selected and the variation points called out
-
-   This is the complement to `project_stub`: `project_stub` reasons from the stub's
-   own context (callers, contracts); `scaffold_from_pattern` reasons from the corpus
-   (what similar complete code looks like). Use both together for the fullest picture.
-
-   **Algorithm:**
-
-   Step 1 -- Find structural siblings:
-   - Get the target symbol's `param_types_json`, `return_type`, `file_path` (same module
-     is a strong prior), and `infer_behavior` role (COORDINATOR / INTERFACER / etc.)
-   - Query: non-stub functions where `return_type` matches AND function is in the same
-     file OR same directory. This is the "same module family" set.
-   - Supplement with embedding similarity: embed `"{name}: {docstring}"` for the target
-     and compare against pre-embedded functions (reuse `find_duplicates` infrastructure
-     from agent_tools.py:4553 which already does pairwise cosine). Threshold 0.50
-     (looser than find_duplicates's 0.85 -- we want structural cousins, not near-copies).
-   - Combine: union of module-family set and embedding-similar set, deduplicated, limit 5.
-
-   Step 2 -- Extract structural skeleton from each match:
-   - Read source lines for each matched function (use `_get_source_lines` from
-     stub_projector.py:100, which already does this).
-   - Use `_source_skeleton` from agent_tools.py:540 -- already extracts signatures and
-     class/def lines without bodies. Extend it to also capture:
-     - First statement type (guard clause? type check? DB query? delegation call?)
-     - Return statement structure (dict literal? named result? early return?)
-     - Error handling pattern (try/except? if/raise? return None?)
-     These are extractable with simple AST pattern matching on the function body.
-
-   Step 3 -- Synthesize the template:
-   - If all 5 matches share a structural pattern (e.g., all start with a guard clause,
-     all return a dict with the same keys), call that out as "canonical pattern."
-   - If matches diverge (some guard, some don't), call that a "variation point" and
-     show both options with which matches use each.
-   - Output is a Python code block with `# FILL IN:` comments at variation points and
-     the canonical choices pre-filled. No LLM needed for this if the AST extraction
-     is reliable; use LLM only to generate the variation-point comment text.
-
-   **What already exists to build on:**
-   - `_source_skeleton(source_text, max_chars)` at agent_tools.py:540 -- extract
-     signatures without bodies. Extend to extract first-statement and return-shape.
-   - `_get_source_lines(file_path, around_line, window)` at stub_projector.py:100 --
-     read source around a function.
-   - `find_duplicates` embedding infrastructure at agent_tools.py:4553 -- cosine
-     similarity over embedded docstrings. Reuse `_get_embed_model()` at agent_tools.py:22.
-   - `match_structural_pattern` at agent_tools.py:3847 -- already compares subgraph
-     shapes. Review before building new similarity; may be partially reusable.
-   - `gather_context(conn, stub_name)` at stub_projector.py:110 -- callers + contracts
-     + siblings. Reuse the context building; add the pattern-finding on top.
-
-   **Entry points for implementation:**
-   - New helper `_extract_structural_skeleton(source: str, fn_name: str) -> dict` in
-     `determined/agent/stub_projector.py`. Returns:
-     `{first_stmt_type, return_shape, error_handling, has_guard, body_skeleton_lines}`
-   - New function `scaffold_from_pattern(assessor, args)` in `determined/agent/agent_tools.py`
-     after `project_stub` (~line 1863). Takes `symbol` arg; optional `limit=5` for
-     how many pattern matches to extract.
-   - Wire into `TOOLS` dict and `tool_registry.py` with category `"frontier"`.
-   - New regression test: `tests/regression/test_scaffold_from_pattern.py`. Verify
-     that for a stub in a file with similar complete functions, the scaffold references
-     at least one of those functions. Do not test the LLM output -- test the pattern
-     discovery and skeleton extraction only (mark LLM portions with `--slow`).
-
-   **SOTS tensions:**
-   - I (locality): the developer needs to find and read similar functions manually today;
-     this surfaces them automatically.
-   - XXI (don't over-engineer): Step 3 (template synthesis) should start with simple
-     frequency counting ("N of 5 matches start with a guard clause"). Only add LLM
-     synthesis for variation-point comments after the structural extraction is proven
-     to find real siblings reliably.
-   - XI (separate decide from do): scaffold is a reading tool. It proposes a template;
-     the developer decides what to write. It does not write files.
-
-   **Dependency:** RM45 (`completion_contract`) is a natural prerequisite -- run it
-   first to understand what the function must satisfy, then `scaffold_from_pattern` to
-   see how similar functions are structured. The two tools are complementary, not
-   redundant.
-
-   **Estimated effort:** 2 days. Step 1 (sibling finding) is 0.5d. Step 2 (skeleton
-   extraction from AST) is 1d. Step 3 (template synthesis) is 0.5d. LLM variation-
-   point text is a fast follow-on once the structural pieces work.
 
 ---
 
