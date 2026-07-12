@@ -1235,6 +1235,34 @@ RM41. **[OPEN] HTTP fetch/HTMX → Flask route cross-language edges**
 
 ---
 
+## Baseline measurements (session 148, 2026-07-11)
+
+Scope: 129 core dj2 source files (dungeon_neo, engine, routes, core, world, resolver + top-level .py).
+Tools installed: pyan3, pyright (both via pip into Determined venv).
+
+**pyan3 call graph baseline (BEFORE RM40):**
+- Solid (call) edges: 1,701
+- Dashed (use/defines) edges: 1,458
+- Total: 3,159
+
+**Determined graph_edges baseline (BEFORE RM40):**
+- Total edges (all core dirs): 5,271
+- Resolved (resolved=1): 1,087 (13%)
+- Unresolved (resolved=0): 7,112 (87% -- bare name matches, stdlib collisions)
+- Edge types: static=8,098, decorator=100, thread=1 (whole corpus)
+
+**pyright baseline (dungeon_neo + engine + routes, 18 files):**
+- Files analyzed: 18
+- Errors: 213 (mostly unknown attributes -- dj2 has loose/missing type annotations)
+- Warnings: 2
+- Note: pyright has no "dump inferred types" mode; useful as error baseline and for
+  spot-checking specific param types after RM49 inferred_annotation pass.
+
+**Re-run after RM40:** compare resolved edge count (target: >13%) and check whether
+pyan3 solid edges overlap better with Determined's resolved set.
+
+---
+
 RM40. **[OPEN] Target resolution collision: bare method names resolve to wrong project functions**
 
    **The gap:** BFS from world_app.py socket handlers returns callee sets polluted with
