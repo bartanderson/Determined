@@ -182,6 +182,33 @@ each step result. 293/293 tests passing.
 
 ---
 
+TODO-1. **[FUTURE] trace_http_chain: store Flask route URL as a dedicated column**
+
+   Currently `trace_http_chain` matches Flask handlers by pattern-matching the
+   route string out of `functions.decorators_json` (e.g. searching for `route`
+   and extracting the quoted URL). This is fragile -- it depends on the exact
+   string format stored in the JSON, and will silently miss handlers whose
+   decorator JSON doesn't match the regex.
+
+   The correct fix: during `extract_decorator_entry_edges` or `parse_ast.py`
+   decorator capture, extract the route URL and store it as a dedicated column
+   on `functions` (e.g. `http_route TEXT`). Then `trace_http_chain` can query
+   `SELECT name FROM functions WHERE http_route = ?` with proper normalization.
+
+   **Entry points:**
+   - `determined/ingestion/parse_ast.py`: in the decorator capture path, when
+     `attr == 'route'`, extract the first string arg and store as `http_route`.
+   - `determined/persistence/persistence_engine.py`: add `http_route` column
+     migration and populate it during `_persist_functions`.
+   - `determined/agent/agent_tools.py` `trace_http_chain`: replace
+     `decorators_json` string inspection with `SELECT name FROM functions WHERE
+     http_route` query using `_url_matches`.
+
+   **Trigger:** if `trace_http_chain` misses known handlers on real dj2 queries
+   after re-ingest, this is why. Low urgency until that happens.
+
+---
+
 
 RM52. **[DONE] Multi-method ingestion pre-pass: structure-induction gate for design doc extraction**
 
