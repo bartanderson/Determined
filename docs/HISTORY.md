@@ -8,6 +8,18 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-12: RM50 inline comment extraction -- two design pivots worth remembering.
+(1) Initial impl used raw line scan + content heuristics (len>5, alphanumeric filter).
+Devil's advocate showed this drops legitimate short comments (TODO, ok) and filters
+for edge cases that don't exist in function bodies. Replaced with tokenize.generate_tokens:
+handles #-in-strings correctly, gives column position for block/inline distinction
+structurally. (2) Initial marker detection used a fixed _MARKERS set (TODO/FIXME/NOTE etc).
+Replaced with regex ^([A-Z][A-Z0-9_]+)\s*(?::|--?|--|  +) -- detects any ALL_CAPS label
+followed by a delimiter. Captures domain-specific tags (SAFETY:, CONTRACT:) without
+enumerating them. Mixed-case labels (Returns:) intentionally not tagged; consumer decides.
+Key lesson: extraction layer should capture and categorize structurally, never filter by
+content quality judgment. Quality decisions belong in consumers.
+
 2026-07-11: Corpus enrichment arc (RM49-RM51) filed after devil's advocate pass on RM44-RM48.
 Three failure modes identified: (1) param_types_json <1% populated in dj2 -- RM45 completion
 contract would produce mostly-empty output. (2) Stubs have no docstrings -- RM46 scaffold's
