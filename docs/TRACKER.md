@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 151):** RM51 done. run_annotation_pass driver: _build_annotation_queue (caller-count ordered, scope-filtered, excludes already-annotated) + run_annotation_pass (max_functions cap, convergence_threshold early stop on LLM failure). 9 regression tests. 590 passed, 1 skipped. RM50 tracker status corrected (was done session 149).
+**Last session (2026-07-12, session 152):** RM44 done. implementation_order: Kahn's BFS topo sort over incomplete-symbol subgraph (stubs ∪ ABC gaps, edges restricted to S×S). Wave 1 = no incomplete callees; later waves annotated with "After: ...". Cycles flagged as groups. Optional scope filter. 12 regression tests. 602 passed, 1 skipped.
+
+**Session 151 (2026-07-12):** RM51 done. run_annotation_pass driver: _build_annotation_queue (caller-count ordered, scope-filtered, excludes already-annotated) + run_annotation_pass (max_functions cap, convergence_threshold early stop on LLM failure). 9 regression tests. 590 passed, 1 skipped. RM50 tracker status corrected (was done session 149).
 
 **Session 150 (2026-07-12):** RM49 done. annotate_function: LLM-inferred param types, return type, behavioral contract. 15 regression tests. 581 passed, 1 skipped.
 
@@ -171,75 +173,6 @@ each step result. 293/293 tests passing.
 ## Open items
 
 ---
-
-RM44. **[OPEN] Implementation ordering: topological sort of stubs and ABC gaps into a dependency-ordered work plan**
-
-   **The gap:** `frontier_coverage`, `list_stubs`, and `find_abc_gaps` surface what is
-   incomplete but give no guidance on what order to implement it. If `fn_a` is a stub
-   and `fn_b` (also a stub) calls `fn_a`, you must implement `fn_a` first or `fn_b`
-   cannot be tested. The user has to reason about this ordering manually by cross-referencing
-   call graph output with the stub list. That reasoning is pure graph topology -- the DB
-   already has everything needed to compute it.
-
-   **The concept:** A `implementation_order` tool that takes the full set of incomplete
-   symbols (stubs + ABC gap methods) and returns them sorted leaves-first: symbols with
-   no incomplete callees come first; symbols whose callees are all complete or scheduled
-   earlier come later. Output is a numbered list, each entry annotated with why it is at
-   that position ("no incomplete dependencies" / "depends on: fn_x, fn_y above").
-
-   **Algorithm (pure SQL + Python, no LLM needed):**
-
-   1. **Collect the incomplete set** S: union of
-      - `SELECT name, file_path FROM functions WHERE is_stub = 1`
-      - ABC gap methods from `_get_abc_gap_set(conn)` (already exists in agent_tools.py:1283)
-
-   2. **Build the restricted call graph** G: for each symbol in S, collect its callees
-      that are also in S. This is the subgraph of "incomplete depends on incomplete."
-      Query: `SELECT caller, callee FROM graph_edges WHERE caller IN S AND callee IN S`.
-      Use `resolved = 1` filter (RM40) once that lands to reduce noise; fall back to
-      unfiltered if RM40 not yet done.
-
-   3. **Topological sort** of G using Kahn's algorithm (standard BFS-based topo sort).
-      Pure Python on the adjacency list. If cycles exist (mutual recursion between stubs),
-      report the cycle as a group with a note: "these must be implemented together."
-
-   4. **Format output:** numbered list, grouped by "wave" (symbols with no remaining
-      incomplete dependencies in earlier waves). Each entry:
-      ```
-      1. fn_name  (file_path:line)
-         Ready: no incomplete callees
-      2. fn_other  (file_path:line)
-         Ready: no incomplete callees
-      3. fn_depends  (file_path:line)
-         After: fn_name (wave 1)
-      ```
-
-   **What already exists to build on:**
-   - `_get_abc_gap_set(conn)` at agent_tools.py:1283 -- returns set of ABC gap method names
-   - `list_stubs` at agent_tools.py:1093 -- already queries `functions WHERE is_stub = 1`
-   - `graph_utils.bfs_callees` at graph_utils.py:140 -- BFS over graph_edges
-   - `graph_edges` table has `caller`, `callee`, `resolved` columns
-
-   **Entry points for implementation:**
-   - New function `implementation_order(oracle, args)` in `determined/agent/agent_tools.py`
-     after `frontier_priority` (~line 1678). Takes optional `scope` arg (file path or
-     prefix to restrict to a subsystem).
-   - Wire into `TOOLS` dict at the bottom of agent_tools.py.
-   - Wire into `tool_registry.py` with category `"frontier"` (alongside `frontier_coverage`,
-     `frontier_priority`, `find_abc_gaps`).
-   - New regression test: `tests/regression/test_implementation_order.py`. Fixture needs
-     at least 3 stubs in a chain (A calls B calls C, all stubs) to verify the ordering.
-
-   **SOTS tensions:**
-   - I (locality): this moves reasoning about ordering from the user's head into the tool.
-   - XXI (don't over-engineer): Kahn's algorithm on an adjacency list is ~20 lines. No
-     graph library needed. The query for S is two SELECTs and a union. Total new code
-     is ~80 lines including output formatting.
-   - XIV (one source of truth): reads only from `graph_edges` and `functions`; does not
-     maintain its own ordering state.
-
-   **Estimated effort:** 0.5 days. Pure DB query + standard algorithm + formatting.
-   No LLM, no schema changes, no new infrastructure.
 
 ---
 
