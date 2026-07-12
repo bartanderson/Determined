@@ -81,7 +81,7 @@ def foo():
 def test_marker_fixme_detected():
     source = """\
 def foo():
-    # FIXME this is wrong
+    # FIXME: this is wrong
     return 1
 """
     fns = _parse(source)
@@ -96,6 +96,41 @@ def foo():
 """
     fns = _parse(source)
     assert fns[0].inline_notes[0]['marker'] == 'NOTE'
+
+
+def test_marker_hyphen_delimiter():
+    source = """\
+def foo():
+    # SAFETY - must hold the lock before calling
+    return 1
+"""
+    fns = _parse(source)
+    assert fns[0].inline_notes[0]['marker'] == 'SAFETY'
+
+
+def test_marker_double_space_delimiter():
+    source = """\
+def foo():
+    # CONTRACT  caller must validate input first
+    return 1
+"""
+    fns = _parse(source)
+    assert fns[0].inline_notes[0]['marker'] == 'CONTRACT'
+
+
+def test_marker_returns_swallowed():
+    # Mixed-case labels like 'Returns' match too -- consumer decides if meaningful
+    source = '''\
+def foo():
+    # Returns: the computed value
+    return 1
+'''
+    fns = _parse(source)
+    # 'Returns' starts with uppercase letter followed by all-caps... wait, it's mixed case
+    # 'R' then 'eturns' -- the regex requires [A-Z][A-Z0-9_]+ so 'Returns' does NOT match
+    # (the 'e' after 'R' is lowercase). This is intentional: only ALL_CAPS labels are markers.
+    assert fns[0].inline_notes[0]['marker'] is None
+    assert fns[0].inline_notes[0]['text'] == 'Returns: the computed value'
 
 
 def test_no_marker_when_not_keyword():

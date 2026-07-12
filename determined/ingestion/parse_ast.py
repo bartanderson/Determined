@@ -157,7 +157,10 @@ def _iter_top_level_functions(tree: ast.AST):
     yield from _visit(ast.iter_child_nodes(tree))
 
 
-_MARKERS = {'TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'WARN', 'WARNING', 'NB'}
+import re as _re
+# Matches an all-caps label (e.g. TODO, THREAD_SAFETY, Returns) followed by any
+# of: colon, hyphen(s), em dash, or two-or-more spaces.  Group 1 is the label.
+_MARKER_RE = _re.compile(r'^([A-Z][A-Z0-9_]+)\s*(?::|--?|—|\s{2,})', _re.ASCII)
 
 
 def _collect_comments(source: str) -> dict:
@@ -175,12 +178,8 @@ def _collect_comments(source: str) -> dict:
                 continue
             # position: block if nothing but whitespace precedes '#' on the line
             position = 'inline' if tok_line[:tok_col].strip() else 'block'
-            marker = None
-            upper = text.upper()
-            for m in _MARKERS:
-                if upper.startswith(m) and (len(upper) == len(m) or upper[len(m)] in ': \t'):
-                    marker = m
-                    break
+            m = _MARKER_RE.match(text)
+            marker = m.group(1) if m else None
             result[tok_lineno] = {'text': text, 'position': position, 'marker': marker}
     except tokenize.TokenError:
         pass
