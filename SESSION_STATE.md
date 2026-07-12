@@ -1,4 +1,4 @@
-Written at commit: fc18a65
+Written at commit: fbef63d
 # SESSION STATE - session 152 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
@@ -9,23 +9,32 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 ### Commits this session [V]
 
 - `fc18a65` RM44: implementation_order -- topo sort of stubs + ABC gaps into wave plan
+- `072e42a` TRACKER: mark RM44 DONE, update dashboard and SESSION_STATE
+- `fbef63d` RM45: completion_contract -- one-call implementation brief for stubs
 
 ### Changes made [V]
 
 **RM44 done [V]**
-- `determined/agent/agent_tools.py`: added `implementation_order(oracle, args)` after
-  `frontier_priority` (~line 1678). Collects stubs (is_stub=1) + ABC gap methods via
-  `_get_abc_gap_set`, builds restricted call subgraph (S×S edges), runs Kahn's BFS topo
-  sort into waves, detects cycles. Optional `scope` arg for file-prefix filtering.
-- `determined/agent/tool_registry.py`: added `implementation_order` entry, category='frontier'.
-- `tests/regression/test_agent_tools.py`: added 'implementation_order' to hardcoded TOOLS set.
-- `tests/regression/test_implementation_order.py`: 12 new tests (all fast, no LLM).
-- `docs/TRACKER.md`: RM44 deleted from open items, dashboard updated.
+- `determined/agent/agent_tools.py`: `implementation_order(oracle, args)` after
+  `frontier_priority`. Collects stubs (is_stub=1) + ABC gaps via `_get_abc_gap_set`,
+  builds S×S restricted call subgraph, runs Kahn's BFS topo sort into waves, detects
+  cycles. Optional `scope` file-prefix filter. Tries resolved=1 edges first, falls back.
+- `determined/agent/tool_registry.py`: implementation_order entry, category='frontier'.
+- `tests/regression/test_implementation_order.py`: 12 tests.
 
-**Tests [V]:** 602 passed, 1 skipped (full suite run this session).
+**RM45 done [V]**
+- `determined/agent/agent_tools.py`: `completion_contract(assessor, args)` after
+  `symbol_context`. Assembles: SIGNATURE (param_types_json + return_type), CALLERS
+  (_list_callers_raw), CALLEES split into implemented vs stub (stub = "implement first"
+  warning), CONTRACTS (behavioral_contracts table with docstring fallback),
+  DESIGN CONSTRAINTS (_check_design_violations_core, silently skipped if embedding
+  unavailable), optional LLM projection gate (include_projection=false by default).
+- `determined/agent/tool_registry.py`: completion_contract entry, category='understanding'.
+- `tests/regression/test_completion_contract.py`: 11 tests.
+- `tests/regression/test_agent_tools.py`: both tools added to hardcoded TOOLS set.
+- `docs/TRACKER.md`: RM44 + RM45 deleted from open items, dashboard updated.
 
-**Key pattern [V]:** resolved=1 edges tried first; falls back to unresolved if none found.
-Cycle detection: when remaining nodes all have in_degree > 0, last wave flagged as cycle group.
+**Tests [V]:** 613 passed, 1 skipped (full suite run this session).
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -37,11 +46,11 @@ Cycle detection: when remaining nodes all have in_degree > 0, last wave flagged 
 | ANN | annotate_function tool | DONE (RM49) |
 | APD | Annotation pass driver | DONE (RM51) |
 | ORD | Implementation ordering | DONE (RM44) |
+| CTR | Completion contract | DONE (RM45) |
 | DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
 | LNS | Canned reasoning lenses | OPEN (RM43) |
-| CTR | Completion contract | OPEN (RM45) |
 | SCF | Scaffold from pattern | OPEN (RM46) |
 | RDY | Readiness gate | OPEN (RM47) |
 | DGP | Design-to-code delta | OPEN (RM48) |
@@ -59,7 +68,7 @@ separate stores -- both must be updated together.
 
 **RM40 opt-in trap [V]:** resolved_only defaults False. RM47 must explicitly pass
 resolved_only=True or it silently uses the polluted graph.
-Note: RM44's implementation_order tries resolved=1 edges first, falls back gracefully.
+Note: implementation_order tries resolved=1 edges first, falls back gracefully.
 
 **RM43 empty-board trap [V]:** Lenses produce nothing on an empty clue board.
 
@@ -70,19 +79,22 @@ Note: RM44's implementation_order tries resolved=1 edges first, falls back grace
 **run_annotation_pass no propagation [V]:** Caller re-queuing not implemented.
 Driver processes static queue built at start only. Correct for single-pass use.
 
+**completion_contract design constraints block [V]:** Silently skipped if embedding
+unavailable (except block). Tests don't cover this path (requires embedding setup).
+
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **Manual integration test (RM49+RM51+RM44 validation):**
+1. **RM46 (0.5-1 day) -- next code item:**
+   `scaffold_from_pattern(assessor, args)` -- find similar complete implementations
+   and use their structure as scaffold for a stub. See TRACKER.md RM46 spec.
+   Uses `concept_search` + `match_structural_pattern` + stub_projector.
+
+2. **Manual integration test (RM49+RM51+RM44+RM45 validation):**
    With llama-server on port 8081, run `run_annotation_pass` on dj2 corpus, then
-   `implementation_order` on dj2. Expect: process() (30 callers), execute() (46 callers),
-   generate() (21 callers) annotated first; ordering shows leaf stubs before callers.
+   `implementation_order` and `completion_contract` on a real stub (e.g. process()).
 
-2. **RM45 (0.5 days) -- next code item:**
-   `completion_contract(oracle, args)` assembly tool. All data in DB; pure glue.
-   Per TRACKER.md spec.
-
-3. **RM46, RM47, RM48** in order after RM45.
+3. **RM47, RM48** after RM46.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.

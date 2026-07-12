@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 152):** RM44 done. implementation_order: Kahn's BFS topo sort over incomplete-symbol subgraph (stubs ∪ ABC gaps, edges restricted to S×S). Wave 1 = no incomplete callees; later waves annotated with "After: ...". Cycles flagged as groups. Optional scope filter. 12 regression tests. 602 passed, 1 skipped.
+**Last session (2026-07-12, session 152):** RM44 + RM45 done. implementation_order: Kahn's BFS topo sort, wave plan, cycle detection, scope filter, 12 tests. completion_contract: one-call impl brief (signature, callers, callees split impl/stub, behavioral contracts w/ docstring fallback, design constraints, optional LLM gate), 11 tests. 613 passed, 1 skipped.
 
 **Session 151 (2026-07-12):** RM51 done. run_annotation_pass driver: _build_annotation_queue (caller-count ordered, scope-filtered, excludes already-annotated) + run_annotation_pass (max_functions cap, convergence_threshold early stop on LLM failure). 9 regression tests. 590 passed, 1 skipped. RM50 tracker status corrected (was done session 149).
 
@@ -171,99 +171,6 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
-
----
-
----
-
-RM45. **[OPEN] Completion contract: unified "what do I need to satisfy to implement X?" summary**
-
-   **The gap:** When a developer picks a stub to implement, they need to know: what types
-   come in, what type must come out, what the callers expect the behavior to be, and what
-   the function is allowed to touch (design constraints). Right now this requires 4+ separate
-   queries: `symbol_context`, `list_callers`, `check_design_violations`, and reading
-   `param_types_json` from the DB manually. There is no single tool that assembles the
-   implementation contract.
-
-   **The concept:** A `completion_contract(symbol)` tool that returns a structured summary
-   of everything a developer needs before writing the first line of a stub implementation.
-   Output is deterministic (no LLM) except for an optional "suggested approach" line if
-   `project_stub` already has context for the symbol.
-
-   **Output shape (one call, no follow-up queries needed):**
-   ```
-   Completion contract for 'process'  (adjudication_engine.py:42)
-
-   SIGNATURE
-     process(self, player_action: PlayerAction, state: DungeonStateNeo) -> Dict
-
-   CALLERS (must satisfy these)
-     - execute_mutation_phase  (mutation_runner.py:88)  -- calls process() and passes
-       return value to apply_mutations()
-     - run_turn  (game_loop.py:201)  -- calls process() and checks return['success']
-
-   CALLEES AVAILABLE (already implemented in this file/module)
-     - _validate_action, _compute_effects, _check_constraints
-
-   CONTRACTS (from behavioral_contracts table)
-     - Returns dict with keys: success (bool), effects (list), message (str)
-     - Raises ValueError if player_action.type is unknown
-
-   DESIGN CONSTRAINTS (from check_design_violations_core)
-     - SOTS XI: process() must not decide AND execute -- return a plan, let caller apply it
-     - GRASP Information Expert: only process() should interpret PlayerAction intent
-
-   STUBS THIS DEPENDS ON (implement those first -- see RM44)
-     - _validate_action is a stub  (same file)
-   ```
-
-   **What already exists to build on (do not rewrite these, call them):**
-   - `param_types_json` column on `functions` table (parse_ast.py:171, persisted at
-     persistence_engine.py:428) -- already stores `{param_name: type_str}` as JSON
-   - `return_type` column on `functions` table (persistence_engine.py:105, parse_ast.py:190)
-     -- already stores the return annotation as a string
-   - `_list_callers_raw(oracle, symbol)` at agent_tools.py:383 -- returns list of dicts
-     with caller name and file_path
-   - `_list_callees_raw(oracle, symbol)` at agent_tools.py:426 -- returns callees
-   - `_check_design_violations_core(conn, symbol, file_path)` at agent_tools.py:758 --
-     returns violation dicts; call this directly, don't go through the string wrapper
-   - `behavioral_contracts` table (populated by parse_ast._extract_behavioral_contracts,
-     written at persistence_engine.py) -- stores pre/post conditions from docstrings
-   - `gather_context(conn, stub_name)` in stub_projector.py:110 -- already assembles
-     callers, contracts, sibling callees; reuse this rather than re-querying
-
-   **New code needed (only the assembly layer):**
-   - Query `functions WHERE name = symbol` for `param_types_json`, `return_type`,
-     `file_path`, `line_number`, `is_stub`, `docstring`
-   - Call `_list_callers_raw` → format as "CALLERS" block, show what each caller does
-     with the return value (needs one extra query per caller: what does caller pass
-     return value to? This is a simple `graph_edges WHERE caller=<caller>` scan)
-   - Call `_list_callees_raw` → split into "already implemented" vs "also stubs" using
-     `functions.is_stub`; list stubs as "implement first" warnings
-   - Call `_check_design_violations_core` → format as "DESIGN CONSTRAINTS" block
-   - Query `behavioral_contracts WHERE function_name = symbol` → format as "CONTRACTS"
-   - If `is_stub = 1`: optionally call `gather_context` from stub_projector and append
-     "SUGGESTED APPROACH" block (LLM call; gate behind `include_projection=False` arg
-     so the tool is fast by default)
-
-   **Entry points for implementation:**
-   - New function `completion_contract(oracle_or_assessor, args)` in
-     `determined/agent/agent_tools.py`. Needs `assessor` (not just `oracle`) because
-     `_check_design_violations_core` requires the assessor's connection and context.
-     Place after `symbol_context` (~line 614).
-   - Wire into `TOOLS` dict and `tool_registry.py` with category `"understanding"`.
-   - New regression test: `tests/regression/test_completion_contract.py`. Verify:
-     param types appear, callers listed, stubs-in-callees flagged, violations surface.
-
-   **SOTS tensions:**
-   - I (locality): replaces 4-query workflow with one call. The implementer's working
-     memory is the scarce resource; this reclaims it.
-   - XI (separate decide from do): tool returns a contract (decide), not code (do).
-     The optional `include_projection` flag keeps LLM suggestion opt-in.
-   - XXI (don't over-engineer): all data already exists in the DB. This is assembly
-     and formatting only. No new schema, no new ingestion pass.
-
-   **Estimated effort:** 0.5 days. All source data exists; this is glue + formatting.
 
 ---
 
