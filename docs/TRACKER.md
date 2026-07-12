@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 156):** RM52 done. determined/ingestion/structure_induction.py: fca_pass (FCA/Wille), mdl_pass (MDL/Rissanen), wrapper_pass (LP2/Kushmerick), grammar_pass (L*/Angluin), combine() D-S gate -> convergent/discriminant/review tiers. Wired into ingest_design_docs after existing extraction. 28 tests. 672 passed, 1 skipped.
+**Last session (2026-07-12, session 157):** RM48 done. design_gaps() tool: 3-level evidence matching (Level A embedding >= 0.45, Level B file path keyword, Level C import graph keyword). Output tiers: GAP / PARTIAL / SATISFIED. scope filter, threshold override, show_satisfied flag. Wired into TOOLS + tool_registry. 19 tests. 691 passed, 1 skipped.
+
+**Previous (session 156):** RM52 done. determined/ingestion/structure_induction.py: fca_pass (FCA/Wille), mdl_pass (MDL/Rissanen), wrapper_pass (LP2/Kushmerick), grammar_pass (L*/Angluin), combine() D-S gate -> convergent/discriminant/review tiers. 28 tests. 672 passed, 1 skipped.
 
 **Previous session (2026-07-12, session 153+):** RM46 + RM47 done. scaffold_from_pattern: module-family + embedding siblings, AST skeleton extraction, canonical/variation-point synthesis, fill-in-the-blanks template, 16 tests. readiness_check: 5-tier pure-DB gate (stub callees, unknown types, design flags opt-in, cycle detection), READY/BLOCKED output with next-step hints, 14 tests. 643 passed, 1 skipped.
 
@@ -276,20 +278,14 @@ RM52. **[DONE] Multi-method ingestion pre-pass: structure-induction gate for des
 ---
 
 
-RM48. **[OPEN] Design-to-code delta: surface what the design says should exist that the code does not yet implement**
+RM48. **[DONE] Design-to-code delta: surface what the design says should exist that the code does not yet implement**
 
-   **The gap:** `check_design_violations` finds where code *violates* design intent --
-   code that exists and does something the design forbids. The inverse question is unasked:
-   what does the design say SHOULD exist (features, behaviors, boundaries, authority flows)
-   that the code does not yet implement? This is the most important question for a project
-   actively building toward a documented architecture.
+   Implemented design_gaps() in agent_tools.py. 3-level evidence matching:
+   Level A (embedding >= 0.45), Level B (file path keyword), Level C (import
+   graph keyword). GAP / PARTIAL / SATISFIED tiers. scope/threshold/show_satisfied
+   args. Wired into TOOLS + tool_registry. 19 tests, 691 passed.
 
-   For dj2 specifically: the architectural constitution describes phases, authority
-   boundaries, AI-layer responsibilities, and world-state invariants. Many of these are
-   only partially implemented. Right now there is no way to ask "what did we commit to
-   architecturally that we haven't built yet?"
-
-   **The concept:** A `design_gaps(scope?)` tool that:
+   **For reference -- original concept:** A `design_gaps(scope?)` tool that:
    1. Reads all `kind='requirement'` design_note artifacts from the corpus DB (these are
       the "MUST", "SHALL", "is required to" rules already extracted by doc_extractor.py)
    2. For each requirement, attempts to locate evidence of implementation in the corpus:
