@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 155):** RM52 filed. Multi-method ingestion pre-pass: four structure-induction methods (FCA/Wille, MDL/Rissanen, LP² Wrapper Induction/Kushmerick, L*/Angluin) run serially over design docs, combined via D-S gate (Dempster/Shafer), tiered output: convergent/discriminant/review. Grounded in Campbell & Fiske 1959 (MTMM) and Kuncheva & Whitaker 2003. Pre-pass prerequisite for RM48.
+**Last session (2026-07-12, session 156):** RM52 done. determined/ingestion/structure_induction.py: fca_pass (FCA/Wille), mdl_pass (MDL/Rissanen), wrapper_pass (LP2/Kushmerick), grammar_pass (L*/Angluin), combine() D-S gate -> convergent/discriminant/review tiers. Wired into ingest_design_docs after existing extraction. 28 tests. 672 passed, 1 skipped.
 
 **Previous session (2026-07-12, session 153+):** RM46 + RM47 done. scaffold_from_pattern: module-family + embedding siblings, AST skeleton extraction, canonical/variation-point synthesis, fill-in-the-blanks template, 16 tests. readiness_check: 5-tier pure-DB gate (stub callees, unknown types, design flags opt-in, cycle detection), READY/BLOCKED output with next-step hints, 14 tests. 643 passed, 1 skipped.
 
@@ -181,21 +181,13 @@ each step result. 293/293 tests passing.
 ---
 
 
-RM52. **[OPEN] Multi-method ingestion pre-pass: structure-induction gate for design doc extraction**
+RM52. **[DONE] Multi-method ingestion pre-pass: structure-induction gate for design doc extraction**
 
-   **The gap:** `ingest_design_docs` uses a hardcoded `_MUST_RE` regex to find requirements
-   (modal verbs: must/shall/required to) plus an LLM fallback for sparse sections. It finds
-   what it knows to look for and misses requirements stated every other way a document might
-   state them -- numbered obligations, bullet constraints, prose invariants, implicit authority
-   rules. The extractor is narrow-but-reliable, not broad.
+   Implemented in determined/ingestion/structure_induction.py. Four methods
+   (fca_pass, mdl_pass, wrapper_pass, grammar_pass) + combine() D-S gate.
+   Wired into ingest_design_docs after existing extraction. 28 tests. 672 passed.
 
-   **The concept:** Run four independent structure-induction methods over each design document
-   before (or in place of) the current extraction pass. Each method uses a different grammar
-   assumption about what "a requirement" looks like structurally. Their outputs are combined
-   via set operations and a Dempster-Shafer gate. The existing extractor's output seeds two
-   of the four methods and anchors the gate, so there is no cold-start problem.
-
-   **Pipeline topology:**
+   **Pipeline topology (for reference):**
 
    ```
    INPUT DOC

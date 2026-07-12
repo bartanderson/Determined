@@ -1,32 +1,26 @@
-Written at commit: 2f2c5ce
-# SESSION STATE - session 155 handoff
+Written at commit: 70bd9b4
+# SESSION STATE - session 156 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 155, 2026-07-12)
+## What happened this session (session 156, 2026-07-12)
 
-**RM52 designed and filed [V]:** Multi-method ingestion pre-pass. Design discussion
-produced a grounded architecture for richer design doc extraction:
-- Four deterministic structure-induction methods (FCA/Wille 1982, MDL/Rissanen 1978,
-  LP² Wrapper Induction/Kushmerick 1997, L*/Angluin 1987) run serially over each doc
-- Existing `_MUST_RE` extractor runs first; its output seeds Wrapper Induction and L*
-  (no cold-start problem)
-- Set operations (∩ △ ∪) + Dempster-Shafer gate tier output into:
-  convergent (high trust) / discriminant (medium trust + tag) / review queue
-- Grounded in Campbell & Fiske 1959 (MTMM) and Kuncheva & Whitaker 2003
-- Pre-pass prerequisite for RM48; filed before it in TRACKER.md
-
-**RM48 Step 0 partially run [V]:** `ingest_design_docs` run against dj2 corpus --
-135 new design_notes stored, 00A + 00F now represented. 00E (AI_LAYER_OPPORTUNITIES)
-scored 0.04 (below default 0.05 threshold) and was NOT ingested. Interrupted before
-lowering threshold. Current count: ~1215 design_notes in C_Users_bartl_dev_dj2.db.
-
-**Schema finding [V]:** design_note content is stored as plain text -- no
-`[REQUIREMENT|...]` prefix in current DB rows. The `[KIND|confidence|source]` prefix
-format exists in code (agent_tools.py:2801) but the 1080 pre-existing rows predate it.
-Requirements must be found via `_MUST_RE` over content at query time, not a kind= column
-query. ~74 rows contain must/shall language.
+**RM52 done [V]:** Multi-method ingestion pre-pass implemented.
+- New module `determined/ingestion/structure_induction.py`
+- Four methods: `fca_pass` (FCA/Wille), `mdl_pass` (MDL/Rissanen),
+  `wrapper_pass` (LP2/Kushmerick), `grammar_pass` (L*/Angluin)
+- `combine()` applies set ops and Dempster-Shafer gate -> tiers:
+  convergent (existing extractor + 2+ methods) / discriminant (2+ methods,
+  extractor missed, stored with found_by/missed_by tag) / review (1 method,
+  held)
+- `run(text, seeds)` is the top-level entry; seeds come from existing
+  extractor's constraint sentence output
+- Wired into `ingest_design_docs` in `agent_tools.py` after existing
+  extraction; result logged in output as "Structure induction (RM52): N
+  additional candidates"
+- 28 new regression tests, all passing
+- **672 passed, 1 skipped [V]** (full suite, pytest tests/regression/ -m "not slow")
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -41,7 +35,7 @@ query. ~74 rows contain must/shall language.
 | CTR | Completion contract | DONE (RM45) |
 | SFP | Scaffold from pattern | DONE (RM46) |
 | RDY | Readiness gate | DONE (RM47) |
-| MMP | Multi-method ingestion pre-pass | OPEN (RM52) |
+| MMP | Multi-method ingestion pre-pass | DONE (RM52) |
 | DGP | Design-to-code delta | OPEN (RM48) |
 | DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
@@ -71,28 +65,27 @@ Module-family siblings still returned. Tests don't cover embedding path.
 design constraint tier. Embedding-based, can be slow.
 
 **00E not ingested [V]:** docs/design/00E AI_LAYER_OPPORTUNITIES.md scored 0.04,
-below default min_score=0.05. Needs min_score=0.01 to pick it up, or RM52 pre-pass
-will handle it more robustly anyway.
+below default min_score=0.05. Needs min_score=0.01 to pick it up.
 
 **design_note content format [V]:** Pre-existing rows have no [KIND|...] prefix.
 Requirements found via _MUST_RE over content at query time. ~74 such rows in dj2 DB.
+
+**RM52 discriminant seeds extraction [?]:** The seeds fed to structure_induction.run()
+are extracted by splitting rule.rule on " | " and stripping the heading prefix. This is
+a heuristic that matches _compress_constraints output but is not robust to all edge cases.
+Worth monitoring when running against real docs.
 
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **RM52 (2 days) -- multi-method ingestion pre-pass:**
-   New module `determined/ingestion/structure_induction.py`. Four methods:
-   `fca_pass`, `mdl_pass`, `wrapper_pass`, `grammar_pass` + `combine(results)`.
-   Modify `ingest_design_docs` in agent_tools.py to call it after existing extraction.
-   See TRACKER.md RM52 for full spec and pipeline topology ASCII.
-   **Start here, before RM48** -- RM52 output enriches RM48's input.
+1. **RM48 (1 day) -- design-to-code delta:**
+   RM52 is done -- RM48's prerequisite is satisfied.
+   Step 0 (ingest) partially done from session 155 (135 notes added, 00E still missing).
+   First: run `ingest_design_docs(min_score=0.01)` against dj2 to pick up 00E.
+   Then: implement `design_gaps()` tool in agent_tools.py.
+   See TRACKER.md RM48 for full spec (Level A/B/C matching, output shape).
 
-2. **RM48 (1 day) -- design-to-code delta:**
-   After RM52 ships. Step 0 (ingest) is partially done (135 notes added this session).
-   Still need: 00E at min_score=0.01, then implement design_gaps() tool.
-   See TRACKER.md RM48 for full spec.
-
-3. **RM39 / RM41 / RM42 / RM43** -- defer unless Bart explicitly wants them.
+2. **RM39 / RM41 / RM42 / RM43** -- defer unless Bart explicitly wants them.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
