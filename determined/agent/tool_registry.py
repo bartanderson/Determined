@@ -348,6 +348,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Function has no type annotations or behavioral contract. Run before completion_contract or readiness_check to fill sparse annotation coverage.",
         "category": "knowledge",
     },
+    "run_annotation_pass": {
+        "purpose": "Priority-ordered annotation pass over unannotated functions. Builds a queue of complete (non-stub) functions lacking param_types_json, ordered by caller count descending, then calls annotate_function for each. Stops at max_functions or after convergence_threshold consecutive LLM failures.",
+        "args": {
+            "scope": "(optional) file path prefix/substring to restrict the pass",
+            "max_functions": "(optional, default 20) max functions to annotate per run",
+            "convergence_threshold": "(optional, default 3) stop after N consecutive LLM failures",
+        },
+        "output": "Summary of annotated/skipped functions with caller counts and confidence scores",
+        "feeds": ["annotate_function", "knowledge_status"],
+        "use_when": "Corpus has many unannotated functions. Run after annotate_function is proven on individual symbols. Processes highest-leverage (most-called) functions first.",
+        "category": "knowledge",
+    },
     "corpus_synthesis": {
         "purpose": "Two-pass architectural analysis. Pass 1 (large context): maps all distilled file summaries into named subsystems. Pass 2 (quality reasoning): reasons over the subsystem map to find structural gaps, broken connections, and missing game features.",
         "args": {},

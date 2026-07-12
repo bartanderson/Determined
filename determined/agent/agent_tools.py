@@ -3612,6 +3612,142 @@ def annotate_function(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# RM51: Annotation pass driver
+# ---------------------------------------------------------------------------
+
+def _build_annotation_queue(oracle, scope: str = "") -> list:
+    """
+    Return list of (name, file_path, caller_count) for functions that lack
+    inferred or real param types, ordered by caller_count descending.
+    Filters to is_stub=0 (complete functions with missing type info).
+    """
+    conn = oracle.conn
+
+    # Functions missing real type annotations and not already annotated by LLM
+    already_annotated = {
+        row[0]
+        for row in conn.execute(
+            "SELECT subject FROM knowledge_artifacts WHERE kind='inferred_annotation'"
+        ).fetchall()
+    }
+
+    scope_clause = ""
+    scope_params: list = []
+    if scope:
+        scope_clause = " AND f.file_path LIKE ?"
+        scope_params = [f"%{scope}%"]
+
+    rows = conn.execute(
+        f"SELECT f.name, f.file_path, "
+        f"  (SELECT COUNT(*) FROM graph_edges WHERE callee=f.name) AS caller_count "
+        f"FROM functions f "
+        f"WHERE f.is_stub=0 "
+        f"  AND (f.param_types_json IS NULL OR f.param_types_json='{{}}' OR f.param_types_json='')"
+        f"{scope_clause} "
+        f"ORDER BY caller_count DESC",
+        scope_params,
+    ).fetchall()
+
+    return [
+        {"name": r[0], "file_path": r[1], "caller_count": r[2]}
+        for r in rows
+        if r[0] not in already_annotated
+    ]
+
+
+def run_annotation_pass(assessor: "Assessor", args: dict) -> str:
+    """
+    run_annotation_pass([scope][, max_functions][, convergence_threshold]) -
+    priority-ordered annotation pass over unannotated functions.
+
+    Builds a queue of complete (non-stub) functions that lack param_types_json,
+    ordered by caller count descending (most-called first). Calls annotate_function
+    for each, up to max_functions or until convergence_threshold consecutive
+    LLM failures occur.
+
+    Args:
+        scope                - optional file path prefix/substring to restrict the pass
+        max_functions        - max functions to annotate per run (default 20)
+        convergence_threshold - stop after this many consecutive LLM failures (default 3)
+    """
+    scope = args.get("scope", "").strip()
+    max_functions = int(args.get("max_functions", 20))
+    convergence_threshold = int(args.get("convergence_threshold", 3))
+
+    oracle = assessor.oracle
+    queue = _build_annotation_queue(oracle, scope)
+
+    if not queue:
+        return (
+            "run_annotation_pass: queue is empty.\n"
+            "All qualifying functions are already annotated, or no functions match the scope.\n"
+            f"(scope={scope!r})"
+        )
+
+    total_eligible = len(queue)
+    to_process = queue[:max_functions]
+
+    results = []
+    annotated = 0
+    skipped = 0
+    consecutive_failures = 0
+
+    for item in to_process:
+        fn_name = item["name"]
+        fn_file = item["file_path"]
+        caller_count = item["caller_count"]
+
+        result_text = annotate_function(assessor, {
+            "symbol": fn_name,
+            "file_path": fn_file,
+            "write_back": False,
+        })
+
+        if result_text.startswith("ERROR"):
+            consecutive_failures += 1
+            skipped += 1
+            results.append(f"  SKIP  {fn_name} ({fn_file}) -- {result_text[:80]}")
+            if consecutive_failures >= convergence_threshold:
+                results.append(
+                    f"\n[STOPPED] {convergence_threshold} consecutive failures -- "
+                    "LLM may be unavailable."
+                )
+                break
+        else:
+            consecutive_failures = 0
+            annotated += 1
+            # Extract confidence from output for summary
+            conf_line = next(
+                (ln for ln in result_text.splitlines() if ln.startswith("Confidence:")),
+                ""
+            )
+            conf = conf_line.split(":", 1)[-1].strip() if conf_line else "?"
+            results.append(
+                f"  OK    {fn_name} ({fn_file.split('/')[-1].split(chr(92))[-1]}) "
+                f"callers={caller_count} conf={conf}"
+            )
+
+    summary_lines = [
+        f"=== run_annotation_pass ===",
+        f"Scope:     {scope or '(all)'}",
+        f"Eligible:  {total_eligible} functions in queue",
+        f"Processed: {len(to_process)} (max_functions={max_functions})",
+        f"Annotated: {annotated}",
+        f"Skipped:   {skipped}",
+        "",
+        "Results:",
+    ] + results
+
+    if total_eligible > max_functions:
+        remaining = total_eligible - len(to_process)
+        summary_lines.append(
+            f"\n{remaining} more functions remain. Run again to continue the pass."
+        )
+
+    return "\n".join(summary_lines)
+
+
 def evaluate_claim(assessor: "Assessor", args: dict) -> str:
     """
     evaluate_claim(claim, question[, surfaces][, top_n]) - evaluate one
@@ -5389,6 +5525,7 @@ TOOLS = {
     # Docstring health + gap analysis (items 23/24)
     "docstring_health":        (docstring_health,        "assessor"),
     "annotate_function":       (annotate_function,       "assessor"),
+    "run_annotation_pass":     (run_annotation_pass,     "assessor"),
     "gap_analysis":            (gap_analysis,            "assessor"),
     # Evaluate kernel + role inference
     "evaluate_claim":          (evaluate_claim,          "assessor"),

@@ -536,6 +536,8 @@ def test_dispatch_all_tools_registered():
         "blast_radius",
         # RM49: annotation inference
         "annotate_function",
+        # RM51: annotation pass driver
+        "run_annotation_pass",
     }
 
     assert set(TOOLS.keys()) == expected
