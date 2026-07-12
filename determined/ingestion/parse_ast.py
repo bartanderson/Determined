@@ -157,7 +157,37 @@ def _iter_top_level_functions(tree: ast.AST):
     yield from _visit(ast.iter_child_nodes(tree))
 
 
-def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
+_MARKERS = {'TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'WARN', 'WARNING', 'NB'}
+
+
+def _collect_comments(source: str) -> dict:
+    """Tokenize source once and return {lineno: {text, position, marker}} for every comment."""
+    import tokenize, io
+    result = {}
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        for tok_type, tok_string, tok_start, _tok_end, tok_line in tokens:
+            if tok_type != tokenize.COMMENT:
+                continue
+            tok_lineno, tok_col = tok_start
+            text = tok_string.lstrip('#').strip()
+            if not text:
+                continue
+            # position: block if nothing but whitespace precedes '#' on the line
+            position = 'inline' if tok_line[:tok_col].strip() else 'block'
+            marker = None
+            upper = text.upper()
+            for m in _MARKERS:
+                if upper.startswith(m) and (len(upper) == len(m) or upper[len(m)] in ': \t'):
+                    marker = m
+                    break
+            result[tok_lineno] = {'text': text, 'position': position, 'marker': marker}
+    except tokenize.TokenError:
+        pass
+    return result
+
+
+def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> List[FunctionRepresentation]:
     results: List[FunctionRepresentation]= []
 
     for node in _iter_top_level_functions(tree):
@@ -181,6 +211,17 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                     decorators.append(ast.unparse(dec))
                 except Exception:
                     pass
+
+            inline_notes: list = []
+            if comment_map is not None:
+                end = getattr(node, 'end_lineno', node.lineno)
+                # body starts on line after the def, so skip node.lineno itself
+                inline_notes = [
+                    comment_map[ln]
+                    for ln in range(node.lineno + 1, end + 1)
+                    if ln in comment_map
+                ]
+
             results.append(
                 FunctionRepresentation(
                     name=node.name,
@@ -191,6 +232,7 @@ def _extract_functions(tree: ast.AST) -> List[FunctionRepresentation]:
                     docstring=docstring,
                     is_stub=_is_stub(node) or stub_by_doc,
                     decorators=decorators,
+                    inline_notes=inline_notes,
                 )
             )
 
@@ -776,7 +818,7 @@ def parse_ast(
         print("  error:", repr(e))
         return None
 
-    functions = _extract_functions(tree)
+    functions = _extract_functions(tree, comment_map=_collect_comments(source))
     classes = _extract_classes(tree)
     imports, alias_map = _extract_imports(tree)
     class_attrs = _extract_class_attributes(tree)

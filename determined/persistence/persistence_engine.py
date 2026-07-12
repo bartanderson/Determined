@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from determined.shared.types import FileAnalysis
 from determined.core.pathing import normalize_file_path
@@ -416,6 +417,11 @@ def persist_file_analysis(
         "DELETE FROM functions WHERE file_path = ?",
         (analysis.file_path,),
     )
+    # Clear stale inline notes for this file before reinserting
+    cursor.execute(
+        "DELETE FROM knowledge_artifacts WHERE kind='inline_note' AND content LIKE ?",
+        (f"[{analysis.file_path}]%",),
+    )
 
     for function in analysis.functions:
         cursor.execute("""
@@ -465,6 +471,17 @@ def persist_file_analysis(
             function.line_number,
             function.return_type or "",
         )
+
+        # Persist inline body comments as knowledge artifacts
+        for note in getattr(function, 'inline_notes', []):
+            created_at = datetime.now(timezone.utc).isoformat()
+            content = f"[{analysis.file_path}] {json.dumps(note)}"
+            cursor.execute(
+                "INSERT INTO knowledge_artifacts "
+                "(subject, kind, content, provenance, created_at, file_hash, needs_review, corpus) "
+                "VALUES (?, 'inline_note', ?, 'human-confirmed', ?, NULL, 0, NULL)",
+                (function.name, content, created_at),
+            )
 
     # -------------------------
     # CLASSES

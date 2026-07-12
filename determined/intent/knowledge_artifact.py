@@ -42,6 +42,10 @@ VALID_KINDS = {
     "reconciliation_finding",
     # callee co-occurrence pattern: content is JSON {callee_a, callee_b, caller_count, callers_sample}
     "primitive_gap",
+    # inline body comments extracted from function source; subject=function_name
+    "inline_note",
+    # LLM-inferred param types, return type, behavioral contract for unannotated functions
+    "inferred_annotation",
 }
 
 VALID_PROVENANCES = {
