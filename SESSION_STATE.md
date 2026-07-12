@@ -1,5 +1,5 @@
-Written at commit: 4aa4412
-# SESSION STATE - session 153 handoff
+Written at commit: d32aaf9
+# SESSION STATE - session 153 handoff (updated: RM46 + RM47 both done)
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
@@ -8,28 +8,36 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 ### Commits this session [V]
 
-- `4aa4412` RM46: scaffold_from_pattern -- find structural siblings and emit fill-in-the-blanks scaffold
+- `4aa4412` RM46: scaffold_from_pattern
+- `ae1a8c4` TRACKER: mark RM46 DONE
+- `d32aaf9` RM47: readiness_check
 
 ### Changes made [V]
 
 **RM46 done [V]**
 - `determined/agent/stub_projector.py`: `_extract_structural_skeleton(source, fn_name) -> dict`
-  before `_get_source_lines`. AST walk of a single function: extracts first_stmt_type
-  (if_guard/assignment/call/try_block/immediate_return/...), return_shape (dict/list/tuple/
-  scalar/expr/none or slash-joined set), error_handling (try_except/raise/none), has_guard (bool).
-  Graceful on SyntaxError or fn_name not found (all fields return 'unknown').
-- `determined/agent/agent_tools.py`: `scaffold_from_pattern(assessor, args)` after `project_stub`.
-  Step 1: module-family siblings (same file matching return_type, then same dir). Step 2: embedding
-  similarity at threshold 0.50 on "{name}: {docstring}" using _get_embed_model(), gracefully
-  skipped if embedding unavailable. Step 3: canonical vs variation-point synthesis per axis,
-  fill-in-the-blanks Python template pre-filled with majority structural choices.
-  Output sections: STRUCTURAL SIBLINGS / STRUCTURAL ANALYSIS / SCAFFOLD TEMPLATE / REFERENCE IMPLEMENTATIONS.
-- `determined/agent/tool_registry.py`: scaffold_from_pattern entry, category='frontier',
-  feeds=['project_stub', 'completion_contract'].
-- `tests/regression/test_scaffold_from_pattern.py`: 16 tests (6 pure AST skeleton, 10 DB integration).
-- `tests/regression/test_agent_tools.py`: scaffold_from_pattern added to TOOLS set.
+  AST analysis: first_stmt_type, return_shape, error_handling, has_guard.
+- `determined/agent/agent_tools.py`: `scaffold_from_pattern(assessor, args)` after project_stub.
+  Module-family siblings (same file/dir, matching return_type) + embedding similarity at 0.50
+  (gracefully skipped if unavailable). Canonical/variation-point synthesis. Fill-in-the-blanks template.
+- `determined/agent/tool_registry.py`: entry, category='frontier'.
+- `tests/regression/test_scaffold_from_pattern.py`: 16 tests (6 AST, 10 integration).
 
-**Tests [V]:** 629 passed, 1 skipped (full suite run this session).
+**RM47 done [V]**
+- `determined/agent/agent_tools.py`: `readiness_check(assessor, args)` after completion_contract.
+  5 tiers, all DB queries, no LLM:
+    T1: symbol exists and is incomplete (stub or ABC gap)
+    T2: stub callees (must be built first)
+    T3: unknown type annotations (type not in functions or classes table)
+    T4: design constraint flags >= 0.4 (opt-in: include_design_check=true, off by default)
+    T5: cycle in stub dependency graph (BFS over stubs only)
+  READY output: resolved types, available callees, next-step hint.
+  BLOCKED output: numbered issues, implementation_order tip if stub callees found.
+- `determined/agent/tool_registry.py`: entry, category='frontier'.
+- `tests/regression/test_readiness_check.py`: 14 tests.
+- `tests/regression/test_agent_tools.py`: both tools added to TOOLS set.
+
+**Tests [V]:** 643 passed, 1 skipped (full suite run this session).
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -43,11 +51,11 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 | ORD | Implementation ordering | DONE (RM44) |
 | CTR | Completion contract | DONE (RM45) |
 | SFP | Scaffold from pattern | DONE (RM46) |
+| RDY | Readiness gate | DONE (RM47) |
 | DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
 | LNS | Canned reasoning lenses | OPEN (RM43) |
-| RDY | Readiness gate | OPEN (RM47) |
 | DGP | Design-to-code delta | OPEN (RM48) |
 
 ## Known issues (carried forward)
@@ -56,44 +64,38 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 **find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
 
-**GUIDE_DATA sync trap [V]:** guide_commonplace.json and console.html GUIDE_DATA are
-separate stores -- both must be updated together.
+**GUIDE_DATA sync trap [V]:** guide_commonplace.json and console.html GUIDE_DATA separate.
 
 **Determined corpus DB path [V]:** C_Users_bartl_dev_Determined.db
 
-**RM40 opt-in trap [V]:** resolved_only defaults False. RM47 must explicitly pass
-resolved_only=True or it silently uses the polluted graph.
-Note: implementation_order tries resolved=1 edges first, falls back gracefully.
+**RM40 opt-in trap [V]:** resolved_only defaults False. readiness_check T2 uses
+_list_callees_raw which does NOT filter to resolved_only -- may surface unresolved
+edges as stub callees. Acceptable for the gate use case but worth noting.
 
 **RM43 empty-board trap [V]:** Lenses produce nothing on an empty clue board.
 
-**pyan3 post-RM40 delta not yet measured [?]:** Re-run after annotation passes land.
+**scaffold_from_pattern embedding path [V]:** Silently skipped if embedding unavailable.
+Module-family siblings still returned. Tests don't cover embedding path.
 
-**inline_note content prefix is normalized path [V]:** Tests use suffix match.
-
-**run_annotation_pass no propagation [V]:** Caller re-queuing not implemented.
-Driver processes static queue built at start only. Correct for single-pass use.
-
-**completion_contract design constraints block [V]:** Silently skipped if embedding
-unavailable (except block). Tests don't cover this path (requires embedding setup).
-
-**scaffold_from_pattern embedding path [V]:** Embedding sibling search silently skipped
-if embedding unavailable. Module-family siblings still returned. Tests don't cover
-embedding path (no embedding model in test environment).
+**readiness_check T4 off by default [V]:** include_design_check=true required to enable
+design constraint tier. Embedding-based, can be slow.
 
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **RM47 (0.5 day) -- next code item:**
-   `readiness_check(symbol)` -- pure DB gate: READY or BLOCKED with blocker list.
-   No LLM. Checks: symbol exists + is stub, callees are ready (no stub callees),
-   param types annotated, behavioral contract exists. See TRACKER.md RM47 spec.
+1. **RM48 (1 day) -- design-to-code delta:**
+   `design_gaps(scope?)` -- which architectural requirements have no detectable
+   implementation? Reads `kind='design_note'` artifacts, matches against corpus
+   via embedding similarity (Level A), file path (Level B), import graph (Level C).
+   **Step 0 first (no code):** ingest dj2 design docs via `ingest_design_docs`, then
+   run `SELECT content FROM knowledge_artifacts WHERE kind='design_note' LIMIT 5`
+   to confirm how 'requirement' kind is stored. See TRACKER.md RM48 spec for details.
 
-2. **Manual integration test (RM46 validation):**
-   With llama-server on port 8081 and dj2 corpus loaded, run `scaffold_from_pattern`
-   on a real stub (e.g. process()) to verify module-family + embedding paths fire.
+2. **Manual integration test:** With dj2 corpus loaded, run the full frontier workflow:
+   implementation_order -> readiness_check -> completion_contract -> scaffold_from_pattern
+   on a real stub to validate the end-to-end arc.
 
-3. **RM48** after RM47.
+3. **RM39 / RM41 / RM42 / RM43** -- defer unless Bart explicitly wants them.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.

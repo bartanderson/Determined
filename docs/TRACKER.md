@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 153):** RM46 done. scaffold_from_pattern: module-family + embedding-similarity sibling search (threshold 0.50), _extract_structural_skeleton (AST: first_stmt_type/return_shape/error_handling/has_guard), canonical vs variation-point synthesis, fill-in-the-blanks template. 16 tests. 629 passed, 1 skipped.
+**Last session (2026-07-12, session 153+):** RM46 + RM47 done. scaffold_from_pattern: module-family + embedding siblings, AST skeleton extraction, canonical/variation-point synthesis, fill-in-the-blanks template, 16 tests. readiness_check: 5-tier pure-DB gate (stub callees, unknown types, design flags opt-in, cycle detection), READY/BLOCKED output with next-step hints, 14 tests. 643 passed, 1 skipped.
+
+**Session 153 (2026-07-12):** RM46 done. scaffold_from_pattern: module-family + embedding-similarity sibling search (threshold 0.50), _extract_structural_skeleton (AST: first_stmt_type/return_shape/error_handling/has_guard), canonical vs variation-point synthesis, fill-in-the-blanks template. 16 tests. 629 passed, 1 skipped.
 
 **Session 152 (2026-07-12):** RM44 + RM45 done. implementation_order: Kahn's BFS topo sort, wave plan, cycle detection, scope filter, 12 tests. completion_contract: one-call impl brief (signature, callers, callees split impl/stub, behavioral contracts w/ docstring fallback, design constraints, optional LLM gate), 11 tests. 613 passed, 1 skipped.
 
@@ -176,98 +178,6 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM47. **[OPEN] Readiness gate: "is this safe to start implementing?"**
-
-   **The gap:** Before starting an implementation, a developer needs to know whether the
-   thing they are about to build has everything it depends on already in place. If upstream
-   dependencies are also stubs, or if the types the function receives are not yet defined,
-   implementing it now means implementing against a moving target. There is no tool that
-   answers "is X ready to implement?" with a clear yes/no and a list of blockers.
-
-   **The concept:** A `readiness_check(symbol)` tool that runs a fast, deterministic
-   gate check and returns either `READY` or `BLOCKED` with a specific list of what must
-   be resolved first. No LLM. Pure DB queries.
-
-   **Checks to run (in order; stop and report at first blocker tier):**
-
-   Tier 1 -- Symbol exists and is actually incomplete:
-   - Query `functions WHERE name = symbol`. If not found: NOT FOUND.
-   - If `is_stub = 0` AND no ABC gap: ALREADY COMPLETE (not a blocker, just informational).
-
-   Tier 2 -- Callees this function will need are ready:
-   - Query `graph_edges WHERE caller = symbol` to get callees.
-   - For each callee, check `functions.is_stub`. If any callee is also a stub: BLOCKED,
-     list the stub callees.
-   - Exception: if a callee is in the "standard library / external" set (no file_path
-     in the corpus, or file_path outside project root), skip it -- only project-internal
-     stubs are blockers.
-
-   Tier 3 -- Parameter types are resolvable:
-   - Parse `param_types_json` for the symbol.
-   - For each type annotation, check whether a class or function by that name exists
-     in the corpus (`SELECT name FROM functions UNION SELECT name FROM classes WHERE name = ?`).
-   - If a type is annotated but not found in the corpus, report it as an UNKNOWN TYPE
-     (possible external dep, possible not-yet-implemented class).
-
-   Tier 4 -- No open design constraints that block implementation:
-   - Run `_check_design_violations_core(conn, symbol, file_path)` (agent_tools.py:758).
-   - If any violation has confidence >= 0.4 (the threshold used by `check_design_violations`),
-     surface it as a DESIGN BLOCKER. These are not hard blockers (the developer may
-     disagree) but they should be seen before starting.
-
-   Tier 5 -- Dependencies not in a cycle with this symbol:
-   - Run a lightweight cycle check: BFS from this symbol over the "incomplete stubs only"
-     subgraph (same data as RM44). If the symbol appears in its own BFS reachability
-     set, report CYCLE with the path.
-
-   **Output shapes:**
-   ```
-   READY: process  (adjudication_engine.py:42)
-   All dependencies resolved. Implementation can start.
-   Types: PlayerAction (found), DungeonStateNeo (found)
-   Callees: _validate_action (complete), _compute_effects (complete)
-   ```
-   ```
-   BLOCKED: handle_move  (world_app.py:88)
-   1. STUB CALLEE: validate_move (movement.py:34) -- implement first (see RM44)
-   2. UNKNOWN TYPE: MoveResult -- not found in corpus (external or not yet defined)
-   3. DESIGN NOTE: SOTS XI score 0.42 -- handle_move may be mixing decide and execute
-   ```
-
-   **What already exists to build on:**
-   - `functions.is_stub`, `functions.param_types_json`, `functions.return_type` --
-     all already in the DB
-   - `_list_callees_raw(oracle, symbol)` at agent_tools.py:426 -- returns callees
-   - `_check_design_violations_core(conn, symbol, file_path)` at agent_tools.py:758
-   - `_get_abc_gap_set(conn)` at agent_tools.py:1283 for ABC gap membership check
-   - BFS subgraph for cycle detection: use `bfs_callees(oracle, symbol, max_depth=10)`
-     from graph_utils.py:140 on the incomplete-stubs-only subgraph
-
-   **Entry points for implementation:**
-   - New function `readiness_check(oracle_or_assessor, args)` in
-     `determined/agent/agent_tools.py`. Needs assessor for design violation check.
-     Place after `completion_contract` (RM45).
-   - Wire into `TOOLS` dict and `tool_registry.py` with category `"frontier"`.
-   - New regression test: `tests/regression/test_readiness_check.py`. Test cases:
-     - Symbol with no stub callees → READY
-     - Symbol with at least one stub callee → BLOCKED (lists it)
-     - Symbol with an unknown type annotation → surfaces UNKNOWN TYPE
-     - Complete symbol (is_stub=0) → ALREADY COMPLETE message
-
-   **SOTS tensions:**
-   - I (locality): the readiness gate is currently in the developer's head. Moving it
-     into the tool means a developer never starts implementing into a broken dependency
-     chain because they forgot to check.
-   - XI (separate decide from do): the tool checks and reports; it does not prevent
-     the developer from proceeding. BLOCKED is advisory, not a lock.
-   - XXI (don't over-engineer): five tier checks, all DB queries, no LLM. The design
-     violation check (Tier 4) is the most expensive (cosine search) and could be made
-     opt-in via `include_design_check=True` if it proves too slow for routine use.
-
-   **Estimated effort:** 0.5 days. All checks are existing queries assembled in a new
-   order with a new output formatter.
-
----
 
 RM48. **[OPEN] Design-to-code delta: surface what the design says should exist that the code does not yet implement**
 
