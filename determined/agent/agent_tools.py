@@ -1164,6 +1164,150 @@ def data_flow_edges(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def trace_http_chain(assessor: "Assessor", args: dict) -> str:
+    """
+    trace_http_chain(url) - show the full browser-to-business-logic chain for a URL.
+
+    Matches the URL against Flask route handlers (http_fetch and decorator edges),
+    then shows:
+      - HTMX elements and JS functions that call this route (http_fetch edges)
+      - DOM elements that trigger those JS functions (js_event_binding edges)
+      - Downstream callees of the Flask handler (static edges, depth=2)
+
+    url: URL pattern to look up (e.g. '/api/party/create', '/character/<id>/basic')
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    url = args.get("url", "").strip()
+    if not url:
+        return "trace_http_chain requires a url argument."
+
+    from determined.ingestion.dynamic_edges import _normalize_url, _url_matches
+
+    # Find Flask handler(s) for this URL via http_fetch or decorator edges
+    # whose callee matches the URL after normalization
+    norm_url = _normalize_url(url)
+
+    # Look up handler by matching source_id or callee name against known routes
+    # Strategy: find all http_fetch edges, then check if any callee matches a route
+    # that matches the requested URL. Also check decorator edges.
+    all_route_edges = conn.execute(
+        "SELECT source_id, target_id, edge_type FROM graph_edges "
+        "WHERE edge_type IN ('http_fetch', 'decorator', 'js_event_binding')"
+    ).fetchall()
+
+    # Build route_map from decorator edges: callee is the handler
+    # We need to match url -> handler. Use the functions table to find handlers
+    # whose decorator includes the URL. Simpler: query the DB for all Flask routes
+    # stored as decorator edges, then match.
+    # Actually we match via the tool: find http_fetch edges whose target is the handler,
+    # then work backwards. But we don't store the URL in the edge.
+    # Correct approach: re-derive from the corpus using extract_flask_route_map.
+    # For query purposes, find handlers by looking at which functions have decorator
+    # edges from __http_client__, then match the URL by querying functions.decorators_json.
+
+    # Simpler and correct: find all http_fetch target_ids (handler names), then
+    # check which ones plausibly match the URL by looking at their decorator_json.
+    import json as _json
+
+    # Get all Flask handlers (functions with @app.route decorator)
+    handler_rows = conn.execute(
+        "SELECT name, decorators_json FROM functions WHERE decorators_json IS NOT NULL"
+    ).fetchall()
+
+    matched_handlers: list[str] = []
+    for row in handler_rows:
+        try:
+            decs = _json.loads(row[0 if isinstance(row, (list, tuple)) and len(row) == 1 else 1] or "[]")
+        except Exception:
+            continue
+        for dec in (decs if isinstance(decs, list) else []):
+            dec_str = dec if isinstance(dec, str) else str(dec)
+            if 'route' in dec_str:
+                # Extract URL from decorator string e.g. "@app.route('/api/foo')"
+                import re as _re
+                url_match = _re.search(r'["\']([^"\']+)["\']', dec_str)
+                if url_match:
+                    route_url = url_match.group(1)
+                    if _url_matches(url, route_url):
+                        name_col = row[0] if not isinstance(row[0], int) else None
+                        if name_col:
+                            matched_handlers.append(name_col)
+
+    # Fallback: search by callee name containing url fragments
+    if not matched_handlers:
+        # Try direct name match on http_fetch targets
+        fetch_targets = {r[1] for r in all_route_edges if r[2] == 'http_fetch'}
+        matched_handlers = list(fetch_targets)
+
+    lines = [f"HTTP chain for: {url}", ""]
+
+    if not matched_handlers:
+        lines.append("No Flask handler found for this URL.")
+        lines.append("(Tip: re-ingest the corpus after RM38 to populate http_fetch edges)")
+        return "\n".join(lines)
+
+    for handler in matched_handlers:
+        lines.append(f"Flask handler: {handler}")
+        lines.append("")
+
+        # Who calls this handler from the browser?
+        callers = conn.execute(
+            "SELECT source_id, edge_type FROM graph_edges "
+            "WHERE target_id = ? AND edge_type IN ('http_fetch', 'decorator')",
+            (handler,),
+        ).fetchall()
+
+        htmx_callers = [r[0] for r in callers if r[1] == 'http_fetch' and r[0] == '__htmx__']
+        js_fn_callers = [r[0] for r in callers if r[1] == 'http_fetch' and r[0] not in ('__htmx__', '__http_client__')]
+
+        if htmx_callers:
+            lines.append(f"  HTMX: {len(htmx_callers)} HTMX element(s) call this route directly")
+
+        if js_fn_callers:
+            lines.append(f"  JS fetch from: {', '.join(js_fn_callers)}")
+            # For each JS function, find what DOM element triggers it
+            for js_fn in js_fn_callers:
+                dom_callers = conn.execute(
+                    "SELECT source_id FROM graph_edges "
+                    "WHERE target_id = ? AND edge_type = 'js_event_binding'",
+                    (js_fn,),
+                ).fetchall()
+                if dom_callers:
+                    triggers = ', '.join(r[0] for r in dom_callers)
+                    lines.append(f"    triggered by: {triggers}")
+
+        if not callers:
+            lines.append("  (No browser callers detected -- re-ingest to populate http_fetch edges)")
+
+        lines.append("")
+
+        # Downstream: what does the Flask handler call? (depth 2)
+        lines.append("  Downstream calls:")
+        direct = conn.execute(
+            "SELECT DISTINCT callee FROM graph_edges "
+            "WHERE caller = ? AND edge_type = 'static' LIMIT 10",
+            (handler,),
+        ).fetchall()
+        if direct:
+            for (callee,) in direct:
+                lines.append(f"    -> {callee}")
+                # One more level
+                deeper = conn.execute(
+                    "SELECT DISTINCT callee FROM graph_edges "
+                    "WHERE caller = ? AND edge_type = 'static' LIMIT 5",
+                    (callee,),
+                ).fetchall()
+                for (d,) in deeper:
+                    lines.append(f"       -> {d}")
+        else:
+            lines.append("    (none found)")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def risk_profile(assessor: "Assessor", args: dict):
     """
     risk_profile(symbol) - structural change-risk rating for a symbol.
@@ -6570,6 +6714,8 @@ TOOLS = {
     "design_gaps":             (design_gaps,             "assessor"),
     # Data flow edges (return-value argument tracking)
     "data_flow_edges":         (data_flow_edges,         "assessor"),
+    # HTTP/HTMX chain tracing
+    "trace_http_chain":        (trace_http_chain,        "assessor"),
     # Project-wide synthesis
     "project_status":          (project_status,          "assessor"),
     # Incremental re-ingest

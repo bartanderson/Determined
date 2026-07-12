@@ -289,6 +289,18 @@ REGISTRY: dict[str, dict] = {
         "category": "knowledge",
     },
 
+    # ── HTTP/HTMX CHAIN ────────────────────────────────────────────
+    "trace_http_chain": {
+        "purpose": "Show the full browser-to-business-logic chain for a URL: HTMX elements and JS functions that call it, DOM controls that trigger those JS functions, and downstream Flask handler callees.",
+        "args": {
+            "url": "URL pattern to trace (e.g. '/api/party/create', '/character/<id>/basic')",
+        },
+        "output": "DOM element -> JS function -> Flask handler -> downstream calls",
+        "feeds": ["bfs_callees", "bfs_callers", "data_flow_edges"],
+        "use_when": "After re-ingesting the corpus post-RM38. Use to trace a UI interaction all the way through to business logic.",
+        "category": "graph",
+    },
+
     # ── DATA FLOW ──────────────────────────────────────────────────
     "data_flow_edges": {
         "purpose": "Show data_flow edges for a symbol: which functions consume its return value as an argument (out), or which functions it consumes return values from (in).",

@@ -5,17 +5,20 @@ All functions return (caller, callee, edge_type) triples.
 Callers that live outside the Python AST use synthetic source symbols:
   __js_client__   - JavaScript browser caller (socket.emit)
   __http_client__ - HTTP caller (@app.route)
+  __htmx__        - HTMX attribute on an HTML element (hx-get/hx-post)
   __abc_base__    - abstract base class polymorphic dispatch
   __annotation__  - manually declared in virtual_edges.json
 
 edge_type values:
-  'static'        - normal AST call (handled by parse_ast.py)
-  'dynamic'       - dict-of-callables dispatch (TOOLS, TASK_PATTERNS, etc.)
-  'thread'        - threading.Thread(target=fn) implicit call
-  'decorator'     - @framework.on/route registration (socketio, Flask)
-  'cross_language'- JS browser → Python socket handler
-  'polymorphic'   - ABC base → concrete subclass (manual or Item-20 derived)
-  'annotation'    - manually declared in virtual_edges.json
+  'static'          - normal AST call (handled by parse_ast.py)
+  'dynamic'         - dict-of-callables dispatch (TOOLS, TASK_PATTERNS, etc.)
+  'thread'          - threading.Thread(target=fn) implicit call
+  'decorator'       - @framework.on/route registration (socketio, Flask)
+  'cross_language'  - JS browser → Python socket handler
+  'polymorphic'     - ABC base → concrete subclass (manual or Item-20 derived)
+  'annotation'      - manually declared in virtual_edges.json
+  'js_event_binding'- DOM element → JS function (onclick / addEventListener)
+  'http_fetch'      - JS fetch() or HTMX hx-get/hx-post → Flask route handler
 """
 from __future__ import annotations
 
@@ -211,6 +214,183 @@ def extract_socketio_handler_map(source: str) -> dict[str, str]:
                 handlers[dec.args[0].value] = node.name
 
     return handlers
+
+
+# ---------------------------------------------------------------------------
+# RM38 — HTTP/HTMX → Flask route chain
+#
+# Three extractors + one normalizer:
+#   extract_flask_route_map(py_src)           -> {pattern: handler_fn}
+#   extract_htmx_edges(html_src, route_map)   -> [(caller, handler, 'http_fetch')]
+#   extract_js_event_bindings(html_src)        -> [(element_id, js_fn, 'js_event_binding')]
+#   extract_fetch_edges(js_src, route_map)     -> [(js_fn, handler, 'http_fetch')]
+#
+# URL normalization: Jinja2 {{var}} and Flask <type:var> both become the same
+# wildcard so "/character/{{ id }}/basic" matches "/character/<int:id>/basic".
+# ---------------------------------------------------------------------------
+
+_JINJA_VAR_RE = re.compile(r'\{\{[^}]+\}\}')
+_FLASK_PARAM_RE = re.compile(r'<(?:[^:>]+:)?([^>]+)>')
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize a URL to a matchable pattern.
+
+    Replaces Jinja2 {{ var }} and Flask <type:var> / <var> with '*'.
+    Strips trailing slashes and query strings.
+    """
+    url = url.split('?')[0].rstrip('/')
+    url = _JINJA_VAR_RE.sub('*', url)
+    url = _FLASK_PARAM_RE.sub('*', url)
+    return url
+
+
+def _url_matches(client_url: str, flask_pattern: str) -> bool:
+    """Return True if a client URL (possibly with Jinja vars) matches a Flask route pattern."""
+    norm_client = _normalize_url(client_url)
+    norm_flask = _normalize_url(flask_pattern)
+    if norm_client == norm_flask:
+        return True
+    # Segment-by-segment wildcard match
+    c_parts = norm_client.split('/')
+    f_parts = norm_flask.split('/')
+    if len(c_parts) != len(f_parts):
+        return False
+    return all(f == '*' or c == '*' or c == f for c, f in zip(c_parts, f_parts))
+
+
+def extract_flask_route_map(source: str) -> dict[str, str]:
+    """
+    Parse Python source and return {url_pattern: handler_fn_name} for every
+    @app.route("/path") or @blueprint.route("/path") decorated function.
+    Patterns are stored as-is (with Flask <type:var> syntax); normalization
+    happens at match time via _url_matches().
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
+
+    routes: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not isinstance(dec, ast.Call):
+                continue
+            func = dec.func
+            if not (isinstance(func, ast.Attribute) and func.attr == 'route'):
+                continue
+            if dec.args and isinstance(dec.args[0], ast.Constant):
+                routes[dec.args[0].value] = node.name
+    return routes
+
+
+def _match_route(url: str, route_map: dict[str, str]) -> str | None:
+    """Return the handler function name for url, or None if no match."""
+    for pattern, handler in route_map.items():
+        if _url_matches(url, pattern):
+            return handler
+    return None
+
+
+# HTMX attribute patterns: hx-get="url" hx-post="url"
+_HTMX_RE = re.compile(
+    r'hx-(?:get|post|put|patch|delete)\s*=\s*["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+# HTML element id preceding an HTMX attribute (best-effort: id="name" ... hx-*)
+_ELEM_ID_RE = re.compile(r'id\s*=\s*["\']([^"\']+)["\']')
+
+
+def extract_htmx_edges(
+    html_src: str,
+    route_map: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    """
+    Scan HTML for hx-get/hx-post/hx-put/hx-patch/hx-delete attributes.
+    Match each URL to a Flask handler via route_map.
+    Caller is '__htmx__' (no JS function intermediary for HTMX).
+    Returns (__htmx__, handler_fn, 'http_fetch') triples.
+    """
+    edges: list[tuple[str, str, str]] = []
+    for m in _HTMX_RE.finditer(html_src):
+        url = m.group(1)
+        handler = _match_route(url, route_map)
+        if handler:
+            edges.append(('__htmx__', handler, 'http_fetch'))
+    return list(dict.fromkeys(edges))
+
+
+# onclick="fn()" or onclick='fn(args)'
+_ONCLICK_RE = re.compile(r'onclick\s*=\s*["\'](\w+)\s*\(', re.IGNORECASE)
+# onsubmit="fn()" etc.
+_ONSUBMIT_RE = re.compile(r'on\w+\s*=\s*["\'](\w+)\s*\(', re.IGNORECASE)
+
+
+def extract_js_event_bindings(html_src: str) -> list[tuple[str, str, str]]:
+    """
+    Scan HTML for inline event handlers: onclick="fn()", onsubmit="fn()", etc.
+    Returns (element_ref, js_fn_name, 'js_event_binding') triples.
+    element_ref is the element's id if detectable, otherwise '__html_element__'.
+
+    Note: addEventListener() bindings in .js files are NOT captured here
+    because they require correlating a selector string to an element at runtime.
+    Inline handlers are static and always capturable.
+    """
+    edges: list[tuple[str, str, str]] = []
+    # Split into rough tag blocks and look for id + on* handler together
+    # Simple approach: find all on* handlers; use nearby id= as caller if present
+    for m in _ONSUBMIT_RE.finditer(html_src):
+        fn_name = m.group(1)
+        # Look back up to 300 chars for an id= attribute
+        start = max(0, m.start() - 300)
+        preceding = html_src[start:m.start()]
+        id_match = list(_ELEM_ID_RE.finditer(preceding))
+        caller = id_match[-1].group(1) if id_match else '__html_element__'
+        edges.append((caller, fn_name, 'js_event_binding'))
+    return list(dict.fromkeys(edges))
+
+
+# fetch('/url', ...) or fetch("/url", ...) or fetch(withSession('/url'), ...)
+_FETCH_URL_RE = re.compile(
+    r'\bfetch\s*\(\s*(?:\w+\s*\(\s*)?["\']([^"\']+)["\']',
+)
+# JS function declaration: function fnName( or async function fnName(
+_JS_FN_RE = re.compile(r'(?:async\s+)?function\s+(\w+)\s*\(')
+
+
+def extract_fetch_edges(
+    js_src: str,
+    route_map: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    """
+    Scan JS source for fetch('/url') calls inside named functions.
+    Match URL to Flask handler via route_map.
+    Returns (js_fn_name, handler_fn, 'http_fetch') triples.
+    Caller is the enclosing JS function name, or '__js_fetch__' if at module level.
+    """
+    edges: list[tuple[str, str, str]] = []
+
+    # Build list of (fn_name, start_pos) sorted by position
+    fn_positions = [(m.group(1), m.start()) for m in _JS_FN_RE.finditer(js_src)]
+
+    def _enclosing_fn(pos: int) -> str:
+        """Return the name of the JS function that contains pos."""
+        caller = '__js_fetch__'
+        for fn_name, fn_start in fn_positions:
+            if fn_start <= pos:
+                caller = fn_name
+        return caller
+
+    for m in _FETCH_URL_RE.finditer(js_src):
+        url = m.group(1)
+        handler = _match_route(url, route_map)
+        if handler:
+            caller = _enclosing_fn(m.start())
+            edges.append((caller, handler, 'http_fetch'))
+
+    return list(dict.fromkeys(edges))
 
 
 # ---------------------------------------------------------------------------

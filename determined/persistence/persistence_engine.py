@@ -761,15 +761,20 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
     """
     Inject virtual edges that cross boundaries static AST can't see:
       - Gap 7: JS socket.emit → Python @socketio.on handler (cross_language)
+      - RM38: DOM element → JS fn (js_event_binding), fetch/HTMX → Flask handler (http_fetch)
       - Gap 8+: manually declared edges from virtual_edges.json (annotation/polymorphic)
 
     These are stored in graph_edges with synthetic source symbols
-    (__js_client__, __http_client__, __abc_base__, __annotation__) so they're
+    (__js_client__, __http_client__, __htmx__, __abc_base__, __annotation__) so they're
     traversable and queryable alongside static edges.
     """
     from determined.ingestion.dynamic_edges import (
         extract_socketio_handler_map,
         extract_cross_language_edges,
+        extract_flask_route_map,
+        extract_htmx_edges,
+        extract_js_event_bindings,
+        extract_fetch_edges,
         load_virtual_edge_annotations,
     )
     from determined.identity.symbol_identity import normalize_symbol, all_name_forms
@@ -821,6 +826,35 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
         cursor.execute("DELETE FROM graph_edges WHERE edge_type = 'cross_language'")
         for html_src in html_sources:
             for src, tgt, etype in extract_cross_language_edges(html_src, py_handler_map):
+                _insert_virtual(src, tgt, etype)
+
+    # --- RM38: HTTP/HTMX → Flask route chain ---
+    # Build Flask route map from all Python files, then scan HTML/JS for fetch and HTMX
+    flask_route_map: dict[str, str] = {}
+    html_srcs: list[str] = []
+    js_srcs: list[str] = []
+
+    for analysis in (file_analyses or []):
+        fp = getattr(analysis, 'file_path', '') or ''
+        src = getattr(analysis, 'source_text', None) or None
+        if src is None:
+            continue
+        if fp.endswith('.py'):
+            flask_route_map.update(extract_flask_route_map(src))
+        elif fp.endswith('.html'):
+            html_srcs.append(src)
+        elif fp.endswith('.js'):
+            js_srcs.append(src)
+
+    if flask_route_map and (html_srcs or js_srcs):
+        cursor.execute("DELETE FROM graph_edges WHERE edge_type IN ('http_fetch', 'js_event_binding')")
+        for html_src in html_srcs:
+            for src, tgt, etype in extract_htmx_edges(html_src, flask_route_map):
+                _insert_virtual(src, tgt, etype)
+            for src, tgt, etype in extract_js_event_bindings(html_src):
+                _insert_virtual(src, tgt, etype)
+        for js_src in js_srcs:
+            for src, tgt, etype in extract_fetch_edges(js_src, flask_route_map):
                 _insert_virtual(src, tgt, etype)
 
     # --- Gap 8: auto-generate polymorphic edges from ABC/subclass data ---

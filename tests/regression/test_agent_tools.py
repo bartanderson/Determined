@@ -507,6 +507,7 @@ def test_dispatch_all_tools_registered():
         "check_design_violations",
         "design_gaps",
         "data_flow_edges",
+        "trace_http_chain",
         "project_status",
         "reingest_file",
         "symbol_context",
