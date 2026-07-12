@@ -188,6 +188,85 @@ def test_subgraph_around_radius():
     assert "X" not in sg["nodes"]  # disconnected
 
 
+def _make_oracle_with_resolved(edges_resolved):
+    """Build oracle where each edge entry is (caller, callee, resolved: 0|1)."""
+    import sqlite3
+    from determined.identity.symbol_identity import normalize_symbol, all_name_forms
+
+    class _Oracle:
+        def __init__(self):
+            self.conn = sqlite3.connect(":memory:")
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute(
+                "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER, "
+                "source_id TEXT, target_id TEXT, caller_file TEXT, resolved INTEGER DEFAULT 0, "
+                "edge_type TEXT DEFAULT 'static')"
+            )
+            self.conn.execute(
+                "CREATE TABLE symbol_names (id INTEGER PRIMARY KEY, canonical_id TEXT, name TEXT, name_type TEXT)"
+            )
+            self.conn.execute(
+                "CREATE TABLE functions (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
+            )
+            self.conn.execute(
+                "CREATE TABLE classes (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
+            )
+            seen: set[tuple] = set()
+            for caller, callee, resolved in edges_resolved:
+                src_id = normalize_symbol(caller)
+                tgt_id = normalize_symbol(callee)
+                self.conn.execute(
+                    "INSERT INTO graph_edges (caller, callee, line_number, source_id, target_id, resolved) VALUES (?,?,0,?,?,?)",
+                    (caller, callee, src_id, tgt_id, resolved)
+                )
+                for name, ntype in all_name_forms(caller):
+                    if (src_id, name) not in seen:
+                        seen.add((src_id, name))
+                        self.conn.execute(
+                            "INSERT INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
+                            (src_id, name, ntype)
+                        )
+                for name, ntype in all_name_forms(callee):
+                    if (tgt_id, name) not in seen:
+                        seen.add((tgt_id, name))
+                        self.conn.execute(
+                            "INSERT INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
+                            (tgt_id, name, ntype)
+                        )
+            self.conn.commit()
+
+    return _Oracle()
+
+
+def test_bfs_callees_resolved_only_excludes_unresolved():
+    """resolved_only=True must not traverse edges with resolved=0."""
+    from determined.agent.graph_utils import bfs_callees
+    # handle_connect -> get (unresolved, stdlib collision) -> bestiary_get (project fn)
+    # handle_connect -> process (resolved, real project call)
+    oracle = _make_oracle_with_resolved([
+        ("handle_connect", "get", 0),
+        ("get", "bestiary_get", 0),
+        ("handle_connect", "process", 1),
+    ])
+    result = bfs_callees(oracle, "handle_connect", max_depth=3, resolved_only=True)
+    syms = [r["symbol"] for r in result]
+    assert "process" in syms, "resolved edge should be traversed"
+    assert "get" not in syms, "unresolved edge target should be excluded"
+    assert "bestiary_get" not in syms, "downstream of unresolved should not appear"
+
+
+def test_subgraph_around_resolved_only():
+    """resolved_only=True must restrict subgraph to resolved edges only."""
+    from determined.agent.graph_utils import subgraph_around
+    oracle = _make_oracle_with_resolved([
+        ("A", "B", 1),   # resolved
+        ("A", "C", 0),   # unresolved -- C should not appear
+    ])
+    sg = subgraph_around(oracle, "A", radius=1, resolved_only=True)
+    assert "B" in sg["nodes"]
+    assert "C" not in sg["nodes"]
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

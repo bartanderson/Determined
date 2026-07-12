@@ -468,13 +468,14 @@ def _graph_most_connected_raw(
     return most_connected(oracle, n=n, filter_substr=filter_str)
 
 
-def _graph_subgraph_raw(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
+def _graph_subgraph_raw(oracle: "DBOracle", symbol: str, radius: int = 2, resolved_only: bool = False) -> dict:
     """
     Nodes and edges within radius hops of symbol.
     Returns dict: nodes (set[str]), edges (list[tuple[str, str]]).
+    resolved_only=True filters to annotation-resolved edges only (reduced noise, lower coverage).
     """
     from determined.agent.graph_utils import subgraph_around
-    return subgraph_around(oracle, symbol, radius=radius)
+    return subgraph_around(oracle, symbol, radius=radius, resolved_only=resolved_only)
 
 
 def _auto_distill_and_store(conn, subject: str, content: str) -> None:

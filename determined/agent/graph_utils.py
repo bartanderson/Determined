@@ -142,6 +142,7 @@ def bfs_callees(
     root: str,
     max_depth: int = 4,
     max_nodes: int = 50,
+    resolved_only: bool = False,
 ) -> list[dict]:
     """
     BFS down the call graph from root.
@@ -159,13 +160,14 @@ def bfs_callees(
     queue: deque[tuple[str, int]] = deque([(root_id, 0)])
     results = []
 
+    res_filter = " AND resolved = 1" if resolved_only else ""
     if use_ids:
-        callers_q = "SELECT DISTINCT source_id FROM graph_edges WHERE target_id = ? AND source_id IN ({ph})"
-        callees_q = "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ?"
+        callers_q = "SELECT DISTINCT source_id FROM graph_edges WHERE target_id = ? AND source_id IN ({ph})" + res_filter
+        callees_q = "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ?" + res_filter
     else:
         # Compatibility: test fixtures that predate source_id/target_id columns.
-        callers_q = "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? AND caller IN ({ph})"
-        callees_q = "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?"
+        callers_q = "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? AND caller IN ({ph})" + res_filter
+        callees_q = "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?" + res_filter
 
     while queue and len(results) < max_nodes:
         node, depth = queue.popleft()
@@ -337,7 +339,7 @@ def find_clusters(oracle: "DBOracle", min_edges: int = 2) -> list[dict]:
 # Subgraph around a symbol (for visualization)
 # ------------------------------------------------------------------
 
-def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
+def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2, resolved_only: bool = False) -> dict:
     """
     Pull all nodes and edges within `radius` hops of `symbol` in either direction.
     Returns {nodes: [str], edges: [(source_id, target_id)],
@@ -354,14 +356,16 @@ def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2) -> dict:
     visited: set[str] = {root_id}
     frontier = {root_id}
 
+    res_filter = " AND resolved = 1" if resolved_only else ""
+    res_where  = " WHERE resolved = 1" if resolved_only else ""
     if use_ids:
-        out_q  = "SELECT target_id FROM graph_edges WHERE source_id = ?"
-        in_q   = "SELECT source_id FROM graph_edges WHERE target_id = ?"
-        edge_q = "SELECT DISTINCT source_id, target_id FROM graph_edges"
+        out_q  = "SELECT target_id FROM graph_edges WHERE source_id = ?" + res_filter
+        in_q   = "SELECT source_id FROM graph_edges WHERE target_id = ?" + res_filter
+        edge_q = "SELECT DISTINCT source_id, target_id FROM graph_edges" + res_where
     else:
-        out_q  = "SELECT callee FROM graph_edges WHERE caller = ?"
-        in_q   = "SELECT caller FROM graph_edges WHERE callee = ?"
-        edge_q = "SELECT DISTINCT caller, callee FROM graph_edges"
+        out_q  = "SELECT callee FROM graph_edges WHERE caller = ?" + res_filter
+        in_q   = "SELECT caller FROM graph_edges WHERE callee = ?" + res_filter
+        edge_q = "SELECT DISTINCT caller, callee FROM graph_edges" + res_where
 
     for hop in range(1, radius + 1):
         next_frontier: set[str] = set()
