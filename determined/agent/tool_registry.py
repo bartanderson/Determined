@@ -275,6 +275,20 @@ REGISTRY: dict[str, dict] = {
         "category": "understanding",
     },
 
+    # ── DESIGN GAPS ────────────────────────────────────────────────
+    "design_gaps": {
+        "purpose": "Surface design requirements (must/shall) that have no detectable implementation in the corpus. Inverse of check_design_violations: finds what the architecture committed to that code hasn't built yet.",
+        "args": {
+            "scope": "(optional) keyword to filter requirements by subject or source file",
+            "show_satisfied": "(optional) if true, also list satisfied requirements",
+            "threshold": "(optional) embedding similarity threshold for Level A match (default 0.45)",
+        },
+        "output": "GAPS / PARTIAL / SATISFIED tiers with source doc, suggested search terms",
+        "feeds": ["goal_intake", "check_design_violations", "symbol_context"],
+        "use_when": "After ingest_design_docs has been run. Use to find unimplemented architectural commitments.",
+        "category": "knowledge",
+    },
+
     # ── DISTILLATION ───────────────────────────────────────────────
     "distill_corpus": {
         "purpose": "Compress each semantic_summary and file_purpose artifact into a one-sentence distillation stored in knowledge.db.",

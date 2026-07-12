@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -848,6 +849,260 @@ def check_design_violations(assessor: "Assessor", args: dict) -> str:
             label = h["subject"] or "general"
             lines.append(f"    [{label}] (score={h['score']:.2f})")
             lines.append(f"      {h['content'][:200]}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# RM48: Design-to-code delta
+# ---------------------------------------------------------------------------
+
+_REQUIREMENT_KINDS = re.compile(
+    r"^\[(REQUIREMENT|CONSTRAINT)\|", re.I
+)
+_MUST_RE_INLINE = re.compile(
+    r"\b(must(?!\s+not)|shall(?!\s+not)|required\s+to|is\s+required)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_design_requirements(conn) -> list[dict]:
+    """
+    Pull all design_note artifacts that represent requirements (must/shall/required to).
+    Returns list[dict]: content, subject, source_file.
+    Two paths:
+      1. Content starts with [REQUIREMENT|...] prefix (new RM52+ format)
+      2. Content body matches _MUST_RE_INLINE (pre-existing rows without prefix)
+    """
+    rows = conn.execute(
+        "SELECT content, subject, source FROM knowledge_artifacts WHERE kind='design_note'"
+    ).fetchall()
+    results = []
+    for content, subject, source in rows:
+        if not content:
+            continue
+        if _REQUIREMENT_KINDS.match(content) or _MUST_RE_INLINE.search(content):
+            results.append({"content": content, "subject": subject or "", "source": source or ""})
+    return results
+
+
+def _match_level_a(oracle, req_text: str, threshold: float = 0.45) -> list[dict]:
+    """
+    Level A: semantic embedding match against all symbols (name + docstring).
+    Returns list of matching symbols with similarity score.
+    """
+    try:
+        from determined.oracle.embedding_model import embed_text, cosine_similarity
+    except Exception:
+        return []
+    try:
+        req_vec = embed_text(req_text)
+    except Exception:
+        return []
+
+    # Fetch all symbols with docstrings (or name only if no docstring)
+    rows = oracle.conn.execute(
+        "SELECT f.name, f.file_path, f.docstring FROM functions f"
+    ).fetchall()
+    class_rows = oracle.conn.execute(
+        "SELECT c.name, c.file_path, c.docstring FROM classes c"
+    ).fetchall()
+
+    matches = []
+    for name, file_path, doc in list(rows) + list(class_rows):
+        text = f"{name} {doc or ''}".strip()
+        try:
+            vec = embed_text(text)
+            score = cosine_similarity(req_vec, vec)
+            if score >= threshold:
+                matches.append({"name": name, "file_path": file_path or "", "score": round(score, 3)})
+        except Exception:
+            continue
+
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    return matches[:3]
+
+
+def _match_level_b(oracle, subject: str, req_text: str) -> list[str]:
+    """
+    Level B: file path substring match on keywords from subject + requirement text.
+    Returns list of matching file paths.
+    """
+    # Extract keywords: words >= 4 chars from subject, skip stop words
+    _stop = frozenset("must shall never only from that this with into when will are the and for its any all required".split())
+    import re as _re
+    words = set(_re.findall(r"\b[a-z][a-z_]{3,}\b", (subject + " " + req_text).lower()))
+    keywords = [w for w in words if w not in _stop]
+    if not keywords:
+        return []
+
+    rows = oracle.conn.execute("SELECT DISTINCT file_path FROM symbols").fetchall()
+    file_paths = [r[0] for r in rows if r[0]]
+
+    matched = []
+    for fp in file_paths:
+        fp_lower = fp.lower().replace("\\", "/")
+        if any(kw in fp_lower for kw in keywords):
+            matched.append(fp)
+    return matched[:3]
+
+
+def _match_level_c(oracle, subject: str, req_text: str) -> list[dict]:
+    """
+    Level C: import graph match. Look for files whose import chain connects
+    keywords from the requirement to existing graph edges.
+    Returns list of matching graph edges {caller, callee, file_path}.
+    """
+    import re as _re
+    _stop = frozenset("must shall never only from that this with into when will are the and for its any all required".split())
+    words = set(_re.findall(r"\b[a-z][a-z_]{3,}\b", (subject + " " + req_text).lower()))
+    keywords = [w for w in words if w not in _stop]
+    if not keywords:
+        return []
+
+    rows = oracle.conn.execute(
+        "SELECT caller, callee FROM graph_edges LIMIT 2000"
+    ).fetchall()
+
+    matched = []
+    seen = set()
+    for caller, callee in rows:
+        combined = f"{caller} {callee}".lower()
+        if any(kw in combined for kw in keywords):
+            key = (caller, callee)
+            if key not in seen:
+                seen.add(key)
+                matched.append({"caller": caller, "callee": callee})
+    return matched[:3]
+
+
+def design_gaps(assessor: "Assessor", args: dict) -> str:
+    """
+    design_gaps(scope?, show_satisfied?, threshold?) - surface design requirements
+    with no detectable implementation in the corpus.
+
+    Arguments:
+      scope           - optional keyword to filter requirements (filename or subject word)
+      show_satisfied  - if true, also list satisfied requirements (default false)
+      threshold       - Level A embedding similarity threshold (default 0.45)
+
+    Reads kind='design_note' artifacts that contain requirement language (must/shall).
+    For each, attempts Level A (embedding), Level B (file path), Level C (import graph).
+    Reports GAP / PARTIAL / SATISFIED.
+    """
+    oracle = assessor.oracle
+    scope = args.get("scope", "").strip().lower()
+    show_satisfied = bool(args.get("show_satisfied", False))
+    threshold = float(args.get("threshold", 0.45))
+
+    reqs = _extract_design_requirements(oracle.conn)
+    if not reqs:
+        return (
+            "No design notes found. Run ingest_design_docs first, or check that "
+            "design_note artifacts exist in this corpus."
+        )
+
+    if scope:
+        reqs = [r for r in reqs if scope in r["subject"].lower() or scope in r["content"].lower() or scope in r["source"].lower()]
+        if not reqs:
+            return f"No design requirements matching scope='{scope}' found."
+
+    db_name = oracle.conn.execute("PRAGMA database_list").fetchone()
+    db_label = db_name[2] if db_name else "unknown"
+
+    gaps = []
+    partials = []
+    satisfied = []
+
+    for req in reqs:
+        content = req["content"]
+        subject = req["subject"]
+        source = req["source"]
+
+        # Strip prefix bracket for cleaner display
+        import re as _re
+        display_text = _re.sub(r"^\[[^\]]+\]\s*", "", content).strip()
+
+        # Determine modal kind for display
+        if _re.search(r"\bmust\s+not\b|\bshall\s+not\b|\bnever\b", content, _re.I):
+            modal = "MUST NOT"
+        elif _re.search(r"\bmust\b", content, _re.I):
+            modal = "MUST"
+        elif _re.search(r"\bshall\b", content, _re.I):
+            modal = "SHALL"
+        else:
+            modal = "REQUIRED"
+
+        level_a = _match_level_a(oracle, display_text, threshold=threshold)
+        level_b = _match_level_b(oracle, subject, display_text) if not level_a else []
+        level_c = _match_level_c(oracle, subject, display_text) if not level_a and not level_b else []
+
+        if level_a:
+            best = level_a[0]
+            satisfied.append({
+                "modal": modal, "text": display_text, "source": source, "subject": subject,
+                "match": f"{best['name']} in {best['file_path']} (similarity {best['score']:.2f})",
+            })
+        elif level_b or level_c:
+            hint = ""
+            if level_b:
+                hint = f"File: {level_b[0]} exists. No function matching requirement found."
+            elif level_c:
+                edge = level_c[0]
+                hint = f"Import edge: {edge['caller']} -> {edge['callee']} (keyword match only)."
+            partials.append({
+                "modal": modal, "text": display_text, "source": source, "subject": subject,
+                "hint": hint,
+            })
+        else:
+            # Suggest search terms based on keywords
+            _stop = frozenset("must shall never only from that this with into when are and for its any all required".split())
+            import re as _re2
+            kws = [w for w in _re2.findall(r"\b[a-zA-Z][a-zA-Z_]{3,}\b", display_text)
+                   if w.lower() not in _stop][:3]
+            suggestion = " / ".join(f"search_symbols('{w}')" for w in kws) if kws else ""
+            gaps.append({
+                "modal": modal, "text": display_text, "source": source, "subject": subject,
+                "suggestion": suggestion,
+            })
+
+    lines = [
+        f"Design gaps for corpus: {db_label}",
+        f"({len(reqs)} requirements checked from design docs)",
+        "",
+    ]
+
+    if gaps:
+        lines.append(f"GAPS ({len(gaps)} -- no implementation found):")
+        for i, g in enumerate(gaps, 1):
+            lines.append(f"  {i}. [{g['modal']}] \"{g['text'][:120]}\"")
+            if g["source"]:
+                lines.append(f"     Source: {g['source']} > {g['subject']}")
+            if g["suggestion"]:
+                lines.append(f"     Suggested search: {g['suggestion']}")
+        lines.append("")
+
+    if partials:
+        lines.append(f"PARTIAL ({len(partials)} -- file/edge exists but no clear implementing function):")
+        for i, p in enumerate(partials, 1):
+            lines.append(f"  {i}. [{p['modal']}] \"{p['text'][:120]}\"")
+            if p["source"]:
+                lines.append(f"     Source: {p['source']} > {p['subject']}")
+            lines.append(f"     {p['hint']}")
+            lines.append(f"     Check: symbols_in_file('{p['source']}')")
+        lines.append("")
+
+    if show_satisfied and satisfied:
+        lines.append(f"SATISFIED ({len(satisfied)}):")
+        for i, s in enumerate(satisfied, 1):
+            lines.append(f"  {i}. [{s['modal']}] \"{s['text'][:120]}\"")
+            lines.append(f"     Matched: {s['match']}")
+        lines.append("")
+    elif satisfied:
+        lines.append(f"SATISFIED: {len(satisfied)} requirements have detectable implementations (use show_satisfied=true to see them).")
+
+    if not gaps and not partials:
+        lines.append("No unimplemented design requirements detected.")
 
     return "\n".join(lines)
 
@@ -6253,8 +6508,9 @@ TOOLS = {
     "goal_intake":          (goal_intake,           "assessor"),
     # Distillation
     "distill_corpus":       (distill_corpus,        "assessor"),
-    # Design violation cross-reference
+    # Design violation cross-reference and gap detection
     "check_design_violations": (check_design_violations, "assessor"),
+    "design_gaps":             (design_gaps,             "assessor"),
     # Project-wide synthesis
     "project_status":          (project_status,          "assessor"),
     # Incremental re-ingest

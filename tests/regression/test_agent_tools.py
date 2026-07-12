@@ -505,6 +505,7 @@ def test_dispatch_all_tools_registered():
         "goal_intake",
         "distill_corpus",
         "check_design_violations",
+        "design_gaps",
         "project_status",
         "reingest_file",
         "symbol_context",
