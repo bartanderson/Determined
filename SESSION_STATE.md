@@ -1,43 +1,12 @@
-Written at commit: d32aaf9
-# SESSION STATE - session 153 handoff (updated: RM46 + RM47 both done)
+Written at commit: 356a06d
+# SESSION STATE - session 154 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 153, 2026-07-12)
+## What happened this session (session 154, 2026-07-12)
 
-### Commits this session [V]
-
-- `4aa4412` RM46: scaffold_from_pattern
-- `ae1a8c4` TRACKER: mark RM46 DONE
-- `d32aaf9` RM47: readiness_check
-
-### Changes made [V]
-
-**RM46 done [V]**
-- `determined/agent/stub_projector.py`: `_extract_structural_skeleton(source, fn_name) -> dict`
-  AST analysis: first_stmt_type, return_shape, error_handling, has_guard.
-- `determined/agent/agent_tools.py`: `scaffold_from_pattern(assessor, args)` after project_stub.
-  Module-family siblings (same file/dir, matching return_type) + embedding similarity at 0.50
-  (gracefully skipped if unavailable). Canonical/variation-point synthesis. Fill-in-the-blanks template.
-- `determined/agent/tool_registry.py`: entry, category='frontier'.
-- `tests/regression/test_scaffold_from_pattern.py`: 16 tests (6 AST, 10 integration).
-
-**RM47 done [V]**
-- `determined/agent/agent_tools.py`: `readiness_check(assessor, args)` after completion_contract.
-  5 tiers, all DB queries, no LLM:
-    T1: symbol exists and is incomplete (stub or ABC gap)
-    T2: stub callees (must be built first)
-    T3: unknown type annotations (type not in functions or classes table)
-    T4: design constraint flags >= 0.4 (opt-in: include_design_check=true, off by default)
-    T5: cycle in stub dependency graph (BFS over stubs only)
-  READY output: resolved types, available callees, next-step hint.
-  BLOCKED output: numbered issues, implementation_order tip if stub callees found.
-- `determined/agent/tool_registry.py`: entry, category='frontier'.
-- `tests/regression/test_readiness_check.py`: 14 tests.
-- `tests/regression/test_agent_tools.py`: both tools added to TOOLS set.
-
-**Tests [V]:** 643 passed, 1 skipped (full suite run this session).
+Nothing new this session -- immediately handing off.
 
 ## Gap taxonomy (cumulative) [V]
 
