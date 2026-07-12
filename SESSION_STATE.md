@@ -1,55 +1,47 @@
-Written at commit: 90e6b26
-# SESSION STATE - session 149 handoff
+Written at commit: 62a1b11
+# SESSION STATE - session 150 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 149, 2026-07-12)
+## What happened this session (session 150, 2026-07-12)
 
 ### Commits this session [V]
 
-- `3a11c0e` RM50: inline comment extraction stored as kind=inline_note knowledge artifacts
-- `90e6b26` RM50 refinement: regex-based marker detection replaces fixed keyword set
+- `62a1b11` RM49: annotate_function -- infer param types, return type, and behavioral contract
 
 ### Changes made [V]
 
-**RM50 done [V]**
-- `determined/ingestion/parse_ast.py`: added `_collect_comments(source)` -- tokenizes
-  source once via `tokenize.generate_tokens`, returns `{lineno: {text, position, marker}}`
-  for every comment token. position=block|inline from column offset (structural).
-  marker detected via regex `^([A-Z][A-Z0-9_]+)\s*(?::|--?|—|\s{2,})` -- any ALL_CAPS
-  label + delimiter, not a fixed enumeration. `_extract_functions` now accepts
-  `comment_map=None`; populates `inline_notes` from the map for each function's body range.
-- `determined/shared/types.py`: `FunctionRepresentation.inline_notes` added as
-  `List[Dict[str, Any]]`. Each entry: `{text, position, marker}`.
-- `determined/persistence/persistence_engine.py`: added `datetime` import. In
-  `persist_file_analysis` functions loop: deletes stale inline_notes before insert
-  (`DELETE WHERE kind='inline_note' AND content LIKE '[{file_path}]%'`), then writes
-  each note as `knowledge_artifact` with kind='inline_note', subject=function_name,
-  content=`[file_path] {json}`, provenance='human-confirmed'.
-- `determined/intent/knowledge_artifact.py`: added `'inline_note'` and
-  `'inferred_annotation'` to `VALID_KINDS`.
-- `tests/regression/test_inline_note_extraction.py`: 19 new tests. [V]
+**RM49 done [V]**
+- `determined/agent/agent_tools.py`: added `annotate_function(assessor, args)` after
+  `docstring_health`. Assembles: source code via `_get_source_lines`, callers via
+  `_list_callers_raw`, callees with return types, inline_notes (kind='inline_note'),
+  design_notes (kind in design_note/layer_rule). Calls `generate_quality()` from
+  llm_client (local import inside function). Stores result as kind='inferred_annotation',
+  provenance='llm-inferred', needs_review=1. Stale annotation for same subject deleted
+  before insert. write_back=False by default -- never touches source files.
+  `inference_basis` auto-filled from structural evidence if LLM omits it.
+- `determined/agent/tool_registry.py`: added annotate_function entry, category='knowledge'.
+- `tests/regression/test_agent_tools.py`: added 'annotate_function' to hardcoded TOOLS set.
+- `tests/regression/test_annotate_function.py`: 15 new tests (14 fast, 1 slow).
+- `docs/TRACKER.md`: RM49 marked DONE.
 
-**Two design pivots made during RM50 [V]**
-1. Initial line-scan + content heuristics (len>5, alphanumeric filter) replaced with
-   tokenizer. Reason: heuristics dropped legitimate short comments (TODO, ok) and
-   filtered for edge cases that can't occur inside function bodies.
-2. Fixed _MARKERS set replaced with regex `^([A-Z][A-Z0-9_]+)\s*(?::|--?|—|\s{2,})`.
-   Detects any ALL_CAPS label + delimiter. Mixed-case labels captured but not tagged.
-   Key lesson: extraction layer categorizes structurally, never filters by content quality.
+**Tests [V]:** 581 passed, 1 skipped (full suite run at commit).
 
-**Tests [V]**
-566 passed, 1 skipped (confirmed this session end).
+**Key pattern [V]:** LLM import is local inside annotate_function (not module-level).
+Monkeypatch target for tests: `determined.agent.llm_client.generate_quality`.
+NOT `agent_tools._llm_generate` -- that doesn't exist at module scope.
+Carry this forward for any test that exercises annotate_function indirectly (RM51).
 
 ## Gap taxonomy (cumulative) [V]
 
 | Gap | Pattern | Status |
 |-----|---------|--------|
 | 1-4,7,8 | Various call graph gaps | FIXED |
-| JS | DOM->socket.emit | REVISED: no emit in dj2 |
-| DF | Data flow edges | OPEN (RM39) |
 | TR | Target resolution collision | DONE (RM40) |
+| ICX | Inline comment extraction | DONE (RM50) |
+| ANN | annotate_function tool | DONE (RM49) |
+| DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
 | LNS | Canned reasoning lenses | OPEN (RM43) |
@@ -58,8 +50,6 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 | SCF | Scaffold from pattern | OPEN (RM46) |
 | RDY | Readiness gate | OPEN (RM47) |
 | DGP | Design-to-code delta | OPEN (RM48) |
-| ANN | Annotation sparsity | OPEN (RM49) |
-| ICX | Inline comment extraction | DONE (RM50) |
 | APD | Annotation pass driver | OPEN (RM51) |
 
 ## Known issues (carried forward)
@@ -80,31 +70,26 @@ pass resolved_only=True or they silently use the polluted graph.
 
 **pyan3 post-RM40 delta not yet measured [?]:** Re-run after RM49 lands.
 
-**doc_extractor prev-details not skipped [V]:** Intentional -- take all data.
-
-**inline_note content prefix is normalized path [V]:** normalize_file_path runs before
-inline_note writes, so content prefix is absolute. Tests use suffix match to avoid
-path-absolute brittleness ('process.py]' in content).
+**inline_note content prefix is normalized path [V]:** Tests use suffix match.
 
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **RM49 (1.5 days) -- next code item:**
-   annotate_function tool in agent_tools.py. Context assembly: source + callers +
-   callees + inline notes (now populated by RM50) + design notes -> LLM infers
-   param types, return type, behavioral contract. Stores as kind='inferred_annotation'.
-   Entry point: `determined/agent/agent_tools.py` -- add after `docstring_health` (~line 1700).
-   Use `generate_quality()` from llm_client.py (not 3B fallback).
-   Manual integration test: annotate process() in adjudication_engine.py.
-   Extends RM45 + RM47 to read inferred store when param_types_json is empty.
-   Run full 566-test suite before commit (high blast-radius).
+1. **RM51 (1 day) -- next code item:**
+   `run_annotation_pass(assessor, args)` driver. Priority queue: functions ordered
+   by caller count desc, filtered is_stub=0, param_types_json IS NULL or empty.
+   Pops top item, calls `annotate_function` for each, stops when marginal gain drops
+   below threshold or scope exhausted.
+   Entry point: `determined/agent/agent_tools.py` -- add after `annotate_function`.
+   Wire into TOOLS dict (hardcoded set in test_agent_tools.py needs update too).
+   LLM monkeypatch pattern: `determined.agent.llm_client.generate_quality`.
 
-2. **RM51 (1 day):** run_annotation_pass driver. Priority queue by caller count desc.
-   Depends on RM49.
-
-3. **RM44 (0.5 days):** implementation_order topo sort. Needs RM40 (done).
+2. **RM44 (0.5 days):** implementation_order topo sort. Needs RM40 (done).
    Remember: pass resolved_only=True explicitly (RM40 opt-in trap).
 
+3. **Manual integration test (RM49 validation):** Run `annotate_function` on `process`
+   in adjudication_engine.py with llama-server on port 8081. Expected: inferred params
+   match PlayerAction/DungeonStateNeo, return=dict, confidence >= 0.6.
+
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
-Started by UI automatically; for CLI use start manually.
