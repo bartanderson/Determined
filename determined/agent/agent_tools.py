@@ -2703,6 +2703,7 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
         detect_conflicts, deduplicate, _split_by_headings,
         _extract_constraint_sentences, _CONSTRAINT_RE,
         _extract_layer_rules, write_seed_layer_rules_doc,
+        DesignRule,
     )
     oracle = assessor.oracle
     root = oracle.get_project_root()
@@ -2722,6 +2723,9 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
     processed_files: list[str] = []
     all_rules = []
 
+    from determined.ingestion.structure_induction import run as _si_run
+    induced_stored = 0
+
     for doc in design_docs:
         try:
             rules = extract_rules(doc.path, doc.rel_path, source_confidence=doc.confidence)
@@ -2732,6 +2736,42 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
             continue
         processed_files.append(doc.rel_path)
         all_rules.extend(rules)
+
+        # Multi-method structure induction pre-pass (RM52)
+        # Seeds = constraint sentences already found by the deterministic extractor.
+        try:
+            doc_text = open(doc.path, encoding="utf-8", errors="ignore").read()
+            seeds = [
+                s
+                for r in rules
+                for s in r.rule.replace(f"[{r.source_heading}] ", "").split(" | ")
+                if s.strip()
+            ]
+            induced = _si_run(doc_text, seeds)
+            for item in induced:
+                if item.tier == "review":
+                    continue  # not stored until confirmed
+                # Convert to DesignRule with tier encoded in kind/confidence
+                if item.tier == "convergent":
+                    si_conf = doc.confidence
+                    si_kind = "requirement"
+                else:  # discriminant
+                    si_conf = "medium"
+                    si_kind = "requirement"
+                prefix = f"[SI:{item.tier}|{item.tag or 'convergent'}] " if item.tag else f"[SI:{item.tier}] "
+                all_rules.append(DesignRule(
+                    subject=doc.rel_path.split("/")[-1].split(".")[0],
+                    rule=prefix + item.text,
+                    source_file=doc.rel_path,
+                    source_heading="structure_induction",
+                    extraction="si",
+                    confidence=si_conf,
+                    provenance=f"{si_conf}:{doc.rel_path}:si",
+                    kind=si_kind,
+                ))
+                induced_stored += 1
+        except Exception:
+            pass
 
         # LLM fallback for sections with design prose but sparse explicit signal
         if use_llm:
@@ -2841,6 +2881,8 @@ def ingest_design_docs(assessor: "Assessor", args: dict) -> str:
     lines = [
         f"Design doc ingestion: {stored} rules stored, {skipped} already present, {errors} errors",
     ]
+    if induced_stored:
+        lines.append(f"  Structure induction (RM52): {induced_stored} additional candidates (convergent + discriminant)")
     if conflicted:
         lines.append(f"  Conflicts detected: {conflicted} rules flagged for human review")
     if layer_rules_stored:
