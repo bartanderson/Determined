@@ -3612,6 +3612,171 @@ def completion_contract(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def readiness_check(assessor: "Assessor", args: dict) -> str:
+    """
+    readiness_check(symbol[, include_design_check]) - fast gate: is this symbol
+    safe to start implementing?
+
+    Returns READY or BLOCKED with a tiered list of blockers:
+      Tier 1 - symbol exists and is actually incomplete
+      Tier 2 - stub callees (must be implemented first)
+      Tier 3 - unknown type annotations (external or not-yet-defined)
+      Tier 4 - design constraint flags (SOTS/GRASP violations >= 0.4)
+      Tier 5 - cycle in the stub dependency graph
+
+    Args:
+        symbol:               function name (required)
+        include_design_check: if true, run embedding-based design constraint check
+                              (Tier 4); default false (can be slow)
+    """
+    import json as _json
+
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+    include_design = str(args.get("include_design_check", "false")).lower() == "true"
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    # ── Tier 1: symbol exists and is incomplete ───────────────────────
+    fn_row = conn.execute(
+        "SELECT name, file_path, line_number, is_stub, param_types_json, return_type "
+        "FROM functions WHERE name = ? LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if not fn_row:
+        return f"NOT FOUND: '{symbol}' not in functions table"
+
+    fn_name, file_path, line_num, is_stub, param_json, return_type = fn_row
+    short_fp = (file_path or "").replace("\\", "/").split("/")[-1]
+    header = f"readiness_check: '{fn_name}'  ({short_fp}:{line_num})\n"
+
+    abc_gaps = _get_abc_gap_set(conn)
+    if not is_stub and fn_name not in abc_gaps:
+        return header + "ALREADY COMPLETE — not a stub and no ABC gap. Nothing to implement."
+
+    blockers: list[str] = []
+
+    # ── Tier 2: stub callees ──────────────────────────────────────────
+    callee_rows = _list_callees_raw(oracle, symbol)
+    if callee_rows:
+        callee_names = [r["callee"].rsplit(".", 1)[-1] for r in callee_rows]
+        if callee_names:
+            placeholders = ",".join("?" * len(callee_names))
+            stub_callees = conn.execute(
+                f"SELECT name, file_path, line_number FROM functions "
+                f"WHERE name IN ({placeholders}) AND is_stub = 1",
+                callee_names,
+            ).fetchall()
+            for sc_name, sc_fp, sc_ln in stub_callees:
+                sc_short = (sc_fp or "").replace("\\", "/").split("/")[-1]
+                blockers.append(
+                    f"STUB CALLEE: {sc_name}  ({sc_short}:{sc_ln}) — implement first"
+                )
+
+    # ── Tier 3: unknown type annotations ─────────────────────────────
+    try:
+        param_types = _json.loads(param_json or "{}")
+    except Exception:
+        param_types = {}
+    unknown_types: list[str] = []
+    for param, type_str in param_types.items():
+        if not type_str:
+            continue
+        # Strip generics/optionals: "list[Foo]" → "Foo", "Optional[Bar]" → "Bar"
+        bare = type_str.strip().rstrip("]")
+        for part in bare.replace("[", ",").split(","):
+            t = part.strip()
+            if not t or t[0].islower() or t in ("None", "str", "int", "float", "bool",
+                                                  "list", "dict", "tuple", "set", "Any",
+                                                  "Optional", "Union", "Callable", "Type"):
+                continue
+            found = conn.execute(
+                "SELECT 1 FROM functions WHERE name = ? UNION SELECT 1 FROM classes WHERE name = ? LIMIT 1",
+                (t, t),
+            ).fetchone()
+            if not found:
+                unknown_types.append(f"UNKNOWN TYPE: {t} (param '{param}') — external or not yet defined")
+    blockers.extend(unknown_types)
+
+    # ── Tier 4: design constraint flags (opt-in) ─────────────────────
+    if include_design and file_path:
+        try:
+            violations = _check_design_violations_core(assessor, symbol, file_path)
+            for v in violations:
+                if v.get("score", 0) >= 0.4:
+                    snippet = v["content"][:100].replace("\n", " ")
+                    blockers.append(
+                        f"DESIGN NOTE: {v['subject']} (score {v['score']:.2f}) — {snippet}"
+                    )
+        except Exception:
+            pass  # embedding unavailable — silently skip
+
+    # ── Tier 5: cycle in stub dependency graph ────────────────────────
+    # BFS from symbol over stub-only subgraph; if symbol reappears → cycle
+    try:
+        from collections import deque as _deque
+        stub_set_q = "SELECT name FROM functions WHERE is_stub = 1"
+        stub_names = {r[0] for r in conn.execute(stub_set_q)}
+        stub_names.update(abc_gaps)
+
+        visited: set[str] = {symbol}
+        queue: _deque = _deque([symbol])
+        cycle_found = False
+        while queue and not cycle_found:
+            current = queue.popleft()
+            callee_rows_bfs = conn.execute(
+                "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?", (current,)
+            ).fetchall()
+            for (callee,) in callee_rows_bfs:
+                bare_callee = callee.rsplit(".", 1)[-1] if "." in callee else callee
+                if bare_callee not in stub_names:
+                    continue
+                if bare_callee == symbol:
+                    cycle_found = True
+                    break
+                if bare_callee not in visited:
+                    visited.add(bare_callee)
+                    queue.append(bare_callee)
+        if cycle_found:
+            blockers.append(
+                f"CYCLE: '{symbol}' appears in its own stub dependency graph — "
+                "circular stub dependency, resolve before implementing"
+            )
+    except Exception:
+        pass
+
+    # ── Output ────────────────────────────────────────────────────────
+    lines = [header.rstrip()]
+    if not blockers:
+        lines.append("READY — all dependency checks passed. Safe to implement.")
+        lines.append("")
+        # Positive summary
+        if param_types:
+            resolved = [f"{p}: {t}" for p, t in param_types.items() if t]
+            if resolved:
+                lines.append("Types resolved: " + ", ".join(resolved))
+        complete_callees = [r["callee"].rsplit(".", 1)[-1] for r in callee_rows
+                            if r["callee"].rsplit(".", 1)[-1] not in
+                            {b.split(":")[1].split("(")[0].strip() for b in blockers}]
+        if complete_callees:
+            lines.append("Callees available: " + ", ".join(complete_callees[:8]))
+        design_note = " (design check skipped — pass include_design_check=true to enable)" if not include_design else ""
+        lines.append(f"Next: run completion_contract('{symbol}') for the implementation brief.{design_note}")
+    else:
+        lines.append(f"BLOCKED — {len(blockers)} issue(s) must be resolved first:")
+        lines.append("")
+        for i, b in enumerate(blockers, 1):
+            lines.append(f"  {i}. {b}")
+        lines.append("")
+        stub_blockers = [b for b in blockers if b.startswith("STUB CALLEE")]
+        if stub_blockers:
+            lines.append("Tip: run implementation_order() to get a wave plan for resolving stub callees.")
+
+    return "\n".join(lines)
+
+
 def concept_search(assessor: "Assessor", args: dict) -> str:
     """
     concept_search(query) - search a term/concept across all text surfaces,
@@ -6037,6 +6202,7 @@ TOOLS = {
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),
     "project_stub":         (project_stub,          "oracle"),
     "scaffold_from_pattern":    (scaffold_from_pattern,     "assessor"),
+    "readiness_check":          (readiness_check,           "assessor"),
     "score_stub":           (score_stub,            "assessor"),
     # Doc tools
     "discover_docs":        (discover_docs_tool,    "oracle"),

@@ -326,6 +326,18 @@ REGISTRY: dict[str, dict] = {
         "category": "understanding",
     },
 
+    "readiness_check": {
+        "purpose": "Fast pre-implementation gate: answers READY or BLOCKED with a tiered list of blockers. Checks: (1) symbol exists and is incomplete, (2) stub callees that must be built first, (3) unknown type annotations, (4) design constraint flags (opt-in), (5) cycles in the stub dependency graph. No LLM — all DB queries.",
+        "args": {
+            "symbol": "function name (required)",
+            "include_design_check": "(optional, default false) also run embedding-based SOTS/GRASP check (Tier 4); can be slow",
+        },
+        "output": "READY or BLOCKED with numbered blockers. READY includes positive summary of resolved types and available callees.",
+        "feeds": ["completion_contract", "scaffold_from_pattern", "implementation_order"],
+        "use_when": "Before starting to implement a stub — verify nothing upstream is broken or missing. Run after implementation_order gives you the wave, before completion_contract gives you the brief.",
+        "category": "frontier",
+    },
+
     "scaffold_from_pattern": {
         "purpose": "Find structurally similar complete implementations and extract a fill-in-the-blanks scaffold. Surfaces canonical structural patterns (first-statement type, return shape, error handling) and flags variation points. Complement to completion_contract: that tool reasons from the stub's own context; this one reasons from what similar complete functions look like.",
         "args": {
