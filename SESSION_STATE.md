@@ -1,37 +1,36 @@
-Written at commit: 62a1b11
-# SESSION STATE - session 150 handoff
+Written at commit: 164e970
+# SESSION STATE - session 151 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 150, 2026-07-12)
+## What happened this session (session 151, 2026-07-12)
 
 ### Commits this session [V]
 
-- `62a1b11` RM49: annotate_function -- infer param types, return type, and behavioral contract
+- `6b0e06f` RM51: run_annotation_pass -- priority queue annotation driver
+- `164e970` TRACKER: mark RM50 and RM51 DONE, update dashboard
 
 ### Changes made [V]
 
-**RM49 done [V]**
-- `determined/agent/agent_tools.py`: added `annotate_function(assessor, args)` after
-  `docstring_health`. Assembles: source code via `_get_source_lines`, callers via
-  `_list_callers_raw`, callees with return types, inline_notes (kind='inline_note'),
-  design_notes (kind in design_note/layer_rule). Calls `generate_quality()` from
-  llm_client (local import inside function). Stores result as kind='inferred_annotation',
-  provenance='llm-inferred', needs_review=1. Stale annotation for same subject deleted
-  before insert. write_back=False by default -- never touches source files.
-  `inference_basis` auto-filled from structural evidence if LLM omits it.
-- `determined/agent/tool_registry.py`: added annotate_function entry, category='knowledge'.
-- `tests/regression/test_agent_tools.py`: added 'annotate_function' to hardcoded TOOLS set.
-- `tests/regression/test_annotate_function.py`: 15 new tests (14 fast, 1 slow).
-- `docs/TRACKER.md`: RM49 marked DONE.
+**RM51 done [V]**
+- `determined/agent/agent_tools.py`: added `_build_annotation_queue(oracle, scope)` at
+  line 3619 and `run_annotation_pass(assessor, args)` at line 3659, both after
+  `annotate_function`. Queue: functions WHERE is_stub=0 AND param_types_json empty,
+  excludes already-annotated (checked against knowledge_artifacts WHERE
+  kind='inferred_annotation'), ordered by caller_count DESC. Driver: loops queue up
+  to max_functions (default 20), stops after convergence_threshold consecutive LLM
+  failures (default 3), reports OK/SKIP per function with confidence.
+- `determined/agent/tool_registry.py`: added run_annotation_pass entry, category='knowledge'.
+- `tests/regression/test_agent_tools.py`: added 'run_annotation_pass' to hardcoded TOOLS set.
+- `tests/regression/test_annotation_pass.py`: 9 new tests (all fast, LLM mocked).
+- `docs/TRACKER.md`: RM51 marked DONE, RM50 corrected to DONE (was incorrectly OPEN).
 
-**Tests [V]:** 581 passed, 1 skipped (full suite run at commit).
+**Tests [V]:** 590 passed, 1 skipped (full suite run this session).
 
-**Key pattern [V]:** LLM import is local inside annotate_function (not module-level).
-Monkeypatch target for tests: `determined.agent.llm_client.generate_quality`.
-NOT `agent_tools._llm_generate` -- that doesn't exist at module scope.
-Carry this forward for any test that exercises annotate_function indirectly (RM51).
+**Key pattern [V]:** LLM monkeypatch target: `determined.agent.llm_client.generate_quality`
+(module-level attribute patch). Same as RM49. Convergence test forces failure via
+`(_ for _ in ()).throw(RuntimeError(...))`.
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -41,6 +40,7 @@ Carry this forward for any test that exercises annotate_function indirectly (RM5
 | TR | Target resolution collision | DONE (RM40) |
 | ICX | Inline comment extraction | DONE (RM50) |
 | ANN | annotate_function tool | DONE (RM49) |
+| APD | Annotation pass driver | DONE (RM51) |
 | DF | Data flow edges | OPEN (RM39) |
 | HTTP | fetch/HTMX -> Flask route | OPEN (RM41) |
 | INV | Investigation context panel | OPEN (RM42) |
@@ -50,7 +50,6 @@ Carry this forward for any test that exercises annotate_function indirectly (RM5
 | SCF | Scaffold from pattern | OPEN (RM46) |
 | RDY | Readiness gate | OPEN (RM47) |
 | DGP | Design-to-code delta | OPEN (RM48) |
-| APD | Annotation pass driver | OPEN (RM51) |
 
 ## Known issues (carried forward)
 
@@ -68,28 +67,30 @@ pass resolved_only=True or they silently use the polluted graph.
 
 **RM43 empty-board trap [V]:** Lenses produce nothing on an empty clue board.
 
-**pyan3 post-RM40 delta not yet measured [?]:** Re-run after RM49 lands.
+**pyan3 post-RM40 delta not yet measured [?]:** Re-run after annotation passes land.
 
 **inline_note content prefix is normalized path [V]:** Tests use suffix match.
+
+**run_annotation_pass no propagation [V]:** Caller re-queuing (BFS-upward) from TRACKER
+spec not implemented. Driver processes static queue built at start only. Correct for
+single-pass use; propagation is a future enhancement.
 
 ## NEXT SESSION -- start here
 
 **Recommended order:**
 
-1. **RM51 (1 day) -- next code item:**
-   `run_annotation_pass(assessor, args)` driver. Priority queue: functions ordered
-   by caller count desc, filtered is_stub=0, param_types_json IS NULL or empty.
-   Pops top item, calls `annotate_function` for each, stops when marginal gain drops
-   below threshold or scope exhausted.
-   Entry point: `determined/agent/agent_tools.py` -- add after `annotate_function`.
-   Wire into TOOLS dict (hardcoded set in test_agent_tools.py needs update too).
-   LLM monkeypatch pattern: `determined.agent.llm_client.generate_quality`.
+1. **RM44 (0.5 days) -- next code item:**
+   `implementation_order(oracle, args)` topo sort. Stubs + ABC gaps, Kahn's algorithm
+   on restricted call graph, leaves-first output.
+   Entry: `determined/agent/agent_tools.py` after `frontier_priority` (~line 1678).
+   Wire TOOLS + tool_registry.py (category='frontier').
+   CRITICAL: pass resolved_only=True to BFS (RM40 opt-in trap).
+   Test: `tests/regression/test_implementation_order.py` -- fixture needs 3-stub chain.
 
-2. **RM44 (0.5 days):** implementation_order topo sort. Needs RM40 (done).
-   Remember: pass resolved_only=True explicitly (RM40 opt-in trap).
+2. **Manual integration test (RM49+RM51 validation):**
+   With llama-server on port 8081, run `run_annotation_pass` on dj2 corpus.
+   Expect: process() (30 callers), execute() (46 callers), generate() (21 callers) first.
 
-3. **Manual integration test (RM49 validation):** Run `annotate_function` on `process`
-   in adjudication_engine.py with llama-server on port 8081. Expected: inferred params
-   match PlayerAction/DungeonStateNeo, return=dict, confidence >= 0.6.
+3. **RM45 (0.5 days):** completion_contract assembly tool. All data in DB; pure glue.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
