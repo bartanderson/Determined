@@ -14,7 +14,13 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-11, session 147):** Corpus enrichment arc filed. Devil's advocate analysis of RM44-RM48 exposed three failure modes: param_types_json sparsity (<1% annotated in dj2), stubs having no docstrings (undermines RM46 embedding), and design notes not existing for fresh corpus (RM47 Tier 4 false-READY). Three new items close these gaps: RM49 (annotate_function: infer types/contracts from call context + LLM), RM50 (inline comment extraction from parse_ast.py), RM51 (annotation pass driver: priority queue + convergence loop). Step 0 action added to RM48: run ingest_design_docs on dj2 design docs before implementing -- costs zero code. 545 passed, 1 skipped (no code changed this session).
+**Last session (2026-07-12, session 151):** RM51 done. run_annotation_pass driver: _build_annotation_queue (caller-count ordered, scope-filtered, excludes already-annotated) + run_annotation_pass (max_functions cap, convergence_threshold early stop on LLM failure). 9 regression tests. 590 passed, 1 skipped. RM50 tracker status corrected (was done session 149).
+
+**Session 150 (2026-07-12):** RM49 done. annotate_function: LLM-inferred param types, return type, behavioral contract. 15 regression tests. 581 passed, 1 skipped.
+
+**Session 149 (2026-07-12):** RM50 done. Inline comment extraction: tokenizer + regex markers in parse_ast.py, stored as kind=inline_note knowledge artifacts.
+
+**Previously (2026-07-11, session 147):** Corpus enrichment arc filed. Devil's advocate analysis of RM44-RM48 exposed three failure modes: param_types_json sparsity (<1% annotated in dj2), stubs having no docstrings (undermines RM46 embedding), and design notes not existing for fresh corpus (RM47 Tier 4 false-READY). Three new items close these gaps: RM49 (annotate_function: infer types/contracts from call context + LLM), RM50 (inline comment extraction from parse_ast.py), RM51 (annotation pass driver: priority queue + convergence loop). Step 0 action added to RM48: run ingest_design_docs on dj2 design docs before implementing -- costs zero code. 545 passed, 1 skipped (no code changed this session).
 
 **Session 140 (2026-07-10):** RM21 adversarial probe follow-up against Determined corpus. Corrected prior handoff (Q1/Q4/Q5 were partial, not all-pass). Fixed Q4 (imports of <file.py> NEED pattern + list_import_deps resolver + DECOMPOSE_SYSTEM tip) -- now PASS. Fixed Q1 (orient_to_codebase regex expanded to 16 phrasings, moved before understand_symbol in detect rules to prevent false capture) -- now PASS. Fixed grounding pollution (test files/symbols filtered from phase0 suggestions). Known orient misses documented: "how does this work", "summarize the codebase", "tell me about this codebase" -- boundary, not bugs. Q5 still confabulates (model invents query_router/query_session pipeline that doesn't exist); deferred to next session. 533 passed, 1 skipped.
 
@@ -654,7 +660,7 @@ RM48. **[OPEN] Design-to-code delta: surface what the design says should exist t
 
 ---
 
-RM51. **[OPEN] Annotation pass driver: prioritized queue and convergence loop for corpus enrichment**
+RM51. **[DONE] Annotation pass driver: prioritized queue and convergence loop for corpus enrichment**
 
    **The gap:** `annotate_function` (RM49) works on a single function. To enrich a
    corpus with 1300+ unannotated functions, there must be a driver that processes them
@@ -722,7 +728,7 @@ RM51. **[OPEN] Annotation pass driver: prioritized queue and convergence loop fo
 
 ---
 
-RM50. **[OPEN] Inline comment extraction: capture body comments as behavioral notes during parse**
+RM50. **[DONE] Inline comment extraction: capture body comments as behavioral notes during parse**
 
    **The gap:** `parse_ast.py` reads function docstrings but ignores inline comments
    in function bodies. Comments like `# validates the move before applying`, `# state
