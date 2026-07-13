@@ -1,29 +1,40 @@
-Written at commit: 127f43d
-# SESSION STATE - session 164 handoff
+Written at commit: 6feb238
+# SESSION STATE - session 165 in progress
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 164, 2026-07-13)
+## What happened this session (session 165, 2026-07-13)
 
-**RM39 confirmed already done [V]:** data_flow edge emission was already implemented in
-parse_ast.py (visit_Call, lines 596-643: fn_b(fn_a()) pattern), data_flow_edges and
-trace_data_flow tools in agent_tools.py. 11 regression tests in test_data_flow.py pass.
-TRACKER.md was just not updated.
+**RM39 Level 2 done [V]:** Variable binding data flow tracking implemented in parse_ast.py.
+Commit 6feb238. 762 passed, 1 skipped [V].
 
-**RM42 confirmed already done [V]:** Investigation panel Pass 1+2 both done.
-ui_server.py has /api/clues GET/POST/DELETE. workflow_items kind='clue'. Pass 2 persistence
-confirmed working. TRACKER.md updated.
+**What was built:**
+- `Visitor._fn_bindings`: per-function dict `{var_name -> callee_fqdn}`, pushed/popped
+  on function entry/exit via visit_FunctionDef. Bindings never cross function boundaries.
+- `Visitor._last_call_fqdn`: `{id(call_node) -> fqdn}`, set in visit_Call BEFORE
+  generic_visit so visit_Assign can read the RHS fqdn after traversal completes.
+- `visit_Assign`: calls `generic_visit(node)` first (fires visit_Call on the RHS),
+  then registers binding if `target[0]` is a simple `ast.Name` and value is an `ast.Call`.
+  Only tracks simple `name = fn()` -- not tuple unpacking, augmented assign, module-level.
+- `visit_Call` Level 2 addition: for each positional `ast.Name` arg, checks `_fn_bindings`;
+  if found emits `data_flow` edge with provenance `["data_flow_var"]`.
+- 7 new regression tests; existing Level 2 marker test converted to affirmation.
 
-**TRACKER.md corrected (b32f2c3) [V]:** RM39 and RM42 marked DONE. Dashboard updated.
-754 passed, 1 skipped. [V]
+**What Level 2 covers:**
+- `result = fn_a(); fn_b(result)` -> data_flow edge fn_b -> fn_a [V]
+- Variable rebinding: latest assignment wins [V]
+- Chained bindings: `a=fn_a(); b=fn_b(a); fn_c(b)` -> two data_flow edges [V]
+- Level 1 + Level 2 coexist: `fn_c(fn_a(), result)` -> both detected [V]
+- Multi-function independence: same var name in different functions tracked separately [V]
+- Bindings scoped to function: never leak into nested functions [V]
+- Module-level assignments not tracked [V]
 
-**Level 1 data_flow coverage validated on dj2 [V]:**
-- 388 total edges; 57% involve builtins (list/str/int/print wrapping -- low signal)
-- 168 real app-level edges after filtering; dominated by PerlinNoise._lerp math recursion
-- Priority targets (process, execute, move_party) = 0 edges each
-- All high-value chains follow `result=fn(); use(result)` -- Level 2 pattern
-- Decision: Level 2 (variable binding) is required to surface meaningful app-level data flow
+**What Level 2 does NOT cover (deferred until corpus queries surface the need):**
+- Keyword args: `fn_b(x=result)` -- only positional args tracked
+- Starred args: `fn_b(*args)` -- skipped
+- Tuple unpacking: `a, b = fn_a()` -- skipped
+- For-loop iteration: `for x in fn_a(): fn_b(x)` -- skipped
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -40,14 +51,15 @@ confirmed working. TRACKER.md updated.
 | RDY | Readiness gate | DONE (RM47) |
 | MMP | Multi-method ingestion pre-pass | DONE (RM52) |
 | DGP | Design-to-code delta | DONE (RM48) |
-| DF | Data flow edges (Level 1) | DONE (RM39); Level 2 needed for real coverage |
+| DF | Data flow edges Level 1 | DONE (RM39 L1) |
+| DF2 | Data flow edges Level 2 | DONE (RM39 L2, this session) |
 | HTTP | fetch/HTMX -> Flask route | DONE (RM38/RM41) |
 | INV | Investigation context panel | DONE Pass 1+2 (RM42) |
 | LNS | Canned reasoning lenses | DONE (RM43) |
 
 ## Known issues (carried forward)
 
-**RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
+**RM21 probes not re-run [?]:** Live LLM probe not re-run.
 
 **find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
 
@@ -66,24 +78,20 @@ _list_callees_raw -- may surface unresolved edges. Pass resolved_only=True expli
 
 **design_note content format [V]:** Pre-existing rows have no [KIND|...] prefix.
 
-**RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` variable binding not implemented.
-~2 weeks effort. Level 1 coverage on dj2: 57% builtin noise, priority targets get 0 edges.
-Level 2 is the meaningful work. Build when data flow tracing is actively needed.
-
 **RM42 clue pinned state not persisted [V]:** Pinned state is in-memory only (low priority).
 
 **UI re-ingest via preview browser [V]:** socket.emit("ingest", {path}) works.
-Re-analyze button falls through to native folder picker when _source_path empty (fresh start).
 
 ## NEXT SESSION -- start here
 
-**All major RM items are DONE.** Real open work:
+**All major RM items including RM39 L2 are now DONE.**
 
-1. **RM39 Level 2 (variable binding tracking):** ~2 weeks.
-   Entry point: parse_ast.py -- new visit_Assign that tracks `name = fn()` bindings,
-   then in visit_Call checks if any arg is a tracked binding and emits data_flow edge.
-   Per-function binding map needed (dict from name -> callee fqdn, scoped to current function).
-   This is the work that surfaces process(), execute(), move_party() in the graph.
+1. **Validate Level 2 on dj2 corpus (highest priority -- quick win):**
+   Re-ingest dj2 (full or per-file), then:
+   `SELECT COUNT(*) FROM graph_edges WHERE edge_type='data_flow'` -- compare to Level 1 baseline
+   Then: `data_flow_edges({"symbol": "process", "direction": "in"})` -- should now surface
+   callers passing results of other calls into process().
+   Entry: UI -> Re-analyze, or `reingest_file` on adjudication_engine.py, world_app.py etc.
 
 2. **RM38** (JS event chain): deferred -- dj2 has no client-side socket.emit.
 
