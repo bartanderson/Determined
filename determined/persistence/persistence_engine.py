@@ -829,7 +829,8 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
                 _insert_virtual(src, tgt, etype)
 
     # --- RM38: HTTP/HTMX → Flask route chain ---
-    # Build Flask route map from all Python files, then scan HTML/JS for fetch and HTMX
+    # Build Flask route map from all Python files, then scan HTML/JS for fetch and HTMX.
+    # scan_project_files only processes .py; read HTML/JS directly from disk via project_root.
     flask_route_map: dict[str, str] = {}
     html_srcs: list[str] = []
     js_srcs: list[str] = []
@@ -845,6 +846,29 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
             html_srcs.append(src)
         elif fp.endswith('.js'):
             js_srcs.append(src)
+
+    # If no HTML/JS from file_analyses (scan_project_files skips them), read from disk
+    if flask_route_map and not html_srcs and not js_srcs:
+        try:
+            row = cursor.execute("SELECT value FROM project_meta WHERE key='project_root'").fetchone()
+            if row:
+                _root = Path(row[0])
+                _SKIP = {'.venv', 'node_modules', '__pycache__', '.git'}
+                for _p in _root.rglob('*'):
+                    if any(s in _p.parts for s in _SKIP):
+                        continue
+                    if _p.suffix == '.html':
+                        try:
+                            html_srcs.append(_p.read_text(encoding='utf-8', errors='replace'))
+                        except OSError:
+                            pass
+                    elif _p.suffix == '.js':
+                        try:
+                            js_srcs.append(_p.read_text(encoding='utf-8', errors='replace'))
+                        except OSError:
+                            pass
+        except Exception:
+            pass
 
     if flask_route_map and (html_srcs or js_srcs):
         cursor.execute("DELETE FROM graph_edges WHERE edge_type IN ('http_fetch', 'js_event_binding')")
