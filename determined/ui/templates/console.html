@@ -75,6 +75,12 @@
 #clue-ask-btn:hover{background:var(--bg3);color:var(--text1)}
 #clue-clear-btn{width:100%;margin-top:4px;font-size:.75em;padding:3px 0;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text3);cursor:pointer}
 #clue-clear-btn:hover{color:var(--text1);border-color:var(--text3)}
+/* ── reasoning lenses (RM43) ── */
+#lens-section{margin-top:10px;border-top:1px solid var(--border);padding-top:8px;display:none}
+#lens-label{font-size:.72em;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:5px}
+#lens-row{display:flex;flex-wrap:wrap;gap:4px}
+.lens-btn{font-size:.72em;padding:3px 7px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;transition:background .12s,color .12s;line-height:1.4}
+.lens-btn:hover{background:var(--bg3);color:var(--text1);border-color:var(--text3)}
 /* pin button injected into result-block headers */
 .result-pin-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.85em;padding:0 3px;line-height:1;flex-shrink:0;margin-left:auto}
 .result-pin-btn:hover,.result-pin-btn.pinned{color:var(--orange)}
@@ -274,6 +280,10 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
         <div id="clue-empty">No clues pinned yet.<br>Click 📌 on any result to add it.</div>
         <button id="clue-ask-btn" style="display:none">Ask about these clues ↵</button>
         <button id="clue-clear-btn" style="display:none">Clear unpinned</button>
+        <div id="lens-section">
+          <div id="lens-label">Apply lens</div>
+          <div id="lens-row"></div>
+        </div>
       </div>
     </div>
 
@@ -4243,6 +4253,35 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
   const clueEmpty    = document.getElementById("clue-empty");
   const clueAskBtn   = document.getElementById("clue-ask-btn");
   const clueClearBtn = document.getElementById("clue-clear-btn");
+  const lensSection  = document.getElementById("lens-section");
+  const lensRow      = document.getElementById("lens-row");
+
+  let _lenses = [];
+
+  // Load lens catalog once from server
+  fetch("/api/reasoning_lenses").then(r => r.json()).then(catalog => {
+    _lenses = catalog;
+    lensRow.innerHTML = "";
+    catalog.forEach(lens => {
+      const btn = document.createElement("button");
+      btn.className = "lens-btn";
+      btn.textContent = lens.name;
+      btn.title = lens.description;
+      btn.addEventListener("click", () => _applyLens(lens));
+      lensRow.appendChild(btn);
+    });
+  }).catch(() => {});
+
+  function _applyLens(lens) {
+    if (_clues.length === 0) return;
+    const clueText = _clues.map((c, i) => `[${i+1}] ${c.tool}(${c.subject}): ${c.summary}`).join("\n");
+    const prompt = lens.prompt_template.replace("{clues}", clueText);
+    input.value = prompt;
+    showQueryBar();
+    input.focus();
+    const askIcon = document.getElementById("ask-rail-icon");
+    if (askIcon) askIcon.click();
+  }
 
   function _ts() {
     const d = new Date();
@@ -4255,11 +4294,13 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
       clueEmpty.style.display = "";
       clueAskBtn.style.display   = "none";
       clueClearBtn.style.display = "none";
+      lensSection.style.display  = "none";
       return;
     }
     clueEmpty.style.display   = "none";
     clueAskBtn.style.display  = "";
     clueClearBtn.style.display = "";
+    lensSection.style.display  = _lenses.length > 0 ? "" : "none";
     _clues.forEach(c => {
       const card = document.createElement("div");
       card.className = "clue-card";

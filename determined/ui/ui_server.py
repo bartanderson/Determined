@@ -112,6 +112,14 @@ def index():
     return render_template("console.html", db_name=db_name, status=status, model_name=LLM_DISPLAY_NAME)
 
 
+@app.route("/api/reasoning_lenses")
+def reasoning_lenses():
+    from determined.agent.reasoning_lenses import LENS_CATALOG
+    from flask import jsonify
+    return jsonify([{"id": l["id"], "name": l["name"], "description": l["description"],
+                     "prompt_template": l["prompt_template"]} for l in LENS_CATALOG])
+
+
 def _corpus_map_data() -> dict:
     """Entry points + hot symbols for the corpus map panel. No LLM, no per-symbol risk queries."""
     if not _oracle:
