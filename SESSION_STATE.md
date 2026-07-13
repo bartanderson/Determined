@@ -1,4 +1,4 @@
-Written at commit: b32f2c3
+Written at commit: 127f43d
 # SESSION STATE - session 164 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
@@ -18,6 +18,13 @@ confirmed working. TRACKER.md updated.
 **TRACKER.md corrected (b32f2c3) [V]:** RM39 and RM42 marked DONE. Dashboard updated.
 754 passed, 1 skipped. [V]
 
+**Level 1 data_flow coverage validated on dj2 [V]:**
+- 388 total edges; 57% involve builtins (list/str/int/print wrapping -- low signal)
+- 168 real app-level edges after filtering; dominated by PerlinNoise._lerp math recursion
+- Priority targets (process, execute, move_party) = 0 edges each
+- All high-value chains follow `result=fn(); use(result)` -- Level 2 pattern
+- Decision: Level 2 (variable binding) is required to surface meaningful app-level data flow
+
 ## Gap taxonomy (cumulative) [V]
 
 | Gap | Pattern | Status |
@@ -33,7 +40,7 @@ confirmed working. TRACKER.md updated.
 | RDY | Readiness gate | DONE (RM47) |
 | MMP | Multi-method ingestion pre-pass | DONE (RM52) |
 | DGP | Design-to-code delta | DONE (RM48) |
-| DF | Data flow edges (Level 1) | DONE (RM39) |
+| DF | Data flow edges (Level 1) | DONE (RM39); Level 2 needed for real coverage |
 | HTTP | fetch/HTMX -> Flask route | DONE (RM38/RM41) |
 | INV | Investigation context panel | DONE Pass 1+2 (RM42) |
 | LNS | Canned reasoning lenses | DONE (RM43) |
@@ -59,36 +66,29 @@ _list_callees_raw -- may surface unresolved edges. Pass resolved_only=True expli
 
 **design_note content format [V]:** Pre-existing rows have no [KIND|...] prefix.
 
-**RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` not implemented. ~2 weeks effort,
-defer until Level 1 proves insufficient on real queries.
+**RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` variable binding not implemented.
+~2 weeks effort. Level 1 coverage on dj2: 57% builtin noise, priority targets get 0 edges.
+Level 2 is the meaningful work. Build when data flow tracing is actively needed.
 
-**RM42 clue pinned state not persisted [V]:** pinned=True/False stored in initial POST content
-but toggling pin after creation does not PATCH the DB row. Pinned state is in-memory only.
-Low priority -- pinned flag only affects "Clear unpinned" button behavior.
+**RM42 clue pinned state not persisted [V]:** Pinned state is in-memory only (low priority).
 
-**UI re-ingest via preview browser [V]:** socket.emit("ingest", {path}) works but
-Re-analyze button silently falls through to browse dialog when _source_path is empty
-(fresh server start). See HISTORY.md for full procedure.
+**UI re-ingest via preview browser [V]:** socket.emit("ingest", {path}) works.
+Re-analyze button falls through to native folder picker when _source_path empty (fresh start).
 
 ## NEXT SESSION -- start here
 
-**All major RM items are DONE.** The open backlog is:
+**All major RM items are DONE.** Real open work:
 
-1. **RM38** (JS event chain): deferred -- dj2 has no client-side socket.emit.
-   Unblock when dj2 adds socket.emit or when HTTP route chain mapping is needed.
+1. **RM39 Level 2 (variable binding tracking):** ~2 weeks.
+   Entry point: parse_ast.py -- new visit_Assign that tracks `name = fn()` bindings,
+   then in visit_Call checks if any arg is a tracked binding and emits data_flow edge.
+   Per-function binding map needed (dict from name -> callee fqdn, scoped to current function).
+   This is the work that surfaces process(), execute(), move_party() in the graph.
 
-2. **RM21 remaining techniques (2-6):** gated on Technique 1 proving insufficient.
-   No active need identified.
+2. **RM38** (JS event chain): deferred -- dj2 has no client-side socket.emit.
 
-3. **files.role column:** low priority. Either implement role classification in
-   parse_ast.py or remove the column + tool parameter.
+3. **RM21 remaining techniques (2-6):** deferred, gated on Technique 1 proving insufficient.
 
-4. **RM39 Level 2 (variable binding):** `result=fn_a(); fn_b(result)` tracking.
-   ~2 weeks. Build only after Level 1 proves insufficient on real corpus queries.
-
-**Recommended next action:** Use the tool on dj2 and identify new gaps from real usage,
-OR discuss with Bart what "finish the tool" means now that the RM arc is complete.
-Run: `data_flow_edges("process")` and `trace_data_flow("process")` on dj2 corpus to
-validate Level 1 coverage and decide if Level 2 is needed.
+4. **files.role column:** low priority -- implement or remove.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.

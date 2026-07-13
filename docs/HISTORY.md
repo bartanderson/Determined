@@ -8,6 +8,15 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-13: RM39 Level 1 data_flow coverage on dj2 -- verdict.
+388 total data_flow edges in dj2 after re-ingest. 57% involve builtins (list/str/int/print
+wrapping function calls -- technically correct but low signal). After filtering: 168 real
+app-level edges, dominated by PerlinNoise._lerp recursive math (28 edges) and stdlib wrapping.
+Priority targets (process, execute, move_party, get_session, generate) show 0-1 edges each.
+All high-value chains in dj2 follow `result = fn_a(); use(result)` (Level 2 pattern), not
+`fn_b(fn_a())` (Level 1 pattern). Level 2 required to surface meaningful app-level data flow.
+Level 2 effort: ~2 weeks. Build only when data flow tracing is actively needed for dj2 analysis.
+
 2026-07-13: Re-ingest via UI -- how it actually works.
 Re-analyze button flow (ui_server.py handle_ingest / console.html line 1388):
 - If `_currentSourcePath` set (path known from a prior ingest this server session): skips
