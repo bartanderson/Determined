@@ -1199,62 +1199,49 @@ def trace_http_chain(assessor: "Assessor", args: dict) -> str:
         return "trace_http_chain requires a url argument."
 
     from determined.ingestion.dynamic_edges import _normalize_url, _url_matches
-
-    # Find Flask handler(s) for this URL via http_fetch or decorator edges
-    # whose callee matches the URL after normalization
-    norm_url = _normalize_url(url)
-
-    # Look up handler by matching source_id or callee name against known routes
-    # Strategy: find all http_fetch edges, then check if any callee matches a route
-    # that matches the requested URL. Also check decorator edges.
-    all_route_edges = conn.execute(
-        "SELECT source_id, target_id, edge_type FROM graph_edges "
-        "WHERE edge_type IN ('http_fetch', 'decorator', 'js_event_binding')"
-    ).fetchall()
-
-    # Build route_map from decorator edges: callee is the handler
-    # We need to match url -> handler. Use the functions table to find handlers
-    # whose decorator includes the URL. Simpler: query the DB for all Flask routes
-    # stored as decorator edges, then match.
-    # Actually we match via the tool: find http_fetch edges whose target is the handler,
-    # then work backwards. But we don't store the URL in the edge.
-    # Correct approach: re-derive from the corpus using extract_flask_route_map.
-    # For query purposes, find handlers by looking at which functions have decorator
-    # edges from __http_client__, then match the URL by querying functions.decorators_json.
-
-    # Simpler and correct: find all http_fetch target_ids (handler names), then
-    # check which ones plausibly match the URL by looking at their decorator_json.
     import json as _json
 
-    # Get all Flask handlers (functions with @app.route decorator)
-    handler_rows = conn.execute(
-        "SELECT name, decorators_json FROM functions WHERE decorators_json IS NOT NULL"
-    ).fetchall()
-
+    # Primary: use http_route column if it was populated during ingest (TODO-1 fix)
+    fn_cols = {row[1] for row in conn.execute("PRAGMA table_info(functions)").fetchall()}
     matched_handlers: list[str] = []
-    for row in handler_rows:
-        try:
-            decs = _json.loads(row[0 if isinstance(row, (list, tuple)) and len(row) == 1 else 1] or "[]")
-        except Exception:
-            continue
-        for dec in (decs if isinstance(decs, list) else []):
-            dec_str = dec if isinstance(dec, str) else str(dec)
-            if 'route' in dec_str:
-                # Extract URL from decorator string e.g. "@app.route('/api/foo')"
-                import re as _re
-                url_match = _re.search(r'["\']([^"\']+)["\']', dec_str)
-                if url_match:
-                    route_url = url_match.group(1)
-                    if _url_matches(url, route_url):
-                        name_col = row[0] if not isinstance(row[0], int) else None
-                        if name_col:
-                            matched_handlers.append(name_col)
 
-    # Fallback: search by callee name containing url fragments
+    if "http_route" in fn_cols:
+        route_rows = conn.execute(
+            "SELECT name, http_route FROM functions WHERE http_route IS NOT NULL"
+        ).fetchall()
+        for name, route_url in route_rows:
+            if _url_matches(url, route_url):
+                matched_handlers.append(name)
+
+    # Fallback for corpora ingested before http_route column existed:
+    # parse route URL out of decorators_json string representation.
+    # Real decorators_json stores ast.unparse output, e.g. "app.route('/api/foo')"
+    # which contains quoted URL substrings the regex can extract.
     if not matched_handlers:
-        # Try direct name match on http_fetch targets
-        fetch_targets = {r[1] for r in all_route_edges if r[2] == 'http_fetch'}
-        matched_handlers = list(fetch_targets)
+        import re as _re
+        handler_rows = conn.execute(
+            "SELECT name, decorators_json FROM functions WHERE decorators_json IS NOT NULL"
+        ).fetchall()
+        for name, decs_json in handler_rows:
+            try:
+                decs = _json.loads(decs_json or "[]")
+            except Exception:
+                continue
+            for dec in (decs if isinstance(decs, list) else []):
+                dec_str = dec if isinstance(dec, str) else str(dec)
+                if "route" in dec_str:
+                    m = _re.search(r'["\']([^"\']+)["\']', dec_str)
+                    if m and _url_matches(url, m.group(1)):
+                        matched_handlers.append(name)
+                        break
+
+    # Last-resort fallback: for corpora with http_fetch edges but no route metadata,
+    # surface all http_fetch edge targets so the chain is still partially visible.
+    if not matched_handlers:
+        fetch_rows = conn.execute(
+            "SELECT DISTINCT target_id FROM graph_edges WHERE edge_type = 'http_fetch'"
+        ).fetchall()
+        matched_handlers = [r[0] for r in fetch_rows if r[0] not in ("__htmx__", "__http_client__")]
 
     lines = [f"HTTP chain for: {url}", ""]
 

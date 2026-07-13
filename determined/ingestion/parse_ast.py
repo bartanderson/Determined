@@ -205,11 +205,23 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
             docstring = ast.get_docstring(node)
             stub_by_doc = bool(docstring and docstring.strip().upper().startswith("STUB:"))
             decorators = []
+            http_route: str | None = None
             for dec in node.decorator_list:
                 try:
                     decorators.append(ast.unparse(dec))
                 except Exception:
                     pass
+                # Extract Flask route URL from @<anything>.route('/path') decorators
+                if (
+                    http_route is None
+                    and isinstance(dec, ast.Call)
+                    and isinstance(dec.func, ast.Attribute)
+                    and dec.func.attr == "route"
+                    and dec.args
+                    and isinstance(dec.args[0], ast.Constant)
+                    and isinstance(dec.args[0].value, str)
+                ):
+                    http_route = dec.args[0].value
 
             inline_notes: list = []
             if comment_map is not None:
@@ -232,6 +244,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     is_stub=_is_stub(node) or stub_by_doc,
                     decorators=decorators,
                     inline_notes=inline_notes,
+                    http_route=http_route,
                 )
             )
 

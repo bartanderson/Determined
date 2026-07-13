@@ -275,3 +275,81 @@ def test_trace_http_chain_shows_js_caller():
     assert "create_party" in result
     assert "createParty" in result
     assert "enter-dungeon" in result
+
+
+# ---------------------------------------------------------------------------
+# TODO-1: http_route column lookup (more robust than decorators_json parsing)
+# ---------------------------------------------------------------------------
+
+def _make_db_with_http_route(edges=None, functions=None):
+    """Like _make_db but includes the http_route column in functions."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE graph_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id TEXT, target_id TEXT,
+            caller TEXT, callee TEXT,
+            line_number INTEGER, caller_file TEXT,
+            resolved INTEGER DEFAULT 0,
+            edge_type TEXT DEFAULT 'static'
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE functions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT, file_path TEXT,
+            decorators_json TEXT,
+            http_route TEXT,
+            is_stub INTEGER DEFAULT 0
+        )
+    """)
+    for e in (edges or []):
+        conn.execute(
+            "INSERT INTO graph_edges (source_id, target_id, caller, callee, edge_type) VALUES (?,?,?,?,?)",
+            e,
+        )
+    for f in (functions or []):
+        conn.execute(
+            "INSERT INTO functions (name, file_path, http_route) VALUES (?,?,?)",
+            f,
+        )
+    conn.commit()
+    return conn
+
+
+def test_trace_http_chain_uses_http_route_column():
+    """trace_http_chain should find the handler via http_route column (TODO-1 fix)."""
+    conn = _make_db_with_http_route(
+        edges=[
+            ("createParty", "create_party", "createParty", "create_party", "http_fetch"),
+        ],
+        functions=[
+            ("create_party", "world_app.py", "/api/party/create"),
+        ],
+    )
+    result = trace_http_chain(_Assessor(conn), {"url": "/api/party/create"})
+    assert "create_party" in result
+    assert "Flask handler" in result
+
+
+def test_trace_http_chain_http_route_param_match():
+    """http_route with Flask param placeholders should match parameterized URLs."""
+    conn = _make_db_with_http_route(
+        functions=[
+            ("get_character", "routes.py", "/character/<int:id>/basic"),
+        ],
+    )
+    result = trace_http_chain(_Assessor(conn), {"url": "/character/42/basic"})
+    assert "get_character" in result
+
+
+def test_trace_http_chain_http_route_no_false_match():
+    """http_route column present but no match returns 'No Flask handler found'."""
+    conn = _make_db_with_http_route(
+        functions=[
+            ("create_party", "world_app.py", "/api/party/create"),
+        ],
+    )
+    result = trace_http_chain(_Assessor(conn), {"url": "/api/unknown"})
+    assert "No Flask handler found" in result

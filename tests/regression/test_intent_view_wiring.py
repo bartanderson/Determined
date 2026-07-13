@@ -83,8 +83,8 @@ def _make_db_with_intent():
     conn.execute("PRAGMA journal_mode=MEMORY")
     initialize_database(conn)
 
-    conn.execute("INSERT INTO functions VALUES (NULL, 'f.py', 'activate', 10, NULL, '[]', 'Activate the widget.', 0, NULL, NULL)")
-    conn.execute("INSERT INTO functions VALUES (NULL, 'f.py', 'helper', 20, NULL, '[]', NULL, 0, NULL, NULL)")
+    conn.execute("INSERT INTO functions VALUES (NULL, 'f.py', 'activate', 10, NULL, '[]', 'Activate the widget.', 0, NULL, NULL, NULL)")
+    conn.execute("INSERT INTO functions VALUES (NULL, 'f.py', 'helper', 20, NULL, '[]', NULL, 0, NULL, NULL, NULL)")
     conn.execute("INSERT INTO classes VALUES (NULL, 'f.py', 'Widget', 1, '[]', '[]', 'Manages widget lifecycle.')")
     conn.execute("INSERT INTO mutations VALUES (NULL, 'f.py', 12, 'ctx', 'register', 'ctx.register(self)', 'Activate the widget.')")
     conn.commit()

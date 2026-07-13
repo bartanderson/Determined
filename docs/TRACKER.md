@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 161):** RM40 done. resolved_only=False param added to _list_callers_raw, _list_callees_raw; threaded through list_callers, list_callees, blast_radius. bfs_callees and subgraph_around already had it in graph_utils. 4 new regression tests. 735 passed, 1 skipped.
+**Last session (2026-07-13, session 161):** TODO-1 + RM40 done. http_route TEXT column added to functions table (parse_ast.py extracts from @x.route AST, persistence_engine stores it, migration added). trace_http_chain uses http_route primary lookup with decorators_json fallback + http_fetch edge last-resort. 3 new tests. RM40: resolved_only on _list_callers_raw/_list_callees_raw, list_callers/list_callees/blast_radius. 4 tests. 739 passed, 1 skipped.
+
+**Previous (2026-07-12, session 160):** RM43 done. resolved_only=False param added to _list_callers_raw, _list_callees_raw; threaded through list_callers, list_callees, blast_radius. bfs_callees and subgraph_around already had it in graph_utils. 4 new regression tests. 735 passed, 1 skipped.
 
 **Previous (2026-07-12, session 160):** RM43 done. 5 reasoning lenses (Next action, Blast radius, Open questions, Convergence check, Not ready) in determined/agent/reasoning_lenses.py. /api/reasoning_lenses Flask route. Lens buttons appear in Investigation panel when clues are pinned; each composes a structured prompt prefilling the Ask bar. 731 passed, 1 skipped.
 
@@ -185,31 +187,6 @@ each step result. 293/293 tests passing.
 ## Open items
 
 ---
-
-TODO-1. **[FUTURE] trace_http_chain: store Flask route URL as a dedicated column**
-
-   Currently `trace_http_chain` matches Flask handlers by pattern-matching the
-   route string out of `functions.decorators_json` (e.g. searching for `route`
-   and extracting the quoted URL). This is fragile -- it depends on the exact
-   string format stored in the JSON, and will silently miss handlers whose
-   decorator JSON doesn't match the regex.
-
-   The correct fix: during `extract_decorator_entry_edges` or `parse_ast.py`
-   decorator capture, extract the route URL and store it as a dedicated column
-   on `functions` (e.g. `http_route TEXT`). Then `trace_http_chain` can query
-   `SELECT name FROM functions WHERE http_route = ?` with proper normalization.
-
-   **Entry points:**
-   - `determined/ingestion/parse_ast.py`: in the decorator capture path, when
-     `attr == 'route'`, extract the first string arg and store as `http_route`.
-   - `determined/persistence/persistence_engine.py`: add `http_route` column
-     migration and populate it during `_persist_functions`.
-   - `determined/agent/agent_tools.py` `trace_http_chain`: replace
-     `decorators_json` string inspection with `SELECT name FROM functions WHERE
-     http_route` query using `_url_matches`.
-
-   **Trigger:** if `trace_http_chain` misses known handlers on real dj2 queries
-   after re-ingest, this is why. Low urgency until that happens.
 
 ---
 
