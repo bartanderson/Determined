@@ -1,27 +1,22 @@
-Written at commit: dd94562
-# SESSION STATE - session 163 handoff
+Written at commit: b32f2c3
+# SESSION STATE - session 164 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 163, 2026-07-13)
+## What happened this session (session 164, 2026-07-13)
 
-**dj2 re-ingest done [V]:** Populated http_route column (93 functions) and http_fetch/js_event_binding edges.
-- Ran via Python script (bypassed UI server) -- see HISTORY.md for why and correct UI procedure.
-- dj2 DB: 153 files, 1321 functions, 93 with http_route, 32 http_fetch edges, 18 js_event_binding edges.
+**RM39 confirmed already done [V]:** data_flow edge emission was already implemented in
+parse_ast.py (visit_Call, lines 596-643: fn_b(fn_a()) pattern), data_flow_edges and
+trace_data_flow tools in agent_tools.py. 11 regression tests in test_data_flow.py pass.
+TRACKER.md was just not updated.
 
-**RM41 confirmed done + tests added (dd94562) [V]:** HTTP fetch/HTMX -> Flask route edges were already
-implemented in dynamic_edges.py and persistence_engine.py. Gap was missing regression tests.
-- 16 new tests: extract_flask_route_map, extract_htmx_edges, extract_js_event_bindings,
-  extract_fetch_edges, _url_matches (URL normalization with Jinja2/Flask param wildcards).
-- 754 passed, 1 skipped. [V]
-- TRACKER.md updated: RM41 marked DONE.
+**RM42 confirmed already done [V]:** Investigation panel Pass 1+2 both done.
+ui_server.py has /api/clues GET/POST/DELETE. workflow_items kind='clue'. Pass 2 persistence
+confirmed working. TRACKER.md updated.
 
-**UI re-ingest procedure documented (HISTORY.md) [V]:**
-- Re-analyze button on fresh server start -> native Windows folder picker opens on desktop.
-- User selects project folder there; ingest runs. Do NOT try to automate via preview browser.
-- If automating: socket.emit("ingest", {path: "..."}) works (socket is live in preview browser).
-- Root cause of confusion: _source_path only set after ingest, not on server restart with existing DB.
+**TRACKER.md corrected (b32f2c3) [V]:** RM39 and RM42 marked DONE. Dashboard updated.
+754 passed, 1 skipped. [V]
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -64,9 +59,10 @@ _list_callees_raw -- may surface unresolved edges. Pass resolved_only=True expli
 
 **design_note content format [V]:** Pre-existing rows have no [KIND|...] prefix.
 
-**RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` not implemented.
+**RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` not implemented. ~2 weeks effort,
+defer until Level 1 proves insufficient on real queries.
 
-**RM42 clue pinned state not persisted [V]:** pinned=True/False is stored in initial POST content
+**RM42 clue pinned state not persisted [V]:** pinned=True/False stored in initial POST content
 but toggling pin after creation does not PATCH the DB row. Pinned state is in-memory only.
 Low priority -- pinned flag only affects "Clear unpinned" button behavior.
 
@@ -76,16 +72,23 @@ Re-analyze button silently falls through to browse dialog when _source_path is e
 
 ## NEXT SESSION -- start here
 
-**Recommended next action:** RM39 -- data flow edges Level 1.
-- Emit data_flow graph edges when fn_b(fn_a()) nested-call pattern detected in AST.
-- Entry point: determined/ingestion/parse_ast.py Visitor.visit_Call.
-- Storage: extend graph_edges with edge_type='data_flow' (Option B -- existing traversal handles it).
-- Estimated effort: ~2 days.
-- Prerequisite analysis done (dj2 path analysis, TRACKER.md RM39 section).
+**All major RM items are DONE.** The open backlog is:
 
-**Also open:**
-- RM21 remaining techniques (2-6): gated on Technique 1 proving insufficient.
-- files.role column: implement or remove (low priority).
-- RM38: JS event chain via socket.emit (deferred -- dj2 has no client-side socket.emit).
+1. **RM38** (JS event chain): deferred -- dj2 has no client-side socket.emit.
+   Unblock when dj2 adds socket.emit or when HTTP route chain mapping is needed.
+
+2. **RM21 remaining techniques (2-6):** gated on Technique 1 proving insufficient.
+   No active need identified.
+
+3. **files.role column:** low priority. Either implement role classification in
+   parse_ast.py or remove the column + tool parameter.
+
+4. **RM39 Level 2 (variable binding):** `result=fn_a(); fn_b(result)` tracking.
+   ~2 weeks. Build only after Level 1 proves insufficient on real corpus queries.
+
+**Recommended next action:** Use the tool on dj2 and identify new gaps from real usage,
+OR discuss with Bart what "finish the tool" means now that the RM arc is complete.
+Run: `data_flow_edges("process")` and `trace_data_flow("process")` on dj2 corpus to
+validate Level 1 coverage and decide if Level 2 is needed.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
