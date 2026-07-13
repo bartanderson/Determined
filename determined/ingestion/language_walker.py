@@ -271,6 +271,20 @@ class LanguageWalker:
                     if name_node:
                         _add(f"{cls_name}.{name_node.text()}", method)
 
+        # Object literal methods: const obj = { method: function() {} }
+        for node in root.find_all({"rule": {"kind": "lexical_declaration"}}):
+            for decl in node.find_all({"rule": {"kind": "variable_declarator"}}):
+                id_node = decl.field("name")
+                val_node = decl.field("value")
+                if id_node is None or val_node is None or val_node.kind() != "object":
+                    continue
+                obj_name = id_node.text()
+                for pair in val_node.find_all({"rule": {"kind": "pair"}}):
+                    key_node = pair.field("key")
+                    val = pair.field("value")
+                    if key_node and val and val.kind() in ("arrow_function", "function_expression"):
+                        _add(f"{obj_name}.{key_node.text().strip(chr(39) + chr(34))}", val)
+
         # Sort by start line so _enclosing_fqdn can find the tightest enclosing scope
         ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
         return ranges

@@ -758,9 +758,93 @@ def persist_all(connection, file_analyses, graph, project_prefixes, logger=None,
     _persist_cross_boundary_edges(connection, file_analyses, annotation_file)
 
     # -----------------------------------------
+    # 5c. PERSIST JS/TS LAYER (LanguageWalker)
+    # -----------------------------------------
+    if project_root:
+        _persist_js_ts_files(connection, project_root, logger=logger)
+
+    # -----------------------------------------
     # 6. RECALCULATE is_hot FROM GRAPH
     # -----------------------------------------
     _recalculate_hot_files(connection)
+
+def _persist_js_ts_files(connection, project_root, ignored_directory_names=None, logger=None):
+    """
+    Discover JS/TS files under project_root, run LanguageWalker on each,
+    and insert symbols + call edges into functions / graph_edges.
+    """
+    from pathlib import Path
+    from determined.ingestion.scan_project_files import discover_js_ts_files
+    from determined.ingestion.language_walker import LanguageWalker, detect_language
+    from determined.identity.edge_identity import edge_identity
+    from determined.identity.symbol_identity import all_name_forms
+
+    cursor = connection.cursor()
+    js_files = discover_js_ts_files(project_root, ignored_directory_names)
+
+    if not js_files:
+        return
+
+    # Scoped delete: remove existing rows for files we're about to re-insert
+    file_paths = [str(p) for p in js_files]
+    placeholders = ",".join("?" * len(file_paths))
+    cursor.execute(f"DELETE FROM functions WHERE file_path IN ({placeholders})", file_paths)
+    cursor.execute(
+        f"DELETE FROM graph_edges WHERE caller_file IN ({placeholders})", file_paths
+    )
+
+    symbol_names_batch: list[tuple[str, str, str]] = []
+
+    for path in js_files:
+        lang = detect_language(str(path))
+        if lang is None:
+            continue
+        try:
+            src = Path(path).read_text(encoding="utf-8", errors="ignore")
+            walker = LanguageWalker(src, str(path), lang)
+        except Exception:
+            continue
+
+        # --- symbols → functions table ---
+        for sym in walker.symbols():
+            cursor.execute("""
+            INSERT INTO functions (
+                file_path, name, line_number, return_type, arguments_json,
+                param_types_json, docstring, is_stub, decorators_json, http_route
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                sym["file_path"], sym["name"], sym["line_number"],
+                sym["return_type"], sym["arguments_json"], sym["param_types_json"],
+                sym["docstring"], 1 if sym["is_stub"] else 0,
+                sym["decorators_json"], sym["http_route"],
+            ))
+            _insert_symbol(cursor, sym["file_path"], "function", sym["name"], sym["line_number"])
+
+        # --- call edges → graph_edges table ---
+        for caller_fqdn, callee_name, etype, resolved in walker.call_edges():
+            src_id, tgt_id = edge_identity(caller_fqdn, callee_name)
+            cursor.execute("""
+            INSERT INTO graph_edges (
+                source_id, target_id, caller, callee, caller_file, resolved, edge_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (src_id, tgt_id, caller_fqdn, callee_name, str(path), 1 if resolved else 0, etype))
+            for name, ntype in all_name_forms(caller_fqdn):
+                symbol_names_batch.append((src_id, name, ntype))
+            for name, ntype in all_name_forms(callee_name):
+                symbol_names_batch.append((tgt_id, name, ntype))
+
+        logger and logger.write(f"[JS/TS] {path.name}: {len(walker.symbols())} symbols, {len(walker.call_edges())} edges")
+
+    seen: set[tuple[str, str]] = set()
+    for canonical_id, name, ntype in symbol_names_batch:
+        key = (canonical_id, name)
+        if key not in seen:
+            seen.add(key)
+            cursor.execute(
+                "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?, ?, ?)",
+                (canonical_id, name, ntype),
+            )
+
 
 def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=None):
     """

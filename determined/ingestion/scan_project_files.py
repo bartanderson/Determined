@@ -68,6 +68,34 @@ def should_ignore_path(path: Path, ignored_directory_names: Iterable[str]) -> bo
     return any(part in ignored for part in path.parts)
 
 
+_JS_TS_EXTENSIONS = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"}
+
+
+def discover_js_ts_files(
+    project_root: str | Path,
+    ignored_directory_names: Iterable[str] | None = None,
+) -> List[Path]:
+    root = Path(project_root).resolve()
+    ignored = (
+        set(ignored_directory_names)
+        if ignored_directory_names is not None
+        else load_ignore_list(root)
+    )
+    discovered: List[Path] = []
+    for path in root.rglob("*"):
+        if path.suffix not in _JS_TS_EXTENSIONS:
+            continue
+        path = path.resolve()
+        if not str(path).startswith(str(root)):
+            continue
+        if any(part in {"node_modules", "dist", "build", ".venv"} for part in path.parts):
+            continue
+        if should_ignore_path(path, ignored):
+            continue
+        discovered.append(path)
+    return sorted(discovered)
+
+
 def discover_python_files(
     project_root: str | Path,
     ignored_directory_names: Iterable[str] | None = None,
