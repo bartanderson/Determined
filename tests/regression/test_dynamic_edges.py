@@ -9,6 +9,11 @@ from determined.ingestion.dynamic_edges import (
     extract_cross_language_edges,
     load_virtual_edge_annotations,
     extract_all_dynamic_edges,
+    extract_flask_route_map,
+    extract_htmx_edges,
+    extract_js_event_bindings,
+    extract_fetch_edges,
+    _url_matches,
 )
 
 
@@ -216,3 +221,122 @@ def test_polymorphic_edges_auto_generated():
     assert "ConcreteProcessor.process" in tgts
     assert "ConcreteProcessor.validate" in tgts
     assert all(e[2] == 'polymorphic' for e in inserted)
+
+
+# ---------------------------------------------------------------------------
+# RM41 — HTTP fetch / HTMX → Flask route chain
+# ---------------------------------------------------------------------------
+
+def test_flask_route_map_basic():
+    src = """
+@app.route('/api/users')
+def list_users():
+    pass
+
+@app.route('/api/users/<int:id>', methods=['GET', 'POST'])
+def get_user(id):
+    pass
+"""
+    routes = extract_flask_route_map(src)
+    assert routes.get('/api/users') == 'list_users'
+    assert routes.get('/api/users/<int:id>') == 'get_user'
+
+
+def test_flask_route_map_blueprint():
+    src = """
+@bp.route('/items')
+def list_items():
+    pass
+"""
+    routes = extract_flask_route_map(src)
+    assert routes.get('/items') == 'list_items'
+
+
+def test_flask_route_map_no_routes():
+    src = "def plain(): pass"
+    assert extract_flask_route_map(src) == {}
+
+
+def test_url_matches_exact():
+    assert _url_matches('/api/users', '/api/users')
+
+
+def test_url_matches_flask_param():
+    assert _url_matches('/api/users/42', '/api/users/<int:id>')
+
+
+def test_url_matches_jinja_var():
+    assert _url_matches('/api/users/{{ user_id }}', '/api/users/<int:id>')
+
+
+def test_url_matches_different_lengths():
+    assert not _url_matches('/api/users', '/api/users/extra')
+
+
+def test_htmx_edges_hx_get():
+    html = '<div hx-get="/api/status" hx-trigger="load"></div>'
+    route_map = {'/api/status': 'get_status'}
+    edges = extract_htmx_edges(html, route_map)
+    assert ('__htmx__', 'get_status', 'http_fetch') in edges
+
+
+def test_htmx_edges_hx_post():
+    html = '<form hx-post="/api/submit">...</form>'
+    route_map = {'/api/submit': 'handle_submit'}
+    edges = extract_htmx_edges(html, route_map)
+    assert ('__htmx__', 'handle_submit', 'http_fetch') in edges
+
+
+def test_htmx_edges_no_match():
+    html = '<div hx-get="/api/unknown"></div>'
+    route_map = {'/api/status': 'get_status'}
+    assert extract_htmx_edges(html, route_map) == []
+
+
+def test_htmx_edges_flask_param_match():
+    html = '<div hx-get="/api/users/{{ user_id }}"></div>'
+    route_map = {'/api/users/<int:id>': 'get_user'}
+    edges = extract_htmx_edges(html, route_map)
+    assert ('__htmx__', 'get_user', 'http_fetch') in edges
+
+
+def test_js_event_bindings_onclick():
+    html = '<button id="save-btn" onclick="saveData()">Save</button>'
+    edges = extract_js_event_bindings(html)
+    targets = {e[1] for e in edges}
+    assert 'saveData' in targets
+    assert all(e[2] == 'js_event_binding' for e in edges)
+
+
+def test_js_event_bindings_no_id():
+    html = '<button onclick="doThing()">Click</button>'
+    edges = extract_js_event_bindings(html)
+    assert any(e[1] == 'doThing' for e in edges)
+    # caller falls back to __html_element__ when no id
+    callers = {e[0] for e in edges}
+    assert '__html_element__' in callers
+
+
+def test_fetch_edges_named_function():
+    js = """
+async function loadUser() {
+    const r = await fetch('/api/users');
+    return r.json();
+}
+"""
+    route_map = {'/api/users': 'list_users'}
+    edges = extract_fetch_edges(js, route_map)
+    assert ('loadUser', 'list_users', 'http_fetch') in edges
+
+
+def test_fetch_edges_no_match():
+    js = "async function foo() { fetch('/api/unknown'); }"
+    route_map = {'/api/users': 'list_users'}
+    assert extract_fetch_edges(js, route_map) == []
+
+
+def test_fetch_edges_module_level():
+    js = "fetch('/api/ping');"
+    route_map = {'/api/ping': 'ping'}
+    edges = extract_fetch_edges(js, route_map)
+    assert any(e[1] == 'ping' and e[2] == 'http_fetch' for e in edges)

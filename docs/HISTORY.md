@@ -8,6 +8,22 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-13: Re-ingest via UI -- how it actually works.
+Re-analyze button flow (ui_server.py handle_ingest / console.html line 1388):
+- If `_currentSourcePath` set (path known from a prior ingest this server session): skips
+  modal, goes straight to ingest. `_currentSourcePath` is only set when an ingest runs --
+  NOT when the server restarts and loads an existing DB.
+- If `_currentSourcePath` empty: falls through to `socket.emit("browse", {})` which calls
+  tkinter filedialog.askdirectory on the SERVER's desktop -- a native Windows folder picker
+  pops up on screen. User selects the folder, result emits back, ingest runs.
+Correct user flow for re-ingest on fresh server start: click Re-analyze in the real browser
+-> native Windows folder picker appears on desktop -> select C:\Users\bartl\dev\dj2 -> ingest runs.
+DO NOT try to automate this through the preview browser -- the native folder picker opens on
+the desktop, not in the browser, so the preview tool can't see or interact with it.
+If automating via claude-in-chrome or javascript_tool: emit `socket.emit("ingest", {path: "C:\\Users\\bartl\\dev\\dj2"})` directly -- bypasses the browse dialog entirely.
+Permanent fix (not done): server should set `_source_path` on `init()` by reversing the
+DB filename convention (`C_Users_bartl_dev_dj2.db` -> `C:\Users\bartl\dev\dj2`).
+
 2026-07-12: RM50 inline comment extraction -- two design pivots worth remembering.
 (1) Initial impl used raw line scan + content heuristics (len>5, alphanumeric filter).
 Devil's advocate showed this drops legitimate short comments (TODO, ok) and filters

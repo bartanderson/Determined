@@ -887,7 +887,19 @@ RM42. **[OPEN] Investigation context panel: accumulate query results as a clue b
 
 ---
 
-RM41. **[OPEN] HTTP fetch/HTMX → Flask route cross-language edges**
+RM41. **[DONE 2026-07-13] HTTP fetch/HTMX → Flask route cross-language edges**
+
+   Implemented in dynamic_edges.py (extract_flask_route_map, extract_htmx_edges,
+   extract_js_event_bindings, extract_fetch_edges) and wired into
+   _persist_cross_boundary_edges in persistence_engine.py. URL normalization handles
+   Jinja2 {{var}} ↔ Flask <type:var> matching. Falls back to reading HTML/JS from disk
+   when scan_project_files skips them. dj2 after re-ingest: 32 http_fetch edges,
+   18 js_event_binding edges. 16 new regression tests (27 total in test_dynamic_edges.py).
+   738 passed, 1 skipped.
+
+   ~~Original description below:~~
+
+RM41. **HTTP fetch/HTMX → Flask route cross-language edges**
 
    **The gap:** Gap 7 wired JS socket.emit → Python @socketio.on via cross_language edges.
    The same pattern applies to the HTTP boundary: `fetch('/api/route', {method:'POST'})` in
