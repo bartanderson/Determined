@@ -59,6 +59,25 @@
 #guide-footer{text-align:center;padding:6px 0 4px;font-size:.72em;color:var(--text3);border-top:1px solid var(--border);margin-top:4px}
 #guide-footer a{color:var(--text3);text-decoration:underline dotted;cursor:pointer}
 #guide-footer a:hover{color:var(--text2)}
+/* ── clue board (RM42) ── */
+.clue-card{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 9px;margin-bottom:6px;font-size:.8em}
+.clue-card-head{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.clue-tool-tag{font-size:.68em;font-weight:600;text-transform:uppercase;letter-spacing:.05em;background:var(--surface2);color:var(--text3);border-radius:3px;padding:1px 5px;flex-shrink:0}
+.clue-subject{font-family:var(--font-mono);color:var(--text1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9em}
+.clue-pin-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.85em;padding:0 2px;line-height:1;flex-shrink:0}
+.clue-pin-btn:hover,.clue-pin-btn.pinned{color:var(--orange)}
+.clue-rm-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.85em;padding:0 2px;line-height:1;flex-shrink:0}
+.clue-rm-btn:hover{color:var(--red)}
+.clue-summary{color:var(--text2);line-height:1.45;white-space:pre-wrap}
+.clue-ts{color:var(--text3);font-size:.72em;margin-top:3px}
+#clue-empty{color:var(--text3);font-size:.82em;text-align:center;padding:20px 0;font-style:italic}
+#clue-ask-btn{width:100%;margin-top:8px;font-size:.8em;padding:5px 0;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;color:var(--text2);cursor:pointer;transition:background .12s,color .12s}
+#clue-ask-btn:hover{background:var(--bg3);color:var(--text1)}
+#clue-clear-btn{width:100%;margin-top:4px;font-size:.75em;padding:3px 0;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text3);cursor:pointer}
+#clue-clear-btn:hover{color:var(--text1);border-color:var(--text3)}
+/* pin button injected into result-block headers */
+.result-pin-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.85em;padding:0 3px;line-height:1;flex-shrink:0;margin-left:auto}
+.result-pin-btn:hover,.result-pin-btn.pinned{color:var(--orange)}
 /* ── rail dot progress indicators ── */
 .rail-icon{position:relative}
 .rail-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:transparent;transition:background .2s}
@@ -157,6 +176,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <button class="rail-icon active" data-section="corpus" title="Corpus — analyze / switch">🗄<span class="rail-dot" data-key="rail:corpus" data-state="unvisited"></span></button>
     <button class="rail-icon" data-section="navigate" title="Navigate — start here, corpus map">🧭<span class="rail-dot" data-key="rail:navigate" data-state="unvisited"></span></button>
     <button class="rail-icon" data-section="tools" title="Tools — query shortcuts">🔧<span class="rail-dot" data-key="rail:tools" data-state="unvisited"></span></button>
+    <button class="rail-icon" id="investigate-rail-icon" data-section="investigate" title="Investigation — pin clues, reason across findings">🔍</button>
     <div class="rail-spacer"></div>
     <button class="rail-icon" id="ask-rail-icon" data-section="ask" title="Ask / chat">💬<span class="rail-dot" data-key="rail:ask" data-state="unvisited"></span></button>
   </div>
@@ -243,6 +263,17 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
             <button class="tp-btn" id="tp-files-btn">Run</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Investigation section (RM42) -->
+    <div class="sb-section" id="sb-investigate" style="display:none">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Investigation</div>
+        <div id="clue-list"></div>
+        <div id="clue-empty">No clues pinned yet.<br>Click 📌 on any result to add it.</div>
+        <button id="clue-ask-btn" style="display:none">Ask about these clues ↵</button>
+        <button id="clue-clear-btn" style="display:none">Clear unpinned</button>
       </div>
     </div>
 
@@ -1662,6 +1693,7 @@ function addResultBlock(question, answer, trace) {
     <div class="result-header">
       <span class="kind-tag ${kindCss}">${kind}</span>
       <span class="result-subject">${escHtml(truncate(question, 60))}</span>
+      <button class="result-pin-btn" title="Pin to Investigation">📌</button>
       <div class="toggle-group" title="view mode">
         <span class="tog active" data-mode="normal" title="normal">≡</span>
         <span class="tog"        data-mode="compact" title="compact">⋯</span>
@@ -1709,6 +1741,14 @@ function addResultBlock(question, answer, trace) {
 
   results.appendChild(block);
   results.scrollTop = results.scrollHeight;
+
+  // wire pin button → clue board
+  block.querySelector(".result-pin-btn").addEventListener("click", function() {
+    const summary = (parts.body || "").slice(0, 400);
+    if (window.pinClue) window.pinClue(kind, question, summary);
+    this.classList.add("pinned");
+    this.title = "Pinned to Investigation";
+  });
 
   // upgrade decorative symbol spans to interactive ones
   attachSymbolHandlers(block);
@@ -3090,7 +3130,7 @@ let _railSection = "corpus";
 let _panelOpen   = true;
 
 function railShowSection(section) {
-  ["corpus","navigate","tools"].forEach(s => {
+  ["corpus","navigate","tools","investigate"].forEach(s => {
     document.getElementById("sb-" + s).style.display = (s === section) ? "" : "none";
   });
 }
@@ -4191,6 +4231,89 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
   // corpus is active by default on load — mark it visited
   guideMarkVisited("rail:corpus");
   guideUpdateDots();
+})();
+
+// ── RM42: Investigation clue board ───────────────────────────────────────────
+(function() {
+  const MAX_CLUES = 20;
+  let _clues = [];   // [{id, tool, subject, summary, pinned, ts}]
+  let _seq   = 0;
+
+  const clueList     = document.getElementById("clue-list");
+  const clueEmpty    = document.getElementById("clue-empty");
+  const clueAskBtn   = document.getElementById("clue-ask-btn");
+  const clueClearBtn = document.getElementById("clue-clear-btn");
+
+  function _ts() {
+    const d = new Date();
+    return d.getHours().toString().padStart(2,"0") + ":" + d.getMinutes().toString().padStart(2,"0");
+  }
+
+  function _renderAll() {
+    clueList.innerHTML = "";
+    if (_clues.length === 0) {
+      clueEmpty.style.display = "";
+      clueAskBtn.style.display   = "none";
+      clueClearBtn.style.display = "none";
+      return;
+    }
+    clueEmpty.style.display   = "none";
+    clueAskBtn.style.display  = "";
+    clueClearBtn.style.display = "";
+    _clues.forEach(c => {
+      const card = document.createElement("div");
+      card.className = "clue-card";
+      card.dataset.id = c.id;
+      card.innerHTML = `
+        <div class="clue-card-head">
+          <span class="clue-tool-tag">${escHtml(c.tool)}</span>
+          <span class="clue-subject" title="${escAttr(c.subject)}">${escHtml(c.subject)}</span>
+          <button class="clue-pin-btn${c.pinned ? " pinned" : ""}" title="${c.pinned ? "Unpin" : "Pin (keep on clear)"}">📌</button>
+          <button class="clue-rm-btn" title="Remove">✕</button>
+        </div>
+        <div class="clue-summary">${escHtml(c.summary)}</div>
+        <div class="clue-ts">${c.ts}</div>`;
+      card.querySelector(".clue-pin-btn").addEventListener("click", () => {
+        c.pinned = !c.pinned;
+        _renderAll();
+      });
+      card.querySelector(".clue-rm-btn").addEventListener("click", () => {
+        _clues = _clues.filter(x => x.id !== c.id);
+        _renderAll();
+      });
+      clueList.appendChild(card);
+    });
+  }
+
+  // public: add a clue from a result block
+  window.pinClue = function(tool, subject, summary) {
+    if (_clues.length >= MAX_CLUES) {
+      const idx = _clues.findIndex(c => !c.pinned);
+      if (idx !== -1) _clues.splice(idx, 1);
+      else return;
+    }
+    _clues.unshift({ id: ++_seq, tool, subject, summary: summary.slice(0, 400), pinned: false, ts: _ts() });
+    _renderAll();
+    const icon = document.getElementById("investigate-rail-icon");
+    if (icon) { icon.style.background = "rgba(255,180,0,.25)"; setTimeout(() => icon.style.background = "", 600); }
+  };
+
+  // "Ask about these clues" → prefill query bar
+  clueAskBtn.addEventListener("click", () => {
+    const summaries = _clues.map((c,i) => `[${i+1}] ${c.tool}(${c.subject}): ${c.summary}`).join("\n");
+    input.value = `Given these investigation findings:\n${summaries}\n\nWhat do they suggest?`;
+    showQueryBar();
+    input.focus();
+    const askIcon = document.getElementById("ask-rail-icon");
+    if (askIcon) askIcon.click();
+  });
+
+  clueClearBtn.addEventListener("click", () => {
+    _clues = _clues.filter(c => c.pinned);
+    _renderAll();
+  });
+
+  _renderAll();
 })();
 </script>
 
