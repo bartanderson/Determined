@@ -14,9 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 161):** TODO-1 + RM40 done. http_route TEXT column added to functions table (parse_ast.py extracts from @x.route AST, persistence_engine stores it, migration added). trace_http_chain uses http_route primary lookup with decorators_json fallback + http_fetch edge last-resort. 3 new tests. RM40: resolved_only on _list_callers_raw/_list_callees_raw, list_callers/list_callees/blast_radius. 4 tests. 739 passed, 1 skipped.
+**Last session (2026-07-13, session 162):** RM42 Pass 2 done. Clue board now persists across page reloads. Three Flask routes (GET/POST /api/clues, DELETE /api/clues/<id>) store clues as workflow_items (kind='clue'). pinClue() POSTs on add; remove DELETEs; page load fetches and restores _clues. 738 passed, 1 skipped.
 
-**Previous (2026-07-12, session 160):** RM43 done. resolved_only=False param added to _list_callers_raw, _list_callees_raw; threaded through list_callers, list_callees, blast_radius. bfs_callees and subgraph_around already had it in graph_utils. 4 new regression tests. 735 passed, 1 skipped.
+**Previous (2026-07-13, session 161):** TODO-1 + RM40 done. http_route TEXT column added to functions table (parse_ast.py extracts from @x.route AST, persistence_engine stores it, migration added). trace_http_chain uses http_route primary lookup with decorators_json fallback + http_fetch edge last-resort. 3 new tests. RM40: resolved_only on _list_callers_raw/_list_callees_raw, list_callers/list_callees/blast_radius. 4 tests. 738 passed, 1 skipped.
 
 **Previous (2026-07-12, session 160):** RM43 done. 5 reasoning lenses (Next action, Blast radius, Open questions, Convergence check, Not ready) in determined/agent/reasoning_lenses.py. /api/reasoning_lenses Flask route. Lens buttons appear in Investigation panel when clues are pinned; each composes a structured prompt prefilling the Ask bar. 731 passed, 1 skipped.
 
