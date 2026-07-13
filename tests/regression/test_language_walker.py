@@ -428,3 +428,76 @@ def test_go_package_name_fallback():
     w = LanguageWalker(src, "/fake/util.go", "go")
     names = symbol_names(w)
     assert any("Standalone" in n for n in names)
+
+
+# ---------------------------------------------------------------------------
+# Rust: Phase 3
+# ---------------------------------------------------------------------------
+
+RUST_SRC = """
+mod game;
+
+fn start_game(cfg: Config) {
+    let g = init(cfg);
+    run(g);
+}
+
+fn init(cfg: Config) -> Game { Game {} }
+fn run(g: Game) {}
+
+struct Player;
+
+impl Player {
+    fn new() -> Self { Player }
+    fn fight(&self, target: &mut Enemy) {
+        target.take_damage(10);
+    }
+}
+"""
+
+
+def test_rust_fn_symbol():
+    w = LanguageWalker(RUST_SRC, "/fake/game.rs", "rust")
+    names = symbol_names(w)
+    assert "game::start_game" in names
+    assert "game::init" in names
+    assert "game::run" in names
+
+
+def test_rust_impl_method_symbol():
+    w = LanguageWalker(RUST_SRC, "/fake/game.rs", "rust")
+    names = symbol_names(w)
+    assert "Player::new" in names
+    assert "Player::fight" in names
+
+
+def test_rust_call_edge_direct():
+    w = LanguageWalker(RUST_SRC, "/fake/game.rs", "rust")
+    edges = callers(w.call_edges())
+    assert ("game::start_game", "init") in edges
+    assert ("game::start_game", "run") in edges
+
+
+def test_rust_method_call_edge():
+    w = LanguageWalker(RUST_SRC, "/fake/game.rs", "rust")
+    edges = callers(w.call_edges())
+    # target.take_damage(10) → method call attributed to Player::fight
+    assert ("Player::fight", "take_damage") in edges
+
+
+def test_rust_builtin_filtered():
+    src = """
+fn setup() {
+    let v: Vec<i32> = Vec::new();
+    println!("hello");
+    do_work();
+}
+fn do_work() {}
+"""
+    w = LanguageWalker(src, "/fake/lib.rs", "rust")
+    edges = callers(w.call_edges())
+    # Vec::new is a builtin — the "new" method call should be filtered
+    # do_work should survive
+    callee_names = {c for _, c in edges}
+    assert "println" not in callee_names
+    assert "do_work" in callee_names

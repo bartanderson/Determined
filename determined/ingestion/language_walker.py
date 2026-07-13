@@ -49,6 +49,33 @@ _GO_BUILTINS = frozenset({
 })
 
 
+# Rust built-in types, traits, macros, and std identifiers to filter from callees
+_RUST_BUILTINS = frozenset({
+    # macros (called with !)
+    "println", "print", "eprintln", "eprint", "format", "vec", "assert",
+    "assert_eq", "assert_ne", "panic", "todo", "unimplemented", "unreachable",
+    "dbg", "write", "writeln",
+    # common std methods / traits that appear as bare identifiers
+    "unwrap", "expect", "ok", "err", "map", "and_then", "or_else",
+    "is_some", "is_none", "is_ok", "is_err", "clone", "into", "from",
+    "iter", "collect", "len", "push", "pop", "contains", "get", "insert",
+    "remove", "default", "new", "drop", "to_string", "to_owned",
+    "copied", "cloned", "as_ref", "as_mut", "borrow", "borrow_mut",
+    "iter_mut", "keys", "values", "entry",
+    # enum variants and special identifiers
+    "Some", "None", "Ok", "Err", "Self", "self", "super",
+    # common iterator adaptors that appear as method calls
+    "filter", "map", "flat_map", "for_each", "any", "all", "find",
+    "count", "sum", "product", "zip", "enumerate", "take", "skip",
+    "chain", "peekable", "rev", "sorted",
+    # primitive types
+    "bool", "i8", "i16", "i32", "i64", "i128", "isize",
+    "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64",
+    "char", "str", "String", "Vec", "Option", "Result", "Box",
+    "Rc", "Arc", "Cell", "RefCell",
+})
+
+
 class LanguageWalker:
     """
     Single abstraction for symbol and edge extraction across languages.
@@ -595,10 +622,21 @@ class LanguageWalker:
         root = self._root.root()
         module = self._basename
 
-        # Free functions
+        impl_ranges: list[tuple[int, int]] = []
+        for impl_node in root.find_all({"rule": {"kind": "impl_item"}}):
+            r = impl_node.range()
+            impl_ranges.append((r.start.line, r.end.line))
+
+        def _in_impl(start_line: int) -> bool:
+            return any(s <= start_line <= e for s, e in impl_ranges)
+
+        # Free functions (not nested inside impl blocks)
         for node in root.find_all({"rule": {"kind": "function_item"}}):
             name_node = node.field("name")
             if name_node is None:
+                continue
+            r = node.range()
+            if _in_impl(r.start.line):
                 continue
             fqdn = f"{module}::{name_node.text()}"
             results.append(self._make_symbol(fqdn, node))
@@ -620,8 +658,80 @@ class LanguageWalker:
         return results
 
     def _rust_call_edges(self) -> list[tuple]:
-        # Phase 3: implement when Rust corpus is active
-        return []
+        results = []
+        root = self._root.root()
+        fn_ranges = self._rust_fn_ranges()
+
+        for call in root.find_all({"rule": {"kind": "call_expression"}}):
+            caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if caller_fqdn is None:
+                continue
+            func_node = call.field("function")
+            if func_node is None:
+                continue
+            callee = self._rust_callee_name(func_node)
+            if callee is None:
+                continue
+            base = callee.split("::")[0].split(".")[0]
+            if base in _RUST_BUILTINS:
+                continue
+            results.append((caller_fqdn, callee, "static", False))
+
+        return results
+
+    def _rust_fn_ranges(self) -> list[tuple]:
+        ranges = []
+        root = self._root.root()
+        module = self._basename
+
+        # Collect line ranges covered by impl blocks so we can exclude nested fn items
+        impl_ranges: list[tuple[int, int]] = []
+        for impl_node in root.find_all({"rule": {"kind": "impl_item"}}):
+            r = impl_node.range()
+            impl_ranges.append((r.start.line, r.end.line))
+
+        def _in_impl(start_line: int) -> bool:
+            return any(s <= start_line <= e for s, e in impl_ranges)
+
+        # Top-level free functions only (not inside impl blocks)
+        for node in root.find_all({"rule": {"kind": "function_item"}}):
+            name_node = node.field("name")
+            if name_node is None:
+                continue
+            r = node.range()
+            if _in_impl(r.start.line):
+                continue
+            ranges.append((r.start.line, r.end.line, f"{module}::{name_node.text()}"))
+
+        # impl block methods
+        for impl_node in root.find_all({"rule": {"kind": "impl_item"}}):
+            type_node = impl_node.field("type")
+            type_name = type_node.text() if type_node else module
+            body = impl_node.field("body")
+            if body is None:
+                continue
+            for fn_node in body.find_all({"rule": {"kind": "function_item"}}):
+                name_node = fn_node.field("name")
+                if name_node:
+                    r = fn_node.range()
+                    ranges.append((r.start.line, r.end.line, f"{type_name}::{name_node.text()}"))
+
+        ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        return ranges
+
+    def _rust_callee_name(self, func_node) -> str | None:
+        """Extract callee name from a Rust call expression function field."""
+        kind = func_node.kind()
+        if kind == "identifier":
+            return func_node.text()
+        if kind == "scoped_identifier":
+            return func_node.text()  # e.g. "module::Function"
+        if kind == "field_expression":
+            # obj.field — use field name only
+            field = func_node.field("field")
+            if field:
+                return field.text()
+        return None
 
 
 # ------------------------------------------------------------------
