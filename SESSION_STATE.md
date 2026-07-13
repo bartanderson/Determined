@@ -1,75 +1,84 @@
-Written at commit: dd71dec
-# SESSION STATE - session 168 wrap
+Written at commit: 405bb31
+
+# SESSION STATE - session 169 wrap
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 168, 2026-07-13)
+## What happened this session (session 169, 2026-07-13)
 
-**Process improvement [V]:**
-- TRACKER.md update rule added to CLAUDE.md: Edit tool for status changes;
-  scratchpad-first for new multi-line item blocks. Memory saved.
+**RM53 fully complete -- all 3 phases committed [V]:**
 
-**RM56 done [V]:**
-- `_last_call_fqdn.pop(node_id, None)` committed (was in working tree from session 167).
-- Tuple-unpack comment added to visit_For (known limitation documented in place).
-- All 26 data_flow tests pass [V].
-- Committed: cc45439
+Phase 1 (JS/TS wire-in) -- commit 857fa6a [V]
+- `scan_project_files.py`: `discover_js_ts_files()` added
+- `persistence_engine.py`: `_persist_js_ts_files()` + step 5c wire-in
+- `test_language_walker_persist.py`: 6 tests
+- dnd-dungeon-gen validated: 291 symbols, 974 call edges
 
-**RM53 Phase 1 done [V]:**
-- `determined/ingestion/language_walker.py` created (~620 lines):
-  - `LanguageWalker(src, file_path, language)` with `.symbols()`, `.call_edges()`,
-    `.data_flow_edges()` public API
-  - JS/TS: named fns, arrow fns, class methods, object literal methods; fqdn convention
-    `<basename>.<fn>` for top-level, `<ClassName>.<method>` for class methods
-  - Call edges: bare + member calls, built-in filtering (_JS_BUILTINS), scope attribution
-    via fn_ranges; callee is raw name from call site (cross-file resolution in persist layer)
-  - Data flow L1 (nested arg), L2 (var binding), L3a (for-of / for_in_statement with
-    operator='of'), L3b (object named arg); provenance tags match Python side
-  - Go Phase 2 stub: function_declaration + method_declaration → `<pkg>.<Fn>`
-  - Rust Phase 3 stub: function_item + impl block methods → `<mod>::<fn>`
-  - `detect_language(file_path)` helper: ext → ast-grep language string
-- `tests/regression/test_language_walker.py`: 27 tests, all pass [V]
-- Key discovery: tree-sitter JS uses `for_in_statement` (not `for_of_statement`) for
-  both for-in and for-of; distinguish via `operator` field == 'of'
-- Full suite: 797 passed, 1 skipped [V]
-- Committed: dd71dec
+Phase 2 (Go) -- commit 36990d8 [V]
+- `.go` and `.rs` added to `_JS_TS_EXTENSIONS` in scan_project_files.py
+- `_GO_BUILTINS` extended to filter primitive type-cast callees
+- 5 new Go call edge tests
+- end_of_eden cloned to `C:\Users\bartl\dev\corpora\end_of_eden`
+- end_of_eden validated: 529 symbols
 
-**NOT YET DONE (RM53 Phase 1 still open):**
-- LanguageWalker is NOT yet wired into `persist_all` or `scan_project_files`.
-  JS/TS files are NOT ingested into the DB yet. Wire-in is the next step.
+Phase 3 (Rust) -- commit 3480d20 [V]
+- `_rust_symbols()` + `_rust_fn_ranges()`: impl-block dedup (free fn scan now excludes
+  fn_items whose start line falls within an impl block range)
+- `_rust_call_edges()` implemented: call_expression walk + `_rust_callee_name()`
+- `_RUST_BUILTINS` set added
+- 5 new Rust regression tests
+- ruggrogue cloned to `C:\Users\bartl\dev\corpora\ruggrogue`
+
+**Post-commit accuracy fixes [V]:**
+
+Go fix -- commit 702dbce [V]
+- `_go_call_edges` was calling `_js_callee_name` which checks `member_expression`
+  (JS grammar). Go uses `selector_expression` (operand + field). ~95% of Go call
+  edges were silently dropped.
+- Added `_go_callee_name()` handling `selector_expression`.
+- end_of_eden edge count: 211 → 3808 [V]
+
+Rust fix -- commit 405bb31 [V]
+- `_rust_callee_name` for `field_expression` was returning only the field name
+  (e.g. `init` from `s.init()`). Now emits `s.init` for consistency with Go.
+- ruggrogue edge count: 2037 → 2809 [V]
+
+**Final validated numbers [V]:**
+- JS/TS (dnd-dungeon-gen): 112 files, 291 symbols, 974 edges
+- Go (end_of_eden): 100 files, 529 symbols, 3808 edges
+- Rust (ruggrogue): 45 files, 337 symbols, 2809 edges
+
+**Tests [V]:** 814 passed, 1 skipped (last run this session)
+
+**Architecture question raised (not yet acted on):**
+Both bugs (Go selector_expression, Rust field_expression) had the same root cause:
+callee extraction borrowed JS logic for non-JS languages. A `LangSpec` refactor
+would prevent this class of bug by requiring each language to declare its own
+callee extractor. Bart has been informed; decision pending next session.
 
 ## NEXT SESSION -- start here
 
-**Wire LanguageWalker into ingestion pipeline (completes RM53 Phase 1):**
+**Decision needed first:** LangSpec refactor vs. proceed to RM54/55.
+- Refactor: ~100 lines, closes silent-drop bug class, makes new languages cheap
+- Skip: bugs are fixed, RM54/55 can proceed on current code
+- Recommended: do the refactor first (it's the right foundation before RM54/55 builds on it)
 
-1. Extend `scan_project_files` to return `.js`/`.ts`/`.jsx`/`.tsx` files alongside `.py`
-   - File: `determined/ingestion/scan_project_files.py`
-   - Add JS/TS extensions to the glob/walk; apply same ignore-dir rules
+**If refactor:**
+- `LangSpec` dataclass in `language_walker.py` with: fn_node_kinds, fn_name_field,
+  callee_extractor, fqdn_builder, builtins, scope_specs
+- Shared walk loop replaces `_js_call_edges`, `_go_call_edges`, `_rust_call_edges`
+- Structural quirks (Go receivers, Rust impl dedup, JS arrow/object-literal) become hooks
+- Run regression suite to verify 814 still pass
 
-2. In `persist_all` (persistence_engine.py:708), after step 4 (PERSIST FILE LAYER),
-   add step 4b: for each non-Python file in file_analyses (or a new `js_files` list),
-   call `LanguageWalker(src, file_path, language).symbols()` and insert into `functions`
-   table; call `.call_edges()` and insert into `graph_edges`.
-
-3. Validate against dnd-dungeon-gen corpus:
-   - Re-ingest `C:\Users\bartl\dev\corpora\dnd-dungeon-gen`
-   - Confirm `controller`, `dungeon`, `room`, `item` module symbols appear in DB
-   - Confirm `controller.generateDungeon → dungeon.buildDungeon` type call chain surfaces
-
-4. Tests for the wire-in (not yet written):
-   - `test_language_walker_persist.py` or extend existing test
-   - Fixture: ingest a 2-file JS corpus; verify symbols + edges land in DB
-
-**Entry points:**
-- `determined/ingestion/scan_project_files.py` — add JS/TS extensions
-- `determined/persistence/persistence_engine.py:persist_all` — add step 4b
-- Import: `from determined.ingestion.language_walker import LanguageWalker, detect_language`
+**If RM54/55 directly:**
+- RM54 depends on RM53 (LanguageWalker must exist) -- it does [V]
+- Check TRACKER.md for RM54/55 spec
 
 ## Known issues (carried forward)
 
-**RM53 wire-in not done [V]:** LanguageWalker exists but is not called from persist_all.
-JS/TS files produce no DB rows yet. This is the immediate next step.
+**LangSpec refactor pending [?]:** Both Go and Rust callee extractors had silent-drop
+bugs from borrowing JS logic. Fixed individually; systemic fix (LangSpec) not yet done.
 
 **RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
 
@@ -79,8 +88,7 @@ JS/TS files produce no DB rows yet. This is the immediate next step.
 
 **Determined corpus DB path [V]:** C_Users_bartl_dev_Determined.db
 
-**RM40 opt-in trap [V]:** resolved_only defaults False. readiness_check T2 uses
-_list_callees_raw -- may surface unresolved edges. Pass resolved_only=True explicitly.
+**RM40 opt-in trap [V]:** resolved_only defaults False. Pass resolved_only=True explicitly.
 
 **RM43 empty-board trap [V]:** Lenses produce nothing on an empty clue board.
 
@@ -90,13 +98,12 @@ _list_callees_raw -- may surface unresolved edges. Pass resolved_only=True expli
 
 **design_note content format [V]:** Pre-existing rows have no [KIND|...] prefix.
 
-**RM42 clue pinned state not persisted [V]:** Pinned state is in-memory only (low priority).
+**RM42 clue pinned state not persisted [V]:** In-memory only (low priority).
 
 **UI re-ingest via preview browser [V]:** socket.emit("ingest", {path}) works.
 
 **DB schema trap [V]:** graph_edges has no provenance column, no callee_fqdn/caller_fqdn.
 knowledge_artifacts uses 'kind' not 'artifact_type'. files uses 'file_path' not 'path'.
-Always check reference_dj2_db_schema.md memory before writing SQL.
 
 **dj2 ignore dirs trap [V]:** Always exclude Lib/, archive/, tools/, tools.old/, og_system/,
 recovered_code/, codebase_analyzer/, Scripts/. See reference_dj2_ignore.md memory.
@@ -105,5 +112,14 @@ recovered_code/, codebase_analyzer/, Scripts/. See reference_dj2_ignore.md memor
 
 **TRACKER.md update rule [V]:** Edit tool for status changes; scratchpad-first for new
 multi-line blocks. Documented in CLAUDE.md + memory.
+
+**JS/TS _persist_graph_edges ordering trap [V]:** Step 5c MUST come after step 5.
+Empty Python graph hits legacy full-delete path and wipes JS/TS edges if inserted earlier.
+
+**Go selector_expression [V]:** Fixed 702dbce. _go_callee_name() handles it. Do not
+use _js_callee_name for Go -- Go grammar uses selector_expression not member_expression.
+
+**Rust field_expression receiver [V]:** Fixed 405bb31. _rust_callee_name emits
+"receiver.method" not just "method" for field_expression nodes.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
