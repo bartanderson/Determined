@@ -1,20 +1,27 @@
-Written at commit: 89fdcaa
-# SESSION STATE - session 162 handoff
+Written at commit: dd94562
+# SESSION STATE - session 163 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 162, 2026-07-13)
+## What happened this session (session 163, 2026-07-13)
 
-**RM42 Pass 2 done + committed (89fdcaa) [V]:** Clue board persistence across page reloads.
-- 3 new Flask routes in ui_server.py: GET /api/clues, POST /api/clues, DELETE /api/clues/<id>.
-- Clues stored as workflow_items (kind='clue', status='active'/'deleted', content=JSON card).
-- `from datetime import datetime` added to ui_server.py imports.
-- pinClue() POSTs on add, stores db_id on clue object.
-- Remove button DELETEs via API (only if db_id present).
-- Page load fetches GET /api/clues and restores _clues array before first _renderAll().
-- Verified in browser: pin → POST 200, reload → GET restores card, remove → DELETE 200, reload → empty. [V]
-- 738 passed, 1 skipped (no change to test count -- no new tests needed for UI-only pass). [V]
+**dj2 re-ingest done [V]:** Populated http_route column (93 functions) and http_fetch/js_event_binding edges.
+- Ran via Python script (bypassed UI server) -- see HISTORY.md for why and correct UI procedure.
+- dj2 DB: 153 files, 1321 functions, 93 with http_route, 32 http_fetch edges, 18 js_event_binding edges.
+
+**RM41 confirmed done + tests added (dd94562) [V]:** HTTP fetch/HTMX -> Flask route edges were already
+implemented in dynamic_edges.py and persistence_engine.py. Gap was missing regression tests.
+- 16 new tests: extract_flask_route_map, extract_htmx_edges, extract_js_event_bindings,
+  extract_fetch_edges, _url_matches (URL normalization with Jinja2/Flask param wildcards).
+- 754 passed, 1 skipped. [V]
+- TRACKER.md updated: RM41 marked DONE.
+
+**UI re-ingest procedure documented (HISTORY.md) [V]:**
+- Re-analyze button on fresh server start -> native Windows folder picker opens on desktop.
+- User selects project folder there; ingest runs. Do NOT try to automate via preview browser.
+- If automating: socket.emit("ingest", {path: "..."}) works (socket is live in preview browser).
+- Root cause of confusion: _source_path only set after ingest, not on server restart with existing DB.
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -32,7 +39,7 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 | MMP | Multi-method ingestion pre-pass | DONE (RM52) |
 | DGP | Design-to-code delta | DONE (RM48) |
 | DF | Data flow edges (Level 1) | DONE (RM39) |
-| HTTP | fetch/HTMX -> Flask route | DONE (RM38) |
+| HTTP | fetch/HTMX -> Flask route | DONE (RM38/RM41) |
 | INV | Investigation context panel | DONE Pass 1+2 (RM42) |
 | LNS | Canned reasoning lenses | DONE (RM43) |
 
@@ -59,23 +66,26 @@ _list_callees_raw -- may surface unresolved edges. Pass resolved_only=True expli
 
 **RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` not implemented.
 
-**dj2 needs re-ingest for http_route [V]:** TODO-1 adds http_route column; existing corpus DB
-has the column (migration runs) but all rows are NULL until re-ingest populates them.
-trace_http_chain falls back to decorators_json regex + http_fetch edges until then.
-
 **RM42 clue pinned state not persisted [V]:** pinned=True/False is stored in initial POST content
 but toggling pin after creation does not PATCH the DB row. Pinned state is in-memory only.
 Low priority -- pinned flag only affects "Clear unpinned" button behavior.
 
+**UI re-ingest via preview browser [V]:** socket.emit("ingest", {path}) works but
+Re-analyze button silently falls through to browse dialog when _source_path is empty
+(fresh server start). See HISTORY.md for full procedure.
+
 ## NEXT SESSION -- start here
 
-**Recommended next action:** dj2 re-ingest to populate http_route column.
-- Run via EngineRunner script (same path as last re-ingest in session 159).
-- After re-ingest, trace_http_chain will use http_route primary lookup for dj2.
+**Recommended next action:** RM39 -- data flow edges Level 1.
+- Emit data_flow graph edges when fn_b(fn_a()) nested-call pattern detected in AST.
+- Entry point: determined/ingestion/parse_ast.py Visitor.visit_Call.
+- Storage: extend graph_edges with edge_type='data_flow' (Option B -- existing traversal handles it).
+- Estimated effort: ~2 days.
+- Prerequisite analysis done (dj2 path analysis, TRACKER.md RM39 section).
 
-**Also open (TRACKER.md items 6, 20, 1):**
-- Item 6: live sync loop (incremental re-ingest per file).
-- Item 20: call graph accuracy (type annotation exploitation + __init__ tracking).
-- Item 1: files.role column (implement or remove).
+**Also open:**
+- RM21 remaining techniques (2-6): gated on Technique 1 proving insufficient.
+- files.role column: implement or remove (low priority).
+- RM38: JS event chain via socket.emit (deferred -- dj2 has no client-side socket.emit).
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
