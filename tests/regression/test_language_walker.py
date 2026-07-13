@@ -497,8 +497,8 @@ def test_rust_call_edge_direct():
 def test_rust_method_call_edge():
     w = LanguageWalker(RUST_SRC, "/fake/game.rs", "rust")
     edges = callers(w.call_edges())
-    # target.take_damage(10) → method call attributed to Player::fight
-    assert ("Player::fight", "take_damage") in edges
+    # target.take_damage(10) → field_expression emits "target.take_damage"
+    assert ("Player::fight", "target.take_damage") in edges
 
 
 def test_rust_builtin_filtered():

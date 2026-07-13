@@ -737,12 +737,13 @@ class LanguageWalker:
         if kind == "identifier":
             return func_node.text()
         if kind == "scoped_identifier":
-            return func_node.text()  # e.g. "module::Function"
+            return func_node.text()  # e.g. "Module::Function"
         if kind == "field_expression":
-            # obj.field — use field name only
+            # receiver.method — emit "receiver.method" for consistency with Go
+            value = func_node.field("value")
             field = func_node.field("field")
-            if field:
-                return field.text()
+            if value and field:
+                return f"{value.text()}.{field.text()}"
         return None
 
 
