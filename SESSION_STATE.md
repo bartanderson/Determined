@@ -1,52 +1,66 @@
-Written at commit: 1a2d12f (+ TRACKER.md uncommitted, no code changed)
-# SESSION STATE - session 166 wrap
+Written at commit: f6ac757
+# SESSION STATE - session 167 wrap
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 166, 2026-07-13)
+## What happened this session (session 167, 2026-07-13)
 
-**RM39 L2 validated on dj2 [V]:** Re-ingested dj2 corpus. data_flow edges: 388 → 1,189
-(+801 new edges from variable binding tracking). Real edges confirmed: DungeonStateNeo ←
-create_dungeon, should_invoke_ai → AdjudicationEngine.process. Level 2 is working.
+**RM39-L3 implemented and verified [V]:**
+- `visit_For` in parse_ast.py: emits `data_flow_for_iter` edge when iterating over a
+  call result; binds loop target var(s) in `_fn_bindings` for downstream tracking.
+- `visit_Call` keyword extension: emits `data_flow_var_kwarg` edge for `fn(key=var)`
+  where var is bound; skips `**kwargs` unpacks.
+- 8 new regression tests; all 26 data_flow tests pass [V].
+- Full suite: 770 passed, 1 skipped [V].
+- dj2 re-ingested: data_flow edges 1,189 → **1,611** (+422, exceeds projected ~341) [V].
+- Committed: 486dbf2
 
-**Coverage map built [V]:** AST-based audit of dj2 game source (excludes .determinedignore dirs).
-Deterministic counts:
-- For-loop over call result blind spot: **41 occurrences** (15 files)
-- Keyword arg variable pass blind spot: **341 occurrences** (56 files)
-- For-loop over var (L2 partial coverage): 127 occurrences
-- Static edges resolved rate: 13.4% (1,087 / 8,098) -- not a bug, a capability ceiling
-- data_flow edges: high confidence (AST-derived, scope-guarded)
-- Total gap: ~382 occurrences = ~24% additional coverage if L3 implemented
+**RM56 Python cleanup partially done [V]:**
+- `_last_call_fqdn.pop(node_id, None)` fix applied (clears consumed entries, prevents
+  id() reuse collisions). Edit is in parse_ast.py but NOT yet committed -- still in
+  working tree at session end. The outer_fqdn dedup analysis showed the two uses are
+  semantically different (can't share), documented in session notes.
 
-**RM39-L3 + JS ESTree TODO filed [V]:** docs/TRACKER.md updated with full spec:
-- Python: visit_For (for x in fn()) + visit_Call keyword extension (fn(key=var))
-- JS ESTree: ForOf/ForIn over CallExpression + named object literal args -- gated on
-  JS corpus becoming active analysis target
-
-**Memory burned in [V]:**
-- reference_dj2_ignore.md: full .determinedignore exclusion list (Lib/, archive/, etc.)
-- reference_dj2_db_schema.md: all table column names; wrong names documented (callee_fqdn,
-  artifact_type, path -- all don't exist; use caller/callee, kind, file_path)
+**RM53-58 designed and committed [V]:**
+- RM58: 5 validation corpora across 4 languages. JS/TS already cloned [V]:
+  - `C:\Users\bartl\dev\corpora\dnd-dungeon-gen` (112 JS files)
+  - `C:\Users\bartl\dev\corpora\dungeoncrawler` (14 TS files, exact hierarchy confirmed)
+  - `C:\Users\bartl\dev\corpora\rotjs` (49 TS files)
+  - Go: BigJk/end_of_eden -- clone before Go phase of RM53
+  - Rust: tung/ruggrogue -- clone before Rust phase of RM53
+- RM53: `LanguageWalker` in `determined/ingestion/language_walker.py`, ast-grep backend
+  (`pip install ast-grep-py`), 3 phases: JS/TS → Go → Rust. 26 languages for free.
+- RM54: JS/TS static call graph via LanguageWalker.call_edges()
+- RM55: JS/TS data flow L1/L2/L3 via LanguageWalker.data_flow_edges(); same provenance
+  tags as Python side for unified querying
+- RM56: Python AST cleanup (see above -- partial)
+- RM57: Cross-language data flow (Python response shape → JS consumer); gates on RM55
+- Committed: fe0c82d, f6ac757
 
 ## NEXT SESSION -- start here
 
-**Implement RM39-L3 (highest priority -- spec is complete):**
-1. Open `determined/ingestion/parse_ast.py`
-2. Add `visit_For` -- if `node.iter` is `ast.Call`, emit data_flow edge, bind loop var
-3. Extend `visit_Call` -- iterate `node.keywords`, emit data_flow edge if `kw.value` is
-   `ast.Name` in `_fn_bindings`
-4. Add regression tests (same pattern as L2 tests in tests/regression/test_data_flow.py)
-5. Re-ingest dj2, verify count goes from 1,189 toward ~1,530+
-6. Commit
+**Option A: Finish RM56 (15 min, trivial):**
+- Verify the `_last_call_fqdn.pop()` edit is still in parse_ast.py (not committed yet)
+- Add the tuple-unpack comment to visit_For
+- Run 26 data_flow tests, commit
+- Mark RM56 done in TRACKER.md
 
-**Counting script for verification:** already written at
-`scratchpad/count_l3_patterns.py` -- run against dj2 after implementation to confirm
-all 41 + 341 occurrences are now emitted.
+**Option B: Start RM53 Phase 1 (LanguageWalker, JS/TS symbols):**
+1. `pip install ast-grep-py` in venv
+2. Create `determined/ingestion/language_walker.py` with `LanguageWalker` class
+3. Phase 1: JS/TS symbol extraction via ast-grep patterns
+4. Wire into `persistence_engine.persist_all` after Python symbols
+5. Tests in `tests/regression/test_language_walker.py`
+6. Validate against dnd-dungeon-gen and dungeoncrawler corpora
 
-**After L3:** JS ESTree equivalent is in TRACKER as RM39-L3, gated on JS corpus need.
+**Recommended order:** Finish RM56 first (cleans up uncommitted edit), then RM53.
 
 ## Known issues (carried forward)
+
+**RM56 partial [?]:** `_last_call_fqdn.pop()` fix in parse_ast.py NOT committed.
+Verify it's still there before starting next session. Outer_fqdn duplication is
+intentional (different semantics in visit_For vs visit_Call) -- document only.
 
 **RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
 
@@ -77,5 +91,10 @@ Always check reference_dj2_db_schema.md memory before writing SQL.
 
 **dj2 ignore dirs trap [V]:** Always exclude Lib/, archive/, tools/, tools.old/, og_system/,
 recovered_code/, codebase_analyzer/, Scripts/. See reference_dj2_ignore.md memory.
+
+**dj2 DB edge_type not kind [V]:** graph_edges uses edge_type='data_flow', not kind.
+Burned in this session when re-ingest count query failed with "no such column: kind".
+
+**ast-grep-py not yet installed [?]:** `pip install ast-grep-py` needed before RM53.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
