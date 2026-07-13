@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 157):** RM48 done. design_gaps() tool: 3-level evidence matching (Level A embedding >= 0.45, Level B file path keyword, Level C import graph keyword). Output tiers: GAP / PARTIAL / SATISFIED. scope filter, threshold override, show_satisfied flag. Wired into TOOLS + tool_registry. 19 tests. 691 passed, 1 skipped.
+**Last session (2026-07-12, session 160):** RM43 done. 5 reasoning lenses (Next action, Blast radius, Open questions, Convergence check, Not ready) in determined/agent/reasoning_lenses.py. /api/reasoning_lenses Flask route. Lens buttons appear in Investigation panel when clues are pinned; each composes a structured prompt prefilling the Ask bar. 731 passed, 1 skipped.
+
+**Previous (2026-07-12, session 159):** RM42 done + dj2 re-ingest. Investigation clue board: pin button on result blocks, clue cards, Ask/Clear actions. http_fetch/js_event_binding fix (read HTML/JS from disk). 731 passed, 1 skipped.
 
 **Previous (session 156):** RM52 done. determined/ingestion/structure_induction.py: fca_pass (FCA/Wille), mdl_pass (MDL/Rissanen), wrapper_pass (LP2/Kushmerick), grammar_pass (L*/Angluin), combine() D-S gate -> convergent/discriminant/review tiers. 28 tests. 672 passed, 1 skipped.
 
@@ -903,83 +905,6 @@ RM42. **[OPEN] Investigation context panel: accumulate query results as a clue b
    hooks. No new schema migration (body column already TEXT).
 
 ---
-
-RM43. **[OPEN] Canned reasoning lenses: project clues to answers, questions, and actions**
-
-   **The gap:** The clue board (RM42) accumulates evidence but leaves all pattern-matching
-   to the user. The user has to know what question to ask. For common investigation types
-   -- "what should I work on next?", "what's not ready?", "what needs wiring?", "what
-   template should I fill in?" -- the reasoning path from clues to answer is repeatable.
-   Encoding these as named lenses makes the tool active, not passive.
-
-   **The concept:** A small library of "reasoning lenses" -- canned prompts that take the
-   clue board contents (plus optional live DB queries) and produce a structured answer.
-   Each lens is a named reasoning step with a defined input pattern and output shape.
-
-   **Lens catalog (initial set):**
-
-   1. **Next action** -- "What should I work on next?" Given call graph gaps, design
-      violations, and open TRACKER items visible in the board, rank by: unblocked,
-      high-connectivity, shortest path to closure.
-
-   2. **Not ready** -- "What is NOT ready to work on?" Identify items with unresolved
-      prerequisites, missing edges, or incomplete data (e.g. RM39 Level 2 before RM40
-      is fixed).
-
-   3. **Wiring gaps** -- "What needs to be wired up?" Cross-layer boundary check: for
-      each DB-documented function, does a caller exist? Does an edge exist at the boundary
-      (HTTP, socket, thread)? If not, flag as unwired. Pairs with RM40/RM41 edge data.
-
-   4. **Template fill** -- "What template should I fill in here?" Given a pattern already
-      in the codebase (e.g. existing route handlers, existing tool definitions), identify
-      the next instance that matches the pseudo-pattern but is incomplete. Surface the
-      template and the gaps.
-
-   5. **Blast radius** -- "If I change X, what breaks?" BFS callers + design violation
-      scan + cross-language edges for the named function/file. Produces a ranked risk list.
-
-   6. **Convergence check** -- "Are these clues pointing at the same root cause?" Given
-      N cards from different tools, look for shared functions, shared callers, shared
-      design violations. Cluster and name the pattern.
-
-   7. **Open questions** -- "What don't I know yet?" Identify what the current clue board
-      cannot answer: missing edges, unresolved names, zero-result queries. Produces a
-      targeted next-query list.
-
-   **SOTS tensions:**
-   - I (locality): lenses reduce cognitive load by doing the pattern-matching for the user.
-   - XI (separate decide from do): lenses produce answers and questions, not actions. The
-     user still decides what to do. Lenses inform; they don't act.
-   - XXI (don't over-engineer): start with 2-3 lenses hardcoded as named prompts. No
-     lens framework, no plugin system. A dict mapping lens name -> prompt template is
-     sufficient for the first pass.
-   - XIV (one source of truth): lenses read from the clue board and the DB; they do not
-     maintain their own state.
-
-   **Design (minimal first pass):**
-
-   1. **Lens selector:** a dropdown or button row at the bottom of the investigation panel
-      (RM42) -- "Apply lens: [Next action] [Not ready] [Wiring gaps] [Template fill] [...]"
-
-   2. **Lens execution:** clicking a lens composes a structured query -- clue summaries +
-      lens prompt template -- and submits it to the Ask bar. Same path as "Ask about this"
-      in RM42, just with a pre-defined reasoning frame instead of a generic prompt.
-
-   3. **Lens prompts:** stored as a dict in `determined/agent/reasoning_lenses.py`. Each
-      entry: `{name, description, prompt_template, requires_db_queries: [tool_name,...]}`.
-      `requires_db_queries` lets the lens pull live data (e.g. open TRACKER items) beyond
-      what is pinned to the board.
-
-   4. **Output shape:** each lens produces a structured markdown block:
-      - **Finding:** one sentence
-      - **Evidence:** 2-3 clue refs
-      - **Next question / action:** one concrete step
-
-   **Dependencies:** RM42 (clue board) must ship first. Lenses are an extension of it, not
-   a standalone feature.
-
-   **Estimated effort:** 1 day for pass 1 (2-3 lenses + selector UI + prompt templates).
-   Full catalog (7 lenses) is another 0.5 days once the pattern is proven.
 
 ---
 
