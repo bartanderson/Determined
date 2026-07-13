@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, render_template, request
@@ -118,6 +119,72 @@ def reasoning_lenses():
     from flask import jsonify
     return jsonify([{"id": l["id"], "name": l["name"], "description": l["description"],
                      "prompt_template": l["prompt_template"]} for l in LENS_CATALOG])
+
+
+# ── RM42 Pass 2: clue board persistence ──────────────────────────────────────
+
+@app.route("/api/clues", methods=["GET"])
+def get_clues():
+    from flask import jsonify
+    if not _db_path:
+        return jsonify([])
+    try:
+        conn = sqlite3.connect(_db_path)
+        rows = conn.execute(
+            "SELECT id, content FROM workflow_items WHERE kind='clue' AND status='active' "
+            "ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        conn.close()
+        return jsonify([{"db_id": r[0], **json.loads(r[1])} for r in rows])
+    except Exception:
+        return jsonify([])
+
+
+@app.route("/api/clues", methods=["POST"])
+def add_clue():
+    from flask import request, jsonify
+    if not _db_path:
+        return jsonify({"error": "no corpus"}), 400
+    data = request.get_json(force=True)
+    now = datetime.utcnow().isoformat()
+    content = json.dumps({
+        "tool": data.get("tool", ""),
+        "subject": data.get("subject", ""),
+        "summary": data.get("summary", ""),
+        "pinned": False,
+        "ts": data.get("ts", ""),
+    })
+    try:
+        conn = sqlite3.connect(_db_path)
+        cur = conn.execute(
+            "INSERT INTO workflow_items (kind, subject, content, status, provenance, created_at, updated_at) "
+            "VALUES ('clue', ?, ?, 'active', 'human', ?, ?)",
+            (data.get("subject", ""), content, now, now)
+        )
+        db_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return jsonify({"db_id": db_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/clues/<int:db_id>", methods=["DELETE"])
+def delete_clue(db_id):
+    from flask import jsonify
+    if not _db_path:
+        return jsonify({"ok": False}), 400
+    try:
+        conn = sqlite3.connect(_db_path)
+        conn.execute(
+            "UPDATE workflow_items SET status='deleted', updated_at=? WHERE id=? AND kind='clue'",
+            (datetime.utcnow().isoformat(), db_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def _corpus_map_data() -> dict:

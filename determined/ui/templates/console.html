@@ -4321,6 +4321,7 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
       card.querySelector(".clue-rm-btn").addEventListener("click", () => {
         _clues = _clues.filter(x => x.id !== c.id);
         _renderAll();
+        if (c.db_id) fetch(`/api/clues/${c.db_id}`, {method: "DELETE"}).catch(() => {});
       });
       clueList.appendChild(card);
     });
@@ -4333,10 +4334,16 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
       if (idx !== -1) _clues.splice(idx, 1);
       else return;
     }
-    _clues.unshift({ id: ++_seq, tool, subject, summary: summary.slice(0, 400), pinned: false, ts: _ts() });
+    const clue = { id: ++_seq, tool, subject, summary: summary.slice(0, 400), pinned: false, ts: _ts(), db_id: null };
+    _clues.unshift(clue);
     _renderAll();
     const icon = document.getElementById("investigate-rail-icon");
     if (icon) { icon.style.background = "rgba(255,180,0,.25)"; setTimeout(() => icon.style.background = "", 600); }
+    fetch("/api/clues", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tool, subject, summary: clue.summary, ts: clue.ts})
+    }).then(r => r.json()).then(d => { if (d.db_id) clue.db_id = d.db_id; }).catch(() => {});
   };
 
   // "Ask about these clues" → prefill query bar
@@ -4354,7 +4361,15 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
     _renderAll();
   });
 
-  _renderAll();
+  // Restore persisted clues on page load
+  fetch("/api/clues").then(r => r.json()).then(rows => {
+    rows.reverse().forEach(row => {
+      _clues.unshift({ id: ++_seq, tool: row.tool, subject: row.subject,
+                       summary: row.summary, pinned: row.pinned || false,
+                       ts: row.ts || "", db_id: row.db_id });
+    });
+    _renderAll();
+  }).catch(() => { _renderAll(); });
 })();
 </script>
 
