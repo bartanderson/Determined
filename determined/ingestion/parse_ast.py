@@ -407,6 +407,10 @@ def _extract_symbol_references(
         def __init__(self):
             self.current_function = "<module>"
             self.current_class = None
+            # Level 2 data flow: per-function variable binding map (var_name -> callee_fqdn)
+            self._fn_bindings: dict = {}
+            # id(call_node) -> fqdn; set before generic_visit so visit_Assign can read it
+            self._last_call_fqdn: dict = {}
 
         def visit_ClassDef(self, node):
             prev_class = self.current_class
@@ -416,13 +420,29 @@ def _extract_symbol_references(
 
         def visit_FunctionDef(self, node):
             prev = self.current_function
+            prev_bindings = self._fn_bindings
             self.current_function = node.name
+            self._fn_bindings = {}
 
             self.generic_visit(node)
 
             self.current_function = prev
+            self._fn_bindings = prev_bindings
 
         visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Assign(self, node):
+            # Visit RHS first so visit_Call fires and populates _last_call_fqdn
+            self.generic_visit(node)
+            # Level 2: `name = fn_call()` -> register variable binding
+            if (self.current_function != "<module>"
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and isinstance(node.value, ast.Call)):
+                var_name = node.targets[0].id
+                callee_fqdn = self._last_call_fqdn.get(id(node.value))
+                if callee_fqdn:
+                    self._fn_bindings[var_name] = callee_fqdn
 
         def visit_Call(self, node):
 
@@ -585,6 +605,9 @@ def _extract_symbol_references(
                 confidence=identity.confidence,
             )
 
+            # Store fqdn before generic_visit so visit_Assign can read it for Level 2 binding
+            self._last_call_fqdn[id(node)] = fqdn
+
             results.append((
                 self.current_function,
                 identity,
@@ -623,6 +646,7 @@ def _extract_symbol_references(
 
             for arg in node.args:
                 if isinstance(arg, ast.Call):
+                    # Level 1: fn_b(fn_a()) -> data_flow edge fn_b -> fn_a
                     inner_raw = _extract_raw_name(arg.func)
                     if inner_raw:
                         inner_identity = SymbolIdentity(
@@ -637,6 +661,25 @@ def _extract_symbol_references(
                         results.append((
                             outer_fqdn,
                             inner_identity,
+                            node.lineno,
+                            False,
+                            'data_flow',
+                        ))
+                elif isinstance(arg, ast.Name):
+                    # Level 2: fn_b(result) where result = fn_a() -> data_flow edge fn_b -> fn_a
+                    bound_callee = self._fn_bindings.get(arg.id)
+                    if bound_callee:
+                        results.append((
+                            outer_fqdn,
+                            SymbolIdentity(
+                                surface=bound_callee,
+                                normalized=bound_callee,
+                                fqdn=bound_callee,
+                                module=bound_callee,
+                                kind="unknown",
+                                provenance=["data_flow_var"],
+                                confidence=0.5,
+                            ),
                             node.lineno,
                             False,
                             'data_flow',

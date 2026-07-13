@@ -125,8 +125,8 @@ def test_multiple_nested_calls():
     assert any(c.endswith("fn_b") for c in callees)
 
 
-def test_non_nested_call_in_assignment_no_data_flow():
-    """result = fn_a(); fn_b(result) -- Level 2, not detected at Level 1."""
+def test_variable_binding_emits_data_flow_edge():
+    """result = fn_a(); fn_b(result) -- Level 2 variable binding -> data_flow edge."""
     source = textwrap.dedent("""\
         def outer():
             result = fn_a()
@@ -134,7 +134,10 @@ def test_non_nested_call_in_assignment_no_data_flow():
     """)
     refs = _refs_from_source(source)
     data_flow = [r for r in refs if r.edge_type == "data_flow"]
-    assert len(data_flow) == 0
+    assert len(data_flow) == 1
+    ref = data_flow[0]
+    assert ref.caller.endswith("fn_b")
+    assert ref.callee.endswith("fn_a")
 
 
 # ---------------------------------------------------------------------------
@@ -199,3 +202,109 @@ def test_data_flow_edges_total_count():
     ])
     result = data_flow_edges(_Assessor(conn), {"symbol": "fn_a"})
     assert "Total data_flow edges in corpus: 2" in result
+
+
+# ---------------------------------------------------------------------------
+# Level 2: variable binding tracking
+# ---------------------------------------------------------------------------
+
+def test_variable_rebound_uses_latest_binding():
+    """When a variable is reassigned, only the latest binding is tracked."""
+    source = textwrap.dedent("""\
+        def outer():
+            x = fn_a()
+            x = fn_b()
+            fn_c(x)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    callees = {r.callee for r in data_flow}
+    assert any(c.endswith("fn_b") for c in callees), "latest binding should be fn_b"
+    assert not any(c.endswith("fn_a") for c in callees), "stale binding fn_a should not appear"
+
+
+def test_binding_does_not_cross_function_boundary():
+    """A variable binding from one function must not leak into a nested function."""
+    source = textwrap.dedent("""\
+        def outer():
+            x = fn_a()
+            def inner():
+                fn_b(x)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 0, "binding from outer must not be visible inside inner"
+
+
+def test_unbound_name_arg_produces_no_data_flow():
+    """fn_b(x) where x was not assigned from a call produces no data_flow edge."""
+    source = textwrap.dedent("""\
+        def outer(x):
+            fn_b(x)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 0
+
+
+def test_module_level_assignment_not_tracked():
+    """result = fn_a() at module level (outside any function) is not tracked."""
+    source = textwrap.dedent("""\
+        result = fn_a()
+        fn_b(result)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 0
+
+
+def test_level1_and_level2_coexist():
+    """fn_c(fn_a(), result) where result=fn_b() produces two data_flow edges."""
+    source = textwrap.dedent("""\
+        def outer():
+            result = fn_b()
+            fn_c(fn_a(), result)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 2
+    assert all(r.caller.endswith("fn_c") for r in data_flow)
+    callees = {r.callee for r in data_flow}
+    assert any(c.endswith("fn_a") for c in callees)
+    assert any(c.endswith("fn_b") for c in callees)
+
+
+def test_chained_variable_bindings():
+    """a = fn_a(); b = fn_b(a); fn_c(b) -- chain of variable bindings."""
+    source = textwrap.dedent("""\
+        def outer():
+            a = fn_a()
+            b = fn_b(a)
+            fn_c(b)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    # fn_b(a) -> data_flow fn_b->fn_a; fn_c(b) -> data_flow fn_c->fn_b
+    assert len(data_flow) == 2
+    callers = {r.caller for r in data_flow}
+    assert any(c.endswith("fn_b") for c in callers)
+    assert any(c.endswith("fn_c") for c in callers)
+
+
+def test_multiple_functions_bindings_are_independent():
+    """Two functions with same variable name have independent bindings."""
+    source = textwrap.dedent("""\
+        def first():
+            x = fn_a()
+            fn_b(x)
+
+        def second():
+            x = fn_c()
+            fn_d(x)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 2
+    pairs = {(r.caller.split(".")[-1], r.callee.split(".")[-1]) for r in data_flow}
+    assert ("fn_b", "fn_a") in pairs
+    assert ("fn_d", "fn_c") in pairs

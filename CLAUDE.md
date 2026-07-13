@@ -107,6 +107,9 @@ Common mistakes:
 - Before any multi-step sequence, state in one short line what is about to happen
   so Bart can abort. Skip this only for single-step actions.
 - Run regression tests before committing: `pytest tests/regression/`
+- Run a single test file: `.venv\Scripts\pytest tests/regression/test_foo.py`
+- Run a single test: `.venv\Scripts\pytest tests/regression/test_foo.py::test_bar`
+- Skip slow (LLM/embedding) tests: `.venv\Scripts\pytest tests/regression/ -m "not slow"`
 - All 298+ tests must pass. A commit that breaks tests is not done.
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
   in full with current status and next steps. This is mandatory. Follow the
