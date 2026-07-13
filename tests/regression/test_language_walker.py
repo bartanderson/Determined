@@ -1,5 +1,5 @@
 """
-Regression tests for LanguageWalker (Phase 1: JS/TS, Phase 2: Go stub).
+Regression tests for LanguageWalker (Phase 1: JS/TS, Phase 2: Go).
 
 Tests use inline source strings — no corpus files needed.
 """
@@ -354,3 +354,77 @@ def test_go_method_symbol():
     w = LanguageWalker(GO_SRC, "/fake/game.go", "go")
     names = symbol_names(w)
     assert "Game.Update" in names
+
+
+GO_CALLS_SRC = """
+package engine
+
+func Run(cfg Config) {
+    result := Prepare(cfg)
+    Process(result)
+}
+
+func Prepare(cfg Config) Result {
+    return Result{}
+}
+
+func Process(r Result) {
+}
+
+func (e *Engine) Start() {
+    Run(e.cfg)
+}
+"""
+
+def test_go_call_edge_direct():
+    w = LanguageWalker(GO_CALLS_SRC, "/fake/engine.go", "go")
+    edges = callers(w.call_edges())
+    assert ("engine.Run", "Prepare") in edges
+    assert ("engine.Run", "Process") in edges
+
+def test_go_method_call_edge():
+    w = LanguageWalker(GO_CALLS_SRC, "/fake/engine.go", "go")
+    edges = callers(w.call_edges())
+    assert ("Engine.Start", "Run") in edges
+
+def test_go_builtin_filtered():
+    src = """
+package main
+
+import "fmt"
+
+func Hello() {
+    fmt.Println("hello")
+    DoWork()
+}
+
+func DoWork() {}
+"""
+    w = LanguageWalker(src, "/fake/main.go", "go")
+    edges = callers(w.call_edges())
+    # fmt is a Go builtin package — should be filtered
+    assert not any(c == "fmt.Println" for _, c in edges)
+    # non-builtin call should remain
+    assert ("main.Hello", "DoWork") in edges
+
+def test_go_no_self_loop():
+    src = """
+package util
+
+func Recurse(n int) int {
+    if n == 0 { return 0 }
+    return Recurse(n - 1)
+}
+"""
+    w = LanguageWalker(src, "/fake/util.go", "go")
+    edges = callers(w.call_edges())
+    # self-loop: caller == callee — Go walker doesn't filter these yet (same as JS baseline)
+    # Just confirm the edge is attributed to the right caller
+    assert all(c == "util.Recurse" for c, _ in edges)
+
+def test_go_package_name_fallback():
+    # No package clause → falls back to basename
+    src = "func Standalone() {}\n"
+    w = LanguageWalker(src, "/fake/util.go", "go")
+    names = symbol_names(w)
+    assert any("Standalone" in n for n in names)

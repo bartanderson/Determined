@@ -33,11 +33,19 @@ _JS_BUILTINS = frozenset({
 
 # Go built-in packages / identifiers to filter
 _GO_BUILTINS = frozenset({
+    # stdlib packages
     "fmt", "os", "io", "log", "sync", "math", "sort", "strings",
     "strconv", "errors", "context", "time", "http", "json", "bytes",
-    "bufio", "path", "filepath", "runtime", "reflect", "make", "len",
-    "cap", "append", "copy", "delete", "close", "panic", "recover",
-    "print", "println",
+    "bufio", "path", "filepath", "runtime", "reflect",
+    # builtin functions
+    "make", "len", "cap", "append", "copy", "delete", "close",
+    "panic", "recover", "print", "println", "new", "real", "imag",
+    "complex", "min", "max",
+    # primitive types used in type-cast expressions: string(x), int(x), etc.
+    "string", "int", "int8", "int16", "int32", "int64",
+    "uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+    "float32", "float64", "complex64", "complex128", "bool", "byte", "rune",
+    "error",
 })
 
 
