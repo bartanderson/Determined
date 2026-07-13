@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 164):** RM39 + RM42 confirmed done (were already implemented). TRACKER.md updated to reflect actual state. 11 tests pass for RM39.
+**Last session (2026-07-13, session 167):** RM39-L3 done (for-loop + kwarg data flow, 8 new tests, 770 passed). RM53-58 designed: LanguageWalker arc via ast-grep covering JS/TS/Go/Rust. JS/TS corpora cloned (dnd-dungeon-gen, dungeoncrawler, rotjs). Go corpus (end_of_eden) + Rust corpus (ruggrogue) added to RM58; Go/Rust phases added to RM53. RM56 Python cleanup started (partial).
 
 **Previous (2026-07-13, session 163):** RM41 done + 16 tests. dj2 re-ingest: 153 files, 1321 fns, 93 http_route, 32 http_fetch, 18 js_event_binding edges. 754 passed, 1 skipped.
 
@@ -192,101 +192,127 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM58. **[TODO] Clone JS/TS validation corpora for RM53-57 testing**
+RM58. **[TODO] Clone validation corpora for RM53-57 testing (JS/TS/Go/Rust)**
 
-   Three reference corpora that cover the full RM53-57 test surface. Clone into
-   `C:\Users\bartl\dev\corpora\` (sibling to dj2). Each is small enough to ingest
-   in seconds but rich enough to validate the analysis.
+   Five reference corpora covering RM53-57 test surface across four languages.
+   Together they validate the "corpus-agnostic" claim: one LanguageWalker abstraction
+   handles Python, JS, TS, Go, and Rust without per-language plumbing changes.
+   Clone into `C:\Users\bartl\dev\corpora\` (sibling to dj2).
 
    **Corpora:**
 
-   | Repo | Language | What it tests |
-   |------|----------|---------------|
-   | [GadgetBlaster/JavaScript-DnD-Dungeon-Generator](https://github.com/GadgetBlaster/JavaScript-DnD-Dungeon-Generator) | Vanilla JS, ES modules, zero deps | fn→fn call chain: controller→dungeon→room→item→utility; vanilla JS data flow |
-   | [HermannPR/DUNGEONCRAWLER](https://github.com/HermannPR/DUNGEONCRAWLER) | TypeScript, ~12-15 files | Class method calls, Game.ts coordinator, entities/world/combat/ui hierarchy; TS path |
-   | [ondras/rot.js](https://github.com/ondras/rot.js) | TypeScript, ~100 files, library | Library-scale: exported API surface, many cross-module callers; blast_radius + list_callees |
+   | Repo | Language | Size | What it tests |
+   |------|----------|------|---------------|
+   | [GadgetBlaster/JavaScript-DnD-Dungeon-Generator](https://github.com/GadgetBlaster/JavaScript-DnD-Dungeon-Generator) | Vanilla JS, ES modules, zero deps | 112 JS files | fn→fn call chain: controller→dungeon→room→item→utility; vanilla JS data flow |
+   | [HermannPR/DUNGEONCRAWLER](https://github.com/HermannPR/DUNGEONCRAWLER) | TypeScript | 14 TS files | Class method calls, Game.ts coordinator, entities/world/combat/ui hierarchy |
+   | [ondras/rot.js](https://github.com/ondras/rot.js) | TypeScript library | 49 TS files | Library-scale: exported API, many cross-module callers; blast_radius |
+   | [BigJk/end_of_eden](https://github.com/BigJk/end_of_eden) | Go (+ Lua content layer) | medium | Go package call graph: game/→ui/→system/; Go→Lua boundary mirrors dj2's Python→JS |
+   | [tung/ruggrogue](https://github.com/tung/ruggrogue) | Rust (99.7%) | ~400 commits | Rust module + trait call graph; has 20-chapter architecture guide = ground-truth validation |
 
-   **Steps:**
+   **JS/TS corpora already cloned [V]** (session 167):
    ```
-   mkdir C:\Users\bartl\dev\corpora
-   git clone https://github.com/GadgetBlaster/JavaScript-DnD-Dungeon-Generator corpora/dnd-dungeon-gen
-   git clone https://github.com/HermannPR/DUNGEONCRAWLER corpora/dungeoncrawler
-   git clone https://github.com/ondras/rot.js corpora/rotjs
+   C:\Users\bartl\dev\corpora\dnd-dungeon-gen
+   C:\Users\bartl\dev\corpora\dungeoncrawler
+   C:\Users\bartl\dev\corpora\rotjs
    ```
-   Then ingest each via Determined UI or CLI and confirm file counts.
 
-   **Validation targets for RM53-55:**
-   - dnd-dungeon-gen: `controller → dungeon → room` call chain surfaces in call graph
-   - dungeoncrawler: `Game → CombatSystem → Entity` chain surfaces with TypeScript classes
-   - rot.js: blast_radius on a core exported function shows meaningful cross-module reach
+   **Go + Rust corpora (clone before implementing Go/Rust LanguageWalker):**
+   ```
+   git clone https://github.com/BigJk/end_of_eden corpora/end-of-eden
+   git clone https://github.com/tung/ruggrogue corpora/ruggrogue
+   ```
 
-   **Estimated effort:** 15 minutes to clone + ingest. Do this before implementing RM53.
+   **Validation targets by language:**
+   - **JS** dnd-dungeon-gen: `controller → dungeon → room` call chain surfaces
+   - **TS** dungeoncrawler: `Game → CombatSystem → Entity` with class-method fqdns
+   - **TS** rot.js: blast_radius on a core export shows meaningful cross-module reach
+   - **Go** end_of_eden: `game.* → ui.* → system.*` package call graph surfaces
+   - **Rust** ruggrogue: call graph matches the documented architecture chapters
+
+   **Estimated effort:** JS/TS already done. Go + Rust = 10 min clone, gate on RM53 Go/Rust phase.
 
 ---
 
-RM53. **[TODO] JS symbol ingestion: extract JS functions as first-class symbols**
+RM53. **[TODO] LanguageWalker: multi-language symbol ingestion via ast-grep**
 
-   Foundation for all JS graph work. Without symbols in the `functions` table,
-   JS→JS call edges have no callee to link to and blast_radius / list_callees
-   are blind to all JS code.
+   Foundation for all non-Python graph work. Introduces `LanguageWalker`, the
+   abstraction layer that RM54/55/57 and all future language extensions build on.
 
-   **Parser backend: tree-sitter**
-   Use `tree-sitter` + `tree-sitter-javascript` / `tree-sitter-typescript` Python
-   packages (pip install, no Node.js required). Handles vanilla JS, TS, JSX, TSX
-   with the same walker API by swapping the grammar. This is the abstraction layer
-   that RM54/55/57 all build on.
+   **Parser backend: ast-grep (`pip install ast-grep-py`)**
+   Rust-based, PyO3 bridge, tree-sitter underneath. 26+ languages built in — JS,
+   TS, JSX, TSX, Go, Rust, Java, C, C#, Python, and more — with the same
+   `SgRoot(src, language)` / `SgNode` API. No Node.js required, no per-language
+   grammar installs. Pattern matching (`find_all("function $NAME($$$) { $$$ }")`)
+   makes symbol and call extraction cleaner than raw CST walking.
 
-   Design a thin `JSWalker(src, language="javascript"|"typescript")` class in
-   `determined/ingestion/parse_js.py` that walks the tree-sitter CST and produces
-   typed results. All downstream RMs import from `parse_js`, not from tree-sitter
-   directly — so the parser backend is swappable without touching RM54/55/57.
+   **Abstraction layer design (`determined/ingestion/language_walker.py`):**
+   ```
+   LanguageWalker(src: str, file_path: str, language: str)
+       .symbols()       -> list[dict]   # functions table rows
+       .call_edges()    -> list[tuple]  # (caller_fqdn, callee, 'static', resolved)
+       .data_flow()     -> list[tuple]  # (caller_fqdn, callee, 'data_flow', prov)
+   ```
+   All downstream RMs import from `language_walker`, not from ast-grep directly.
+   Swapping the backend (e.g. to Jelly for TS or a custom parser) touches only
+   this file. `language` is a string passed through to `SgRoot` — adding a new
+   language requires zero new plumbing, just a new pattern set.
 
-   **Scope:** `.js` and `.ts` files. Arrow functions, named functions, class
-   methods, and method definitions in object literals. HTML inline scripts deferred.
+   **Phase 1 — JS/TS (implement now, gates RM54/55):**
+   - Named functions, arrow functions, class methods, object literal methods
+   - `.js` and `.ts` files; HTML inline scripts deferred
+   - fqdn convention: `<basename_no_ext>.<fn_name>`, class methods `<Class>.<method>`
+   - TS type annotations captured in `param_types_json` if present
+   - Wire into `persistence_engine.persist_all` after Python symbols
 
-   **Implementation:**
-   - `JSWalker.symbols()` → list of dicts matching `functions` table schema:
-     `fqdn`, `name`, `file_path`, `line_number`, `is_stub` (body is `{}` or
-     single return), `docstring` (leading block comment), `param_types_json`
-     (param names only; TS type annotations captured if present).
-   - JS fqdn convention: `<basename_no_ext>.<fn_name>` (e.g. `console.loadCorpus`).
-     Class methods: `<ClassName>.<methodName>`. Matches what `extract_fetch_edges`
-     already uses as caller names, so existing http_fetch edges link correctly.
-   - Wire into `persistence_engine.persist_all`: after Python symbols, scan JS/TS
-     files and insert via `_insert_symbol`.
+   **Phase 2 — Go (implement after Phase 1, gates Go corpus ingestion):**
+   - Go functions and methods (`func $NAME(...)`, `func ($R $T) $NAME(...)`)
+   - Package-qualified fqdn: `<package>.<FuncName>`
+   - Validation corpus: end_of_eden (RM58)
+
+   **Phase 3 — Rust (implement after Phase 2):**
+   - `fn`, `pub fn`, `impl` block methods, trait impls
+   - fqdn: `<module>::<fn>` or `<Struct>::<method>`
+   - Validation corpus: ruggrogue — cross-check against its 20-chapter architecture guide
+   - Rust trait dispatch adds a new edge type worth capturing: `trait_dispatch`
+
+   **Language roadmap (ast-grep handles all of these, same API):**
+   Go → Rust → Java → C# → Kotlin — each is a new pattern set, not new plumbing.
 
    **Validation (RM58 corpora):**
-   - dnd-dungeon-gen: symbols from `app/dungeon/`, `app/room/`, `app/item/` all appear
-   - dungeoncrawler: `Game`, `Player`, `Enemy`, `CombatSystem` methods all appear
-     with correct TS class-method fqdn
+   - dnd-dungeon-gen: symbols from `app/dungeon/`, `app/room/`, `app/item/` appear
+   - dungeoncrawler: `Game`, `Player`, `Enemy`, `CombatSystem` methods with correct fqdns
+   - end_of_eden (Phase 2): Go package symbols appear, package call graph queryable
+   - ruggrogue (Phase 3): Rust module symbols match documented architecture chapters
 
-   **Regression tests:** 5-6 tests in `tests/regression/test_js_analysis.py`
-   covering named fn, arrow fn, class method, object literal method, TS typed
-   params, stub detection.
+   **Regression tests:** `tests/regression/test_language_walker.py`
+   - Phase 1: named fn, arrow fn, class method, object literal method, TS typed params,
+     stub detection, fqdn convention, cross-file unresolved callee
+   - Phase 2: Go func, Go method receiver, package fqdn
+   - Phase 3: Rust fn, impl method, pub vs private, trait impl
 
-   **Estimated effort:** 1 day (CST walker is ~0.5 day more than regex, paid back
-   immediately when TS arrives).
+   **Estimated effort:** Phase 1: 1 day. Phase 2: 0.5 day. Phase 3: 1 day.
 
 ---
 
 RM54. **[TODO] JS static call graph: fn→fn call edges within JS files**
 
-   Depends on RM53 (JSWalker + tree-sitter backend must exist first).
+   Depends on RM53 Phase 1 (LanguageWalker + ast-grep backend must exist first).
 
    Within a JS/TS file, detect `fnA()` calls inside the body of `fnB` and emit
    `static` edge `fnB → fnA`. Uses tree-sitter CST so arrow functions, class
    methods, and template-literal calls are all handled correctly — not just
    `function` keyword declarations.
 
-   **Implementation (`parse_js.py`):**
-   - `JSWalker.call_edges()` → list of `(caller_fqdn, callee_name, 'static', resolved)`.
-   - Walk `call_expression` nodes; enclosing function scope tracked via CST parent
-     chain (tree-sitter gives parent references). Callee is `callee.name` for
-     direct calls, `object.method` for member calls.
+   **Implementation (`language_walker.py` Phase 1 extension):**
+   - `LanguageWalker.call_edges()` → list of `(caller_fqdn, callee_name, 'static', resolved)`.
+   - ast-grep pattern `$FN($$$)` inside enclosing function scope (use `inside()`
+     relational method to scope matches to their containing function node).
+   - Callee is direct name for bare calls, `object.method` for member calls.
    - Filter JS keywords / built-ins (console, Math, Object, Array, Promise, etc.).
    - Cross-file resolution: if callee name matches a symbol from another ingested
      JS/TS file, emit `resolved=1`; otherwise `resolved=0`.
    - Wire into `persist_all` after RM53 symbol pass.
+   - Go/Rust phases: same method, different ast-grep patterns and built-in filter lists.
 
    **Validation (RM58 corpora):**
    - dnd-dungeon-gen: `controller.generateDungeon → dungeon.buildDungeon`,
@@ -303,8 +329,8 @@ RM54. **[TODO] JS static call graph: fn→fn call edges within JS files**
 
 RM55. **[TODO] JS data flow: variable binding and call-chain tracking (L1/L2/L3)**
 
-   Depends on RM54. Mirrors the Python data_flow levels in JS. Uses tree-sitter
-   CST via `JSWalker` — same backend as RM53/54, no new parser setup.
+   Depends on RM54. Mirrors the Python data_flow levels in JS/TS. Uses ast-grep
+   via `LanguageWalker` — same backend as RM53/54, no new parser setup.
 
    - L1: `fnB(fnA())` → inline call arg → `data_flow` edge, provenance `data_flow_arg`
    - L2: `const x = fnA(); fnB(x)` → variable binding → `data_flow` edge, provenance `data_flow_var`
@@ -312,8 +338,8 @@ RM55. **[TODO] JS data flow: variable binding and call-chain tracking (L1/L2/L3)
    - L3b: `fnB({key: x})` where x is bound → `data_flow_var_kwarg` (JS object literal
      named arg, the JS equivalent of Python keyword args)
 
-   **Implementation (`parse_js.py`):**
-   - `JSWalker.data_flow_edges()` → list of `(caller_fqdn, callee_fqdn, 'data_flow', provenance)`.
+   **Implementation (`language_walker.py` Phase 1 extension):**
+   - `LanguageWalker.data_flow_edges()` → list of `(caller_fqdn, callee_fqdn, 'data_flow', provenance)`.
    - Per-function binding map scoped via CST function scope nodes (same invariant as
      Python: bindings don't cross function boundaries).
    - Provenance tags identical to Python side (`data_flow_arg`, `data_flow_var`,
