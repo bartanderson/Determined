@@ -1,66 +1,75 @@
-Written at commit: f6ac757
-# SESSION STATE - session 167 wrap
+Written at commit: dd71dec
+# SESSION STATE - session 168 wrap
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 167, 2026-07-13)
+## What happened this session (session 168, 2026-07-13)
 
-**RM39-L3 implemented and verified [V]:**
-- `visit_For` in parse_ast.py: emits `data_flow_for_iter` edge when iterating over a
-  call result; binds loop target var(s) in `_fn_bindings` for downstream tracking.
-- `visit_Call` keyword extension: emits `data_flow_var_kwarg` edge for `fn(key=var)`
-  where var is bound; skips `**kwargs` unpacks.
-- 8 new regression tests; all 26 data_flow tests pass [V].
-- Full suite: 770 passed, 1 skipped [V].
-- dj2 re-ingested: data_flow edges 1,189 → **1,611** (+422, exceeds projected ~341) [V].
-- Committed: 486dbf2
+**Process improvement [V]:**
+- TRACKER.md update rule added to CLAUDE.md: Edit tool for status changes;
+  scratchpad-first for new multi-line item blocks. Memory saved.
 
-**RM56 Python cleanup partially done [V]:**
-- `_last_call_fqdn.pop(node_id, None)` fix applied (clears consumed entries, prevents
-  id() reuse collisions). Edit is in parse_ast.py but NOT yet committed -- still in
-  working tree at session end. The outer_fqdn dedup analysis showed the two uses are
-  semantically different (can't share), documented in session notes.
+**RM56 done [V]:**
+- `_last_call_fqdn.pop(node_id, None)` committed (was in working tree from session 167).
+- Tuple-unpack comment added to visit_For (known limitation documented in place).
+- All 26 data_flow tests pass [V].
+- Committed: cc45439
 
-**RM53-58 designed and committed [V]:**
-- RM58: 5 validation corpora across 4 languages. JS/TS already cloned [V]:
-  - `C:\Users\bartl\dev\corpora\dnd-dungeon-gen` (112 JS files)
-  - `C:\Users\bartl\dev\corpora\dungeoncrawler` (14 TS files, exact hierarchy confirmed)
-  - `C:\Users\bartl\dev\corpora\rotjs` (49 TS files)
-  - Go: BigJk/end_of_eden -- clone before Go phase of RM53
-  - Rust: tung/ruggrogue -- clone before Rust phase of RM53
-- RM53: `LanguageWalker` in `determined/ingestion/language_walker.py`, ast-grep backend
-  (`pip install ast-grep-py`), 3 phases: JS/TS → Go → Rust. 26 languages for free.
-- RM54: JS/TS static call graph via LanguageWalker.call_edges()
-- RM55: JS/TS data flow L1/L2/L3 via LanguageWalker.data_flow_edges(); same provenance
-  tags as Python side for unified querying
-- RM56: Python AST cleanup (see above -- partial)
-- RM57: Cross-language data flow (Python response shape → JS consumer); gates on RM55
-- Committed: fe0c82d, f6ac757
+**RM53 Phase 1 done [V]:**
+- `determined/ingestion/language_walker.py` created (~620 lines):
+  - `LanguageWalker(src, file_path, language)` with `.symbols()`, `.call_edges()`,
+    `.data_flow_edges()` public API
+  - JS/TS: named fns, arrow fns, class methods, object literal methods; fqdn convention
+    `<basename>.<fn>` for top-level, `<ClassName>.<method>` for class methods
+  - Call edges: bare + member calls, built-in filtering (_JS_BUILTINS), scope attribution
+    via fn_ranges; callee is raw name from call site (cross-file resolution in persist layer)
+  - Data flow L1 (nested arg), L2 (var binding), L3a (for-of / for_in_statement with
+    operator='of'), L3b (object named arg); provenance tags match Python side
+  - Go Phase 2 stub: function_declaration + method_declaration → `<pkg>.<Fn>`
+  - Rust Phase 3 stub: function_item + impl block methods → `<mod>::<fn>`
+  - `detect_language(file_path)` helper: ext → ast-grep language string
+- `tests/regression/test_language_walker.py`: 27 tests, all pass [V]
+- Key discovery: tree-sitter JS uses `for_in_statement` (not `for_of_statement`) for
+  both for-in and for-of; distinguish via `operator` field == 'of'
+- Full suite: 797 passed, 1 skipped [V]
+- Committed: dd71dec
+
+**NOT YET DONE (RM53 Phase 1 still open):**
+- LanguageWalker is NOT yet wired into `persist_all` or `scan_project_files`.
+  JS/TS files are NOT ingested into the DB yet. Wire-in is the next step.
 
 ## NEXT SESSION -- start here
 
-**Option A: Finish RM56 (15 min, trivial):**
-- Verify the `_last_call_fqdn.pop()` edit is still in parse_ast.py (not committed yet)
-- Add the tuple-unpack comment to visit_For
-- Run 26 data_flow tests, commit
-- Mark RM56 done in TRACKER.md
+**Wire LanguageWalker into ingestion pipeline (completes RM53 Phase 1):**
 
-**Option B: Start RM53 Phase 1 (LanguageWalker, JS/TS symbols):**
-1. `pip install ast-grep-py` in venv
-2. Create `determined/ingestion/language_walker.py` with `LanguageWalker` class
-3. Phase 1: JS/TS symbol extraction via ast-grep patterns
-4. Wire into `persistence_engine.persist_all` after Python symbols
-5. Tests in `tests/regression/test_language_walker.py`
-6. Validate against dnd-dungeon-gen and dungeoncrawler corpora
+1. Extend `scan_project_files` to return `.js`/`.ts`/`.jsx`/`.tsx` files alongside `.py`
+   - File: `determined/ingestion/scan_project_files.py`
+   - Add JS/TS extensions to the glob/walk; apply same ignore-dir rules
 
-**Recommended order:** Finish RM56 first (cleans up uncommitted edit), then RM53.
+2. In `persist_all` (persistence_engine.py:708), after step 4 (PERSIST FILE LAYER),
+   add step 4b: for each non-Python file in file_analyses (or a new `js_files` list),
+   call `LanguageWalker(src, file_path, language).symbols()` and insert into `functions`
+   table; call `.call_edges()` and insert into `graph_edges`.
+
+3. Validate against dnd-dungeon-gen corpus:
+   - Re-ingest `C:\Users\bartl\dev\corpora\dnd-dungeon-gen`
+   - Confirm `controller`, `dungeon`, `room`, `item` module symbols appear in DB
+   - Confirm `controller.generateDungeon → dungeon.buildDungeon` type call chain surfaces
+
+4. Tests for the wire-in (not yet written):
+   - `test_language_walker_persist.py` or extend existing test
+   - Fixture: ingest a 2-file JS corpus; verify symbols + edges land in DB
+
+**Entry points:**
+- `determined/ingestion/scan_project_files.py` — add JS/TS extensions
+- `determined/persistence/persistence_engine.py:persist_all` — add step 4b
+- Import: `from determined.ingestion.language_walker import LanguageWalker, detect_language`
 
 ## Known issues (carried forward)
 
-**RM56 partial [?]:** `_last_call_fqdn.pop()` fix in parse_ast.py NOT committed.
-Verify it's still there before starting next session. Outer_fqdn duplication is
-intentional (different semantics in visit_For vs visit_Call) -- document only.
+**RM53 wire-in not done [V]:** LanguageWalker exists but is not called from persist_all.
+JS/TS files produce no DB rows yet. This is the immediate next step.
 
 **RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
 
@@ -93,8 +102,8 @@ Always check reference_dj2_db_schema.md memory before writing SQL.
 recovered_code/, codebase_analyzer/, Scripts/. See reference_dj2_ignore.md memory.
 
 **dj2 DB edge_type not kind [V]:** graph_edges uses edge_type='data_flow', not kind.
-Burned in this session when re-ingest count query failed with "no such column: kind".
 
-**ast-grep-py not yet installed [?]:** `pip install ast-grep-py` needed before RM53.
+**TRACKER.md update rule [V]:** Edit tool for status changes; scratchpad-first for new
+multi-line blocks. Documented in CLAUDE.md + memory.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.

@@ -100,6 +100,22 @@ Common mistakes:
 - There is no separate shared knowledge overlay DB. Everything is scoped to the
   active corpus DB.
 
+## TRACKER.md update rules
+
+Two operation types, two strategies:
+
+- **Status changes** (mark DONE, update dashboard line, add a dated note to an existing item):
+  Use the `Edit` tool with exact-string replacement. Surgical, low blast radius.
+
+- **New item blocks** (adding an RM* item or other multi-line block):
+  Write the new block to the scratchpad first. Read it back to verify it looks right.
+  Then append/insert into TRACKER.md with `Edit`. Never write a 200-line new block
+  directly into a 2400-line file in one shot.
+
+SESSION_STATE.md is always a complete overwrite -- the delta approach does not apply there.
+
+---
+
 ## Working agreement
 
 - Read/write access to this folder -- edit files in place, no patch files.

@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 167):** RM39-L3 done (for-loop + kwarg data flow, 8 new tests, 770 passed). RM53-58 designed: LanguageWalker arc via ast-grep covering JS/TS/Go/Rust. JS/TS corpora cloned (dnd-dungeon-gen, dungeoncrawler, rotjs). Go corpus (end_of_eden) + Rust corpus (ruggrogue) added to RM58; Go/Rust phases added to RM53. RM56 Python cleanup started (partial).
+**Last session (2026-07-13, session 168):** RM56 done (cc45439: _last_call_fqdn.pop() fix, tuple-unpack comment, 26 data_flow tests pass). Starting RM53 Phase 1.
+
+**Previous (2026-07-13, session 167):** RM39-L3 done (for-loop + kwarg data flow, 8 new tests, 770 passed). RM53-58 designed: LanguageWalker arc via ast-grep covering JS/TS/Go/Rust. JS/TS corpora cloned (dnd-dungeon-gen, dungeoncrawler, rotjs). RM56 Python cleanup started (partial).
 
 **Previous (2026-07-13, session 163):** RM41 done + 16 tests. dj2 re-ingest: 153 files, 1321 fns, 93 http_route, 32 http_fetch, 18 js_event_binding edges. 754 passed, 1 skipped.
 
