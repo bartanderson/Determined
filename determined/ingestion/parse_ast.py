@@ -444,6 +444,51 @@ def _extract_symbol_references(
                 if callee_fqdn:
                     self._fn_bindings[var_name] = callee_fqdn
 
+        def visit_For(self, node):
+            # Level 3: for x in fn_a() -> data_flow edge (current fn) -> fn_a; bind loop var
+            if isinstance(node.iter, ast.Call):
+                iter_raw = None
+                if isinstance(node.iter.func, ast.Name):
+                    iter_raw = node.iter.func.id
+                elif isinstance(node.iter.func, ast.Attribute):
+                    base = node.iter.func.value
+                    if isinstance(base, ast.Name):
+                        iter_raw = f"{base.id}.{node.iter.func.attr}"
+                if iter_raw and self.current_function != "<module>":
+                    callee_fqdn = (
+                        alias_map.get(iter_raw)
+                        or runtime_bindings.get(iter_raw)
+                        or local_symbol_map.get(iter_raw)
+                        or iter_raw
+                    )
+                    outer_fqdn = (
+                        f"{self.current_class}.{self.current_function}"
+                        if self.current_class else self.current_function
+                    )
+                    results.append((
+                        outer_fqdn,
+                        SymbolIdentity(
+                            surface=callee_fqdn,
+                            normalized=callee_fqdn,
+                            fqdn=callee_fqdn,
+                            module=callee_fqdn,
+                            kind="unknown",
+                            provenance=["data_flow_for_iter"],
+                            confidence=0.5,
+                        ),
+                        node.lineno,
+                        False,
+                        'data_flow',
+                    ))
+                    # Bind loop target variable(s) so downstream uses are tracked
+                    if isinstance(node.target, ast.Name):
+                        self._fn_bindings[node.target.id] = callee_fqdn
+                    elif isinstance(node.target, ast.Tuple):
+                        for elt in node.target.elts:
+                            if isinstance(elt, ast.Name):
+                                self._fn_bindings[elt.id] = callee_fqdn
+            self.generic_visit(node)
+
         def visit_Call(self, node):
 
             raw = None
@@ -678,6 +723,29 @@ def _extract_symbol_references(
                                 module=bound_callee,
                                 kind="unknown",
                                 provenance=["data_flow_var"],
+                                confidence=0.5,
+                            ),
+                            node.lineno,
+                            False,
+                            'data_flow',
+                        ))
+
+            # Level 3: fn(key=var) where var = fn_a() -> data_flow edge fn -> fn_a
+            for kw in node.keywords:
+                if kw.arg is None:
+                    continue  # **kwargs unpack, skip
+                if isinstance(kw.value, ast.Name):
+                    bound_callee = self._fn_bindings.get(kw.value.id)
+                    if bound_callee:
+                        results.append((
+                            outer_fqdn,
+                            SymbolIdentity(
+                                surface=bound_callee,
+                                normalized=bound_callee,
+                                fqdn=bound_callee,
+                                module=bound_callee,
+                                kind="unknown",
+                                provenance=["data_flow_var_kwarg"],
                                 confidence=0.5,
                             ),
                             node.lineno,

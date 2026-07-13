@@ -308,3 +308,118 @@ def test_multiple_functions_bindings_are_independent():
     pairs = {(r.caller.split(".")[-1], r.callee.split(".")[-1]) for r in data_flow}
     assert ("fn_b", "fn_a") in pairs
     assert ("fn_d", "fn_c") in pairs
+
+
+# ---------------------------------------------------------------------------
+# Level 3: for-loop over call result + keyword-arg variable pass
+# ---------------------------------------------------------------------------
+
+def test_for_loop_over_call_emits_data_flow_edge():
+    """for x in fn_a() -> data_flow edge (outer) -> fn_a."""
+    source = textwrap.dedent("""\
+        def outer():
+            for x in fn_a():
+                pass
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 1
+    assert data_flow[0].caller.endswith("outer")
+    assert data_flow[0].callee.endswith("fn_a")
+    assert data_flow[0].identity.provenance == ["data_flow_for_iter"]
+
+
+def test_for_loop_binds_loop_var_for_downstream():
+    """for x in fn_a(): fn_b(x) -> two data_flow edges: outer->fn_a, fn_b->fn_a."""
+    source = textwrap.dedent("""\
+        def outer():
+            for x in fn_a():
+                fn_b(x)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 2
+    provs = {r.identity.provenance[0] for r in data_flow}
+    assert "data_flow_for_iter" in provs
+    assert "data_flow_var" in provs
+
+
+def test_for_loop_attribute_iter_emits_edge():
+    """for x in obj.get_items() -> data_flow edge outer -> obj.get_items."""
+    source = textwrap.dedent("""\
+        def outer():
+            for x in obj.get_items():
+                pass
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 1
+    assert "get_items" in data_flow[0].callee
+
+
+def test_for_loop_over_name_not_call_no_data_flow():
+    """for x in items -> items is not a call, no data_flow edge emitted."""
+    source = textwrap.dedent("""\
+        def outer():
+            items = [1, 2, 3]
+            for x in items:
+                pass
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 0
+
+
+def test_keyword_arg_variable_pass_emits_data_flow():
+    """fn_b(key=result) where result=fn_a() -> data_flow edge fn_b -> fn_a."""
+    source = textwrap.dedent("""\
+        def outer():
+            result = fn_a()
+            fn_b(key=result)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 1
+    assert data_flow[0].caller.endswith("fn_b")
+    assert data_flow[0].callee.endswith("fn_a")
+    assert data_flow[0].identity.provenance == ["data_flow_var_kwarg"]
+
+
+def test_kwargs_unpack_not_tracked():
+    """fn_b(**result) should not emit a data_flow edge."""
+    source = textwrap.dedent("""\
+        def outer():
+            result = fn_a()
+            fn_b(**result)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 0
+
+
+def test_keyword_arg_unbound_var_no_data_flow():
+    """fn_b(key=x) where x is not from a call -> no data_flow edge."""
+    source = textwrap.dedent("""\
+        def outer(x):
+            fn_b(key=x)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 0
+
+
+def test_level3_coexists_with_level1_and_level2():
+    """fn_d(fn_a(), result, key=other) where result=fn_b(), other=fn_c() -> 3 edges."""
+    source = textwrap.dedent("""\
+        def outer():
+            result = fn_b()
+            other = fn_c()
+            fn_d(fn_a(), result, key=other)
+    """)
+    refs = _refs_from_source(source)
+    data_flow = [r for r in refs if r.edge_type == "data_flow"]
+    assert len(data_flow) == 3
+    callees = {r.callee for r in data_flow}
+    assert any(c.endswith("fn_a") for c in callees)
+    assert any(c.endswith("fn_b") for c in callees)
+    assert any(c.endswith("fn_c") for c in callees)
