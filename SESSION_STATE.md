@@ -1,42 +1,35 @@
-Written at commit: 3bf787d
-# SESSION STATE - session 159 handoff
+Written at commit: 12668b2
+# SESSION STATE - session 161 handoff
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 159, 2026-07-12)
+## What happened this session (session 161, 2026-07-13)
 
-**Re-ingest dj2 [V]:** Full corpus re-ingest to populate new RM38/RM39 edge types.
-- Ran EngineRunner directly via script (same path as UI handle_ingest).
-- data_flow: 388, static: 8098, decorator: 100, thread: 1.
-- http_fetch and js_event_binding were 0 -- bug found and fixed.
-
-**Bug fixed + committed (0511bdc) [V]:** `_persist_cross_boundary_edges` got 0
-HTML/JS sources because `scan_project_files` only processes .py files. File
-analyses had no HTML or JS entries so the RM38 extractor block was skipped.
-Fix: when flask_route_map is non-empty but html_srcs/js_srcs are empty, fall back
-to reading .html/.js directly from disk via `project_meta.project_root`.
-Skips .venv, node_modules, __pycache__, .git.
-After fix: http_fetch: 32, js_event_binding: 18. [V]
-
-**Validation [V]:**
-- `ingest_design_docs(min_score=0.01)`: 00E picked up, 2388 rules stored, 52 docs. [V]
-- `trace_http_chain('/api/party/create')`: 2 handlers (get_party_data, api_party_create),
-  HTMX element, JS callers (showCreatePartyModal, showJoinPartyModal, leaveParty). [V]
-- `data_flow_edges('process')`: runs; 0 results (expected -- process() called via
-  result=process() pattern = Level 2, deferred). [V]
-
-**RM42 done + committed (3bf787d) [V]:** Investigation clue board, Pass 1.
-- 5th rail icon (magnifier) opens Investigation panel (sb-investigate section).
-- Pin button injected into every result-block header via addResultBlock().
-- Clue card model: tool-tag, subject, 400-char summary, timestamp, pin/remove.
-- Max 20 cards; oldest unpinned auto-dropped at cap.
-- "Ask about these clues" prefills q-input with numbered clue summaries.
-- "Clear unpinned" removes all non-pinned cards.
-- Rail icon flashes amber briefly on new pin.
-- Verified in browser: panel opens, pin appears on result blocks, pinning creates
-  card, ask composes query, clear works. [V]
+**RM43 done + committed (4d0f7b0) [V]:** Canned reasoning lenses for investigation clue board.
+- 5 lenses: Next action, Blast radius, Open questions, Convergence check, Not ready.
+- `determined/agent/reasoning_lenses.py` -- LENS_CATALOG dict with prompt_template per lens.
+- `/api/reasoning_lenses` Flask route in ui_server.py serves catalog as JSON.
+- Investigation panel fetches catalog on load; lens buttons appear when clues are pinned.
+- Click composes clue summaries + lens prompt template, prefills Ask bar. Same path as RM42.
+- Verified in browser: catalog loaded (5 buttons), lens section shows on pin, click prefills. [V]
 - 731 passed, 1 skipped. [V]
+
+**RM40 done + committed (472452c) [V]:** resolved_only filter for direct caller/callee lookups.
+- `_list_callers_raw` and `_list_callees_raw` gain `resolved_only: bool = False` param.
+- `list_callers`, `list_callees`, `blast_radius` thread it through from args dict.
+- `bfs_callees` and `subgraph_around` in graph_utils.py already had it -- full stack consistent.
+- 4 new regression tests in test_graph_utils.py documenting the bare-name collision scenario.
+- 735 passed, 1 skipped. [V]
+
+**TODO-1 done + committed (12668b2) [V]:** http_route column for reliable Flask handler lookup.
+- `FunctionRepresentation` gains `http_route: Optional[str] = None` field (shared/types.py).
+- `parse_ast.py` extracts route URL from `@<x>.route('/path')` AST node in decorator loop.
+- `persistence_engine.py`: `http_route TEXT` in CREATE TABLE + ALTER TABLE migration + INSERT.
+- `trace_http_chain` in agent_tools.py: queries `http_route` column first (via `_url_matches`),
+  falls back to decorators_json regex (for pre-migration corpora), then http_fetch edge targets.
+- 3 new tests in test_http_chain.py. Fixed positional INSERT in test_intent_view_wiring.py.
+- 738 passed, 1 skipped. [V]
 
 ## Gap taxonomy (cumulative) [V]
 
@@ -56,7 +49,7 @@ After fix: http_fetch: 32, js_event_binding: 18. [V]
 | DF | Data flow edges (Level 1) | DONE (RM39) |
 | HTTP | fetch/HTMX -> Flask route | DONE (RM38) |
 | INV | Investigation context panel | DONE Pass 1 (RM42) |
-| LNS | Canned reasoning lenses | OPEN (RM43) |
+| LNS | Canned reasoning lenses | DONE (RM43) |
 
 ## Known issues (carried forward)
 
@@ -69,7 +62,7 @@ After fix: http_fetch: 32, js_event_binding: 18. [V]
 **Determined corpus DB path [V]:** C_Users_bartl_dev_Determined.db
 
 **RM40 opt-in trap [V]:** resolved_only defaults False. readiness_check T2 uses
-_list_callees_raw -- may surface unresolved edges.
+_list_callees_raw -- may surface unresolved edges. Pass resolved_only=True explicitly.
 
 **RM43 empty-board trap [V]:** Lenses produce nothing on an empty clue board.
 
@@ -81,24 +74,24 @@ _list_callees_raw -- may surface unresolved edges.
 
 **RM39 Level 2 deferred [V]:** `result=fn_a(); fn_b(result)` not implemented.
 
-**trace_http_chain decorator lookup fragile [V]:** TODO-1 in TRACKER.md covers the fix.
-
-**dj2 re-ingested this session [V]:** http_fetch=32, js_event_binding=18, data_flow=388.
+**dj2 needs re-ingest for http_route [V]:** TODO-1 adds http_route column; existing corpus DB
+has the column (migration runs) but all rows are NULL until re-ingest populates them.
+trace_http_chain falls back to decorators_json regex + http_fetch edges until then.
 
 **RM42 Pass 2 deferred [V]:** Clue board is session-only JS; lost on page reload.
 Pass 2 (persist to workflow_items) not yet implemented.
 
 ## NEXT SESSION -- start here
 
-**Recommended first action:** RM43 -- canned reasoning lenses.
-- RM42 (clue board) is the prerequisite -- shipped this session. [V]
-- New file: `determined/agent/reasoning_lenses.py` -- lens dict
-  {name, description, prompt_template, requires_db_queries}
-- UI: lens selector buttons at bottom of #sb-investigate panel in console.html
-- Start with 2-3 lenses: "Next action", "Blast radius", "Open questions"
-- Each lens: clue summaries + optional live DB queries -> prefills Ask bar
+**Recommended first action:** RM42 Pass 2 -- persist clue board to DB.
+- Clue board (RM42) works in-session but is lost on page reload.
+- Three API endpoints: POST /api/clues (pin), DELETE /api/clues/<id>, GET /api/clues.
+- Store in workflow_items table (body = JSON card, kind = 'clue').
+- Frontend: on load, fetch GET /api/clues and restore _clues array.
+- On pin/remove, emit socket or fetch to sync. Same panel UI, no visual change.
+- Estimated effort: 0.5 days.
 
-After RM43: TODO-1 (trace_http_chain hardening), RM40 (target resolution),
-RM42 Pass 2 (DB persistence for clue board).
+**Also open:** dj2 re-ingest to populate http_route column after TODO-1 fix.
+Run via EngineRunner script (same path as last re-ingest in session 159).
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
