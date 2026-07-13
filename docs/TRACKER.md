@@ -192,6 +192,204 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM58. **[TODO] Clone JS/TS validation corpora for RM53-57 testing**
+
+   Three reference corpora that cover the full RM53-57 test surface. Clone into
+   `C:\Users\bartl\dev\corpora\` (sibling to dj2). Each is small enough to ingest
+   in seconds but rich enough to validate the analysis.
+
+   **Corpora:**
+
+   | Repo | Language | What it tests |
+   |------|----------|---------------|
+   | [GadgetBlaster/JavaScript-DnD-Dungeon-Generator](https://github.com/GadgetBlaster/JavaScript-DnD-Dungeon-Generator) | Vanilla JS, ES modules, zero deps | fn→fn call chain: controller→dungeon→room→item→utility; vanilla JS data flow |
+   | [HermannPR/DUNGEONCRAWLER](https://github.com/HermannPR/DUNGEONCRAWLER) | TypeScript, ~12-15 files | Class method calls, Game.ts coordinator, entities/world/combat/ui hierarchy; TS path |
+   | [ondras/rot.js](https://github.com/ondras/rot.js) | TypeScript, ~100 files, library | Library-scale: exported API surface, many cross-module callers; blast_radius + list_callees |
+
+   **Steps:**
+   ```
+   mkdir C:\Users\bartl\dev\corpora
+   git clone https://github.com/GadgetBlaster/JavaScript-DnD-Dungeon-Generator corpora/dnd-dungeon-gen
+   git clone https://github.com/HermannPR/DUNGEONCRAWLER corpora/dungeoncrawler
+   git clone https://github.com/ondras/rot.js corpora/rotjs
+   ```
+   Then ingest each via Determined UI or CLI and confirm file counts.
+
+   **Validation targets for RM53-55:**
+   - dnd-dungeon-gen: `controller → dungeon → room` call chain surfaces in call graph
+   - dungeoncrawler: `Game → CombatSystem → Entity` chain surfaces with TypeScript classes
+   - rot.js: blast_radius on a core exported function shows meaningful cross-module reach
+
+   **Estimated effort:** 15 minutes to clone + ingest. Do this before implementing RM53.
+
+---
+
+RM53. **[TODO] JS symbol ingestion: extract JS functions as first-class symbols**
+
+   Foundation for all JS graph work. Without symbols in the `functions` table,
+   JS→JS call edges have no callee to link to and blast_radius / list_callees
+   are blind to all JS code.
+
+   **Parser backend: tree-sitter**
+   Use `tree-sitter` + `tree-sitter-javascript` / `tree-sitter-typescript` Python
+   packages (pip install, no Node.js required). Handles vanilla JS, TS, JSX, TSX
+   with the same walker API by swapping the grammar. This is the abstraction layer
+   that RM54/55/57 all build on.
+
+   Design a thin `JSWalker(src, language="javascript"|"typescript")` class in
+   `determined/ingestion/parse_js.py` that walks the tree-sitter CST and produces
+   typed results. All downstream RMs import from `parse_js`, not from tree-sitter
+   directly — so the parser backend is swappable without touching RM54/55/57.
+
+   **Scope:** `.js` and `.ts` files. Arrow functions, named functions, class
+   methods, and method definitions in object literals. HTML inline scripts deferred.
+
+   **Implementation:**
+   - `JSWalker.symbols()` → list of dicts matching `functions` table schema:
+     `fqdn`, `name`, `file_path`, `line_number`, `is_stub` (body is `{}` or
+     single return), `docstring` (leading block comment), `param_types_json`
+     (param names only; TS type annotations captured if present).
+   - JS fqdn convention: `<basename_no_ext>.<fn_name>` (e.g. `console.loadCorpus`).
+     Class methods: `<ClassName>.<methodName>`. Matches what `extract_fetch_edges`
+     already uses as caller names, so existing http_fetch edges link correctly.
+   - Wire into `persistence_engine.persist_all`: after Python symbols, scan JS/TS
+     files and insert via `_insert_symbol`.
+
+   **Validation (RM58 corpora):**
+   - dnd-dungeon-gen: symbols from `app/dungeon/`, `app/room/`, `app/item/` all appear
+   - dungeoncrawler: `Game`, `Player`, `Enemy`, `CombatSystem` methods all appear
+     with correct TS class-method fqdn
+
+   **Regression tests:** 5-6 tests in `tests/regression/test_js_analysis.py`
+   covering named fn, arrow fn, class method, object literal method, TS typed
+   params, stub detection.
+
+   **Estimated effort:** 1 day (CST walker is ~0.5 day more than regex, paid back
+   immediately when TS arrives).
+
+---
+
+RM54. **[TODO] JS static call graph: fn→fn call edges within JS files**
+
+   Depends on RM53 (JSWalker + tree-sitter backend must exist first).
+
+   Within a JS/TS file, detect `fnA()` calls inside the body of `fnB` and emit
+   `static` edge `fnB → fnA`. Uses tree-sitter CST so arrow functions, class
+   methods, and template-literal calls are all handled correctly — not just
+   `function` keyword declarations.
+
+   **Implementation (`parse_js.py`):**
+   - `JSWalker.call_edges()` → list of `(caller_fqdn, callee_name, 'static', resolved)`.
+   - Walk `call_expression` nodes; enclosing function scope tracked via CST parent
+     chain (tree-sitter gives parent references). Callee is `callee.name` for
+     direct calls, `object.method` for member calls.
+   - Filter JS keywords / built-ins (console, Math, Object, Array, Promise, etc.).
+   - Cross-file resolution: if callee name matches a symbol from another ingested
+     JS/TS file, emit `resolved=1`; otherwise `resolved=0`.
+   - Wire into `persist_all` after RM53 symbol pass.
+
+   **Validation (RM58 corpora):**
+   - dnd-dungeon-gen: `controller.generateDungeon → dungeon.buildDungeon`,
+     `dungeon → room.generate`, `room → utility.randomInt` chain all surface
+   - dungeoncrawler: `Game.update → CombatSystem.resolveCombat → Entity.takeDamage`
+     chain surfaces with class-method fqdns
+
+   **Regression tests:** direct call, member call, arrow fn caller, keyword filtered,
+   cross-file unresolved stub, TS class method caller.
+
+   **Estimated effort:** 0.5 day.
+
+---
+
+RM55. **[TODO] JS data flow: variable binding and call-chain tracking (L1/L2/L3)**
+
+   Depends on RM54. Mirrors the Python data_flow levels in JS. Uses tree-sitter
+   CST via `JSWalker` — same backend as RM53/54, no new parser setup.
+
+   - L1: `fnB(fnA())` → inline call arg → `data_flow` edge, provenance `data_flow_arg`
+   - L2: `const x = fnA(); fnB(x)` → variable binding → `data_flow` edge, provenance `data_flow_var`
+   - L3a: `for (const x of fnA())` → for-of over call → `data_flow_for_iter`; bind loop var
+   - L3b: `fnB({key: x})` where x is bound → `data_flow_var_kwarg` (JS object literal
+     named arg, the JS equivalent of Python keyword args)
+
+   **Implementation (`parse_js.py`):**
+   - `JSWalker.data_flow_edges()` → list of `(caller_fqdn, callee_fqdn, 'data_flow', provenance)`.
+   - Per-function binding map scoped via CST function scope nodes (same invariant as
+     Python: bindings don't cross function boundaries).
+   - Provenance tags identical to Python side (`data_flow_arg`, `data_flow_var`,
+     `data_flow_for_iter`, `data_flow_var_kwarg`) so `data_flow_edges` tool queries
+     both Python and JS edges uniformly.
+   - Wire into `persist_all` after RM54.
+
+   **Validation (RM58 corpora):**
+   - dnd-dungeon-gen: `const rooms = generateRooms(); placeItems(rooms)` type patterns
+     surface as data_flow edges through the generation pipeline
+   - dungeoncrawler: combat result flowing from `CombatSystem` into `UIManager` surfaces
+
+   **Regression tests:** inline arg, const binding, let binding, for-of loop, object
+   named arg, binding scoped to fn (no leak), module-level not tracked, TS typed var.
+
+   **Estimated effort:** 1 day.
+
+---
+
+RM56. **[TODO] Python AST cleanup: shared fqdn helper, binding reset, tuple unpack**
+
+   Three known rough edges in parse_ast.py introduced across L1/L2/L3:
+
+   1. **Duplicate `outer_fqdn` computation** — `visit_For` and `visit_Call` each
+      independently compute `outer_fqdn` from `self.current_class` + `self.current_function`.
+      Extract to a `@property` or inline helper so it's one place.
+
+   2. **`_last_call_fqdn` accumulates without clearing** — the dict grows for the
+      lifetime of a file visit and is never pruned. For large files with many calls
+      this is a minor memory leak and could theoretically collide if `id()` is reused
+      (CPython recycles node ids after GC). Clear the entry after consuming it in
+      `visit_Assign`.
+
+   3. **`visit_For` tuple unpack binds all elements to the same callee** — correct
+      for tracking but misleading: `for k, v in fn()` binds both `k` and `v` to
+      `fn`, which is the right provenance but could produce spurious downstream edges
+      if `k` and `v` are structurally unrelated outputs. Document the known limitation
+      in a comment; no behavior change needed unless a real false-positive surfaces.
+
+   **No new tests required** — existing 26 data_flow tests are the regression suite.
+   Verify all 26 still pass after refactor.
+
+   **Estimated effort:** 1-2 hours.
+
+---
+
+RM57. **[TODO] Cross-language data flow: Python response shape → JS consumer**
+
+   Depends on RM54 + RM55. The "data to data" path across the language boundary.
+
+   A Flask route returns `jsonify({"key": value})`. A JS `fetch()` call hits that
+   route and destructures `const {key} = await resp.json()`. Today these are two
+   disconnected facts. RM57 links them into a cross-language data_flow edge.
+
+   **Three sub-problems:**
+   1. **Python side — response shape extraction:** in `parse_ast.py` or a new pass,
+      detect `jsonify(dict_literal)` or `return {"key": ...}` in a route handler and
+      store the key names as a `knowledge_artifact` (`kind='response_shape'`).
+   2. **JS side — response consumer extraction:** `JSWalker.response_consumers()`
+      detects `await resp.json()` / `.then(data => ...)` / destructuring
+      `const {key} = ...` patterns and extracts the key names being consumed.
+   3. **Linking pass:** after RM54/55 emit http_fetch edges (JS fn → Flask handler),
+      join response_shape artifacts to JS consumer key sets. Emit a `cross_language`
+      data_flow edge annotated with matched/unmatched keys. Mismatches surface as gaps
+      (design_gaps() can pick them up if stored as knowledge_artifacts).
+
+   **Validation (RM58 corpora):**
+   - dj2 is the primary target here (has real Flask + fetch chains).
+   - dnd-dungeon-gen and dungeoncrawler are pure client-side so they won't exercise
+     this path — that's fine, they cover RM53-55.
+
+   **Gating condition:** implement after RM55 is working and at least one real
+   fetch→handler chain exists in the active corpus (dj2 has several).
+
+   **Estimated effort:** 1.5 days.
+
 ---
 
 
