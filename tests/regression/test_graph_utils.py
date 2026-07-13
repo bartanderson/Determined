@@ -267,6 +267,100 @@ def test_subgraph_around_resolved_only():
     assert "C" not in sg["nodes"]
 
 
+def _make_oracle_for_tools(edges_resolved):
+    """Oracle with graph_edges + symbol_references + symbols tables for agent_tools tests."""
+    import sqlite3
+    from determined.identity.symbol_identity import normalize_symbol
+
+    class _Oracle:
+        def __init__(self):
+            self.conn = sqlite3.connect(":memory:")
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute(
+                "CREATE TABLE graph_edges (caller TEXT, callee TEXT, line_number INTEGER, "
+                "source_id TEXT, target_id TEXT, caller_file TEXT, resolved INTEGER DEFAULT 0, "
+                "edge_type TEXT DEFAULT 'static')"
+            )
+            self.conn.execute(
+                "CREATE TABLE symbol_references (caller TEXT, callee TEXT, file_path TEXT)"
+            )
+            self.conn.execute(
+                "CREATE TABLE symbols (name TEXT, file_path TEXT)"
+            )
+            self.conn.execute(
+                "CREATE TABLE symbol_names (id INTEGER PRIMARY KEY, canonical_id TEXT, name TEXT, name_type TEXT)"
+            )
+            self.conn.execute(
+                "CREATE TABLE functions (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
+            )
+            self.conn.execute(
+                "CREATE TABLE classes (name TEXT, file_path TEXT, line_number INTEGER, docstring TEXT)"
+            )
+            for caller, callee, resolved in edges_resolved:
+                src_id = normalize_symbol(caller)
+                tgt_id = normalize_symbol(callee)
+                self.conn.execute(
+                    "INSERT INTO graph_edges (caller, callee, line_number, source_id, target_id, resolved) VALUES (?,?,1,?,?,?)",
+                    (caller, callee, src_id, tgt_id, resolved)
+                )
+            self.conn.commit()
+
+    return _Oracle()
+
+
+def test_list_callers_raw_resolved_only_filters_collision():
+    """_list_callers_raw(resolved_only=True) must exclude unresolved bare-name collision edges."""
+    from determined.agent.agent_tools import _list_callers_raw
+    # handle_connect calls auth.get() (unresolved, stdlib) and real_caller calls get (resolved)
+    oracle = _make_oracle_for_tools([
+        ("handle_connect", "get", 0),  # unresolved collision -- should be excluded
+        ("real_caller", "get", 1),     # annotation-resolved -- should be included
+    ])
+    rows = _list_callers_raw(oracle, "get", resolved_only=True)
+    callers = [r["caller"] for r in rows]
+    assert "real_caller" in callers, "resolved caller should appear"
+    assert "handle_connect" not in callers, "unresolved collision caller should be excluded"
+
+
+def test_list_callers_raw_default_includes_unresolved():
+    """_list_callers_raw without resolved_only returns all edges (backward compat)."""
+    from determined.agent.agent_tools import _list_callers_raw
+    oracle = _make_oracle_for_tools([
+        ("handle_connect", "get", 0),
+        ("real_caller", "get", 1),
+    ])
+    rows = _list_callers_raw(oracle, "get")
+    callers = [r["caller"] for r in rows]
+    assert "handle_connect" in callers
+    assert "real_caller" in callers
+
+
+def test_list_callees_raw_resolved_only_filters_collision():
+    """_list_callees_raw(resolved_only=True) must exclude unresolved outgoing edges."""
+    from determined.agent.agent_tools import _list_callees_raw
+    oracle = _make_oracle_for_tools([
+        ("handle_connect", "get", 0),      # unresolved stdlib collision
+        ("handle_connect", "process", 1),  # real project call, resolved
+    ])
+    rows = _list_callees_raw(oracle, "handle_connect", resolved_only=True)
+    callees = [r["callee"] for r in rows]
+    assert "process" in callees, "resolved callee should appear"
+    assert "get" not in callees, "unresolved callee should be excluded"
+
+
+def test_list_callees_raw_default_includes_unresolved():
+    """_list_callees_raw without resolved_only returns all project callees (backward compat)."""
+    from determined.agent.agent_tools import _list_callees_raw
+    oracle = _make_oracle_for_tools([
+        ("handle_connect", "get", 0),
+        ("handle_connect", "process", 1),
+    ])
+    rows = _list_callees_raw(oracle, "handle_connect")
+    callees = [r["callee"] for r in rows]
+    assert "process" in callees
+    assert "get" in callees
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

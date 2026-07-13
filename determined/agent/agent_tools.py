@@ -93,18 +93,20 @@ def search_files(oracle: "DBOracle", args: dict) -> str:
 
 def list_callers(oracle: "DBOracle", args: dict) -> str:
     """
-    list_callers(symbol) - direct callers from graph_edges.
+    list_callers(symbol, resolved_only=False) - direct callers from graph_edges.
     Matches bare name and module.name qualified forms.
+    resolved_only=true restricts to annotation-resolved edges (less noise, less coverage).
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
+    resolved_only = bool(args.get("resolved_only", False))
     # Check if symbol is defined in multiple files (do before callers lookup)
     decl_rows = oracle.conn.execute(
         "SELECT DISTINCT file_path FROM symbols WHERE name = ?", (symbol,)
     ).fetchall()
     decl_files = [r[0].replace("\\", "/").split("/")[-1] for r in decl_rows]
-    rows = _list_callers_raw(oracle, symbol)
+    rows = _list_callers_raw(oracle, symbol, resolved_only=resolved_only)
     if not rows:
         if len(decl_files) > 1:
             return (f"No direct callers found for '{symbol}' "
@@ -128,13 +130,15 @@ def list_callers(oracle: "DBOracle", args: dict) -> str:
 
 def blast_radius(oracle: "DBOracle", args: dict) -> str:
     """
-    blast_radius(target) - what would break if target (file or symbol) were removed.
+    blast_radius(target, resolved_only=False) - what would break if target (file or symbol) were removed.
     If target ends in .py or contains a path separator, treats as a file and lists callers
     of each symbol in that file. Otherwise treats as a symbol and lists its callers + risk.
+    resolved_only=true restricts to annotation-resolved edges (less noise, less coverage).
     """
     target = args.get("target", "").strip()
     if not target:
         return "ERROR: target argument required"
+    resolved_only = bool(args.get("resolved_only", False))
 
     is_file = target.endswith(".py") or "/" in target or "\\" in target
 
@@ -153,7 +157,7 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
         no_callers = []
         for row in rows[:15]:
             name = row[0]
-            callers = _list_callers_raw(oracle, name)
+            callers = _list_callers_raw(oracle, name, resolved_only=resolved_only)
             if callers:
                 total_callers += len(callers)
                 caller_names = [c["caller"] for c in callers[:3]]
@@ -173,7 +177,7 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
 
     else:
         # Symbol-level blast radius: list callers + risk profile
-        callers = _list_callers_raw(oracle, target)
+        callers = _list_callers_raw(oracle, target, resolved_only=resolved_only)
         from determined.agent.risk_annotator import score_risk, risk_badge
         try:
             risk = score_risk(oracle, target)
@@ -204,12 +208,14 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
 
 def list_callees(oracle: "DBOracle", args: dict) -> str:
     """
-    list_callees(symbol) - what this symbol calls, from graph_edges.
+    list_callees(symbol, resolved_only=False) - what this symbol calls, from graph_edges.
+    resolved_only=true restricts to annotation-resolved edges (less noise, less coverage).
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
-    rows = _list_callees_raw(oracle, symbol)
+    resolved_only = bool(args.get("resolved_only", False))
+    rows = _list_callees_raw(oracle, symbol, resolved_only=resolved_only)
     if not rows:
         return f"No project callees for '{symbol}' (only builtins, or makes no calls)"
     lines = [f"'{symbol}' calls:"]
@@ -381,10 +387,14 @@ def _search_symbols_raw(oracle: "DBOracle", query: str, limit: int = 20) -> list
     return results
 
 
-def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
+def _list_callers_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = False) -> list[dict]:
     """
     Direct callers of symbol from graph_edges.
     Returns list[dict]: caller, file_path, line_number, resolved.
+
+    resolved_only=True filters to annotation-resolved edges, suppressing noise
+    from bare-name collisions (e.g. a project function named 'get' being treated
+    as a caller of stdlib dict.get).
 
     Queries target_id (canonical bare name) rather than the callee surface column.
     The callee column may store fully-qualified names for cross-module imports
@@ -395,14 +405,15 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
     from determined.identity.symbol_identity import normalize_symbol
     from determined.agent.graph_utils import _has_id_columns
     canonical = normalize_symbol(symbol)
+    res_filter = " AND ge.resolved = 1" if resolved_only else ""
     if _has_id_columns(oracle.conn):
         rows = oracle.conn.execute(
-            """
+            f"""
             SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
             FROM graph_edges ge
             LEFT JOIN symbol_references sr
                 ON ge.caller = sr.caller AND ge.callee = sr.callee
-            WHERE ge.target_id = ?
+            WHERE ge.target_id = ?{res_filter}
             ORDER BY sr.file_path, ge.line_number
             """,
             (canonical,),
@@ -411,12 +422,12 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
         # Compatibility: test fixtures that predate source_id/target_id columns.
         # Fall back to callee surface column with bare-name and FQ-name match.
         rows = oracle.conn.execute(
-            """
+            f"""
             SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
             FROM graph_edges ge
             LEFT JOIN symbol_references sr
                 ON ge.caller = sr.caller AND ge.callee = sr.callee
-            WHERE ge.callee = ? OR ge.callee LIKE ?
+            WHERE (ge.callee = ? OR ge.callee LIKE ?){res_filter}
             ORDER BY sr.file_path, ge.line_number
             """,
             (canonical, f"%.{canonical}"),
@@ -424,19 +435,23 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
     return [{"caller": r[0], "file_path": r[1], "line_number": r[2], "resolved": bool(r[3])} for r in rows]
 
 
-def _list_callees_raw(oracle: "DBOracle", symbol: str) -> list[dict]:
+def _list_callees_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = False) -> list[dict]:
     """
     Project callees of symbol from graph_edges (builtins filtered out).
     Returns list[dict]: callee, file_path, line_number, count, resolved.
+
+    resolved_only=True filters to annotation-resolved edges only, reducing
+    noise from bare-name collisions on generic method names (get, set, all, etc.).
     """
     import builtins as _bi
+    res_filter = " AND ge.resolved = 1" if resolved_only else ""
     rows = oracle.conn.execute(
-        """
+        f"""
         SELECT ge.callee, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
         FROM graph_edges ge
         LEFT JOIN symbol_references sr
             ON ge.caller = sr.caller AND ge.callee = sr.callee
-        WHERE ge.caller = ?
+        WHERE ge.caller = ?{res_filter}
         ORDER BY ge.line_number
         """,
         (symbol,),

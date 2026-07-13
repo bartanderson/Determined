@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-12, session 160):** RM43 done. 5 reasoning lenses (Next action, Blast radius, Open questions, Convergence check, Not ready) in determined/agent/reasoning_lenses.py. /api/reasoning_lenses Flask route. Lens buttons appear in Investigation panel when clues are pinned; each composes a structured prompt prefilling the Ask bar. 731 passed, 1 skipped.
+**Last session (2026-07-13, session 161):** RM40 done. resolved_only=False param added to _list_callers_raw, _list_callees_raw; threaded through list_callers, list_callees, blast_radius. bfs_callees and subgraph_around already had it in graph_utils. 4 new regression tests. 735 passed, 1 skipped.
+
+**Previous (2026-07-12, session 160):** RM43 done. 5 reasoning lenses (Next action, Blast radius, Open questions, Convergence check, Not ready) in determined/agent/reasoning_lenses.py. /api/reasoning_lenses Flask route. Lens buttons appear in Investigation panel when clues are pinned; each composes a structured prompt prefilling the Ask bar. 731 passed, 1 skipped.
 
 **Previous (2026-07-12, session 159):** RM42 done + dj2 re-ingest. Investigation clue board: pin button on result blocks, clue cards, Ask/Clear actions. http_fetch/js_event_binding fix (read HTML/JS from disk). 731 passed, 1 skipped.
 
@@ -966,43 +968,6 @@ Tools installed: pyan3, pyright (both via pip into Determined venv).
 pyan3 solid edges overlap better with Determined's resolved set.
 
 ---
-
-RM40. **[OPEN] Target resolution collision: bare method names resolve to wrong project functions**
-
-   **The gap:** BFS from world_app.py socket handlers returns callee sets polluted with
-   unrelated project functions. Verified: `handle_connect` calls `auth.get()` and
-   `request.cookies.get()` (dict/Flask methods). The graph stores target_id=`get` for these
-   calls. BFS then finds `bestiary.get() -> Optional['Monster']` as a match because it's
-   the project function named `get`. The handler never touches bestiary data. Same collision
-   happens for `emit`, `all`, `execute`, `get_connection` -- generic names shared between
-   stdlib/Flask internals and project-level functions.
-
-   **Root cause:** Method calls on unannotated receiver objects (e.g. `auth.get()`,
-   `session.get()`, `obj.all()`) store only the bare method name as target_id, with no
-   type context. BFS resolves bare names to project functions by name match alone. When
-   a project function shares a name with a stdlib/Flask method, the edge incorrectly
-   traverses into project code.
-
-   **The existing `resolved` column** (Item 20, done) was meant for this: annotation-resolved
-   edges get `resolved=1`, heuristic-name edges get `resolved=0`. The fix is to make BFS
-   optionally filter to `resolved=1` edges (or at least surface the distinction), so
-   high-confidence traversal is possible. Alternatively: filter out target_ids that
-   match known generic names (`get`, `set`, `all`, `execute`, `emit`, `run`, `close`, etc.)
-   when no annotation supports the resolution.
-
-   **Two-part fix:**
-   1. In `graph_utils.py` BFS functions: add `resolved_only=False` parameter. When True,
-      filter `WHERE resolved = 1`. Surface this in agent tools as a traversal flag.
-   2. In `agent_tools.py` `bfs_callees`: expose `resolved_only` in the tool args. Default
-      off for backward compat; document when to use it (accuracy-vs-coverage tradeoff).
-
-   **Entry points:**
-   - `determined/agent/graph_utils.py`: `bfs_callees`, `subgraph_around` -- add resolved filter
-   - `determined/agent/agent_tools.py`: `bfs_callees` tool args
-   - `tests/regression/test_graph_utils.py` or new test: verify that a method call on an
-     unannotated receiver does NOT traverse into a same-named project function
-
-   **Estimated effort:** 0.5 days.
 
 ---
 
