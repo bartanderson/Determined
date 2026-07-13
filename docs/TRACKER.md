@@ -14,7 +14,11 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 162):** RM42 Pass 2 done. Clue board now persists across page reloads. Three Flask routes (GET/POST /api/clues, DELETE /api/clues/<id>) store clues as workflow_items (kind='clue'). pinClue() POSTs on add; remove DELETEs; page load fetches and restores _clues. 738 passed, 1 skipped.
+**Last session (2026-07-13, session 164):** RM39 + RM42 confirmed done (were already implemented). TRACKER.md updated to reflect actual state. 11 tests pass for RM39.
+
+**Previous (2026-07-13, session 163):** RM41 done + 16 tests. dj2 re-ingest: 153 files, 1321 fns, 93 http_route, 32 http_fetch, 18 js_event_binding edges. 754 passed, 1 skipped.
+
+**Previous (2026-07-13, session 162):** RM42 Pass 2 done. Clue board now persists across page reloads. Three Flask routes (GET/POST /api/clues, DELETE /api/clues/<id>) store clues as workflow_items (kind='clue'). pinClue() POSTs on add; remove DELETEs; page load fetches and restores _clues. 738 passed, 1 skipped.
 
 **Previous (2026-07-13, session 161):** TODO-1 + RM40 done. http_route TEXT column added to functions table (parse_ast.py extracts from @x.route AST, persistence_engine stores it, migration added). trace_http_chain uses http_route primary lookup with decorators_json fallback + http_fetch edge last-resort. 3 new tests. RM40: resolved_only on _list_callers_raw/_list_callees_raw, list_callers/list_callees/blast_radius. 4 tests. 738 passed, 1 skipped.
 
@@ -648,7 +652,7 @@ RM49. **[DONE] annotate_function: infer and store docstrings, param types, and b
 
 ---
 
-RM39. **[OPEN] Data flow tracking: parameter-passing and return-value edges**
+RM39. **[DONE 2026-07-13] Data flow tracking: parameter-passing and return-value edges**
 
    **The gap:** The graph tracks control flow (which function calls which) but not data
    flow (what values move between functions). We can say "handler A calls validate_move
@@ -779,7 +783,7 @@ RM38. **[OPEN, SCOPE REVISED 2026-07-11] JS/HTML event chain analysis: map DOM c
 
 ---
 
-RM42. **[OPEN] Investigation context panel: accumulate query results as a clue board**
+RM42. **[DONE 2026-07-12] Investigation context panel: accumulate query results as a clue board**
 
    **The gap:** Every tool query produces a result that disappears when the user moves to
    the next query. There is no way to accumulate findings across a session and reason about
