@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 168):** RM56 done (cc45439: _last_call_fqdn.pop() fix, tuple-unpack comment, 26 data_flow tests pass). Starting RM53 Phase 1.
+**Last session (2026-07-13, session 169):** RM53 Phase 1 wire-in done (857fa6a). JS/TS ingestion wired into persist_all (step 5c). dnd-dungeon-gen validation: 291 symbols, 974 call edges. 6 regression tests pass.
+
+**Previous (2026-07-13, session 168):** RM56 done (cc45439: _last_call_fqdn.pop() fix, tuple-unpack comment, 26 data_flow tests pass). Starting RM53 Phase 1.
 
 **Previous (2026-07-13, session 167):** RM39-L3 done (for-loop + kwarg data flow, 8 new tests, 770 passed). RM53-58 designed: LanguageWalker arc via ast-grep covering JS/TS/Go/Rust. JS/TS corpora cloned (dnd-dungeon-gen, dungeoncrawler, rotjs). RM56 Python cleanup started (partial).
 
@@ -235,7 +237,7 @@ RM58. **[TODO] Clone validation corpora for RM53-57 testing (JS/TS/Go/Rust)**
 
 ---
 
-RM53. **[TODO] LanguageWalker: multi-language symbol ingestion via ast-grep**
+RM53. **[IN PROGRESS] LanguageWalker: multi-language symbol ingestion via ast-grep** — Phase 1 (JS/TS) done (session 169, commit 857fa6a). Phases 2 (Go) and 3 (Rust) remain.
 
    Foundation for all non-Python graph work. Introduces `LanguageWalker`, the
    abstraction layer that RM54/55/57 and all future language extensions build on.
