@@ -387,6 +387,22 @@ def test_go_method_call_edge():
     edges = callers(w.call_edges())
     assert ("Engine.Start", "Run") in edges
 
+def test_go_selector_call_edge():
+    # selector_expression: e.cfg, pkg.Func() — must not be silently dropped
+    src = """
+package game
+
+func Setup(s *State) {
+    s.Init()
+    helper.Run(s)
+}
+func (s *State) Init() {}
+"""
+    w = LanguageWalker(src, "/fake/game.go", "go")
+    edges = callers(w.call_edges())
+    assert ("game.Setup", "s.Init") in edges
+    assert ("game.Setup", "helper.Run") in edges
+
 def test_go_builtin_filtered():
     src = """
 package main

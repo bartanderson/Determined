@@ -581,7 +581,7 @@ class LanguageWalker:
             func_node = call.field("function")
             if func_node is None:
                 continue
-            callee = self._js_callee_name(func_node)  # member_expression logic same for Go
+            callee = self._go_callee_name(func_node)
             if callee is None:
                 continue
             base = callee.split(".")[0]
@@ -590,6 +590,18 @@ class LanguageWalker:
             results.append((caller_fqdn, callee, "static", False))
 
         return results
+
+    def _go_callee_name(self, func_node) -> str | None:
+        """Extract callee name from a Go call expression's function field."""
+        kind = func_node.kind()
+        if kind == "identifier":
+            return func_node.text()
+        if kind == "selector_expression":
+            operand = func_node.field("operand")
+            field = func_node.field("field")
+            if operand and field:
+                return f"{operand.text()}.{field.text()}"
+        return None
 
     def _go_fn_ranges(self) -> list[tuple]:
         ranges = []
