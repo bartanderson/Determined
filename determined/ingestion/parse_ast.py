@@ -440,7 +440,8 @@ def _extract_symbol_references(
                     and isinstance(node.targets[0], ast.Name)
                     and isinstance(node.value, ast.Call)):
                 var_name = node.targets[0].id
-                callee_fqdn = self._last_call_fqdn.get(id(node.value))
+                node_id = id(node.value)
+                callee_fqdn = self._last_call_fqdn.pop(node_id, None)
                 if callee_fqdn:
                     self._fn_bindings[var_name] = callee_fqdn
 
@@ -484,6 +485,10 @@ def _extract_symbol_references(
                     if isinstance(node.target, ast.Name):
                         self._fn_bindings[node.target.id] = callee_fqdn
                     elif isinstance(node.target, ast.Tuple):
+                        # Known limitation: `for k, v in fn()` binds both k and v to fn.
+                        # Correct provenance; may produce spurious downstream edges if k and v
+                        # are structurally unrelated outputs. No behavior change until a real
+                        # false-positive surfaces.
                         for elt in node.target.elts:
                             if isinstance(elt, ast.Name):
                                 self._fn_bindings[elt.id] = callee_fqdn
