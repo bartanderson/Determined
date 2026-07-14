@@ -8,6 +8,16 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-13: JS call-edge resolved flag was always False before RM54 post-pass.
+LanguageWalker._shared_call_edges compares raw callee name ("placeWalls") against
+symbol fqdns ("gen.placeWalls") -- they never match, so resolved was always False even
+for same-file calls. compute_resolved=True in LangSpec was doing nothing. Fix: post-pass
+UPDATE in _persist_js_ts_files after all files processed -- compares callee against
+bare suffix (SUBSTR(name, INSTR(name,'.')+1)) of every JS/TS function in the DB.
+Pattern: walker sees one file at a time and can't resolve cross-file; persist layer
+has full corpus and is the right place for resolution passes. Same pattern applies
+if Go/Rust ever need resolved=True edges.
+
 2026-07-13: RM39 Level 1 data_flow coverage on dj2 -- verdict.
 388 total data_flow edges in dj2 after re-ingest. 57% involve builtins (list/str/int/print
 wrapping function calls -- technically correct but low signal). After filtering: 168 real
