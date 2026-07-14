@@ -466,6 +466,36 @@ def extract_fetch_edges(
 # ]
 # ---------------------------------------------------------------------------
 
+def load_external_interfaces(root_path: str | Path) -> dict[str, dict[str, list[str]]]:
+    """
+    Load external_interfaces.json from root_path.
+
+    Format:
+    [
+      {"interface": "tea.Model", "methods": ["Init", "Update", "View"], "language": "go"},
+      {"interface": "io.Reader", "methods": ["Read"], "language": "go"}
+    ]
+
+    Returns {language: {interface_name: [method_name, ...]}} or {} if missing/malformed.
+    """
+    path = Path(root_path) / "external_interfaces.json"
+    if not path.exists():
+        return {}
+    try:
+        entries = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+    result: dict[str, dict[str, list[str]]] = {}
+    for entry in entries:
+        iface = entry.get('interface', '').strip()
+        methods = entry.get('methods', [])
+        lang = entry.get('language', 'go').strip().lower()
+        if iface and methods:
+            result.setdefault(lang, {})[iface] = [m for m in methods if m]
+    return result
+
+
 def load_virtual_edge_annotations(
     annotation_file: str | Path,
 ) -> list[tuple[str, str, str]]:

@@ -903,6 +903,15 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
     if rust_traits and rust_impl_map:
         _rust_trait_dispatch_pass(cursor, rust_traits, rust_impl_map, file_paths, logger=logger)
 
+    # External interface dispatch post-pass: insert interface_dispatch edges for
+    # interfaces declared in external_interfaces.json (e.g. tea.Model, io.Reader).
+    if project_root:
+        from determined.ingestion.dynamic_edges import load_external_interfaces
+        ext_ifaces_by_lang = load_external_interfaces(project_root)
+        for lang, ifaces in ext_ifaces_by_lang.items():
+            if ifaces:
+                _external_interface_dispatch_pass(cursor, ifaces, lang, file_paths, logger=logger)
+
     # Cross-file resolution post-pass: mark an edge resolved=1 when the callee
     # matches a known JS/TS symbol (full fqdn OR the bare suffix after the last '.').
     # This covers both same-file and cross-file calls.  The walker always emits
@@ -1073,6 +1082,75 @@ def _rust_trait_dispatch_pass(
 
     logger and logger.write(
         f"[Rust] trait dispatch: {dispatch_count} edges from {len(all_traits)} traits"
+    )
+    return dispatch_count
+
+
+def _external_interface_dispatch_pass(
+    cursor,
+    ext_ifaces: dict[str, list[str]],
+    language: str,
+    file_paths: list,
+    logger=None,
+) -> int:
+    """
+    Insert interface_dispatch edges for externally declared interfaces (external_interfaces.json).
+
+    ext_ifaces: {interface_name: [method_name, ...]} for one language.
+    language:   "go" (separator ".") or "rust" (separator "::").
+
+    Finds corpus types that implement ALL methods of each declared interface and inserts
+    interface_dispatch edges: ExternalIface.Method → ConcreteType.Method.
+    """
+    from determined.identity.symbol_identity import normalize_symbol
+
+    sep = "::" if language == "rust" else "."
+
+    placeholders = ",".join("?" * len(file_paths)) if file_paths else None
+
+    # Build type → methods set from functions table
+    type_methods: dict[str, set[str]] = {}
+    type_file: dict[str, str] = {}  # "TypeName<sep>MethodName" → file_path
+
+    if file_paths:
+        rows = cursor.execute(
+            f"SELECT name, file_path FROM functions WHERE file_path IN ({placeholders})",
+            file_paths,
+        ).fetchall()
+    else:
+        rows = cursor.execute("SELECT name, file_path FROM functions").fetchall()
+
+    for name, fp in rows:
+        if sep in name:
+            type_name, method_name = name.rsplit(sep, 1)
+            type_methods.setdefault(type_name, set()).add(method_name)
+            type_file[name] = fp
+
+    dispatch_count = 0
+    for iface_name, iface_methods in ext_ifaces.items():
+        iface_method_set = set(iface_methods)
+        for type_name, methods_present in type_methods.items():
+            if not iface_method_set.issubset(methods_present):
+                continue
+            for method in iface_methods:
+                iface_fqdn = f"{iface_name}{sep}{method}"
+                concrete_fqdn = f"{type_name}{sep}{method}"
+                cursor.execute("""
+                    INSERT INTO graph_edges
+                        (source_id, target_id, caller, callee, caller_file, resolved, edge_type)
+                    VALUES (?, ?, ?, ?, ?, 1, 'interface_dispatch')
+                """, (
+                    normalize_symbol(iface_fqdn),
+                    concrete_fqdn,
+                    iface_fqdn,
+                    concrete_fqdn,
+                    "",
+                ))
+                dispatch_count += 1
+
+    logger and logger.write(
+        f"[{language}] external interface dispatch: {dispatch_count} edges"
+        f" from {len(ext_ifaces)} declared interfaces"
     )
     return dispatch_count
 
