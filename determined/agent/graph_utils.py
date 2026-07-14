@@ -331,19 +331,31 @@ def find_clusters(oracle: "DBOracle", min_edges: int = 2) -> list[dict]:
     A cluster is a set of files with >= min_edges between them in either direction.
     Returns list of {files: [str], edge_count: int} sorted by edge_count desc.
     """
-    # Build file-to-file edge counts
+    # Build file_map indexed by FQDN and bare name so both Python (FQDN caller column)
+    # and Go/Rust (bare target_id) resolve correctly.
     file_map: dict[str, str] = {}
     for row in oracle.conn.execute(
         "SELECT name, file_path FROM functions UNION ALL SELECT name, file_path FROM classes"
     ).fetchall():
-        file_map[row[0]] = row[1]
+        name, fp = row[0], row[1]
+        file_map[name] = fp
+        bare = name.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
+        if bare != name:
+            file_map.setdefault(bare, fp)
 
-    # Use source_id/target_id (canonical bare names) so that cross-module edges
-    # stored as FQ callees resolve correctly via file_map (which is keyed on bare names).
+    # Use caller (FQDN, always matches functions.name) for source file.
+    # Use target_id (canonical bare name) for dest file — resolved via bare-name
+    # entries added above. This handles all languages: Python, Go, Rust, JS/TS.
+    use_ids = _has_id_columns(oracle.conn)
+    if use_ids:
+        edge_rows = oracle.conn.execute("SELECT caller, target_id FROM graph_edges").fetchall()
+    else:
+        edge_rows = oracle.conn.execute("SELECT caller, callee FROM graph_edges").fetchall()
+
     edge_counts: dict[frozenset, int] = defaultdict(int)
-    for row in oracle.conn.execute("SELECT source_id, target_id FROM graph_edges").fetchall():
-        src_file = file_map.get(row[0], "")
-        dst_file = file_map.get(row[1], "")
+    for caller, target in edge_rows:
+        src_file = file_map.get(caller, "")
+        dst_file = file_map.get(target, "")
         if src_file and dst_file and src_file != dst_file:
             pair = frozenset([src_file, dst_file])
             edge_counts[pair] += 1
