@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 171):** RM55 + RM56 confirmed done. RM57 done (6632db4): response_shape extraction, response_consumers(), cross_language_linker.py, 15 tests, 831 passed. RM58 done: all 4 corpora verified (dnd-dungeon-gen, dungeoncrawler, rotjs, end-of-eden, ruggrogue). RM53-58 arc complete. No open TODO items remain.
+**Last session (2026-07-14, session 174):** External interface annotation (18607fc): load_external_interfaces() + _external_interface_dispatch_pass(), 13 tests. RM38 done (4a20155): extract_js_addEventListener_bindings() + wired into run_cross_language_link, 6 tests. 877 passed. No open items remain in TRACKER.md.
 
 **Previous (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
 
@@ -957,7 +957,7 @@ RM39. **[DONE 2026-07-13] Data flow tracking: parameter-passing and return-value
 
 ---
 
-RM38. **[OPEN, SCOPE REVISED 2026-07-11] JS/HTML event chain analysis: map DOM controls to HTTP routes**
+RM38. **[DONE 2026-07-14] JS/HTML event chain analysis: map DOM controls to HTTP routes**
 
    **Scope revision (2026-07-11):** dj2 has no client-side socket.emit calls. The socket.io
    connection is server-to-client push only. The @socketio.on handlers in world_app.py are
