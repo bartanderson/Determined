@@ -64,7 +64,7 @@ _RUST_BUILTINS = frozenset({
     "copied", "cloned", "as_ref", "as_mut", "borrow", "borrow_mut",
     "iter_mut", "keys", "values", "entry",
     # enum variants and special identifiers
-    "Some", "None", "Ok", "Err", "Self", "self", "super",
+    "Some", "None", "Ok", "Err", "Self", "super",
     # common iterator adaptors that appear as method calls
     "filter", "map", "flat_map", "for_each", "any", "all", "find",
     "count", "sum", "product", "zip", "enumerate", "take", "skip",
@@ -861,14 +861,21 @@ class LanguageWalker:
             field = func_node.field("field")
             if not value or not field:
                 return None
+            method = field.text()
             val_kind = value.kind()
-            if val_kind in ("identifier", "self"):
-                return f"{value.text()}.{field.text()}"
+            if val_kind == "self":
+                # self.method() — receiver type unknown; filter on the method name,
+                # not on "self" which would drop every call through the current struct.
+                if method in _RUST_BUILTINS:
+                    return None
+                return method
+            if val_kind == "identifier":
+                return f"{value.text()}.{method}"
             if val_kind == "field_expression":
                 # self.inner.method() — use inner field as receiver
                 inner_field = value.field("field")
                 if inner_field:
-                    return f"{inner_field.text()}.{field.text()}"
+                    return f"{inner_field.text()}.{method}"
             # call_expression or deeper chain — skip to avoid garbage names
             return None
         return None
