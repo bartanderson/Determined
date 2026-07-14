@@ -1,58 +1,73 @@
-Written at commit: 6632db4
+Written at commit: e60620a
 
-# SESSION STATE - session 171
+# SESSION STATE - session 172
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 171, 2026-07-13)
+## What happened this session (session 172, 2026-07-14)
 
-**RM55 + RM56 confirmed done [V]:**
-- JS data flow tests (L1/L2/L3): 4 tests passing. Code already in language_walker.py.
-- parse_ast.py _last_call_fqdn.pop() fix already in place.
-- Both marked DONE in TRACKER.md.
+**Go/Rust quality validation arc -- all committed [V]:**
 
-**RM57 done -- commit 6632db4 [V]:**
-- `_extract_response_shape(fn_node)` in parse_ast.py: walks function body for
-  `return jsonify({"key": ...})` / `return jsonify(key=v)` / `return {"key": ...}`.
-  Only runs when `http_route` is set (route handler only).
-- `response_shape: list[str]` field added to `FunctionRepresentation` in types.py.
-- Persistence: route handlers with response_shape get `knowledge_artifact(kind='response_shape',
-  subject=fn_name, content=json(keys))` in persistence_engine.py.
-- `LanguageWalker.response_consumers()` / `_js_response_consumers()` in language_walker.py:
-  detects `const {key} = await resp.json()` (object_pattern destructuring) and property
-  access on variables bound from `.json()` calls. Returns [(fqdn, [keys])].
-- `cross_language_linker.py` (new file): `run_cross_language_link(conn, corpus_root)` --
-  loads http_fetch edges + response_shape artifacts + scans JS/TS files for response_consumers,
-  emits `cross_language` graph_edges (caller=js_fn, callee=flask_handler), stores
-  `response_mismatch` knowledge_artifacts (needs_review=1) for consumed keys not in shape.
-- Wired as step 5d in persistence_engine.persist_all after _persist_js_ts_files.
-- 15 regression tests. 831 passed, 1 skipped [V].
+tools/lang_quality_probe.py (new): runs LanguageWalker against any corpus,
+reports symbol counts, edge density, stub fraction, top callers/callees, random
+edge sample. Run: `python tools/lang_quality_probe.py <corpus_root> [--sample N]`
 
-**RM58 done [V]:**
-- end-of-eden (Go) cloned to C:\Users\bartl\dev\corpora\end-of-eden
-- ruggrogue (Rust) already existed at C:\Users\bartl\dev\corpora\ruggrogue
-- All 4 corpora verified present: dnd-dungeon-gen, dungeoncrawler, rotjs, end-of-eden, ruggrogue
-- TRACKER marked DONE.
+tools/ingest_lang_corpus.py (new): ingests a non-Python corpus via persist_all
+directly, bypassing EngineRunner which requires Python files. Run:
+`python tools/ingest_lang_corpus.py <corpus_root>`
 
-**Arc complete [V]:**
-RM53-58 (LanguageWalker arc) all DONE. No open TODO items remain in TRACKER.md.
+**language_walker.py fixes [V] (commit e402300):**
+- _go_callee_name: now returns None when operand is a call_expression (chained
+  builder), only emits receiver.method for identifier and one-level selector.
+- _rust_callee_name: same fix for field_expression -- None for call_expression
+  receivers, "inner_field.method" for field_expression receivers.
+- Impact: Go 3808->3297 edges, Rust 2809->2259 edges. Garbage chain strings gone.
+- 831 tests pass [V].
+
+**graph_utils.py fixes [V] (commits b6747ac, 4d44018, e60620a):**
+- most_connected file_map: now indexes by both full FQDN and bare name so
+  Go "game.SessionAdapter" matches source_id "SessionAdapter".
+- most_connected display_name: bare-key entries now show full FQDN.
+- most_connected dedup: merges bare+FQDN entries for same symbol/file into one.
+  run::run went from two split entries to one correct (in=92 out=51).
+
+**persistence_engine.py fix [V] (commit e60620a):**
+- _persist_js_ts_files now inserts rows into files table (file_path, line_count,
+  ingested_at) for every file it processes.
+- Root cause: files table was Python-only; find_todos/search_files/files_in_directory
+  returned empty for all Go/Rust corpora.
+- After fix: end-of-eden shows 10 real TODOs (shader hacks, error handling gaps).
+  Ruggrogue has zero TODOs (confirmed by grep -- clean codebase).
+
+**identity/symbol_identity.py + agent_tools.py fix [V] (commit e60620a):**
+- normalize_symbol now strips :: before . so "Module::Fn" -> "Fn".
+- _list_callers_raw now also matches raw (un-normalized) symbol as OR clause.
+- FieldOfView::get went from 0 callers to 133 [V].
+
+**Corpora ingested and verified [V]:**
+- C_Users_bartl_dev_corpora_end_of_eden.db: 533 symbols, 3305 edges, 109 files
+- C_Users_bartl_dev_corpora_ruggrogue.db: 337 symbols, 2259 edges, 46 files
 
 ## NEXT SESSION -- start here
 
-**No open TODO items.** Time to plan the next arc.
+**Bart flagged quality concerns at end of session.** Next session should open with
+a code audit before any new feature work. Specifically:
 
-Options to discuss with Bart:
-1. **Go/Rust validation** -- ingest end-of-eden and ruggrogue, confirm call graphs surface
-   correctly, mark RM58 fully validated (currently just "cloned").
-2. **dj2 cross-language validation** -- re-ingest dj2 with RM57, verify cross_language edges
-   appear for fetch→Flask chains, check response_mismatch artifacts for real gaps.
-3. **New arc planning** -- what's the next capability gap? (items 6/20/1 from CLAUDE.md arc
-   are all done; likely need fresh brainstorm against current dj2 analysis pain points).
+1. **Audit the changes made this session** -- four commits touched core identity,
+   persistence, and graph analysis. Verify no regressions introduced beyond the
+   831-test suite (which doesn't cover Go/Rust integration paths end-to-end).
+2. **caller file/line = "? None" for Go/Rust [?]** -- list_callers returns correct
+   caller names but file_path and line_number are always null because symbol_references
+   is Python-only. Needs fallback to functions.file_path for Go/Rust callers.
+3. **Go cluster analysis empty [?]** -- Bubble Tea interface dispatch hides all
+   Model.Update/Model.View call edges. Structural fix requires Go interface detection.
+4. **Go/Rust interface/trait extraction** -- extract `interface` types (Go) and
+   `trait` impls (Rust) so topology analysis is meaningful for these languages.
 
 ## Known issues (carried forward)
 
-**RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
+**RM21 probes not re-run [?]:** Live LLM probe not re-run.
 
 **find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
 
@@ -87,18 +102,13 @@ multi-line blocks.
 
 **JS/TS _persist_graph_edges ordering trap [V]:** Step 5c MUST come after step 5.
 
-**Go selector_expression [V]:** Fixed 702dbce. _go_callee_name() handles it.
+**caller file/line null for Go/Rust [V]:** list_callers returns "? None" for file/line
+because symbol_references table is Python-only. Callers are correct, locations missing.
 
-**Rust field_expression receiver [V]:** Fixed 405bb31. _rust_callee_name emits
-"receiver.method" not just "method".
+**normalize_symbol strips :: [V]:** After e60620a, "Module::Fn" -> "Fn". This is correct
+for target_id lookup but means any tool that calls normalize_symbol on a Rust FQDN loses
+the type context. Watch for unintended consequences in Python corpus analysis.
 
-**JS resolved=False trap [V]:** Fixed in RM54 (5d325d5). Walker always emits False
-(single-file scope); persist post-pass resolves against full corpus.
-
-**RM57 response_consumers scope [V]:** LanguageWalker constructor is (src, file_path, language)
-not (src, language, basename). basename derived from file_path internally.
-
-**graph_edges no provenance column [V]:** cross_language linker uses edge_type='cross_language'
-as the type discriminator (not a provenance column). Stale edges deleted by edge_type.
+**graph_edges no provenance column [V]:** cross_language linker uses edge_type='cross_language'.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
