@@ -265,19 +265,21 @@ def most_connected(oracle: "DBOracle", n: int = 20, filter_substr: str = "") -> 
         out_deg[row[0]] += 1
         in_deg[row[1]] += 1
 
-    # Build file lookup: key by both the stored name AND its canonical bare form
-    # so that Go/Rust FQDNs (e.g. "game.SessionAdapter" stored in functions.name)
-    # match the normalized source_id in graph_edges (e.g. "SessionAdapter").
+    # Build file lookup and a bare-name → full FQDN display map.
+    # source_id/target_id in graph_edges are normalized bare names (e.g. "SessionAdapter")
+    # but functions.name stores the full FQDN ("game.SessionAdapter"). Index both so
+    # the degree lookup succeeds, and record the full name for display.
     file_map: dict[str, str] = {}
+    display_name: dict[str, str] = {}  # bare/source_id key -> full FQDN for display
     for row in oracle.conn.execute(
         "SELECT name, file_path FROM functions UNION ALL SELECT name, file_path FROM classes"
     ).fetchall():
         name, fp = row[0], row[1]
         file_map[name] = fp
-        # Also index by bare name (last segment after '.' or '::')
         bare = name.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
         if bare != name:
             file_map.setdefault(bare, fp)
+            display_name.setdefault(bare, name)
 
     all_syms = set(in_deg) | set(out_deg)
     results = []
@@ -295,7 +297,7 @@ def most_connected(oracle: "DBOracle", n: int = 20, filter_substr: str = "") -> 
             continue
         total = in_deg[sym] + out_deg[sym]
         results.append({
-            "symbol": sym,
+            "symbol": display_name.get(sym, sym),
             "file_path": fp,
             "in_degree": in_deg[sym],
             "out_degree": out_deg[sym],
