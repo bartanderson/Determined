@@ -12,7 +12,8 @@ Swapping the backend touches only this file.
 import json
 import os
 import re
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 try:
     from ast_grep_py import SgRoot
@@ -76,6 +77,25 @@ _RUST_BUILTINS = frozenset({
 })
 
 
+@dataclass
+class LangSpec:
+    """Per-language config for the shared call-edge walk.
+
+    To add a new language: fill in a LangSpec and register it in _lang_spec().
+    The walk loop in _shared_call_edges handles the rest — no new walk code needed.
+
+    callee_extractor: maps a call_expression's function node to a callee string.
+    builtins: set of base names to filter from the callee list.
+    fn_ranges_builder: zero-arg callable (bound method) that returns fn_ranges.
+    compute_resolved: if True, cross-file symbol lookup sets resolved=True when callee
+                      matches a symbol defined in this file (JS only for now).
+    """
+    callee_extractor: Callable
+    builtins: frozenset
+    fn_ranges_builder: Callable
+    compute_resolved: bool = False
+
+
 class LanguageWalker:
     """
     Single abstraction for symbol and edge extraction across languages.
@@ -114,13 +134,67 @@ class LanguageWalker:
         resolved is False at this stage; cross-file resolution happens in persist layer.
         """
         lang = self._language
+        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust"):
+            return []
+        return self._shared_call_edges(self._lang_spec())
+
+    def _lang_spec(self) -> LangSpec:
+        """Return the LangSpec for self._language. Called only for supported languages."""
+        lang = self._language
         if lang in ("javascript", "typescript", "jsx", "tsx"):
-            return self._js_call_edges()
+            return LangSpec(
+                callee_extractor=self._js_callee_name,
+                builtins=_JS_BUILTINS,
+                fn_ranges_builder=self._js_fn_ranges,
+                compute_resolved=True,
+            )
         if lang == "go":
-            return self._go_call_edges()
+            return LangSpec(
+                callee_extractor=self._go_callee_name,
+                builtins=_GO_BUILTINS,
+                fn_ranges_builder=self._go_fn_ranges,
+            )
         if lang == "rust":
-            return self._rust_call_edges()
-        return []
+            return LangSpec(
+                callee_extractor=self._rust_callee_name,
+                builtins=_RUST_BUILTINS,
+                fn_ranges_builder=self._rust_fn_ranges,
+            )
+        raise ValueError(f"No LangSpec for language: {lang}")
+
+    def _shared_call_edges(self, spec: LangSpec) -> list[tuple]:
+        """
+        Unified call-edge walk used by all languages.
+
+        Callee name extraction, builtins filter, and fn-range attribution are
+        all delegated to the LangSpec so this loop never borrows another
+        language's extractor (the root cause of the Go and Rust silent-drop bugs).
+        """
+        results = []
+        root = self._root.root()
+        fn_ranges = spec.fn_ranges_builder()
+        symbol_names = {s["name"] for s in self.symbols()} if spec.compute_resolved else set()
+
+        for call in root.find_all({"rule": {"kind": "call_expression"}}):
+            caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if caller_fqdn is None:
+                continue
+            func_node = call.field("function")
+            if func_node is None:
+                continue
+            callee = spec.callee_extractor(func_node)
+            if callee is None:
+                continue
+            # Split on both separators so JS 'obj.m', Go 'pkg.Fn', Rust 'Mod::Fn' all work
+            base = callee.split("::")[0].split(".")[0]
+            if base in spec.builtins:
+                continue
+            if callee == caller_fqdn:
+                continue
+            resolved = callee in symbol_names if spec.compute_resolved else False
+            results.append((caller_fqdn, callee, "static", resolved))
+
+        return results
 
     def data_flow_edges(self) -> list[tuple]:
         """
@@ -233,44 +307,6 @@ class LanguageWalker:
     # ------------------------------------------------------------------
     # JS/TS: call edges
     # ------------------------------------------------------------------
-
-    def _js_call_edges(self) -> list[tuple]:
-        """
-        For each function in the file, find call expressions inside its body
-        and emit (caller_fqdn, callee_name, 'static', False).
-        """
-        results = []
-        root = self._root.root()
-        symbol_names = {s["name"] for s in self._js_symbols()}
-
-        # Build a map from enclosing function node range -> fqdn
-        fn_ranges = self._js_fn_ranges()
-
-        # Find all call expressions and attribute them to their enclosing function
-        for call in root.find_all({"rule": {"kind": "call_expression"}}):
-            caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
-            if caller_fqdn is None:
-                continue
-
-            func_node = call.field("function")
-            if func_node is None:
-                continue
-
-            callee = self._js_callee_name(func_node)
-            if callee is None:
-                continue
-
-            # Filter built-ins and self-references
-            base = callee.split(".")[0]
-            if base in _JS_BUILTINS:
-                continue
-            if callee == caller_fqdn:
-                continue
-
-            resolved = callee in symbol_names
-            results.append((caller_fqdn, callee, "static", resolved))
-
-        return results
 
     def _js_fn_ranges(self) -> list[tuple]:
         """
@@ -569,28 +605,6 @@ class LanguageWalker:
                 return clean
         return self._basename
 
-    def _go_call_edges(self) -> list[tuple]:
-        results = []
-        root = self._root.root()
-        fn_ranges = self._go_fn_ranges()
-
-        for call in root.find_all({"rule": {"kind": "call_expression"}}):
-            caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
-            if caller_fqdn is None:
-                continue
-            func_node = call.field("function")
-            if func_node is None:
-                continue
-            callee = self._go_callee_name(func_node)
-            if callee is None:
-                continue
-            base = callee.split(".")[0]
-            if base in _GO_BUILTINS:
-                continue
-            results.append((caller_fqdn, callee, "static", False))
-
-        return results
-
     def _go_callee_name(self, func_node) -> str | None:
         """Extract callee name from a Go call expression's function field."""
         kind = func_node.kind()
@@ -666,28 +680,6 @@ class LanguageWalker:
                     continue
                 fqdn = f"{type_name}::{name_node.text()}"
                 results.append(self._make_symbol(fqdn, fn_node))
-
-        return results
-
-    def _rust_call_edges(self) -> list[tuple]:
-        results = []
-        root = self._root.root()
-        fn_ranges = self._rust_fn_ranges()
-
-        for call in root.find_all({"rule": {"kind": "call_expression"}}):
-            caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
-            if caller_fqdn is None:
-                continue
-            func_node = call.field("function")
-            if func_node is None:
-                continue
-            callee = self._rust_callee_name(func_node)
-            if callee is None:
-                continue
-            base = callee.split("::")[0].split(".")[0]
-            if base in _RUST_BUILTINS:
-                continue
-            results.append((caller_fqdn, callee, "static", False))
 
         return results
 
