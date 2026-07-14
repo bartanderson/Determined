@@ -870,6 +870,19 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
             for name, ntype in all_name_forms(callee_name):
                 symbol_names_batch.append((tgt_id, name, ntype))
 
+        # --- data_flow edges → graph_edges table ---
+        for caller_fqdn, callee_name, etype, _prov in walker.data_flow_edges():
+            src_id, tgt_id = edge_identity(caller_fqdn, callee_name)
+            cursor.execute("""
+            INSERT INTO graph_edges (
+                source_id, target_id, caller, callee, caller_file, resolved, edge_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (src_id, tgt_id, caller_fqdn, callee_name, str(path), 0, etype))
+            for name, ntype in all_name_forms(caller_fqdn):
+                symbol_names_batch.append((src_id, name, ntype))
+            for name, ntype in all_name_forms(callee_name):
+                symbol_names_batch.append((tgt_id, name, ntype))
+
         # Collect Go interface definitions for the dispatch post-pass
         if lang == "go":
             for iface_name, methods in walker.interface_types().items():
