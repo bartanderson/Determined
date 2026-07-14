@@ -817,6 +817,12 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
     # Maps interface_name -> list[method_name]; file tracked separately in post-pass.
     go_interfaces: dict[str, list[str]] = {}
 
+    # Collect Rust trait definitions and impl-for mappings for the trait dispatch post-pass.
+    # rust_traits: {trait_name: [method_name, ...]}
+    # rust_impl_map: {concrete_type: [trait_name, ...]}
+    rust_traits: dict[str, list[str]] = {}
+    rust_impl_map: dict[str, list[str]] = {}
+
     for path in js_files:
         lang = detect_language(str(path))
         if lang is None:
@@ -872,12 +878,30 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                     if m not in go_interfaces[iface_name]:
                         go_interfaces[iface_name].append(m)
 
+        # Collect Rust trait definitions and impl-for mappings for the dispatch post-pass
+        if lang == "rust":
+            for trait_name, methods in walker.trait_types().items():
+                rust_traits.setdefault(trait_name, [])
+                for m in methods:
+                    if m not in rust_traits[trait_name]:
+                        rust_traits[trait_name].append(m)
+            for ctype, traits in walker.impl_trait_map().items():
+                existing = rust_impl_map.setdefault(ctype, [])
+                for t in traits:
+                    if t not in existing:
+                        existing.append(t)
+
         logger and logger.write(f"[JS/TS] {path.name}: {len(walker.symbols())} symbols, {len(walker.call_edges())} edges")
 
     # Go interface dispatch post-pass: add synthetic edges from each interface method
     # to every concrete type that fully implements that interface.
     if go_interfaces:
         _go_interface_dispatch_pass(cursor, go_interfaces, file_paths, logger=logger)
+
+    # Rust trait dispatch post-pass: add synthetic edges from each trait method
+    # to every concrete type that implements that trait.
+    if rust_traits and rust_impl_map:
+        _rust_trait_dispatch_pass(cursor, rust_traits, rust_impl_map, file_paths, logger=logger)
 
     # Cross-file resolution post-pass: mark an edge resolved=1 when the callee
     # matches a known JS/TS symbol (full fqdn OR the bare suffix after the last '.').
@@ -980,6 +1004,75 @@ def _go_interface_dispatch_pass(cursor, all_interfaces: dict, file_paths: list, 
 
     logger and logger.write(
         f"[Go] interface dispatch: {dispatch_count} edges from {len(all_interfaces)} interfaces"
+    )
+    return dispatch_count
+
+
+def _rust_trait_dispatch_pass(
+    cursor,
+    all_traits: dict[str, list[str]],
+    impl_map: dict[str, list[str]],
+    file_paths: list,
+    logger=None,
+) -> int:
+    """
+    For each Rust trait, find concrete types in the corpus that implement it (via impl_map)
+    and insert trait_dispatch edges: TraitName::method → ConcreteType::method.
+
+    all_traits: {trait_name: [method_name, ...]}
+    impl_map:   {concrete_type: [trait_name, ...]}  (built from 'impl Trait for Type' blocks)
+    """
+    from determined.identity.symbol_identity import normalize_symbol
+
+    # Clear stale trait_dispatch edges
+    if file_paths:
+        placeholders = ",".join("?" * len(file_paths))
+        cursor.execute(
+            f"DELETE FROM graph_edges WHERE edge_type = 'trait_dispatch'"
+            f" AND (caller_file IN ({placeholders}) OR caller_file = '' OR caller_file IS NULL)",
+            file_paths,
+        )
+    else:
+        cursor.execute("DELETE FROM graph_edges WHERE edge_type = 'trait_dispatch'")
+
+    # Build set of known FQDNs from functions table for existence check
+    if file_paths:
+        placeholders = ",".join("?" * len(file_paths))
+        known_fqdns = {
+            row[0]
+            for row in cursor.execute(
+                f"SELECT name FROM functions WHERE file_path IN ({placeholders})", file_paths
+            ).fetchall()
+        }
+    else:
+        known_fqdns = {row[0] for row in cursor.execute("SELECT name FROM functions").fetchall()}
+
+    dispatch_count = 0
+    for concrete_type, trait_names in impl_map.items():
+        for trait_name in trait_names:
+            methods = all_traits.get(trait_name)
+            if not methods:
+                continue
+            for method in methods:
+                concrete_fqdn = f"{concrete_type}::{method}"
+                if concrete_fqdn not in known_fqdns:
+                    continue  # impl doesn't actually define this method in this corpus
+                trait_fqdn = f"{trait_name}::{method}"
+                cursor.execute("""
+                    INSERT INTO graph_edges
+                        (source_id, target_id, caller, callee, caller_file, resolved, edge_type)
+                    VALUES (?, ?, ?, ?, ?, 1, 'trait_dispatch')
+                """, (
+                    normalize_symbol(trait_fqdn),  # bare method name for degree counting
+                    concrete_fqdn,                  # FQDN so list_callers matches exact type
+                    trait_fqdn,
+                    concrete_fqdn,
+                    "",
+                ))
+                dispatch_count += 1
+
+    logger and logger.write(
+        f"[Rust] trait dispatch: {dispatch_count} edges from {len(all_traits)} traits"
     )
     return dispatch_count
 

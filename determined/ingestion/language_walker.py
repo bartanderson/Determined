@@ -654,6 +654,59 @@ class LanguageWalker:
             return {}
         return self._go_interface_types()
 
+    def trait_types(self) -> dict[str, list[str]]:
+        """Return {trait_name: [method_name, ...]} for Rust files; empty for other languages."""
+        if self._language != "rust":
+            return {}
+        return self._rust_trait_types()
+
+    def impl_trait_map(self) -> dict[str, list[str]]:
+        """Return {concrete_type: [trait_name, ...]} for Rust 'impl Trait for Type' blocks."""
+        if self._language != "rust":
+            return {}
+        return self._rust_impl_trait_map()
+
+    def _rust_trait_types(self) -> dict[str, list[str]]:
+        """Extract Rust trait definitions: trait Foo { fn method1(...); fn method2(...) }"""
+        result: dict[str, list[str]] = {}
+        root = self._root.root()
+        for trait_node in root.find_all({"rule": {"kind": "trait_item"}}):
+            name_node = trait_node.field("name")
+            body = trait_node.field("body")
+            if name_node is None or body is None:
+                continue
+            trait_name = name_node.text()
+            methods: list[str] = []
+            for fn_node in body.find_all({"rule": {"kind": "function_item"}}):
+                m_name = fn_node.field("name")
+                if m_name is not None:
+                    methods.append(m_name.text())
+            # Also capture function signatures (fn_signature_item) — trait method declarations
+            for fn_node in body.find_all({"rule": {"kind": "function_signature_item"}}):
+                m_name = fn_node.field("name")
+                if m_name is not None and m_name.text() not in methods:
+                    methods.append(m_name.text())
+            if methods:
+                result[trait_name] = methods
+        return result
+
+    def _rust_impl_trait_map(self) -> dict[str, list[str]]:
+        """Return {concrete_type: [trait_name, ...]} for all 'impl Trait for Type' blocks."""
+        result: dict[str, list[str]] = {}
+        root = self._root.root()
+        for impl_node in root.find_all({"rule": {"kind": "impl_item"}}):
+            trait_node = impl_node.field("trait")
+            type_node = impl_node.field("type")
+            if trait_node is None or type_node is None:
+                continue
+            # trait field text may be "TraitName" or "path::TraitName" — use the last segment
+            trait_text = trait_node.text().split("::")[-1]
+            concrete_type = type_node.text()
+            result.setdefault(concrete_type, [])
+            if trait_text not in result[concrete_type]:
+                result[concrete_type].append(trait_text)
+        return result
+
     def _go_interface_types(self) -> dict[str, list[str]]:
         """Extract Go interface definitions: type X interface { Method1(...) ... }"""
         result: dict[str, list[str]] = {}
