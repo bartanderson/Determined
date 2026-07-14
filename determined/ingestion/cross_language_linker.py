@@ -23,6 +23,7 @@ from pathlib import Path
 from determined.ingestion.language_walker import LanguageWalker
 from determined.ingestion.dynamic_edges import (
     extract_js_socketio_edges,
+    extract_js_addEventListener_bindings,
     extract_socketio_handler_map,
 )
 
@@ -77,6 +78,7 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
 
     consumer_map: dict[str, set[str]] = {}
     socketio_emit_edges: list[tuple[str, str, str]] = []
+    addeventlistener_edges: list[tuple[str, str, str]] = []
 
     for file_path in js_files:
         p = Path(file_path)
@@ -93,6 +95,9 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
                 socketio_emit_edges.extend(
                     extract_js_socketio_edges(source, socketio_handlers, file_path)
                 )
+            addeventlistener_edges.extend(
+                extract_js_addEventListener_bindings(source, file_path)
+            )
         except Exception:
             continue
 
@@ -145,7 +150,25 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
     for caller, callee, _ in socketio_emit_edges:
         _insert_edge(caller, callee)
 
-    if fetch_edges or socketio_emit_edges:
+    # 8. Emit js_event_binding edges for elem.addEventListener('event', namedFn)
+    if addeventlistener_edges:
+        # Delete stale js_event_binding edges that came from JS files (HTML-inline ones
+        # were already cleared by _persist_cross_boundary_edges which runs before us).
+        cur.execute(
+            "DELETE FROM graph_edges WHERE edge_type = 'js_event_binding'"
+            " AND caller NOT LIKE '%__html_element__%' AND caller NOT LIKE '%__html_%'"
+        )
+        from determined.identity.edge_identity import edge_identity as _eid
+        for elem_var, handler_fqdn, etype in addeventlistener_edges:
+            src_id, tgt_id = _eid(elem_var, handler_fqdn)
+            cur.execute(
+                "INSERT OR IGNORE INTO graph_edges "
+                "(source_id, target_id, caller, callee, edge_type, resolved) "
+                "VALUES (?, ?, ?, ?, 'js_event_binding', 1)",
+                (src_id, tgt_id, elem_var, handler_fqdn),
+            )
+
+    if fetch_edges or socketio_emit_edges or addeventlistener_edges:
         conn.commit()
     return count
 

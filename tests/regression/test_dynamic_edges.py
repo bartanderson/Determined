@@ -13,6 +13,7 @@ from determined.ingestion.dynamic_edges import (
     extract_htmx_edges,
     extract_js_event_bindings,
     extract_fetch_edges,
+    extract_js_addEventListener_bindings,
     _url_matches,
 )
 
@@ -382,3 +383,51 @@ def test_xhr_open_edge():
     route_map = {'/api/submit': 'submit_handler'}
     edges = extract_fetch_edges(js, route_map, "app.js")
     assert ('app.sendReq', 'submit_handler', 'http_fetch') in edges
+
+
+# ---------------------------------------------------------------------------
+# extract_js_addEventListener_bindings
+# ---------------------------------------------------------------------------
+
+def test_addeventlistener_named_handler():
+    js = "chatSend.addEventListener('click', sendToAI);"
+    edges = extract_js_addEventListener_bindings(js, "/static/js/world.js")
+    assert ('chatSend', 'world.sendToAI', 'js_event_binding') in edges
+
+
+def test_addeventlistener_multiple():
+    js = """
+canvas.addEventListener('pointermove', onPointerMove);
+canvas.addEventListener('pointerup', onPointerUp);
+"""
+    edges = extract_js_addEventListener_bindings(js, "/static/js/world.js")
+    assert ('canvas', 'world.onPointerMove', 'js_event_binding') in edges
+    assert ('canvas', 'world.onPointerUp', 'js_event_binding') in edges
+
+
+def test_addeventlistener_skips_arrow_fn():
+    # Arrow fn handler — not capturable, should produce no edges
+    js = "btn.addEventListener('click', () => { doSomething(); });"
+    edges = extract_js_addEventListener_bindings(js, "/static/js/app.js")
+    assert edges == []
+
+
+def test_addeventlistener_skips_anonymous_fn():
+    js = "btn.addEventListener('click', function() { doSomething(); });"
+    edges = extract_js_addEventListener_bindings(js, "/static/js/app.js")
+    assert edges == []
+
+
+def test_addeventlistener_fqdn_uses_basename():
+    js = "submitBtn.addEventListener('submit', handleSubmit);"
+    edges = extract_js_addEventListener_bindings(js, "/path/to/my_module.js")
+    assert ('submitBtn', 'my_module.handleSubmit', 'js_event_binding') in edges
+
+
+def test_addeventlistener_deduplicates():
+    js = """
+chatSend.addEventListener('click', sendToAI);
+chatSend.addEventListener('click', sendToAI);
+"""
+    edges = extract_js_addEventListener_bindings(js, "/js/world.js")
+    assert edges.count(('chatSend', 'world.sendToAI', 'js_event_binding')) == 1

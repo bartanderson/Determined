@@ -358,6 +358,11 @@ def extract_htmx_edges(
 _ONCLICK_RE = re.compile(r'onclick\s*=\s*["\'](\w+)\s*\(', re.IGNORECASE)
 # onsubmit="fn()" etc.
 _ONSUBMIT_RE = re.compile(r'on\w+\s*=\s*["\'](\w+)\s*\(', re.IGNORECASE)
+# elem.addEventListener('event', namedFn) — only named function references, not arrow fns
+# Group 1: element variable, Group 2: event type, Group 3: handler name
+_ADDEVENTLISTENER_RE = re.compile(
+    r'(\w+)\.addEventListener\s*\(\s*["\'](\w+)["\']\s*,\s*(\w+)\s*\)'
+)
 
 
 def extract_js_event_bindings(html_src: str) -> list[tuple[str, str, str]]:
@@ -381,6 +386,29 @@ def extract_js_event_bindings(html_src: str) -> list[tuple[str, str, str]]:
         id_match = list(_ELEM_ID_RE.finditer(preceding))
         caller = id_match[-1].group(1) if id_match else '__html_element__'
         edges.append((caller, fn_name, 'js_event_binding'))
+    return list(dict.fromkeys(edges))
+
+
+def extract_js_addEventListener_bindings(
+    js_src: str,
+    file_path: str = "__module__",
+) -> list[tuple[str, str, str]]:
+    """
+    Scan JS source for elem.addEventListener('event', namedFn) patterns.
+    Returns (element_ref, handler_fqdn, 'js_event_binding') triples.
+
+    Only captures named function references (not inline arrow functions) since
+    those can be statically linked to a known JS symbol in the corpus.
+    element_ref is the variable name used to reference the DOM element.
+    handler_fqdn uses basename.handlerName convention to match ingested symbols.
+    """
+    basename = Path(file_path).stem
+    edges: list[tuple[str, str, str]] = []
+    for m in _ADDEVENTLISTENER_RE.finditer(js_src):
+        elem_var = m.group(1)
+        handler_name = m.group(3)
+        handler_fqdn = f"{basename}.{handler_name}"
+        edges.append((elem_var, handler_fqdn, 'js_event_binding'))
     return list(dict.fromkeys(edges))
 
 
