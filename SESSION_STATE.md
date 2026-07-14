@@ -1,4 +1,4 @@
-Written at commit: 3c68ec0
+Written at commit: f2d1553
 
 # SESSION STATE - session 175
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
@@ -8,28 +8,26 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 ## What happened this session (session 175, 2026-07-14)
 
 **Step 0: Re-ingested dj2 and Determined [V]**
-- dj2: cross_language=33 (was 0), js_event_binding=15 (was 0) -- now correct.
-- Determined: data_flow=3,157 (was 0) -- now correct.
-- Key trap discovered and documented in HISTORY.md: non-Python corpora (JS/Go/Rust)
-  must use tools/ingest_lang_corpus.py, NOT EngineRunner.run(). EngineRunner only
-  discovers .py files and raises "Engine ingestion produced no analyses" on pure
-  JS/Go/Rust corpora.
+- dj2: cross_language=33 (was 0), js_event_binding=15 (was 0).
+- Determined: data_flow=3,157 (was 0).
+- Key trap: non-Python corpora must use tools/ingest_lang_corpus.py, NOT
+  EngineRunner.run(). Documented in HISTORY.md.
 
 **7432bf3 -- Go/Rust typed params [V]**
-- _go_param_types(): extracts {name, type} from parameter_declaration nodes in Go
-  function_declaration and method_declaration. Strips leading * from pointer types.
-- _rust_param_types(): extracts {name, type} from parameter nodes in Rust function_item.
-  self parameters (no type field) are skipped naturally.
-- Both wired into _go_symbols() and _rust_symbols() via param_types_json= arg.
+- _go_param_types(): parameter_declaration nodes, strips leading *.
+- _rust_param_types(): parameter nodes in function_item; self skipped naturally.
+- Wired into _go_symbols() and _rust_symbols().
 - 8 new tests. 885 passed, 1 skipped.
 
 **3c68ec0 -- Go/Rust data_flow edges [V]**
-- _go_data_flow(): L1 via nested call_expression in arguments, L2 via
-  short_var_declaration (:= binds). Uses _go_callee_name() and _go_fn_ranges().
-- _rust_data_flow(): L1 via nested call_expression, L2 via let_declaration.
-  Inner _rust_callee() handles identifier, scoped_identifier, field_expression.
-- Both wired into data_flow_edges() dispatcher.
+- _go_data_flow(): L1 nested call args, L2 short_var_declaration (:=).
+- _rust_data_flow(): L1 nested call args, L2 let_declaration.
 - 6 new tests. 891 passed, 1 skipped.
+
+**f2d1553 -- Wire data_flow_edges() into persist layer [V]**
+- _persist_js_ts_files() was calling call_edges() but NOT data_flow_edges().
+- Added insert loop for data_flow_edges() after call_edges() loop.
+- 891 passed, 1 skipped.
 
 **Gap 3: JS corpora ingested [V]**
 - dnd-dungeon-gen: 291 syms, 974 edges
@@ -38,42 +36,40 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 **Gap 4: ruggrogue external_interfaces.json [V]**
 - Created C:\Users\bartl\dev\corpora\ruggrogue\external_interfaces.json
-  with Iterator (next), From (from), Default (default), Display (fmt).
-- Re-ingested ruggrogue: interface_dispatch 0 → 12. trait_dispatch stays 4.
+  with Iterator/From/Default/Display traits.
+- interface_dispatch: 0 → 12.
 
-## Corpus status (all up to date) [V]
+## Corpus status (all current) [V]
 
-| Corpus | Syms | Edges | Notable edge types |
-|--------|------|-------|--------------------|
-| dj2 (Python+JS) | 1,399 | 10,206 | data_flow=1611, cross_lang=33, js_event=15 |
-| Determined (Python) | 2,048 | 23,499 | data_flow=3157, polymorphic=18 |
-| end-of-eden (Go) | 533 | 3,346 | interface_dispatch=41 |
-| ruggrogue (Rust) | 337 | 2,343 | interface_dispatch=12, trait_dispatch=4 |
-| dnd-dungeon-gen (JS) | 291 | 974 | static only |
-| dungeoncrawler (JS) | 78 | 163 | static only |
-| rotjs (JS) | 626 | 1,886 | js_event_binding=6 |
+| Corpus | Syms | Edges | data_flow | dispatch |
+|--------|------|-------|-----------|----------|
+| dj2 (Python+JS) | 1,399 | 10,206 | 1,611 | cross_lang=33, js_event=15 |
+| Determined (Python) | 2,048 | 23,499 | 3,157 | polymorphic=18 |
+| end-of-eden (Go) | 533 | 7,494 | **4,148** | iface_dispatch=41 |
+| ruggrogue (Rust) | 337 | 2,782 | **439** | iface_dispatch=12, trait=4 |
+| dnd-dungeon-gen (JS) | 291 | 974 | 0 | - |
+| dungeoncrawler (JS) | 78 | 163 | 0 | - |
+| rotjs (JS) | 626 | 1,886 | 0 | js_event=6 |
+
+end-of-eden notable: data_flow (4,148) exceeds static (3,305) -- Go chains heavily.
 
 ## NEXT SESSION -- start here
 
-**No open items in TRACKER.md [V].** Remaining work from gap list:
+**No open items in TRACKER.md. Next work: Item 6 or Item 20 (see CLAUDE.md).**
 
-**Gap 5: Go/Rust resolution rate improvement**
-Go is at ~15.6%, Rust at ~7.5%. Most unresolved edges are external stdlib calls
-(expected). But in-corpus method calls also fail because receiver type isn't tracked
-at the point of call resolution. Now that param_types_json is populated, a type-guided
-resolution pass could match `x.Method()` to `ReceiverType.Method` when x's declared
-type is known. This requires a new resolution post-pass in _persist_js_ts_files or
-a new Go/Rust equivalent. Medium complexity, would move resolution rates meaningfully.
+Item 6 (live sync loop): incremental re-ingest by file_path, edge delta propagation.
+Item 20 (call graph accuracy): type annotation exploitation + __init__ attribute tracking.
+  Item 6 should come first -- Item 20 needs re-ingest to populate new columns.
 
-**Next natural work: Item 6 (live sync loop) or Item 20 (call graph accuracy)**
-See CLAUDE.md "Active work arc" for details. Item 6 (incremental re-ingest) is
-prerequisite for Item 20 (type annotation exploitation needs re-ingest to populate
-new columns). Both are medium complexity (~1 day each).
+**Optional follow-on: JS data_flow for pure-JS corpora**
+dnd-dungeon-gen, dungeoncrawler have 0 data_flow. JS data_flow IS implemented
+(_js_data_flow()) but these corpora may not trigger it -- check if the LanguageWalker
+is being called with the right language. rotjs has 0 too. May need investigation.
 
 ## Known issues (carried forward)
 
-**ingest_lang_corpus.py for non-Python corpora [V]:** Use tools/ingest_lang_corpus.py
-  NOT EngineRunner.run() for pure JS/Go/Rust corpora. Documented in HISTORY.md.
+**ingest_lang_corpus.py for non-Python corpora [V]:** Use tools/ingest_lang_corpus.py,
+  NOT EngineRunner.run(). Documented in HISTORY.md.
 **interface_dispatch caller_file empty [V]:** Interface types not in functions table.
 **addEventListener arrow fn not captured [V]:** Inline arrow callbacks not statically linkable.
 **RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
@@ -89,7 +85,7 @@ new columns). Both are medium complexity (~1 day each).
 **dj2 ignore dirs trap [V]:** Always exclude Lib/, archive/, tools/, tools.old/, og_system/,
   recovered_code/, codebase_analyzer/, Scripts/.
 **normalize_symbol strips :: [V]:** "Module::Fn" -> "Fn". Watch for Rust FQDN collisions.
-**Go/Rust data_flow edge counts [?]:** Not yet evaluated against Go/Rust corpora post-commit.
-  Re-ingest end-of-eden and ruggrogue to populate data_flow edges there.
+**JS corpora data_flow=0 [?]:** dnd-dungeon-gen, dungeoncrawler, rotjs show 0 data_flow
+  despite _js_data_flow() being implemented. Not investigated yet.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
