@@ -1,71 +1,86 @@
-Written at commit: e60620a
+Written at commit: 94a1d71
 
-# SESSION STATE - session 172
+# SESSION STATE - session 173
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 172, 2026-07-14)
+## What happened this session (session 173, 2026-07-14)
 
-**Go/Rust quality validation arc -- all committed [V]:**
+**Four Go/Rust analysis bug fixes -- all committed [V]:**
 
-tools/lang_quality_probe.py (new): runs LanguageWalker against any corpus,
-reports symbol counts, edge density, stub fraction, top callers/callees, random
-edge sample. Run: `python tools/lang_quality_probe.py <corpus_root> [--sample N]`
+**c0cfe75 -- Rust self.method() calls silently dropped [V]**
+- Root cause: "self" was in _RUST_BUILTINS; the base-left-of-dot filter
+  hit "self" for any self.method() call and dropped the edge entirely.
+- Fix: _rust_callee_name now special-cases val_kind == "self" -- checks
+  the method name (right side) against _RUST_BUILTINS; returns bare method
+  name if not stdlib. Removed "self" from _RUST_BUILTINS.
+- Impact: ruggrogue 2259 -> 2327 edges after re-ingest.
 
-tools/ingest_lang_corpus.py (new): ingests a non-Python corpus via persist_all
-directly, bypassing EngineRunner which requires Python files. Run:
-`python tools/ingest_lang_corpus.py <corpus_root>`
+**1a7a085 -- caller/callee file_path and line_number null for Go/Rust [V]**
+- Root cause: _list_callers_raw and _list_callees_raw joined only on
+  symbol_references (Python-only table); Go/Rust rows returned NULL.
+- Fix: added LEFT JOIN on functions keyed by caller/callee name; COALESCE
+  picks sr.file_path first, falls back to f.file_path. Same for line_number.
+- After fix: Go/Rust callers show real file paths and function definition lines.
 
-**language_walker.py fixes [V] (commit e402300):**
-- _go_callee_name: now returns None when operand is a call_expression (chained
-  builder), only emits receiver.method for identifier and one-level selector.
-- _rust_callee_name: same fix for field_expression -- None for call_expression
-  receivers, "inner_field.method" for field_expression receivers.
-- Impact: Go 3808->3297 edges, Rust 2809->2259 edges. Garbage chain strings gone.
-- 831 tests pass [V].
+**096713f -- find_clusters returning empty for Go/Rust [V]**
+- Root cause: file_map keyed by FQDN (functions.name) but source_id in
+  graph_edges is normalized bare name -- 0 matches, 0 clusters.
+- Fix: file_map now indexed by FQDN AND bare name (like most_connected);
+  uses caller column (FQDN, always matches functions.name) for source file,
+  target_id (bare) for dest file via bare-name entries.
+- After fix: end-of-eden returns 155 clusters (lua.go<->session.go at 75).
 
-**graph_utils.py fixes [V] (commits b6747ac, 4d44018, e60620a):**
-- most_connected file_map: now indexes by both full FQDN and bare name so
-  Go "game.SessionAdapter" matches source_id "SessionAdapter".
-- most_connected display_name: bare-key entries now show full FQDN.
-- most_connected dedup: merges bare+FQDN entries for same symbol/file into one.
-  run::run went from two split entries to one correct (in=92 out=51).
+**94a1d71 -- Go interface dispatch [V]**
+- LanguageWalker.interface_types(): parses Go "type X interface { }" nodes,
+  returns {iface_name: [method_names]}. Called per file during ingestion.
+- _go_interface_dispatch_pass(): after all files ingested, finds concrete
+  types that fully implement each interface, inserts interface_dispatch edges.
+  target_id stores FQDN (not bare) so list_callers matches specific type.
+- end-of-eden: 41 dispatch edges from 2 interfaces:
+  Settings -> Browser, Viper, empty, settings (10 methods each)
+  Menu -> MenuBase (1 method)
+- Browser.LoadSettings now shows Settings.LoadSettings as caller [V].
+- tea.Model is external (bubbletea library) -- not in corpus, not detectable.
+  ChoicesModel.Update etc. remain in_degree=0; that's an honest gap.
 
-**persistence_engine.py fix [V] (commit e60620a):**
-- _persist_js_ts_files now inserts rows into files table (file_path, line_count,
-  ingested_at) for every file it processes.
-- Root cause: files table was Python-only; find_todos/search_files/files_in_directory
-  returned empty for all Go/Rust corpora.
-- After fix: end-of-eden shows 10 real TODOs (shader hacks, error handling gaps).
-  Ruggrogue has zero TODOs (confirmed by grep -- clean codebase).
+**Corpora after this session [V]:**
+- end-of-eden: 533 symbols, 3346 edges, 109 files
+- ruggrogue: 337 symbols, 2327 edges, 46 files
 
-**identity/symbol_identity.py + agent_tools.py fix [V] (commit e60620a):**
-- normalize_symbol now strips :: before . so "Module::Fn" -> "Fn".
-- _list_callers_raw now also matches raw (un-normalized) symbol as OR clause.
-- FieldOfView::get went from 0 callers to 133 [V].
-
-**Corpora ingested and verified [V]:**
-- C_Users_bartl_dev_corpora_end_of_eden.db: 533 symbols, 3305 edges, 109 files
-- C_Users_bartl_dev_corpora_ruggrogue.db: 337 symbols, 2259 edges, 46 files
+**All 831 tests pass [V].**
 
 ## NEXT SESSION -- start here
 
-**Bart flagged quality concerns at end of session.** Next session should open with
-a code audit before any new feature work. Specifically:
+No specific next tasks flagged. Carry-forward options in order of value:
 
-1. **Audit the changes made this session** -- four commits touched core identity,
-   persistence, and graph analysis. Verify no regressions introduced beyond the
-   831-test suite (which doesn't cover Go/Rust integration paths end-to-end).
-2. **caller file/line = "? None" for Go/Rust [?]** -- list_callers returns correct
-   caller names but file_path and line_number are always null because symbol_references
-   is Python-only. Needs fallback to functions.file_path for Go/Rust callers.
-3. **Go cluster analysis empty [?]** -- Bubble Tea interface dispatch hides all
-   Model.Update/Model.View call edges. Structural fix requires Go interface detection.
-4. **Go/Rust interface/trait extraction** -- extract `interface` types (Go) and
-   `trait` impls (Rust) so topology analysis is meaningful for these languages.
+1. **Rust trait dispatch** -- same pattern as Go interface dispatch but for
+   Rust "trait Foo { fn method(...) }" + "impl Foo for Type { }". Would
+   connect trait implementors the way Go interfaces now work.
+2. **External interface annotation** -- add a way to declare external interfaces
+   (e.g. tea.Model: Init/Update/View) in virtual_edges.json so that
+   ChoicesModel.Update etc. get interface_dispatch callers even for library
+   interfaces not in the corpus.
+3. **Active work arc items 6, 20, 1** -- see CLAUDE.md for details.
 
 ## Known issues (carried forward)
+
+**caller file/line null for Go/Rust [V]:** FIXED this session (1a7a085).
+  File and line now fall back to functions table for Go/Rust callers.
+
+**find_clusters empty for Go/Rust [V]:** FIXED this session (096713f).
+
+**Rust self.method() dropped [V]:** FIXED this session (c0cfe75).
+
+**interface_dispatch caller_file empty [V]:** Interface types are not in
+  functions table, so caller_file on interface_dispatch edges is "". These
+  edges are skipped by find_clusters source-file lookup. Callers of concrete
+  implementations do show the interface as caller in list_callers [V].
+
+**Bubble Tea tea.Model external [V]:** ChoicesModel/DamageAnimationModel etc.
+  Update/View/Init methods remain in_degree=0. External library interface --
+  requires annotation or structural inference to fix.
 
 **RM21 probes not re-run [?]:** Live LLM probe not re-run.
 
@@ -102,12 +117,8 @@ multi-line blocks.
 
 **JS/TS _persist_graph_edges ordering trap [V]:** Step 5c MUST come after step 5.
 
-**caller file/line null for Go/Rust [V]:** list_callers returns "? None" for file/line
-because symbol_references table is Python-only. Callers are correct, locations missing.
-
-**normalize_symbol strips :: [V]:** After e60620a, "Module::Fn" -> "Fn". This is correct
-for target_id lookup but means any tool that calls normalize_symbol on a Rust FQDN loses
-the type context. Watch for unintended consequences in Python corpus analysis.
+**normalize_symbol strips :: [V]:** "Module::Fn" -> "Fn". Correct for target_id lookup
+but loses type context on Rust FQDNs. Watch for unintended consequences.
 
 **graph_edges no provenance column [V]:** cross_language linker uses edge_type='cross_language'.
 
