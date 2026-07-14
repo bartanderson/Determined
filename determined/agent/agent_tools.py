@@ -407,16 +407,19 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = Fal
     canonical = normalize_symbol(symbol)
     res_filter = " AND ge.resolved = 1" if resolved_only else ""
     if _has_id_columns(oracle.conn):
+        # Try exact canonical match first; if nothing, also try the raw symbol as
+        # stored (handles Go "Type.Method" and Rust "Type::Method" where target_id
+        # may be the bare method name OR the full FQDN depending on how it was emitted).
         rows = oracle.conn.execute(
             f"""
             SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
             FROM graph_edges ge
             LEFT JOIN symbol_references sr
                 ON ge.caller = sr.caller AND ge.callee = sr.callee
-            WHERE ge.target_id = ?{res_filter}
+            WHERE (ge.target_id = ? OR ge.target_id = ?){res_filter}
             ORDER BY sr.file_path, ge.line_number
             """,
-            (canonical,),
+            (canonical, symbol),
         ).fetchall()
     else:
         # Compatibility: test fixtures that predate source_id/target_id columns.

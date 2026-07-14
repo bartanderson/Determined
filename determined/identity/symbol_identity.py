@@ -27,12 +27,19 @@ class SymbolIdentity:
     confidence: float
     
 def normalize_symbol(name: str) -> str:
-    """Return canonical bare name: strip module/attribute prefix, keep last segment."""
+    """Return canonical bare name: strip module/attribute prefix, keep last segment.
+
+    Handles both dot-separated (Python/Go: 'pkg.Fn') and double-colon-separated
+    (Rust: 'Module::Fn') paths. Only the final segment is kept.
+    """
     if not name:
         return name
     name = name.strip()
+    # Strip Rust-style :: paths first, then dot paths
+    if '::' in name:
+        name = name.rsplit('::', 1)[-1]
     if '.' in name:
-        return name.rsplit('.', 1)[-1]
+        name = name.rsplit('.', 1)[-1]
     return name
 
 

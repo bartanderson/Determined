@@ -811,6 +811,7 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
     )
 
     symbol_names_batch: list[tuple[str, str, str]] = []
+    from datetime import datetime, timezone
 
     for path in js_files:
         lang = detect_language(str(path))
@@ -821,6 +822,15 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
             walker = LanguageWalker(src, str(path), lang)
         except Exception:
             continue
+
+        # --- file row → files table (needed by find_todos, search_files, etc.) ---
+        line_count = src.count("\n") + 1
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            "INSERT OR REPLACE INTO files (file_path, line_count, role, ingested_at)"
+            " VALUES (?, ?, NULL, ?)",
+            (str(path), line_count, now),
+        )
 
         # --- symbols → functions table ---
         for sym in walker.symbols():

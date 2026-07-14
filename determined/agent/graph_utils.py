@@ -304,6 +304,19 @@ def most_connected(oracle: "DBOracle", n: int = 20, filter_substr: str = "") -> 
             "total": total,
         })
 
+    # Merge duplicate entries that arose from bare-name aliasing (e.g. both "run"
+    # and "run::run" resolve to the same display symbol in the same file).
+    merged: dict[tuple, dict] = {}
+    for r in results:
+        key = (r["symbol"], r["file_path"])
+        if key in merged:
+            merged[key]["in_degree"] += r["in_degree"]
+            merged[key]["out_degree"] += r["out_degree"]
+            merged[key]["total"] += r["total"]
+        else:
+            merged[key] = dict(r)
+    results = list(merged.values())
+
     results.sort(key=lambda r: r["total"], reverse=True)
     return results[:n]
 
