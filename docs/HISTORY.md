@@ -8,6 +8,15 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-14: Non-Python corpora (JS/Go/Rust) must be ingested via tools/ingest_lang_corpus.py,
+NOT EngineRunner.run(). EngineRunner calls scan_project_files() which only discovers .py files
+and raises "Engine ingestion produced no analyses" on pure JS/Go/Rust corpora. ingest_lang_corpus.py
+calls persist_all() with file_analyses=[] so the LanguageWalker step (step 5c inside persist_all)
+runs discover_js_ts_files() and handles everything. The UI server's handle_ingest() also calls
+EngineRunner but it only works because the corpus has Python files (dj2, Determined). For
+pure-JS/Go/Rust corpora, always use the tools/ script or replicate its persist_all() call.
+
+
 2026-07-13: JS call-edge resolved flag was always False before RM54 post-pass.
 LanguageWalker._shared_call_edges compares raw callee name ("placeWalls") against
 symbol fqdns ("gen.placeWalls") -- they never match, so resolved was always False even
