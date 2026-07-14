@@ -175,24 +175,37 @@ class LanguageWalker:
         fn_ranges = spec.fn_ranges_builder()
         symbol_names = {s["name"] for s in self.symbols()} if spec.compute_resolved else set()
 
-        for call in root.find_all({"rule": {"kind": "call_expression"}}):
-            caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
-            if caller_fqdn is None:
-                continue
-            func_node = call.field("function")
-            if func_node is None:
-                continue
-            callee = spec.callee_extractor(func_node)
-            if callee is None:
-                continue
-            # Split on both separators so JS 'obj.m', Go 'pkg.Fn', Rust 'Mod::Fn' all work
-            base = callee.split("::")[0].split(".")[0]
-            if base in spec.builtins:
-                continue
-            if callee == caller_fqdn:
-                continue
-            resolved = callee in symbol_names if spec.compute_resolved else False
-            results.append((caller_fqdn, callee, "static", resolved))
+        # For TypeScript: populate type map and fn_ranges cache so _js_callee_name
+        # can resolve typed receivers (obj.method() → TypeName.method()).
+        if self._language in ("typescript", "tsx"):
+            self._type_map = self._ts_type_map()
+            self._fn_ranges_cache = fn_ranges
+        else:
+            self._type_map = {}
+            self._fn_ranges_cache = []
+
+        try:
+            for call in root.find_all({"rule": {"kind": "call_expression"}}):
+                caller_fqdn = self._enclosing_fqdn(call, fn_ranges)
+                if caller_fqdn is None:
+                    continue
+                func_node = call.field("function")
+                if func_node is None:
+                    continue
+                callee = spec.callee_extractor(func_node)
+                if callee is None:
+                    continue
+                # Split on both separators so JS 'obj.m', Go 'pkg.Fn', Rust 'Mod::Fn' all work
+                base = callee.split("::")[0].split(".")[0]
+                if base in spec.builtins:
+                    continue
+                if callee == caller_fqdn:
+                    continue
+                resolved = callee in symbol_names if spec.compute_resolved else False
+                results.append((caller_fqdn, callee, "static", resolved))
+        finally:
+            self._type_map = {}
+            self._fn_ranges_cache = []
 
         return results
 
@@ -222,7 +235,11 @@ class LanguageWalker:
                 continue
             name = name_node.text()
             fqdn = f"{self._basename}.{name}"
-            results.append(self._make_symbol(fqdn, node, is_stub=self._js_is_stub(node)))
+            results.append(self._make_symbol(
+                fqdn, node, is_stub=self._js_is_stub(node),
+                return_type=self._ts_return_type(node),
+                param_types_json=self._ts_param_types(node),
+            ))
 
         # Arrow functions and function expressions assigned to variables:
         # const foo = (...) => { } / const foo = function(...) { }
@@ -236,7 +253,11 @@ class LanguageWalker:
                     continue
                 name = id_node.text()
                 fqdn = f"{self._basename}.{name}"
-                results.append(self._make_symbol(fqdn, decl, is_stub=self._js_is_stub(val_node)))
+                results.append(self._make_symbol(
+                    fqdn, decl, is_stub=self._js_is_stub(val_node),
+                    return_type=self._ts_return_type(val_node),
+                    param_types_json=self._ts_param_types(val_node),
+                ))
 
         # Class method definitions
         for cls_node in root.find_all({"rule": {"kind": "class_declaration"}}):
@@ -251,7 +272,11 @@ class LanguageWalker:
                     continue
                 method_name = name_node.text()
                 fqdn = f"{cls_name}.{method_name}"
-                results.append(self._make_symbol(fqdn, method, is_stub=self._js_is_stub(method)))
+                results.append(self._make_symbol(
+                    fqdn, method, is_stub=self._js_is_stub(method),
+                    return_type=self._ts_return_type(method),
+                    param_types_json=self._ts_param_types(method),
+                ))
 
         # Object literal methods assigned to const/let/var (common in JS modules)
         for node in root.find_all({"rule": {"kind": "lexical_declaration"}}):
@@ -276,14 +301,134 @@ class LanguageWalker:
 
         return results
 
-    def _make_symbol(self, fqdn: str, node, is_stub: bool = False) -> dict:
+    # ------------------------------------------------------------------
+    # TypeScript: type annotation helpers
+    # ------------------------------------------------------------------
+
+    def _ts_return_type(self, fn_node) -> str | None:
+        """Extract the return type string from a function/method node's type_annotation field."""
+        if self._language not in ("typescript", "tsx"):
+            return None
+        ta = fn_node.field("return_type")
+        if ta is None:
+            return None
+        # type_annotation text is ": SomeType" — strip leading ": "
+        text = ta.text().lstrip(": ").strip()
+        return text if text else None
+
+    def _ts_param_types(self, fn_node) -> str | None:
+        """Extract parameter types from a function/method node's formal_parameters field.
+        Returns JSON list of {"name": str, "type": str} or None if no typed params found."""
+        if self._language not in ("typescript", "tsx"):
+            return None
+        params_node = fn_node.field("parameters")
+        if params_node is None:
+            return None
+        result = []
+        for param in params_node.find_all({"rule": {"kind": "required_parameter"}}):
+            pattern = param.field("pattern")
+            type_ann = param.field("type")
+            name = pattern.text() if pattern else ""
+            if not name:
+                continue
+            type_str = None
+            if type_ann is not None:
+                type_str = type_ann.text().lstrip(": ").strip() or None
+            result.append({"name": name, "type": type_str})
+        if not result:
+            return None
+        import json as _json
+        return _json.dumps(result)
+
+    def _ts_type_map(self) -> dict[str, str]:
+        """Build {var_name: TypeName} for TypeScript files from type annotations and new-expressions.
+        Used by _js_callee_name to resolve obj.method() → TypeName.method()."""
+        if self._language not in ("typescript", "tsx"):
+            return {}
+        root = self._root.root()
+        type_map: dict[str, str] = {}
+
+        for ld in root.find_all({"rule": {"kind": "lexical_declaration"}}):
+            for decl in ld.find_all({"rule": {"kind": "variable_declarator"}}):
+                id_node = decl.field("name")
+                if id_node is None:
+                    continue
+                var_name = id_node.text()
+
+                # Explicit type annotation: const x: MyClass = ...
+                type_ann = decl.field("type")
+                if type_ann is not None:
+                    type_text = type_ann.text().lstrip(": ").strip()
+                    # For generics like Array<Item>, use outer type name only
+                    outer = type_text.split("<")[0].strip()
+                    if outer:
+                        type_map[var_name] = outer
+                        continue
+
+                # new-expression initializer: const x = new MyClass(...)
+                val = decl.field("value")
+                if val is not None and val.kind() == "new_expression":
+                    ctor = val.field("constructor")
+                    if ctor is not None:
+                        type_map[var_name] = ctor.text()
+
+        # Class field declarations: private repo: UserRepository
+        for cls_node in root.find_all({"rule": {"kind": "class_declaration"}}):
+            body = cls_node.field("body")
+            if body is None:
+                continue
+            for field_def in body.find_all({"rule": {"kind": "public_field_definition"}}):
+                prop = field_def.field("name")
+                type_ann = field_def.field("type")
+                if prop is not None and type_ann is not None:
+                    type_text = type_ann.text().lstrip(": ").strip()
+                    outer = type_text.split("<")[0].strip()
+                    if outer:
+                        # Store as both "repo" and "this.repo"
+                        type_map[prop.text()] = outer
+                        type_map[f"this.{prop.text()}"] = outer
+
+        # Function/method parameters with type annotations
+        for fn_node in root.find_all({"rule": {"kind": "function_declaration"}}):
+            params = fn_node.field("parameters")
+            if params:
+                for param in params.find_all({"rule": {"kind": "required_parameter"}}):
+                    pattern = param.field("pattern")
+                    type_ann = param.field("type")
+                    if pattern and type_ann:
+                        type_text = type_ann.text().lstrip(": ").strip()
+                        outer = type_text.split("<")[0].strip()
+                        if outer and outer not in ("string", "number", "boolean", "any", "void", "never", "unknown", "object"):
+                            type_map[pattern.text()] = outer
+
+        for cls_node in root.find_all({"rule": {"kind": "class_declaration"}}):
+            body = cls_node.field("body")
+            if body is None:
+                continue
+            for method in body.find_all({"rule": {"kind": "method_definition"}}):
+                params = method.field("parameters")
+                if params:
+                    for param in params.find_all({"rule": {"kind": "required_parameter"}}):
+                        pattern = param.field("pattern")
+                        type_ann = param.field("type")
+                        if pattern and type_ann:
+                            type_text = type_ann.text().lstrip(": ").strip()
+                            outer = type_text.split("<")[0].strip()
+                            if outer and outer not in ("string", "number", "boolean", "any", "void", "never", "unknown", "object"):
+                                type_map[pattern.text()] = outer
+
+        return type_map
+
+    def _make_symbol(self, fqdn: str, node, is_stub: bool = False,
+                     return_type: str | None = None,
+                     param_types_json: str | None = None) -> dict:
         return {
             "file_path": self._file_path,
             "name": fqdn,
             "line_number": node.range().start.line + 1,
-            "return_type": None,
+            "return_type": return_type,
             "arguments_json": "[]",
-            "param_types_json": None,
+            "param_types_json": param_types_json,
             "docstring": None,
             "is_stub": is_stub,
             "decorators_json": None,
@@ -390,15 +535,43 @@ class LanguageWalker:
         return self._js_fn_ranges()
 
     def _js_callee_name(self, func_node) -> str | None:
-        """Extract callee name from the function field of a call_expression."""
+        """Extract callee name from the function field of a call_expression.
+        For TypeScript files, resolves typed receivers: obj.method() → TypeName.method()."""
         kind = func_node.kind()
         if kind == "identifier":
             return func_node.text()
         if kind == "member_expression":
             obj = func_node.field("object")
             prop = func_node.field("property")
-            if obj and prop:
-                return f"{obj.text()}.{prop.text()}"
+            if obj is None or prop is None:
+                return None
+            obj_text = obj.text()
+            prop_text = prop.text()
+            # Resolve "this.field.method()" chains: obj is a member_expression itself
+            if obj.kind() == "member_expression":
+                inner_obj = obj.field("object")
+                inner_prop = obj.field("property")
+                if inner_obj and inner_prop and inner_obj.text() == "this":
+                    type_map = getattr(self, "_type_map", {})
+                    field_key = f"this.{inner_prop.text()}"
+                    resolved = type_map.get(field_key)
+                    if resolved:
+                        return f"{resolved}.{prop_text}"
+            # Resolve simple receiver: obj.method() → TypeName.method()
+            type_map = getattr(self, "_type_map", {})
+            if obj_text == "this":
+                # Resolve this.method() → ClassName.method() via enclosing class
+                fn_ranges = getattr(self, "_fn_ranges_cache", [])
+                if fn_ranges:
+                    line = func_node.range().start.line
+                    enclosing = self.enclosing_fqdn_by_line(line, fn_ranges)
+                    if enclosing and "." in enclosing:
+                        cls_name = enclosing.split(".")[0]
+                        return f"{cls_name}.{prop_text}"
+            resolved_type = type_map.get(obj_text)
+            if resolved_type:
+                return f"{resolved_type}.{prop_text}"
+            return f"{obj_text}.{prop_text}"
         return None
 
     # ------------------------------------------------------------------

@@ -263,8 +263,10 @@ def test_ts_class_method_call_edge():
     w = walker(TS_CLASS, "typescript", "CombatSystem")
     edges = callers(w.call_edges())
     # resolveCombat calls target.takeDamage and attacker.getDamage
+    # With type resolution: target: Enemy → Enemy.takeDamage, attacker: Player → Player.getDamage
     targets = {tgt for src, tgt in edges if src == "CombatSystem.resolveCombat"}
-    assert "target.takeDamage" in targets or "attacker.getDamage" in targets
+    assert "Enemy.takeDamage" in targets
+    assert "Player.getDamage" in targets
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +442,115 @@ func (s *State) Init() {}
     edges = callers(w.call_edges())
     assert ("game.Setup", "s.Init") in edges
     assert ("game.Setup", "helper.Run") in edges
+
+
+# ---------------------------------------------------------------------------
+# TypeScript: type annotations in symbols
+# ---------------------------------------------------------------------------
+
+TS_TYPED_FN = """\
+function fetchUser(repo: UserRepository, id: string): Promise<User> {
+    return repo.findById(id);
+}
+"""
+
+def test_ts_return_type_in_symbol():
+    import json
+    w = LanguageWalker(TS_TYPED_FN, "/fake/api.ts", "typescript")
+    syms = {s["name"]: s for s in w.symbols()}
+    assert "api.fetchUser" in syms
+    assert syms["api.fetchUser"]["return_type"] == "Promise<User>"
+
+def test_ts_param_types_in_symbol():
+    import json
+    w = LanguageWalker(TS_TYPED_FN, "/fake/api.ts", "typescript")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = json.loads(syms["api.fetchUser"]["param_types_json"])
+    assert {"name": "repo", "type": "UserRepository"} in pt
+    assert {"name": "id", "type": "string"} in pt
+
+def test_js_return_type_none():
+    """Plain JS files get no type annotations."""
+    w = LanguageWalker("function foo() { return 1; }", "/fake/app.js", "javascript")
+    syms = w.symbols()
+    assert syms[0]["return_type"] is None
+    assert syms[0]["param_types_json"] is None
+
+
+# ---------------------------------------------------------------------------
+# TypeScript: type map
+# ---------------------------------------------------------------------------
+
+TS_TYPE_MAP_SRC = """\
+const repo: UserRepository = new UserRepository();
+const items = new ItemList();
+function process(svc: DataService) { svc.run(); }
+"""
+
+def test_ts_type_map_annotated_var():
+    w = LanguageWalker(TS_TYPE_MAP_SRC, "/fake/app.ts", "typescript")
+    tm = w._ts_type_map()
+    assert tm.get("repo") == "UserRepository"
+
+def test_ts_type_map_new_expression():
+    w = LanguageWalker(TS_TYPE_MAP_SRC, "/fake/app.ts", "typescript")
+    tm = w._ts_type_map()
+    assert tm.get("items") == "ItemList"
+
+def test_ts_type_map_param():
+    w = LanguageWalker(TS_TYPE_MAP_SRC, "/fake/app.ts", "typescript")
+    tm = w._ts_type_map()
+    assert tm.get("svc") == "DataService"
+
+def test_ts_type_map_empty_for_js():
+    w = LanguageWalker("const x = foo();", "/fake/app.js", "javascript")
+    assert w._ts_type_map() == {}
+
+
+# ---------------------------------------------------------------------------
+# TypeScript: typed receiver resolution in call edges
+# ---------------------------------------------------------------------------
+
+TS_RECEIVER_SRC = """\
+function fetchUser(repo: UserRepository) {
+    return repo.findById(1);
+}
+"""
+
+def test_ts_typed_receiver_resolved():
+    w = LanguageWalker(TS_RECEIVER_SRC, "/fake/api.ts", "typescript")
+    edges = callers(w.call_edges())
+    targets = {tgt for _, tgt in edges}
+    assert "UserRepository.findById" in targets
+    assert "repo.findById" not in targets
+
+TS_THIS_FIELD_SRC = """\
+class UserService {
+    private repo: UserRepository;
+    getUser(id: string) {
+        return this.repo.findById(id);
+    }
+}
+"""
+
+def test_ts_this_field_method_resolved():
+    w = LanguageWalker(TS_THIS_FIELD_SRC, "/fake/svc.ts", "typescript")
+    edges = callers(w.call_edges())
+    targets = {tgt for src, tgt in edges if src == "UserService.getUser"}
+    assert "UserRepository.findById" in targets
+
+TS_THIS_METHOD_SRC = """\
+class Engine {
+    run() { this.prepare(); }
+    prepare() {}
+}
+"""
+
+def test_ts_this_method_resolved_to_class():
+    w = LanguageWalker(TS_THIS_METHOD_SRC, "/fake/engine.ts", "typescript")
+    edges = callers(w.call_edges())
+    targets = {tgt for src, tgt in edges if src == "Engine.run"}
+    assert "Engine.prepare" in targets
 
 def test_go_builtin_filtered():
     src = """
