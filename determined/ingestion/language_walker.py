@@ -218,6 +218,10 @@ class LanguageWalker:
         lang = self._language
         if lang in ("javascript", "typescript", "jsx", "tsx"):
             return self._js_data_flow()
+        if lang == "go":
+            return self._go_data_flow()
+        if lang == "rust":
+            return self._rust_data_flow()
         return []
 
     # ------------------------------------------------------------------
@@ -577,6 +581,174 @@ class LanguageWalker:
     # ------------------------------------------------------------------
     # JS/TS: data flow edges
     # ------------------------------------------------------------------
+
+    def _go_data_flow(self) -> list[tuple]:
+        """
+        Emit data_flow edges for Go:
+          L1: fnB(fnA())         -> data_flow_arg
+          L2: x := fnA(); fnB(x) -> data_flow_var
+        """
+        results = []
+        fn_ranges = self._go_fn_ranges()
+        root = self._root.root()
+        fn_bindings: dict[str, dict[str, str]] = {}
+
+        # --- L1: nested call args ---
+        for call in root.find_all({"rule": {"kind": "call_expression"}}):
+            outer_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            func_node = call.field("function")
+            if func_node is None:
+                continue
+            outer_callee = self._go_callee_name(func_node)
+            if outer_callee is None:
+                continue
+            args = call.field("arguments")
+            if args is None:
+                continue
+            for arg in args.find_all({"rule": {"kind": "call_expression"}}):
+                inner_func = arg.field("function")
+                if inner_func is None:
+                    continue
+                inner_callee = self._go_callee_name(inner_func)
+                if inner_callee:
+                    results.append((outer_fqdn, inner_callee, "data_flow", "data_flow_arg"))
+
+        # --- L2: x := fnA(); fnB(x) ---
+        # short_var_declaration: "x := fnA()"
+        for decl in root.find_all({"rule": {"kind": "short_var_declaration"}}):
+            outer_fqdn = self._enclosing_fqdn(decl, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            # left = expression_list of identifiers, right = expression_list of values
+            left = decl.field("left")
+            right = decl.field("right")
+            if left is None or right is None:
+                continue
+            # right may be a single call_expression
+            if right.kind() == "call_expression":
+                fn_node = right.field("function")
+                if fn_node is None:
+                    continue
+                callee = self._go_callee_name(fn_node)
+                if callee:
+                    var_name = left.text().split(",")[0].strip()
+                    fn_bindings.setdefault(outer_fqdn, {})[var_name] = callee
+            else:
+                # expression_list — walk children
+                for child in right.find_all({"rule": {"kind": "call_expression"}}):
+                    fn_node = child.field("function")
+                    if fn_node is None:
+                        continue
+                    callee = self._go_callee_name(fn_node)
+                    if callee:
+                        var_name = left.text().split(",")[0].strip()
+                        fn_bindings.setdefault(outer_fqdn, {})[var_name] = callee
+
+        # Emit L2 edges
+        for call in root.find_all({"rule": {"kind": "call_expression"}}):
+            outer_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            bindings = fn_bindings.get(outer_fqdn, {})
+            if not bindings:
+                continue
+            func_node = call.field("function")
+            if func_node is None:
+                continue
+            outer_callee = self._go_callee_name(func_node)
+            if outer_callee is None:
+                continue
+            args = call.field("arguments")
+            if args is None:
+                continue
+            for arg in args.children():
+                if arg.kind() == "identifier" and arg.text() in bindings:
+                    results.append((outer_fqdn, bindings[arg.text()], "data_flow", "data_flow_var"))
+
+        return results
+
+    def _rust_data_flow(self) -> list[tuple]:
+        """
+        Emit data_flow edges for Rust:
+          L1: fnB(fnA())          -> data_flow_arg
+          L2: let x = fnA(); fnB(x) -> data_flow_var
+        """
+        results = []
+        fn_ranges = self._rust_fn_ranges()
+        root = self._root.root()
+        fn_bindings: dict[str, dict[str, str]] = {}
+
+        def _rust_callee(call_node) -> str | None:
+            """Extract callee name from a Rust call_expression."""
+            func = call_node.field("function")
+            if func is None:
+                return None
+            kind = func.kind()
+            if kind == "identifier":
+                return func.text()
+            if kind == "scoped_identifier":
+                return func.text()  # e.g. "Vec::new"
+            if kind == "field_expression":
+                field = func.field("field")
+                value = func.field("value")
+                if field and value and value.kind() == "identifier":
+                    return f"{value.text()}.{field.text()}"
+            return None
+
+        # --- L1: nested call args ---
+        for call in root.find_all({"rule": {"kind": "call_expression"}}):
+            outer_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            outer_callee = _rust_callee(call)
+            if outer_callee is None:
+                continue
+            args = call.field("arguments")
+            if args is None:
+                continue
+            for arg in args.find_all({"rule": {"kind": "call_expression"}}):
+                inner_callee = _rust_callee(arg)
+                if inner_callee:
+                    results.append((outer_fqdn, inner_callee, "data_flow", "data_flow_arg"))
+
+        # --- L2: let x = fnA(); fnB(x) ---
+        for let_decl in root.find_all({"rule": {"kind": "let_declaration"}}):
+            outer_fqdn = self._enclosing_fqdn(let_decl, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            value = let_decl.field("value")
+            if value is None or value.kind() != "call_expression":
+                continue
+            callee = _rust_callee(value)
+            if callee is None:
+                continue
+            pattern = let_decl.field("pattern")
+            if pattern is None:
+                continue
+            var_name = pattern.text()
+            fn_bindings.setdefault(outer_fqdn, {})[var_name] = callee
+
+        # Emit L2 edges
+        for call in root.find_all({"rule": {"kind": "call_expression"}}):
+            outer_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            bindings = fn_bindings.get(outer_fqdn, {})
+            if not bindings:
+                continue
+            outer_callee = _rust_callee(call)
+            if outer_callee is None:
+                continue
+            args = call.field("arguments")
+            if args is None:
+                continue
+            for arg in args.children():
+                if arg.kind() == "identifier" and arg.text() in bindings:
+                    results.append((outer_fqdn, bindings[arg.text()], "data_flow", "data_flow_var"))
+
+        return results
 
     def _js_data_flow(self) -> list[tuple]:
         """

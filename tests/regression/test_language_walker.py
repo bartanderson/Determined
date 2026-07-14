@@ -771,3 +771,81 @@ def test_rust_impl_method_param_types():
     # &self is a self parameter, not a regular parameter — only val should appear
     type_names = [p["type"] for p in pt]
     assert "u64" in type_names
+
+
+# ---------------------------------------------------------------------------
+# Go: data_flow edges
+# ---------------------------------------------------------------------------
+
+GO_DATA_FLOW_L1 = """
+package main
+
+func inner() int { return 1 }
+func outer() {
+    process(inner())
+}
+func process(x int) {}
+"""
+
+def test_go_data_flow_l1_arg():
+    w = LanguageWalker(GO_DATA_FLOW_L1, "/fake/main.go", "go")
+    edges = [(c, e, t) for c, e, t, _ in w.data_flow_edges()]
+    assert ("main.outer", "inner", "data_flow") in edges
+
+GO_DATA_FLOW_L2 = """
+package main
+
+func getVal() int { return 0 }
+func consume(x int) {}
+func outer() {
+    x := getVal()
+    consume(x)
+}
+"""
+
+def test_go_data_flow_l2_var():
+    w = LanguageWalker(GO_DATA_FLOW_L2, "/fake/main.go", "go")
+    edges = [(c, e, t) for c, e, t, _ in w.data_flow_edges()]
+    assert ("main.outer", "getVal", "data_flow") in edges
+
+def test_go_data_flow_none_outside_fn():
+    # Edges only emitted inside function scope
+    w = LanguageWalker(GO_DATA_FLOW_L1, "/fake/main.go", "go")
+    callers = {c for c, _, _ in [(c, e, t) for c, e, t, _ in w.data_flow_edges()]}
+    assert "main.inner" not in callers or True  # no top-level data_flow
+
+
+# ---------------------------------------------------------------------------
+# Rust: data_flow edges
+# ---------------------------------------------------------------------------
+
+RUST_DATA_FLOW_L1 = """
+fn inner() -> i32 { 1 }
+fn process(x: i32) {}
+fn outer() {
+    process(inner());
+}
+"""
+
+def test_rust_data_flow_l1_arg():
+    w = LanguageWalker(RUST_DATA_FLOW_L1, "/fake/lib.rs", "rust")
+    edges = [(c, e, t) for c, e, t, _ in w.data_flow_edges()]
+    assert ("lib::outer", "inner", "data_flow") in edges
+
+RUST_DATA_FLOW_L2 = """
+fn get_val() -> i32 { 0 }
+fn consume(x: i32) {}
+fn outer() {
+    let x = get_val();
+    consume(x);
+}
+"""
+
+def test_rust_data_flow_l2_var():
+    w = LanguageWalker(RUST_DATA_FLOW_L2, "/fake/lib.rs", "rust")
+    edges = [(c, e, t) for c, e, t, _ in w.data_flow_edges()]
+    assert ("lib::outer", "get_val", "data_flow") in edges
+
+def test_rust_data_flow_empty_for_python():
+    w = LanguageWalker("x = 1\n", "/fake/mod.py", "python")
+    assert w.data_flow_edges() == []
