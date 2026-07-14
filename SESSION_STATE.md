@@ -1,88 +1,73 @@
-Written at commit: 94a1d71
+Written at commit: 4c466be
 
-# SESSION STATE - session 173
+# SESSION STATE - session 174
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 173, 2026-07-14)
+## What happened this session (session 174, 2026-07-14)
 
-**Four Go/Rust analysis bug fixes -- all committed [V]:**
+**Drift from prior handoff (94a1d71 → 42bb97c, 3 commits already in repo):**
+- 657dd87: Rust trait dispatch (was next-session item 1, done by prior session)
+- 32165fe: JS cross-language bridge improvements
+- 42bb97c: TypeScript type annotations + typed receiver call resolution
 
-**c0cfe75 -- Rust self.method() calls silently dropped [V]**
-- Root cause: "self" was in _RUST_BUILTINS; the base-left-of-dot filter
-  hit "self" for any self.method() call and dropped the edge entirely.
-- Fix: _rust_callee_name now special-cases val_kind == "self" -- checks
-  the method name (right side) against _RUST_BUILTINS; returns bare method
-  name if not stdlib. Removed "self" from _RUST_BUILTINS.
-- Impact: ruggrogue 2259 -> 2327 edges after re-ingest.
+**18607fc -- External interface annotation [V]**
+- load_external_interfaces(root_path) in dynamic_edges.py: reads external_interfaces.json,
+  returns {language: {iface_name: [methods]}}. Missing/malformed file returns {}.
+- _external_interface_dispatch_pass(cursor, ext_ifaces, language, file_paths): finds corpus
+  types implementing ALL declared methods; inserts interface_dispatch edges.
+  Go uses "." separator, Rust uses "::". Partial implementors skipped.
+- Wired into _persist_js_ts_files after Go/Rust dispatch passes.
+- To close tea.Model gap: drop external_interfaces.json at corpus root with tea.Model entry,
+  re-ingest → ChoicesModel.Init/Update/View etc. get interface_dispatch callers.
+- 13 new tests in test_external_interface_dispatch.py.
 
-**1a7a085 -- caller/callee file_path and line_number null for Go/Rust [V]**
-- Root cause: _list_callers_raw and _list_callees_raw joined only on
-  symbol_references (Python-only table); Go/Rust rows returned NULL.
-- Fix: added LEFT JOIN on functions keyed by caller/callee name; COALESCE
-  picks sr.file_path first, falls back to f.file_path. Same for line_number.
-- After fix: Go/Rust callers show real file paths and function definition lines.
+**4a20155 -- RM38: JS addEventListener bindings [V]**
+- extract_js_addEventListener_bindings(js_src, file_path) in dynamic_edges.py:
+  regex _ADDEVENTLISTENER_RE captures elem.addEventListener('event', namedFn) only for
+  named function refs (not inline arrow fns). Returns (elem_var, basename.handler, 'js_event_binding').
+- Wired into run_cross_language_link: iterates JS files already, now also extracts
+  addEventListener bindings and inserts js_event_binding edges.
+- Stale JS-file-sourced js_event_binding edges cleared before re-insertion.
+- Completes static-linkable DOM→JS handler chain in dj2:
+  chatSend.addEventListener('click', sendToAI)
+  → js_event_binding: chatSend → world.sendToAI
+  → http_fetch: world.sendToAI → flask_handler (pre-existing)
+- 6 new tests in test_dynamic_edges.py.
+- RM38 marked DONE in TRACKER.md.
 
-**096713f -- find_clusters returning empty for Go/Rust [V]**
-- Root cause: file_map keyed by FQDN (functions.name) but source_id in
-  graph_edges is normalized bare name -- 0 matches, 0 clusters.
-- Fix: file_map now indexed by FQDN AND bare name (like most_connected);
-  uses caller column (FQDN, always matches functions.name) for source file,
-  target_id (bare) for dest file via bare-name entries.
-- After fix: end-of-eden returns 155 clusters (lua.go<->session.go at 75).
-
-**94a1d71 -- Go interface dispatch [V]**
-- LanguageWalker.interface_types(): parses Go "type X interface { }" nodes,
-  returns {iface_name: [method_names]}. Called per file during ingestion.
-- _go_interface_dispatch_pass(): after all files ingested, finds concrete
-  types that fully implement each interface, inserts interface_dispatch edges.
-  target_id stores FQDN (not bare) so list_callers matches specific type.
-- end-of-eden: 41 dispatch edges from 2 interfaces:
-  Settings -> Browser, Viper, empty, settings (10 methods each)
-  Menu -> MenuBase (1 method)
-- Browser.LoadSettings now shows Settings.LoadSettings as caller [V].
-- tea.Model is external (bubbletea library) -- not in corpus, not detectable.
-  ChoicesModel.Update etc. remain in_degree=0; that's an honest gap.
-
-**Corpora after this session [V]:**
-- end-of-eden: 533 symbols, 3346 edges, 109 files
-- ruggrogue: 337 symbols, 2327 edges, 46 files
-
-**All 831 tests pass [V].**
+**All 877 tests pass [V].**
 
 ## NEXT SESSION -- start here
 
-No specific next tasks flagged. Carry-forward options in order of value:
+No open items in TRACKER.md. CLAUDE.md active arc items (6, 20, 1) are all done.
 
-1. **Rust trait dispatch** -- same pattern as Go interface dispatch but for
-   Rust "trait Foo { fn method(...) }" + "impl Foo for Type { }". Would
-   connect trait implementors the way Go interfaces now work.
-2. **External interface annotation** -- add a way to declare external interfaces
-   (e.g. tea.Model: Init/Update/View) in virtual_edges.json so that
-   ChoicesModel.Update etc. get interface_dispatch callers even for library
-   interfaces not in the corpus.
-3. **Active work arc items 6, 20, 1** -- see CLAUDE.md for details.
+Options in order of value:
+
+1. **File new items** -- the Go/Rust/JS/TS arc (RM53-58) is complete. Natural next arc:
+   - Better JS call graph for inline arrow functions (currently skipped for addEventListener)
+   - Python class attribute call graph (self.x.method() → concrete type via class_attributes table)
+   - RM21 probe re-run against dj2/Determined corpora to find remaining LLM reasoning gaps
+
+2. **Validate end-of-eden tea.Model gap** -- create external_interfaces.json at corpus root,
+   re-ingest, verify ChoicesModel.Update shows tea.Model.Update as caller.
+
+3. **Add new corpora** -- Java, C#, Kotlin analysis via LanguageWalker (ast-grep supports all,
+   zero new plumbing, just pattern sets).
 
 ## Known issues (carried forward)
 
-**caller file/line null for Go/Rust [V]:** FIXED this session (1a7a085).
-  File and line now fall back to functions table for Go/Rust callers.
+**interface_dispatch caller_file empty [V]:** Interface types not in functions table,
+  so caller_file on interface_dispatch edges is "". Skipped by find_clusters source-file lookup.
 
-**find_clusters empty for Go/Rust [V]:** FIXED this session (096713f).
+**Bubble Tea tea.Model external [V]:** Fixed by external_interfaces.json (see above).
+  No file created yet for end-of-eden corpus -- needs a re-ingest to activate.
 
-**Rust self.method() dropped [V]:** FIXED this session (c0cfe75).
+**addEventListener arrow fn not captured [V]:** inline arrow callbacks to addEventListener
+  are not extractable statically. Named fn refs only. Known limitation.
 
-**interface_dispatch caller_file empty [V]:** Interface types are not in
-  functions table, so caller_file on interface_dispatch edges is "". These
-  edges are skipped by find_clusters source-file lookup. Callers of concrete
-  implementations do show the interface as caller in list_callers [V].
-
-**Bubble Tea tea.Model external [V]:** ChoicesModel/DamageAnimationModel etc.
-  Update/View/Init methods remain in_degree=0. External library interface --
-  requires annotation or structural inference to fix.
-
-**RM21 probes not re-run [?]:** Live LLM probe not re-run.
+**RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
 
 **find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
 
