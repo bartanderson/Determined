@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 169):** RM53 all phases done. Phase 3 (Rust, 3480d20): impl-block dedup fix, _rust_call_edges(), _RUST_BUILTINS. ruggrogue: 45 files, 337 symbols, 2037 edges. 813 passed.
+**Last session (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
 
 **Previous (2026-07-13, session 168):** RM56 done (cc45439: _last_call_fqdn.pop() fix, tuple-unpack comment, 26 data_flow tests pass). Starting RM53 Phase 1.
 
@@ -298,36 +298,15 @@ RM53. **[DONE]** LanguageWalker: JS/TS (857fa6a), Go (36990d8), Rust (3480d20). 
 
 ---
 
-RM54. **[TODO] JS static call graph: fn→fn call edges within JS files**
+RM54. **[DONE 2026-07-13]** JS static call graph: fn→fn call edges within JS/TS files.
 
-   Depends on RM53 Phase 1 (LanguageWalker + ast-grep backend must exist first).
-
-   Within a JS/TS file, detect `fnA()` calls inside the body of `fnB` and emit
-   `static` edge `fnB → fnA`. Uses tree-sitter CST so arrow functions, class
-   methods, and template-literal calls are all handled correctly — not just
-   `function` keyword declarations.
-
-   **Implementation (`language_walker.py` Phase 1 extension):**
-   - `LanguageWalker.call_edges()` → list of `(caller_fqdn, callee_name, 'static', resolved)`.
-   - ast-grep pattern `$FN($$$)` inside enclosing function scope (use `inside()`
-     relational method to scope matches to their containing function node).
-   - Callee is direct name for bare calls, `object.method` for member calls.
-   - Filter JS keywords / built-ins (console, Math, Object, Array, Promise, etc.).
-   - Cross-file resolution: if callee name matches a symbol from another ingested
-     JS/TS file, emit `resolved=1`; otherwise `resolved=0`.
-   - Wire into `persist_all` after RM53 symbol pass.
-   - Go/Rust phases: same method, different ast-grep patterns and built-in filter lists.
-
-   **Validation (RM58 corpora):**
-   - dnd-dungeon-gen: `controller.generateDungeon → dungeon.buildDungeon`,
-     `dungeon → room.generate`, `room → utility.randomInt` chain all surface
-   - dungeoncrawler: `Game.update → CombatSystem.resolveCombat → Entity.takeDamage`
-     chain surfaces with class-method fqdns
-
-   **Regression tests:** direct call, member call, arrow fn caller, keyword filtered,
-   cross-file unresolved stub, TS class method caller.
-
-   **Estimated effort:** 0.5 day.
+   Core extraction was part of RM53 Phase 1 (LangSpec refactor unified the walk).
+   This session added: cross-file resolution post-pass in _persist_js_ts_files
+   (UPDATE graph_edges resolved=1 where callee matches any known JS/TS symbol suffix),
+   2 missing regression tests (arrow fn caller, cross-file unresolved stub).
+   Validated: dnd-dungeon-gen 974 edges (controller→generateDungeon chains surface);
+   dungeoncrawler 163 edges (Game.constructor→handlePlayerInput, CombatSystem→takeDamage).
+   816 passed, 1 skipped.
 
 ---
 

@@ -835,6 +835,29 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
 
         logger and logger.write(f"[JS/TS] {path.name}: {len(walker.symbols())} symbols, {len(walker.call_edges())} edges")
 
+    # Cross-file resolution post-pass: mark an edge resolved=1 when the callee
+    # matches a known JS/TS symbol (full fqdn OR the bare suffix after the last '.').
+    # This covers both same-file and cross-file calls.  The walker always emits
+    # resolved=False because it only sees one file at a time; this pass has the full set.
+    if file_paths:
+        cursor.execute(f"""
+            UPDATE graph_edges
+            SET resolved = 1
+            WHERE caller_file IN ({placeholders})
+              AND edge_type = 'static'
+              AND EXISTS (
+                SELECT 1 FROM functions f
+                WHERE f.file_path IN ({placeholders})
+                  AND (
+                    f.name = graph_edges.callee
+                    OR (
+                      INSTR(f.name, '.') > 0
+                      AND SUBSTR(f.name, INSTR(f.name, '.') + 1) = graph_edges.callee
+                    )
+                  )
+              )
+        """, file_paths + file_paths)
+
     seen: set[tuple[str, str]] = set()
     for canonical_id, name, ntype in symbol_names_batch:
         key = (canonical_id, name)

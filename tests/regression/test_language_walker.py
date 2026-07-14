@@ -201,6 +201,44 @@ def test_js_member_call_edge():
 
 
 # ---------------------------------------------------------------------------
+# JS: arrow function as caller (RM54)
+# ---------------------------------------------------------------------------
+
+JS_ARROW_CALLER = """
+const loadData = () => {
+    fetchItems();
+    formatResult();
+};
+function fetchItems() { return []; }
+function formatResult() { return null; }
+"""
+
+def test_js_arrow_fn_caller_emits_edges():
+    w = walker(JS_ARROW_CALLER, "javascript", "data")
+    edges = callers(w.call_edges())
+    assert ("data.loadData", "fetchItems") in edges
+    assert ("data.loadData", "formatResult") in edges
+
+
+# ---------------------------------------------------------------------------
+# JS: cross-file unresolved stub (RM54)
+# ---------------------------------------------------------------------------
+
+def test_js_cross_file_callee_unresolved():
+    # externalHelper is not defined anywhere in this file -- resolved must be False
+    src = """
+function main() {
+    externalHelper();
+    anotherExternal();
+}
+"""
+    w = walker(src, "javascript", "app")
+    edges = w.call_edges()
+    for caller, callee, etype, resolved in edges:
+        assert resolved is False, f"Callee '{callee}' not defined in file but resolved=True"
+
+
+# ---------------------------------------------------------------------------
 # TS: class method fqdn
 # ---------------------------------------------------------------------------
 
