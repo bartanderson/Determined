@@ -157,8 +157,8 @@ def test_fetch_simple():
         }
     """)
     route_map = {'/api/party/create': 'create_party'}
-    edges = extract_fetch_edges(js, route_map)
-    assert ('createParty', 'create_party', 'http_fetch') in edges
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.createParty', 'create_party', 'http_fetch') in edges
 
 def test_fetch_with_session_helper():
     js = textwrap.dedent("""\
@@ -167,8 +167,8 @@ def test_fetch_with_session_helper():
         }
     """)
     route_map = {'/api/party/join': 'join_party'}
-    edges = extract_fetch_edges(js, route_map)
-    assert ('joinParty', 'join_party', 'http_fetch') in edges
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.joinParty', 'join_party', 'http_fetch') in edges
 
 def test_fetch_no_match():
     js = "function foo() { fetch('/api/unknown'); }"
@@ -184,9 +184,9 @@ def test_fetch_multiple_in_one_function():
         }
     """)
     route_map = {'/api/foo': 'foo_handler', '/api/bar': 'bar_handler'}
-    edges = extract_fetch_edges(js, route_map)
-    assert ('doStuff', 'foo_handler', 'http_fetch') in edges
-    assert ('doStuff', 'bar_handler', 'http_fetch') in edges
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.doStuff', 'foo_handler', 'http_fetch') in edges
+    assert ('app.doStuff', 'bar_handler', 'http_fetch') in edges
 
 
 # ---------------------------------------------------------------------------

@@ -190,6 +190,38 @@ def extract_cross_language_edges(
     return list(dict.fromkeys(edges))
 
 
+def extract_js_socketio_edges(
+    js_src: str,
+    socketio_handlers: dict[str, str],
+    file_path: str = "__module__",
+) -> list[tuple[str, str, str]]:
+    """
+    Match JS socket.emit("event") calls to Python @socketio.on("event") handlers,
+    attributing each call to its enclosing JS function via the AST walker.
+
+    socketio_handlers: {event_name: handler_fn_name}
+    Returns (caller_fqdn, handler_fn, 'cross_language') triples.
+    """
+    from determined.ingestion.language_walker import LanguageWalker
+
+    edges: list[tuple[str, str, str]] = []
+    walker = LanguageWalker(js_src, file_path, "javascript")
+    fn_ranges = walker.js_fn_ranges()
+    basename = Path(file_path).stem
+
+    for m in _EMIT_RE.finditer(js_src):
+        event = m.group(1)
+        handler = socketio_handlers.get(event)
+        if not handler:
+            continue
+        line = js_src[: m.start()].count("\n")
+        fqdn = walker.enclosing_fqdn_by_line(line, fn_ranges)
+        caller = fqdn if fqdn else f"{basename}.__emit__"
+        edges.append((caller, handler, "cross_language"))
+
+    return list(dict.fromkeys(edges))
+
+
 def extract_socketio_handler_map(source: str) -> dict[str, str]:
     """
     Parse Python source and return {event_name: handler_fn_name} for every
@@ -353,42 +385,71 @@ def extract_js_event_bindings(html_src: str) -> list[tuple[str, str, str]]:
 
 
 # fetch('/url', ...) or fetch("/url", ...) or fetch(withSession('/url'), ...)
+# Also matches template-literal prefix: fetch(`/api/${id}`) -> captures '/api/'
 _FETCH_URL_RE = re.compile(
-    r'\bfetch\s*\(\s*(?:\w+\s*\(\s*)?["\']([^"\']+)["\']',
+    r'\bfetch\s*\(\s*(?:\w+\s*\(\s*)?(?:["\']([^"\']+)["\']|`([^`$]+))',
 )
-# JS function declaration: function fnName( or async function fnName(
-_JS_FN_RE = re.compile(r'(?:async\s+)?function\s+(\w+)\s*\(')
+# axios.get('/url') / axios.post('/url') etc.
+_AXIOS_METHOD_RE = re.compile(
+    r'\baxios\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']',
+)
+# axios({ url: '/url' })
+_AXIOS_OBJ_RE = re.compile(
+    r'\baxios\s*\(\s*\{[^}]*?url\s*:\s*["\']([^"\']+)["\']',
+    re.DOTALL,
+)
+# $.ajax({ url: '/url' })
+_JQUERY_AJAX_RE = re.compile(
+    r'\$\.ajax\s*\(\s*\{[^}]*?url\s*:\s*["\']([^"\']+)["\']',
+    re.DOTALL,
+)
+# xhr.open('GET', '/url') / xhr.open("POST", "/url")
+_XHR_OPEN_RE = re.compile(
+    r'\.open\s*\(\s*["\'](?:GET|POST|PUT|DELETE|PATCH)["\'],\s*["\']([^"\']+)["\']',
+)
+
+# All HTTP-client patterns unified: each yields the URL string from group(1)
+# except _AXIOS_METHOD_RE which yields URL from group(2).
+_HTTP_CLIENT_PATTERNS: list[tuple] = [
+    (_FETCH_URL_RE, lambda m: m.group(1) or m.group(2)),
+    (_AXIOS_METHOD_RE, lambda m: m.group(2)),
+    (_AXIOS_OBJ_RE, lambda m: m.group(1)),
+    (_JQUERY_AJAX_RE, lambda m: m.group(1)),
+    (_XHR_OPEN_RE, lambda m: m.group(1)),
+]
 
 
 def extract_fetch_edges(
     js_src: str,
     route_map: dict[str, str],
+    file_path: str = "__module__",
 ) -> list[tuple[str, str, str]]:
     """
-    Scan JS source for fetch('/url') calls inside named functions.
+    Scan JS source for HTTP client calls (fetch, axios, $.ajax, XHR) inside named functions.
     Match URL to Flask handler via route_map.
-    Returns (js_fn_name, handler_fn, 'http_fetch') triples.
-    Caller is the enclosing JS function name, or '__js_fetch__' if at module level.
+    Returns (caller_fqdn, handler_fn, 'http_fetch') triples.
+    Caller is the FQDN of the enclosing JS function, or '<basename>.__fetch__' if module-level.
+    file_path is used to derive the basename for FQDN generation.
     """
+    from determined.ingestion.language_walker import LanguageWalker
+
     edges: list[tuple[str, str, str]] = []
+    walker = LanguageWalker(js_src, file_path, "javascript")
+    fn_ranges = walker.js_fn_ranges()
+    basename = Path(file_path).stem
 
-    # Build list of (fn_name, start_pos) sorted by position
-    fn_positions = [(m.group(1), m.start()) for m in _JS_FN_RE.finditer(js_src)]
-
-    def _enclosing_fn(pos: int) -> str:
-        """Return the name of the JS function that contains pos."""
-        caller = '__js_fetch__'
-        for fn_name, fn_start in fn_positions:
-            if fn_start <= pos:
-                caller = fn_name
-        return caller
-
-    for m in _FETCH_URL_RE.finditer(js_src):
-        url = m.group(1)
-        handler = _match_route(url, route_map)
-        if handler:
-            caller = _enclosing_fn(m.start())
-            edges.append((caller, handler, 'http_fetch'))
+    for pattern, url_extractor in _HTTP_CLIENT_PATTERNS:
+        for m in pattern.finditer(js_src):
+            url = url_extractor(m)
+            if not url:
+                continue
+            handler = _match_route(url, route_map)
+            if not handler:
+                continue
+            line = js_src[: m.start()].count("\n")
+            fqdn = walker.enclosing_fqdn_by_line(line, fn_ranges)
+            caller = fqdn if fqdn else f"{basename}.__fetch__"
+            edges.append((caller, handler, "http_fetch"))
 
     return list(dict.fromkeys(edges))
 

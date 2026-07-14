@@ -374,6 +374,21 @@ class LanguageWalker:
         # Tightest = largest start line
         return max(candidates, key=lambda x: x[0])[2]
 
+    def enclosing_fqdn_by_line(self, line: int, fn_ranges: list[tuple]) -> str | None:
+        """Return the fqdn of the tightest function scope containing the given 0-based line."""
+        candidates = [
+            (start, end, fqdn)
+            for start, end, fqdn in fn_ranges
+            if start <= line <= end
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda x: x[0])[2]
+
+    def js_fn_ranges(self) -> list[tuple]:
+        """Public accessor for JS function ranges, for use by external extractors."""
+        return self._js_fn_ranges()
+
     def _js_callee_name(self, func_node) -> str | None:
         """Extract callee name from the function field of a call_expression."""
         kind = func_node.kind()

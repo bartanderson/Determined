@@ -220,12 +220,19 @@ def test_link_no_fetch_edges(tmp_path):
 
 
 def test_link_no_response_shapes(tmp_path):
+    """cross_language edge is emitted even when no response_shape artifacts exist."""
     conn = _make_db(
         fetch_edges=[("app.fetchUser", "get_user")],
         response_shapes={},
     )
     count = run_cross_language_link(conn, tmp_path)
-    assert count == 0
+    assert count == 1
+    row = conn.execute(
+        "SELECT * FROM graph_edges WHERE edge_type = 'cross_language'"
+    ).fetchone()
+    assert row is not None
+    assert row["caller"] == "app.fetchUser"
+    assert row["callee"] == "get_user"
 
 
 def test_link_mismatch_stored_as_artifact(tmp_path):
@@ -254,3 +261,34 @@ def test_link_mismatch_stored_as_artifact(tmp_path):
     assert row is not None
     data = json.loads(row["content"])
     assert "email" in data["missing_keys"]
+
+
+def test_link_socketio_emit_to_handler(tmp_path):
+    """socket.emit in JS wires to @socketio.on Python handler as cross_language edge."""
+    py_file = tmp_path / "server.py"
+    py_file.write_text(textwrap.dedent("""\
+        @socketio.on("join_room")
+        def handle_join(data):
+            pass
+    """))
+    js_file = tmp_path / "client.js"
+    js_file.write_text(textwrap.dedent("""\
+        function joinRoom() {
+            socket.emit("join_room", { id: roomId });
+        }
+    """))
+
+    conn = _make_db(fetch_edges=[], response_shapes={})
+    conn.execute("INSERT INTO files (file_path) VALUES (?)", (str(py_file),))
+    conn.execute("INSERT INTO files (file_path) VALUES (?)", (str(js_file),))
+    conn.commit()
+
+    count = run_cross_language_link(conn, tmp_path)
+    assert count == 1
+
+    row = conn.execute(
+        "SELECT * FROM graph_edges WHERE edge_type = 'cross_language'"
+    ).fetchone()
+    assert row is not None
+    assert row["callee"] == "handle_join"
+    assert "joinRoom" in row["caller"]

@@ -325,8 +325,8 @@ async function loadUser() {
 }
 """
     route_map = {'/api/users': 'list_users'}
-    edges = extract_fetch_edges(js, route_map)
-    assert ('loadUser', 'list_users', 'http_fetch') in edges
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.loadUser', 'list_users', 'http_fetch') in edges
 
 
 def test_fetch_edges_no_match():
@@ -338,5 +338,47 @@ def test_fetch_edges_no_match():
 def test_fetch_edges_module_level():
     js = "fetch('/api/ping');"
     route_map = {'/api/ping': 'ping'}
-    edges = extract_fetch_edges(js, route_map)
+    edges = extract_fetch_edges(js, route_map, "app.js")
     assert any(e[1] == 'ping' and e[2] == 'http_fetch' for e in edges)
+
+
+def test_fetch_edges_arrow_function():
+    js = "const load = async () => { fetch('/api/users'); };"
+    route_map = {'/api/users': 'list_users'}
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.load', 'list_users', 'http_fetch') in edges
+
+
+def test_fetch_edges_template_literal():
+    js = "async function getItem() { fetch(`/api/items/${id}`); }"
+    route_map = {'/api/items/': 'get_item'}
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert any(e[1] == 'get_item' and e[2] == 'http_fetch' for e in edges)
+
+
+def test_axios_method_edge():
+    js = "async function loadUser() { axios.get('/api/users'); }"
+    route_map = {'/api/users': 'list_users'}
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.loadUser', 'list_users', 'http_fetch') in edges
+
+
+def test_axios_object_edge():
+    js = "async function createUser() { axios({ url: '/api/users', method: 'POST' }); }"
+    route_map = {'/api/users': 'list_users'}
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.createUser', 'list_users', 'http_fetch') in edges
+
+
+def test_jquery_ajax_edge():
+    js = "function doPost() { $.ajax({ url: '/api/data', method: 'POST' }); }"
+    route_map = {'/api/data': 'post_data'}
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.doPost', 'post_data', 'http_fetch') in edges
+
+
+def test_xhr_open_edge():
+    js = "function sendReq() { xhr.open('POST', '/api/submit'); }"
+    route_map = {'/api/submit': 'submit_handler'}
+    edges = extract_fetch_edges(js, route_map, "app.js")
+    assert ('app.sendReq', 'submit_handler', 'http_fetch') in edges

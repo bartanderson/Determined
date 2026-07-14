@@ -1153,7 +1153,7 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
     # scan_project_files only processes .py; read HTML/JS directly from disk via project_root.
     flask_route_map: dict[str, str] = {}
     html_srcs: list[str] = []
-    js_srcs: list[str] = []
+    js_srcs: list[tuple[str, str]] = []  # (source_text, file_path)
 
     for analysis in (file_analyses or []):
         fp = getattr(analysis, 'file_path', '') or ''
@@ -1165,7 +1165,7 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
         elif fp.endswith('.html'):
             html_srcs.append(src)
         elif fp.endswith('.js'):
-            js_srcs.append(src)
+            js_srcs.append((src, fp))
 
     # If no HTML/JS from file_analyses (scan_project_files skips them), read from disk
     if flask_route_map and not html_srcs and not js_srcs:
@@ -1184,7 +1184,7 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
                             pass
                     elif _p.suffix == '.js':
                         try:
-                            js_srcs.append(_p.read_text(encoding='utf-8', errors='replace'))
+                            js_srcs.append((_p.read_text(encoding='utf-8', errors='replace'), str(_p)))
                         except OSError:
                             pass
         except Exception:
@@ -1197,8 +1197,8 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
                 _insert_virtual(src, tgt, etype)
             for src, tgt, etype in extract_js_event_bindings(html_src):
                 _insert_virtual(src, tgt, etype)
-        for js_src in js_srcs:
-            for src, tgt, etype in extract_fetch_edges(js_src, flask_route_map):
+        for js_src, js_fp in js_srcs:
+            for src, tgt, etype in extract_fetch_edges(js_src, flask_route_map, js_fp):
                 _insert_virtual(src, tgt, etype)
 
     # --- Gap 8: auto-generate polymorphic edges from ABC/subclass data ---

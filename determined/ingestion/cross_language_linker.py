@@ -21,12 +21,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from determined.ingestion.language_walker import LanguageWalker
+from determined.ingestion.dynamic_edges import (
+    extract_js_socketio_edges,
+    extract_socketio_handler_map,
+)
 
 
 def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
     """
     Run the cross-language linking pass over all JS/TS files in the corpus.
-    Returns the number of cross_language data_flow edges emitted.
+    Returns the number of cross_language edges emitted (http_fetch + socketio).
     """
     cur = conn.cursor()
 
@@ -35,8 +39,6 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
         "SELECT caller, callee FROM graph_edges WHERE edge_type = 'http_fetch'"
     )
     fetch_edges: list[tuple[str, str]] = cur.fetchall()
-    if not fetch_edges:
-        return 0
 
     # 2. Load response_shape artifacts: handler_fn_name -> [keys]
     cur.execute(
@@ -51,17 +53,30 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    if not response_shapes:
-        return 0
+    # 3. Build socketio handler map from Python files in corpus
+    socketio_handlers: dict[str, str] = {}
+    cur.execute("SELECT DISTINCT file_path FROM files WHERE file_path LIKE '%.py'")
+    for (py_fp,) in cur.fetchall():
+        p = Path(py_fp)
+        if not p.exists():
+            continue
+        try:
+            socketio_handlers.update(
+                extract_socketio_handler_map(p.read_text(encoding="utf-8", errors="ignore"))
+            )
+        except Exception:
+            continue
 
-    # 3. Build consumer map from JS/TS files: js_fn -> set[keys]
-    consumer_map: dict[str, set[str]] = {}
+    # 4. Load JS/TS files for consumer map and socket.emit extraction
     cur.execute(
         "SELECT DISTINCT file_path FROM files WHERE "
         "file_path LIKE '%.js' OR file_path LIKE '%.ts' "
         "OR file_path LIKE '%.jsx' OR file_path LIKE '%.tsx'"
     )
     js_files = [row[0] for row in cur.fetchall()]
+
+    consumer_map: dict[str, set[str]] = {}
+    socketio_emit_edges: list[tuple[str, str, str]] = []
 
     for file_path in js_files:
         p = Path(file_path)
@@ -71,45 +86,43 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
             source = p.read_text(encoding="utf-8", errors="ignore")
             lang = _lang_from_path(file_path)
             walker = LanguageWalker(source, file_path, lang)
-            for fn_fqdn, keys in walker.response_consumers():
-                consumer_map.setdefault(fn_fqdn, set()).update(keys)
+            if response_shapes:
+                for fn_fqdn, keys in walker.response_consumers():
+                    consumer_map.setdefault(fn_fqdn, set()).update(keys)
+            if socketio_handlers:
+                socketio_emit_edges.extend(
+                    extract_js_socketio_edges(source, socketio_handlers, file_path)
+                )
         except Exception:
             continue
 
-    # 4. Delete stale cross_language_response edges before re-emitting
-    cur.execute(
-        "DELETE FROM graph_edges WHERE edge_type = 'data_flow' "
-        "AND caller IN (SELECT caller FROM graph_edges WHERE edge_type = 'http_fetch')"
-        "AND callee IN (SELECT callee FROM graph_edges WHERE edge_type = 'http_fetch')"
-        "AND resolved = 1"
-    )
-    # Simpler: just delete by a known marker via knowledge_artifacts subject pattern
-    # Actually, emit as edge_type='cross_language' to be distinct from data_flow
+    # 5. Delete stale cross_language edges before re-emitting
     cur.execute("DELETE FROM graph_edges WHERE edge_type = 'cross_language'")
 
-    # 5. Emit cross_language edges
     count = 0
     created_at = datetime.now(timezone.utc).isoformat()
 
     from determined.identity.edge_identity import edge_identity
 
-    for js_fn, handler in fetch_edges:
-        shape_keys = _lookup_response_shape(handler, response_shapes)
-        if shape_keys is None:
-            continue
-
-        src_id, tgt_id = edge_identity(js_fn, handler)
+    def _insert_edge(caller: str, callee: str) -> None:
+        nonlocal count
+        src_id, tgt_id = edge_identity(caller, callee)
         cur.execute(
             "INSERT OR IGNORE INTO graph_edges "
             "(source_id, target_id, caller, callee, edge_type, resolved) "
             "VALUES (?, ?, ?, ?, 'cross_language', 1)",
-            (src_id, tgt_id, js_fn, handler),
+            (src_id, tgt_id, caller, callee),
         )
         count += 1
 
-        # Check for mismatches if we have consumer data
+    # 6. Emit cross_language edges for every http_fetch edge unconditionally
+    for js_fn, handler in fetch_edges:
+        _insert_edge(js_fn, handler)
+
+        # Optional: emit response_mismatch artifact when shape data is available
+        shape_keys = _lookup_response_shape(handler, response_shapes)
         consumed = consumer_map.get(js_fn, set())
-        if consumed:
+        if shape_keys and consumed:
             missing = consumed - set(shape_keys)
             if missing:
                 cur.execute(
@@ -128,7 +141,12 @@ def run_cross_language_link(conn: sqlite3.Connection, corpus_root: Path) -> int:
                     ),
                 )
 
-    conn.commit()
+    # 7. Emit cross_language edges for socket.emit → @socketio.on handler
+    for caller, callee, _ in socketio_emit_edges:
+        _insert_edge(caller, callee)
+
+    if fetch_edges or socketio_emit_edges:
+        conn.commit()
     return count
 
 
