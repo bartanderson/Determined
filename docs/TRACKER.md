@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 171):** RM55 + RM56 confirmed done. RM57 done: response_shape extraction in parse_ast.py, response_consumers() in LanguageWalker, cross_language_linker.py linking pass, 15 tests. 831 passed, 1 skipped.
+**Last session (2026-07-13, session 171):** RM55 + RM56 confirmed done. RM57 done (6632db4): response_shape extraction, response_consumers(), cross_language_linker.py, 15 tests, 831 passed. RM58 done: all 4 corpora verified (dnd-dungeon-gen, dungeoncrawler, rotjs, end-of-eden, ruggrogue). RM53-58 arc complete. No open TODO items remain.
 
 **Previous (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
 
@@ -198,7 +198,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM58. **[TODO] Clone validation corpora for RM53-57 testing (JS/TS/Go/Rust)**
+RM58. **[DONE 2026-07-13] Clone validation corpora for RM53-57 testing (JS/TS/Go/Rust)**
 
    Five reference corpora covering RM53-57 test surface across four languages.
    Together they validate the "corpus-agnostic" claim: one LanguageWalker abstraction

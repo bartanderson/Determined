@@ -1,47 +1,54 @@
-Written at commit: 5d325d5
+Written at commit: 6632db4
 
-# SESSION STATE - session 170
+# SESSION STATE - session 171
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 170, 2026-07-13)
+## What happened this session (session 171, 2026-07-13)
 
-**LangSpec refactor -- commit e939072 [V]:**
-- `LangSpec` dataclass in `language_walker.py`: callee_extractor, builtins,
-  fn_ranges_builder, compute_resolved
-- `_lang_spec()` returns the right LangSpec for the active language
-- `_shared_call_edges(spec)` replaces `_js_call_edges`, `_go_call_edges`,
-  `_rust_call_edges` (three duplicated walk loops, root cause of prior bugs)
-- `call_edges()` now delegates to `_shared_call_edges(self._lang_spec())`
-- Adding a new language: add callee extractor method + builtins set + LangSpec entry
-- 814 passed, 1 skipped [V]
+**RM55 + RM56 confirmed done [V]:**
+- JS data flow tests (L1/L2/L3): 4 tests passing. Code already in language_walker.py.
+- parse_ast.py _last_call_fqdn.pop() fix already in place.
+- Both marked DONE in TRACKER.md.
 
-**RM54 done -- commit 5d325d5 [V]:**
-- 2 new regression tests: arrow fn as caller, cross-file callee unresolved
-- Cross-file resolution post-pass in `_persist_js_ts_files`: after all JS/TS files
-  processed, UPDATE graph_edges SET resolved=1 where callee matches any known
-  JS/TS symbol (bare name OR fqdn suffix via SUBSTR). Walker always emits
-  resolved=False (single-file scope); persist layer has full corpus.
-- Validated: dnd-dungeon-gen 974 edges (controller->generateDungeon chains surface)
-- Validated: dungeoncrawler 163 TS edges (Game.constructor->handlePlayerInput,
-  CombatSystem.executeAttack->defender.takeDamage)
-- 816 passed, 1 skipped [V]
+**RM57 done -- commit 6632db4 [V]:**
+- `_extract_response_shape(fn_node)` in parse_ast.py: walks function body for
+  `return jsonify({"key": ...})` / `return jsonify(key=v)` / `return {"key": ...}`.
+  Only runs when `http_route` is set (route handler only).
+- `response_shape: list[str]` field added to `FunctionRepresentation` in types.py.
+- Persistence: route handlers with response_shape get `knowledge_artifact(kind='response_shape',
+  subject=fn_name, content=json(keys))` in persistence_engine.py.
+- `LanguageWalker.response_consumers()` / `_js_response_consumers()` in language_walker.py:
+  detects `const {key} = await resp.json()` (object_pattern destructuring) and property
+  access on variables bound from `.json()` calls. Returns [(fqdn, [keys])].
+- `cross_language_linker.py` (new file): `run_cross_language_link(conn, corpus_root)` --
+  loads http_fetch edges + response_shape artifacts + scans JS/TS files for response_consumers,
+  emits `cross_language` graph_edges (caller=js_fn, callee=flask_handler), stores
+  `response_mismatch` knowledge_artifacts (needs_review=1) for consumed keys not in shape.
+- Wired as step 5d in persistence_engine.persist_all after _persist_js_ts_files.
+- 15 regression tests. 831 passed, 1 skipped [V].
 
-**Known trap discovered this session [V]:**
-JS `resolved` was always False before RM54 because walker compares raw callee
-("placeWalls") against fqdn symbol names ("gen.placeWalls") -- never matches.
-compute_resolved=True in LangSpec was doing nothing. Fixed by persist post-pass.
-See HISTORY.md 2026-07-13 entry.
+**RM58 done [V]:**
+- end-of-eden (Go) cloned to C:\Users\bartl\dev\corpora\end-of-eden
+- ruggrogue (Rust) already existed at C:\Users\bartl\dev\corpora\ruggrogue
+- All 4 corpora verified present: dnd-dungeon-gen, dungeoncrawler, rotjs, end-of-eden, ruggrogue
+- TRACKER marked DONE.
+
+**Arc complete [V]:**
+RM53-58 (LanguageWalker arc) all DONE. No open TODO items remain in TRACKER.md.
 
 ## NEXT SESSION -- start here
 
-**RM55: JS data flow L1/L2/L3 [V -- likely already done]**
-Same situation as RM54: data_flow_edges() and all L1/L2/L3 tests are already
-in place from RM53 Phase 1. Check if any spec tests are missing, validate against
-dnd-dungeon-gen, mark DONE in TRACKER.md.
+**No open TODO items.** Time to plan the next arc.
 
-After RM55: RM56 (Python AST cleanup, 1-2 hrs) then RM57 (cross-language data flow).
+Options to discuss with Bart:
+1. **Go/Rust validation** -- ingest end-of-eden and ruggrogue, confirm call graphs surface
+   correctly, mark RM58 fully validated (currently just "cloned").
+2. **dj2 cross-language validation** -- re-ingest dj2 with RM57, verify cross_language edges
+   appear for fetch→Flask chains, check response_mismatch artifacts for real gaps.
+3. **New arc planning** -- what's the next capability gap? (items 6/20/1 from CLAUDE.md arc
+   are all done; likely need fresh brainstorm against current dj2 analysis pain points).
 
 ## Known issues (carried forward)
 
@@ -86,7 +93,12 @@ multi-line blocks.
 "receiver.method" not just "method".
 
 **JS resolved=False trap [V]:** Fixed in RM54 (5d325d5). Walker always emits False
-(single-file scope); persist post-pass resolves against full corpus. LangSpec
-compute_resolved is now effectively unused -- resolution happens in persist layer.
+(single-file scope); persist post-pass resolves against full corpus.
+
+**RM57 response_consumers scope [V]:** LanguageWalker constructor is (src, file_path, language)
+not (src, language, basename). basename derived from file_path internally.
+
+**graph_edges no provenance column [V]:** cross_language linker uses edge_type='cross_language'
+as the type discriminator (not a provenance column). Stale edges deleted by edge_type.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
