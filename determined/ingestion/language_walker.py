@@ -645,6 +645,38 @@ class LanguageWalker:
         return None
 
     # ------------------------------------------------------------------
+    # Go: interface types
+    # ------------------------------------------------------------------
+
+    def interface_types(self) -> dict[str, list[str]]:
+        """Return {interface_name: [method_name, ...]} for Go files; empty for other languages."""
+        if self._language != "go":
+            return {}
+        return self._go_interface_types()
+
+    def _go_interface_types(self) -> dict[str, list[str]]:
+        """Extract Go interface definitions: type X interface { Method1(...) ... }"""
+        result: dict[str, list[str]] = {}
+        root = self._root.root()
+        for type_decl in root.find_all({"rule": {"kind": "type_declaration"}}):
+            for spec in type_decl.find_all({"rule": {"kind": "type_spec"}}):
+                name_node = spec.field("name")
+                type_node = spec.field("type")
+                if name_node is None or type_node is None:
+                    continue
+                if type_node.kind() != "interface_type":
+                    continue
+                iface_name = name_node.text()
+                methods: list[str] = []
+                for method in type_node.find_all({"rule": {"kind": "method_elem"}}):
+                    m_name = method.field("name")
+                    if m_name is not None:
+                        methods.append(m_name.text())
+                if methods:
+                    result[iface_name] = methods
+        return result
+
+    # ------------------------------------------------------------------
     # Go: symbols (Phase 2 — stub)
     # ------------------------------------------------------------------
 

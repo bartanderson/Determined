@@ -813,6 +813,10 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
     symbol_names_batch: list[tuple[str, str, str]] = []
     from datetime import datetime, timezone
 
+    # Collect Go interface definitions across all files for the dispatch post-pass.
+    # Maps interface_name -> list[method_name]; file tracked separately in post-pass.
+    go_interfaces: dict[str, list[str]] = {}
+
     for path in js_files:
         lang = detect_language(str(path))
         if lang is None:
@@ -860,7 +864,20 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
             for name, ntype in all_name_forms(callee_name):
                 symbol_names_batch.append((tgt_id, name, ntype))
 
+        # Collect Go interface definitions for the dispatch post-pass
+        if lang == "go":
+            for iface_name, methods in walker.interface_types().items():
+                go_interfaces.setdefault(iface_name, [])
+                for m in methods:
+                    if m not in go_interfaces[iface_name]:
+                        go_interfaces[iface_name].append(m)
+
         logger and logger.write(f"[JS/TS] {path.name}: {len(walker.symbols())} symbols, {len(walker.call_edges())} edges")
+
+    # Go interface dispatch post-pass: add synthetic edges from each interface method
+    # to every concrete type that fully implements that interface.
+    if go_interfaces:
+        _go_interface_dispatch_pass(cursor, go_interfaces, file_paths, logger=logger)
 
     # Cross-file resolution post-pass: mark an edge resolved=1 when the callee
     # matches a known JS/TS symbol (full fqdn OR the bare suffix after the last '.').
@@ -894,6 +911,77 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                 "INSERT OR IGNORE INTO symbol_names (canonical_id, name, name_type) VALUES (?, ?, ?)",
                 (canonical_id, name, ntype),
             )
+
+
+def _go_interface_dispatch_pass(cursor, all_interfaces: dict, file_paths: list, logger=None) -> int:
+    """
+    For each collected Go interface, find concrete types in the corpus that implement
+    all its methods and insert interface_dispatch edges.
+
+    target_id stores the concrete FQDN (not bare-normalized) so that list_callers on
+    a specific concrete type (e.g. ChoicesModel.Update) matches only that type's edge,
+    not every method with the same bare name.
+    """
+    from determined.identity.symbol_identity import normalize_symbol
+
+    # Clear stale interface_dispatch edges before re-inserting
+    if file_paths:
+        placeholders = ",".join("?" * len(file_paths))
+        cursor.execute(
+            f"DELETE FROM graph_edges WHERE edge_type = 'interface_dispatch'"
+            f" AND (caller_file IN ({placeholders}) OR caller_file = '' OR caller_file IS NULL)",
+            file_paths,
+        )
+    else:
+        cursor.execute("DELETE FROM graph_edges WHERE edge_type = 'interface_dispatch'")
+
+    # Build type → methods set from functions table (Go methods are "TypeName.MethodName")
+    type_methods: dict[str, set[str]] = {}
+    type_file: dict[str, str] = {}  # "TypeName.MethodName" → file_path
+
+    if file_paths:
+        rows = cursor.execute(
+            f"SELECT name, file_path FROM functions WHERE file_path IN ({placeholders})",
+            file_paths,
+        ).fetchall()
+    else:
+        rows = cursor.execute("SELECT name, file_path FROM functions").fetchall()
+
+    for name, fp in rows:
+        if "." in name and "::" not in name:
+            type_name, method_name = name.rsplit(".", 1)
+            type_methods.setdefault(type_name, set()).add(method_name)
+            type_file[name] = fp
+
+    dispatch_count = 0
+    for iface_name, iface_methods in all_interfaces.items():
+        iface_method_set = set(iface_methods)
+        for type_name, methods_present in type_methods.items():
+            if type_name == iface_name:
+                continue  # don't self-dispatch (e.g. gifviewer's Model struct vs Model interface)
+            if not iface_method_set.issubset(methods_present):
+                continue  # doesn't fully implement the interface
+            for method in iface_methods:
+                iface_fqdn = f"{iface_name}.{method}"
+                concrete_fqdn = f"{type_name}.{method}"
+                iface_fp = type_file.get(iface_fqdn, "")
+                cursor.execute("""
+                    INSERT INTO graph_edges
+                        (source_id, target_id, caller, callee, caller_file, resolved, edge_type)
+                    VALUES (?, ?, ?, ?, ?, 1, 'interface_dispatch')
+                """, (
+                    normalize_symbol(iface_fqdn),  # bare method name for degree counting
+                    concrete_fqdn,                  # FQDN so list_callers matches exact type
+                    iface_fqdn,
+                    concrete_fqdn,
+                    iface_fp,
+                ))
+                dispatch_count += 1
+
+    logger and logger.write(
+        f"[Go] interface dispatch: {dispatch_count} edges from {len(all_interfaces)} interfaces"
+    )
+    return dispatch_count
 
 
 def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=None):
