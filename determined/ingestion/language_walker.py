@@ -108,6 +108,7 @@ class LanguageWalker:
         if not _AST_GREP_AVAILABLE:
             raise RuntimeError("ast-grep-py not installed. Run: pip install ast-grep-py")
         self._src = src
+        self._lines = src.splitlines()
         self._file_path = file_path
         self._language = language
         self._root = SgRoot(src, language)
@@ -243,6 +244,7 @@ class LanguageWalker:
                 fqdn, node, is_stub=self._js_is_stub(node),
                 return_type=self._ts_return_type(node),
                 param_types_json=self._ts_param_types(node),
+                docstring=self._preceding_comment(node),
             ))
 
         # Arrow functions and function expressions assigned to variables:
@@ -261,6 +263,7 @@ class LanguageWalker:
                     fqdn, decl, is_stub=self._js_is_stub(val_node),
                     return_type=self._ts_return_type(val_node),
                     param_types_json=self._ts_param_types(val_node),
+                    docstring=self._preceding_comment(node),
                 ))
 
         # Class method definitions
@@ -280,6 +283,7 @@ class LanguageWalker:
                     fqdn, method, is_stub=self._js_is_stub(method),
                     return_type=self._ts_return_type(method),
                     param_types_json=self._ts_param_types(method),
+                    docstring=self._preceding_comment(method),
                 ))
 
         # Object literal methods assigned to const/let/var (common in JS modules)
@@ -423,9 +427,69 @@ class LanguageWalker:
 
         return type_map
 
+    def _preceding_comment(self, node) -> str | None:
+        """Return the doc comment immediately above node, or None.
+
+        Handles:
+          Python   -- triple-quoted strings handled by parse_ast; not needed here.
+          Go       -- consecutive `//` lines directly above the declaration.
+          Rust     -- consecutive `///` lines directly above the declaration.
+          JS/TS    -- /** ... */ block ending on the line before the declaration.
+        """
+        start_line = node.range().start.line  # 0-indexed
+        if start_line == 0:
+            return None
+        lines = self._lines
+        lang = self._language
+
+        if lang in ("go",):
+            # Walk backwards collecting `//` lines
+            collected = []
+            i = start_line - 1
+            while i >= 0 and lines[i].strip().startswith("//"):
+                collected.append(lines[i].strip().lstrip("/").strip())
+                i -= 1
+            if collected:
+                return " ".join(reversed(collected))
+
+        if lang == "rust":
+            # Walk backwards collecting `///` lines
+            collected = []
+            i = start_line - 1
+            while i >= 0 and lines[i].strip().startswith("///"):
+                collected.append(lines[i].strip().lstrip("/").strip())
+                i -= 1
+            if collected:
+                return " ".join(reversed(collected))
+
+        if lang in ("javascript", "typescript", "jsx", "tsx"):
+            # Look for a /** ... */ block ending on start_line - 1
+            end_idx = start_line - 1
+            # skip blank lines between comment and declaration
+            while end_idx >= 0 and not lines[end_idx].strip():
+                end_idx -= 1
+            if end_idx >= 0 and lines[end_idx].strip().endswith("*/"):
+                # find opening /**
+                i = end_idx
+                while i >= 0 and "/**" not in lines[i]:
+                    i -= 1
+                if i >= 0:
+                    block = lines[i:end_idx + 1]
+                    # strip * prefixes and collect non-empty lines
+                    parts = []
+                    for l in block:
+                        s = l.strip().lstrip("/*").lstrip("*").strip()
+                        if s:
+                            parts.append(s)
+                    if parts:
+                        return " ".join(parts)
+
+        return None
+
     def _make_symbol(self, fqdn: str, node, is_stub: bool = False,
                      return_type: str | None = None,
-                     param_types_json: str | None = None) -> dict:
+                     param_types_json: str | None = None,
+                     docstring: str | None = None) -> dict:
         return {
             "file_path": self._file_path,
             "name": fqdn,
@@ -433,7 +497,7 @@ class LanguageWalker:
             "return_type": return_type,
             "arguments_json": "[]",
             "param_types_json": param_types_json,
-            "docstring": None,
+            "docstring": docstring,
             "is_stub": is_stub,
             "decorators_json": None,
             "http_route": None,
@@ -543,7 +607,8 @@ class LanguageWalker:
         For TypeScript files, resolves typed receivers: obj.method() → TypeName.method()."""
         kind = func_node.kind()
         if kind == "identifier":
-            return func_node.text()
+            t = func_node.text()
+            return t if "\n" not in t and len(t) < 120 else None
         if kind == "member_expression":
             obj = func_node.field("object")
             prop = func_node.field("property")
@@ -1105,7 +1170,9 @@ class LanguageWalker:
                 continue
             name = name_node.text()
             fqdn = f"{package}.{name}"
-            results.append(self._make_symbol(fqdn, node, param_types_json=self._go_param_types(node)))
+            results.append(self._make_symbol(fqdn, node,
+                param_types_json=self._go_param_types(node),
+                docstring=self._preceding_comment(node)))
 
         # Method declarations: func (r ReceiverType) MethodName(...) ...
         for node in root.find_all({"rule": {"kind": "method_declaration"}}):
@@ -1116,7 +1183,9 @@ class LanguageWalker:
             receiver_type = self._go_receiver_type(receiver) if receiver else package
             method_name = name_node.text()
             fqdn = f"{receiver_type}.{method_name}"
-            results.append(self._make_symbol(fqdn, node, param_types_json=self._go_param_types(node)))
+            results.append(self._make_symbol(fqdn, node,
+                param_types_json=self._go_param_types(node),
+                docstring=self._preceding_comment(node)))
 
         return results
 
@@ -1151,10 +1220,19 @@ class LanguageWalker:
             if type_node is None:
                 continue
             type_str = type_node.text().lstrip("*").strip()
-            # name field may be absent for unnamed params or variadic
             name_node = param.field("name")
             name = name_node.text() if name_node else ""
             result.append({"name": name, "type": type_str})
+        # Also capture variadic params: func f(xs ...T)
+        for param in params_node.find_all({"rule": {"kind": "variadic_parameter_declaration"}}):
+            type_node = param.field("type")
+            name_node = param.field("name")
+            if type_node is None:
+                continue
+            result.append({
+                "name": name_node.text() if name_node else "",
+                "type": f"...{type_node.text().lstrip('*').strip()}",
+            })
         if not result:
             return None
         import json as _json
@@ -1243,7 +1321,9 @@ class LanguageWalker:
             if _in_impl(r.start.line):
                 continue
             fqdn = f"{module}::{name_node.text()}"
-            results.append(self._make_symbol(fqdn, node, param_types_json=self._rust_param_types(node)))
+            results.append(self._make_symbol(fqdn, node,
+                param_types_json=self._rust_param_types(node),
+                docstring=self._preceding_comment(node)))
 
         # impl block methods
         for impl_node in root.find_all({"rule": {"kind": "impl_item"}}):
@@ -1257,7 +1337,9 @@ class LanguageWalker:
                 if name_node is None:
                     continue
                 fqdn = f"{type_name}::{name_node.text()}"
-                results.append(self._make_symbol(fqdn, fn_node, param_types_json=self._rust_param_types(fn_node)))
+                results.append(self._make_symbol(fqdn, fn_node,
+                    param_types_json=self._rust_param_types(fn_node),
+                    docstring=self._preceding_comment(fn_node)))
 
         return results
 

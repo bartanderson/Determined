@@ -90,6 +90,8 @@ def discover_js_ts_files(
             continue
         if any(part in {"node_modules", "dist", "build", ".venv"} for part in path.parts):
             continue
+        if path.stem.endswith(".min"):
+            continue
         if should_ignore_path(path, ignored):
             continue
         discovered.append(path)
