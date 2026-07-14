@@ -477,6 +477,16 @@ def persist_file_analysis(
             function.return_type or "",
         )
 
+        # Persist response_shape for Flask route handlers
+        if getattr(function, 'response_shape', None):
+            created_at = datetime.now(timezone.utc).isoformat()
+            cursor.execute(
+                "INSERT OR REPLACE INTO knowledge_artifacts "
+                "(subject, kind, content, provenance, created_at, file_hash, needs_review, corpus) "
+                "VALUES (?, 'response_shape', ?, 'ast', ?, NULL, 0, NULL)",
+                (function.name, json.dumps(function.response_shape), created_at),
+            )
+
         # Persist inline body comments as knowledge artifacts
         for note in getattr(function, 'inline_notes', []):
             created_at = datetime.now(timezone.utc).isoformat()
@@ -762,6 +772,13 @@ def persist_all(connection, file_analyses, graph, project_prefixes, logger=None,
     # -----------------------------------------
     if project_root:
         _persist_js_ts_files(connection, project_root, logger=logger)
+
+    # -----------------------------------------
+    # 5d. CROSS-LANGUAGE DATA FLOW LINK (RM57)
+    # -----------------------------------------
+    if project_root:
+        from determined.ingestion.cross_language_linker import run_cross_language_link
+        run_cross_language_link(connection, Path(project_root))
 
     # -----------------------------------------
     # 6. RECALCULATE is_hot FROM GRAPH

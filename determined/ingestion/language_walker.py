@@ -542,6 +542,95 @@ class LanguageWalker:
 
         return results
 
+    def response_consumers(self) -> list[tuple]:
+        """
+        Return list of (fn_fqdn, keys: list[str]) for JS/TS functions that
+        consume JSON responses. Detects:
+          const {key, key2} = await resp.json()
+          const {key} = data   (where data is from .json() or .then)
+          data.key             (property access on a response variable)
+        """
+        lang = self._language
+        if lang not in ("javascript", "typescript", "jsx", "tsx"):
+            return []
+        return self._js_response_consumers()
+
+    def _js_response_consumers(self) -> list[tuple]:
+        """
+        Detect JS/TS patterns that destructure or access keys from a JSON response.
+        Returns [(fn_fqdn, [key, ...]), ...] — one entry per function.
+        """
+        results = []
+        fn_ranges = self._js_fn_ranges()
+        root = self._root.root()
+
+        # Collect per-function consumed keys
+        fn_keys: dict[str, set[str]] = {}
+
+        # Pattern 1: object destructuring from .json() call
+        # const {key1, key2} = await resp.json()  or  const {key1} = data.json()
+        for decl in root.find_all({"rule": {"kind": "lexical_declaration"}}):
+            outer_fqdn = self._enclosing_fqdn(decl, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            for declarator in decl.find_all({"rule": {"kind": "variable_declarator"}}):
+                id_node = declarator.field("name")
+                val_node = declarator.field("value")
+                if id_node is None or val_node is None:
+                    continue
+                # Look for object_pattern on the left side (destructuring)
+                if id_node.kind() != "object_pattern":
+                    continue
+                # Check that the right side involves .json() somewhere
+                val_text = val_node.text()
+                if ".json()" not in val_text:
+                    continue
+                # Extract keys from the destructuring pattern
+                for shorthand in id_node.find_all({"rule": {"kind": "shorthand_property_identifier_pattern"}}):
+                    fn_keys.setdefault(outer_fqdn, set()).add(shorthand.text())
+                for pair in id_node.find_all({"rule": {"kind": "pair_pattern"}}):
+                    key_node = pair.field("key")
+                    if key_node:
+                        fn_keys.setdefault(outer_fqdn, set()).add(key_node.text())
+
+        # Pattern 2: property access on a variable bound from .json() or fetch response
+        # data.key  /  response.data.key  — track which vars come from .json()
+        json_vars: dict[str, set[str]] = {}  # fn_fqdn -> set of var names holding .json() result
+
+        for decl in root.find_all({"rule": {"kind": "lexical_declaration"}}):
+            outer_fqdn = self._enclosing_fqdn(decl, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            for declarator in decl.find_all({"rule": {"kind": "variable_declarator"}}):
+                id_node = declarator.field("name")
+                val_node = declarator.field("value")
+                if id_node is None or val_node is None:
+                    continue
+                if id_node.kind() != "identifier":
+                    continue
+                if ".json()" in val_node.text():
+                    json_vars.setdefault(outer_fqdn, set()).add(id_node.text())
+
+        for call in root.find_all({"rule": {"kind": "member_expression"}}):
+            outer_fqdn = self._enclosing_fqdn(call, fn_ranges)
+            if outer_fqdn is None:
+                continue
+            obj = call.field("object")
+            prop = call.field("property")
+            if obj is None or prop is None:
+                continue
+            var_name = obj.text().split(".")[0]
+            if var_name in json_vars.get(outer_fqdn, set()):
+                key = prop.text()
+                if key and key.isidentifier() and key not in ("json", "then", "catch", "finally"):
+                    fn_keys.setdefault(outer_fqdn, set()).add(key)
+
+        for fqdn, keys in fn_keys.items():
+            if keys:
+                results.append((fqdn, sorted(keys)))
+
+        return results
+
     def _js_for_var_name(self, left_node) -> str | None:
         """Extract the loop variable name from a for-of left side."""
         kind = left_node.kind()

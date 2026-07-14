@@ -163,6 +163,53 @@ import re as _re
 _MARKER_RE = _re.compile(r'^([A-Z][A-Z0-9_]+)\s*(?::|--?|—|\s{2,})', _re.ASCII)
 
 
+def _extract_response_shape(fn_node: ast.AST) -> list[str]:
+    """
+    For a Flask route handler, extract the JSON keys it returns.
+    Detects:
+      return jsonify({"key": ...})     -> ["key"]
+      return jsonify(key=value, ...)   -> ["key"]
+      return {"key": ...}              -> ["key"]
+    """
+    keys: list[str] = []
+    seen: set[str] = set()
+
+    def _dict_keys(d: ast.Dict) -> list[str]:
+        out = []
+        for k in d.keys:
+            if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                out.append(k.value)
+        return out
+
+    for node in ast.walk(fn_node):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        val = node.value
+        # return jsonify({...}) or return jsonify(key=v, ...)
+        if (
+            isinstance(val, ast.Call)
+            and isinstance(val.func, ast.Name)
+            and val.func.id == "jsonify"
+        ):
+            if val.args and isinstance(val.args[0], ast.Dict):
+                for k in _dict_keys(val.args[0]):
+                    if k not in seen:
+                        seen.add(k)
+                        keys.append(k)
+            for kw in val.keywords:
+                if kw.arg and kw.arg not in seen:
+                    seen.add(kw.arg)
+                    keys.append(kw.arg)
+        # return {"key": ...}
+        elif isinstance(val, ast.Dict):
+            for k in _dict_keys(val):
+                if k not in seen:
+                    seen.add(k)
+                    keys.append(k)
+
+    return keys
+
+
 def _collect_comments(source: str) -> dict:
     """Tokenize source once and return {lineno: {text, position, marker}} for every comment."""
     import tokenize, io
@@ -233,6 +280,8 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     if ln in comment_map
                 ]
 
+            response_shape = _extract_response_shape(node) if http_route else []
+
             results.append(
                 FunctionRepresentation(
                     name=node.name,
@@ -245,6 +294,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     decorators=decorators,
                     inline_notes=inline_notes,
                     http_route=http_route,
+                    response_shape=response_shape,
                 )
             )
 

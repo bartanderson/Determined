@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
+**Last session (2026-07-13, session 171):** RM55 + RM56 confirmed done. RM57 done: response_shape extraction in parse_ast.py, response_consumers() in LanguageWalker, cross_language_linker.py linking pass, 15 tests. 831 passed, 1 skipped.
+
+**Previous (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
 
 **Previous (2026-07-13, session 168):** RM56 done (cc45439: _last_call_fqdn.pop() fix, tuple-unpack comment, 26 data_flow tests pass). Starting RM53 Phase 1.
 
@@ -310,7 +312,7 @@ RM54. **[DONE 2026-07-13]** JS static call graph: fn→fn call edges within JS/T
 
 ---
 
-RM55. **[TODO] JS data flow: variable binding and call-chain tracking (L1/L2/L3)**
+RM55. **[DONE 2026-07-13] JS data flow: variable binding and call-chain tracking (L1/L2/L3)**
 
    Depends on RM54. Mirrors the Python data_flow levels in JS/TS. Uses ast-grep
    via `LanguageWalker` — same backend as RM53/54, no new parser setup.
@@ -342,7 +344,7 @@ RM55. **[TODO] JS data flow: variable binding and call-chain tracking (L1/L2/L3)
 
 ---
 
-RM56. **[TODO] Python AST cleanup: shared fqdn helper, binding reset, tuple unpack**
+RM56. **[DONE 2026-07-13] Python AST cleanup: shared fqdn helper, binding reset, tuple unpack**
 
    Three known rough edges in parse_ast.py introduced across L1/L2/L3:
 
@@ -369,7 +371,7 @@ RM56. **[TODO] Python AST cleanup: shared fqdn helper, binding reset, tuple unpa
 
 ---
 
-RM57. **[TODO] Cross-language data flow: Python response shape → JS consumer**
+RM57. **[DONE 2026-07-13] Cross-language data flow: Python response shape → JS consumer**
 
    Depends on RM54 + RM55. The "data to data" path across the language boundary.
 
