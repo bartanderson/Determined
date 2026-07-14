@@ -695,15 +695,38 @@ class LanguageWalker:
         return self._basename
 
     def _go_callee_name(self, func_node) -> str | None:
-        """Extract callee name from a Go call expression's function field."""
+        """Extract callee name from a Go call expression's function field.
+
+        Only emits a name when the receiver is identifiable without reproducing
+        raw source text from chained call expressions (which produces unparseable
+        garbage callee strings and inflates edge counts with unresolvable noise).
+
+        Patterns handled:
+          identifier              → bare name
+          pkg.Function            → "pkg.Function"   (operand is identifier)
+          variable.Method         → "variable.Method" (operand is identifier)
+          s.field.Method          → "field.Method"   (operand is selector_expression)
+          getObj().Method         → None (skip — receiver is a call result)
+          a.b().c().d             → None (skip — chained temporary)
+        """
         kind = func_node.kind()
         if kind == "identifier":
             return func_node.text()
         if kind == "selector_expression":
             operand = func_node.field("operand")
             field = func_node.field("field")
-            if operand and field:
+            if not operand or not field:
+                return None
+            op_kind = operand.kind()
+            if op_kind == "identifier":
                 return f"{operand.text()}.{field.text()}"
+            if op_kind == "selector_expression":
+                # s.field.Method() — use the inner field as receiver
+                inner_field = operand.field("field")
+                if inner_field:
+                    return f"{inner_field.text()}.{field.text()}"
+            # call_expression or other complex receiver — skip to avoid garbage names
+            return None
         return None
 
     def _go_fn_ranges(self) -> list[tuple]:
@@ -813,18 +836,41 @@ class LanguageWalker:
         return ranges
 
     def _rust_callee_name(self, func_node) -> str | None:
-        """Extract callee name from a Rust call expression function field."""
+        """Extract callee name from a Rust call expression function field.
+
+        Only emits a name when the receiver is identifiable. Iterator and builder
+        method chains produce call_expression receivers whose .text() spans the
+        entire chain — emitting that as a callee name produces unresolvable garbage.
+
+        Patterns handled:
+          identifier              → bare name
+          scoped_identifier       → "Module::Function"
+          self.method             → "self.method"
+          variable.method         → "variable.method"   (value is identifier)
+          self.field.method       → "field.method"       (value is field_expression)
+          iter().filter_map(...)  → None (skip — value is call_expression)
+          a.b().c().d             → None (skip — chained temporary)
+        """
         kind = func_node.kind()
         if kind == "identifier":
             return func_node.text()
         if kind == "scoped_identifier":
             return func_node.text()  # e.g. "Module::Function"
         if kind == "field_expression":
-            # receiver.method — emit "receiver.method" for consistency with Go
             value = func_node.field("value")
             field = func_node.field("field")
-            if value and field:
+            if not value or not field:
+                return None
+            val_kind = value.kind()
+            if val_kind in ("identifier", "self"):
                 return f"{value.text()}.{field.text()}"
+            if val_kind == "field_expression":
+                # self.inner.method() — use inner field as receiver
+                inner_field = value.field("field")
+                if inner_field:
+                    return f"{inner_field.text()}.{field.text()}"
+            # call_expression or deeper chain — skip to avoid garbage names
+            return None
         return None
 
 
