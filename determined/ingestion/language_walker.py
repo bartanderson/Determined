@@ -933,7 +933,7 @@ class LanguageWalker:
                 continue
             name = name_node.text()
             fqdn = f"{package}.{name}"
-            results.append(self._make_symbol(fqdn, node))
+            results.append(self._make_symbol(fqdn, node, param_types_json=self._go_param_types(node)))
 
         # Method declarations: func (r ReceiverType) MethodName(...) ...
         for node in root.find_all({"rule": {"kind": "method_declaration"}}):
@@ -944,7 +944,7 @@ class LanguageWalker:
             receiver_type = self._go_receiver_type(receiver) if receiver else package
             method_name = name_node.text()
             fqdn = f"{receiver_type}.{method_name}"
-            results.append(self._make_symbol(fqdn, node))
+            results.append(self._make_symbol(fqdn, node, param_types_json=self._go_param_types(node)))
 
         return results
 
@@ -966,6 +966,27 @@ class LanguageWalker:
             if clean and clean[0].isupper():
                 return clean
         return self._basename
+
+    def _go_param_types(self, fn_node) -> str | None:
+        """Extract parameter types from a Go function/method node.
+        Returns JSON list of {"name": str, "type": str} or None if no typed params."""
+        params_node = fn_node.field("parameters")
+        if params_node is None:
+            return None
+        result = []
+        for param in params_node.find_all({"rule": {"kind": "parameter_declaration"}}):
+            type_node = param.field("type")
+            if type_node is None:
+                continue
+            type_str = type_node.text().lstrip("*").strip()
+            # name field may be absent for unnamed params or variadic
+            name_node = param.field("name")
+            name = name_node.text() if name_node else ""
+            result.append({"name": name, "type": type_str})
+        if not result:
+            return None
+        import json as _json
+        return _json.dumps(result)
 
     def _go_callee_name(self, func_node) -> str | None:
         """Extract callee name from a Go call expression's function field.
@@ -1050,7 +1071,7 @@ class LanguageWalker:
             if _in_impl(r.start.line):
                 continue
             fqdn = f"{module}::{name_node.text()}"
-            results.append(self._make_symbol(fqdn, node))
+            results.append(self._make_symbol(fqdn, node, param_types_json=self._rust_param_types(node)))
 
         # impl block methods
         for impl_node in root.find_all({"rule": {"kind": "impl_item"}}):
@@ -1064,9 +1085,29 @@ class LanguageWalker:
                 if name_node is None:
                     continue
                 fqdn = f"{type_name}::{name_node.text()}"
-                results.append(self._make_symbol(fqdn, fn_node))
+                results.append(self._make_symbol(fqdn, fn_node, param_types_json=self._rust_param_types(fn_node)))
 
         return results
+
+    def _rust_param_types(self, fn_node) -> str | None:
+        """Extract parameter types from a Rust function_item node.
+        Returns JSON list of {"name": str, "type": str} or None if no typed params."""
+        params_node = fn_node.field("parameters")
+        if params_node is None:
+            return None
+        result = []
+        for param in params_node.find_all({"rule": {"kind": "parameter"}}):
+            pattern = param.field("pattern")
+            type_node = param.field("type")
+            if type_node is None:
+                continue
+            name = pattern.text() if pattern else ""
+            type_str = type_node.text().strip()
+            result.append({"name": name, "type": type_str})
+        if not result:
+            return None
+        import json as _json
+        return _json.dumps(result)
 
     def _rust_fn_ranges(self) -> list[tuple]:
         ranges = []

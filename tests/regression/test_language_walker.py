@@ -666,3 +666,108 @@ fn do_work() {}
     callee_names = {c for _, c in edges}
     assert "println" not in callee_names
     assert "do_work" in callee_names
+
+
+# ---------------------------------------------------------------------------
+# Go: param_types_json
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+GO_TYPED_PARAMS = """
+package main
+
+func Add(x int, y int) int {
+    return x + y
+}
+
+func Greet(name string) string {
+    return "hello"
+}
+
+func NoParams() {}
+"""
+
+def test_go_param_types_basic():
+    w = LanguageWalker(GO_TYPED_PARAMS, "/fake/main.go", "go")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["main.Add"]["param_types_json"])
+    assert len(pt) == 2
+    assert pt[0] == {"name": "x", "type": "int"}
+    assert pt[1] == {"name": "y", "type": "int"}
+
+def test_go_param_types_string():
+    w = LanguageWalker(GO_TYPED_PARAMS, "/fake/main.go", "go")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["main.Greet"]["param_types_json"])
+    assert pt[0] == {"name": "name", "type": "string"}
+
+def test_go_no_params_is_none():
+    w = LanguageWalker(GO_TYPED_PARAMS, "/fake/main.go", "go")
+    syms = {s["name"]: s for s in w.symbols()}
+    assert syms["main.NoParams"]["param_types_json"] is None
+
+GO_METHOD_PARAMS = """
+package main
+
+type Server struct{}
+
+func (s *Server) Handle(req Request, w Writer) {}
+"""
+
+def test_go_method_param_types():
+    w = LanguageWalker(GO_METHOD_PARAMS, "/fake/main.go", "go")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["Server.Handle"]["param_types_json"])
+    assert len(pt) == 2
+    assert pt[0]["type"] == "Request"
+    assert pt[1]["type"] == "Writer"
+
+
+# ---------------------------------------------------------------------------
+# Rust: param_types_json
+# ---------------------------------------------------------------------------
+
+RUST_TYPED_PARAMS = """
+fn add(x: i32, y: i32) -> i32 {
+    x + y
+}
+
+fn greet(name: String) -> String {
+    name
+}
+
+fn no_params() {}
+
+struct Foo;
+impl Foo {
+    fn method(&self, val: u64) -> u64 { val }
+}
+"""
+
+def test_rust_param_types_basic():
+    w = LanguageWalker(RUST_TYPED_PARAMS, "/fake/lib.rs", "rust")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["lib::add"]["param_types_json"])
+    assert len(pt) == 2
+    assert pt[0] == {"name": "x", "type": "i32"}
+    assert pt[1] == {"name": "y", "type": "i32"}
+
+def test_rust_param_types_string():
+    w = LanguageWalker(RUST_TYPED_PARAMS, "/fake/lib.rs", "rust")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["lib::greet"]["param_types_json"])
+    assert pt[0] == {"name": "name", "type": "String"}
+
+def test_rust_no_params_is_none():
+    w = LanguageWalker(RUST_TYPED_PARAMS, "/fake/lib.rs", "rust")
+    syms = {s["name"]: s for s in w.symbols()}
+    assert syms["lib::no_params"]["param_types_json"] is None
+
+def test_rust_impl_method_param_types():
+    w = LanguageWalker(RUST_TYPED_PARAMS, "/fake/lib.rs", "rust")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["Foo::method"]["param_types_json"])
+    # &self is a self parameter, not a regular parameter — only val should appear
+    type_names = [p["type"] for p in pt]
+    assert "u64" in type_names
