@@ -410,14 +410,21 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = Fal
         # Try exact canonical match first; if nothing, also try the raw symbol as
         # stored (handles Go "Type.Method" and Rust "Type::Method" where target_id
         # may be the bare method name OR the full FQDN depending on how it was emitted).
+        # COALESCE(sr.file_path, f.file_path): symbol_references only exists for Python;
+        # for Go/Rust callers fall back to the caller's row in functions for location.
         rows = oracle.conn.execute(
             f"""
-            SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
+            SELECT ge.caller,
+                   COALESCE(sr.file_path, f.file_path),
+                   COALESCE(ge.line_number, f.line_number),
+                   COALESCE(ge.resolved, 0)
             FROM graph_edges ge
             LEFT JOIN symbol_references sr
                 ON ge.caller = sr.caller AND ge.callee = sr.callee
+            LEFT JOIN functions f
+                ON ge.caller = f.name
             WHERE (ge.target_id = ? OR ge.target_id = ?){res_filter}
-            ORDER BY sr.file_path, ge.line_number
+            ORDER BY COALESCE(sr.file_path, f.file_path), COALESCE(ge.line_number, f.line_number)
             """,
             (canonical, symbol),
         ).fetchall()
@@ -426,12 +433,17 @@ def _list_callers_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = Fal
         # Fall back to callee surface column with bare-name and FQ-name match.
         rows = oracle.conn.execute(
             f"""
-            SELECT ge.caller, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
+            SELECT ge.caller,
+                   COALESCE(sr.file_path, f.file_path),
+                   COALESCE(ge.line_number, f.line_number),
+                   COALESCE(ge.resolved, 0)
             FROM graph_edges ge
             LEFT JOIN symbol_references sr
                 ON ge.caller = sr.caller AND ge.callee = sr.callee
+            LEFT JOIN functions f
+                ON ge.caller = f.name
             WHERE (ge.callee = ? OR ge.callee LIKE ?){res_filter}
-            ORDER BY sr.file_path, ge.line_number
+            ORDER BY COALESCE(sr.file_path, f.file_path), COALESCE(ge.line_number, f.line_number)
             """,
             (canonical, f"%.{canonical}"),
         ).fetchall()
@@ -450,12 +462,17 @@ def _list_callees_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = Fal
     res_filter = " AND ge.resolved = 1" if resolved_only else ""
     rows = oracle.conn.execute(
         f"""
-        SELECT ge.callee, sr.file_path, ge.line_number, COALESCE(ge.resolved, 0)
+        SELECT ge.callee,
+               COALESCE(sr.file_path, f.file_path),
+               COALESCE(ge.line_number, f.line_number),
+               COALESCE(ge.resolved, 0)
         FROM graph_edges ge
         LEFT JOIN symbol_references sr
             ON ge.caller = sr.caller AND ge.callee = sr.callee
+        LEFT JOIN functions f
+            ON ge.callee = f.name
         WHERE ge.caller = ?{res_filter}
-        ORDER BY ge.line_number
+        ORDER BY COALESCE(ge.line_number, f.line_number)
         """,
         (symbol,),
     ).fetchall()
