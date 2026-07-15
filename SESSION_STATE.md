@@ -1,87 +1,95 @@
-Written at commit: e4b6125
+Written at commit: 42f786a
 
-# SESSION STATE - session 178
+# SESSION STATE - session 179
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 178, 2026-07-15)
+## What happened this session (session 179, 2026-07-15)
 
-**Go receiver types fixed [V]**
-- `_go_param_types` now prepends method receiver (e.g. `{"name":"r","type":"Model"}`) before regular params.
-- end-of-eden re-ingested: typed params 88% (was 60%). 533 symbols, 7,494 edges unchanged.
-- 1 new test: `test_go_method_receiver_in_param_types`. Updated `test_go_method_param_types` (len 3 not 2).
+**RM59 fully done [V]**
+- Phase 1 (prior session): list_features, feature_shape -- 15 tests
+- Phase 2 (this session): development_priorities -- 9 new tests (24 total)
+- Priority score = (1 - completeness) x entry_point_caller_count
+- Cross-feature blocker flag: stubs called from other features rank higher
+- All 3 tools in TOOLS dict and tool_registry
+- 917 passed, 1 skipped [V]
 
-**Plain JS excluded from annotation queue [V]**
-- `_build_annotation_queue` now skips `.js` and `.jsx` files -- no type syntax, LLM annotation meaningless.
-- `.ts`/`.tsx` stay in queue (TS has type annotations `_ts_param_types` can fill).
-- 1 new test: `test_queue_excludes_plain_js`. 892 passed, 1 skipped [V].
-
-**JS "typed params 0%" resolved as N/A [V]**
-- Plain JS has no type syntax. `_ts_param_types` bails for non-TS/TSX by design.
-- dungeoncrawler (56%) and rotjs (31%) typed params are correct -- both are TypeScript corpora (.ts files).
-- SESSION_STATE had them labeled "(JS)" -- corrected in corpus table below.
-
-**All corpora re-ingested [V]**
-- dj2: 1,399 fns / 9,931 edges (static 8,595 + data_flow 1,336) / docs 43% / typed 33%
-- ruggrogue re-ingested: 337 symbols / 2,741 edges (no Rust extraction changed)
-
-**RM59 filed [V]**
-- TRACKER.md: feature shape analysis -- list_features, feature_shape, development_priorities.
-- CLAUDE.md active arc updated (prior items 6/20/1 were already done, arc was stale).
-- Dashboard updated.
+**RM60 filed [V]**
+- Ran audit_corpora.py against all 7 corpus DBs
+- Found 2 structural problems before per-corpus work could start (see RM60)
+- Depth reference table written to TRACKER.md RM60 for all corpora
+- Phase 0 (prefix fix + missing inflation fix) must happen before Phase 1 eval
 
 ## NEXT SESSION -- start here
 
-**Implement RM59 Phase 1:**
-- `list_features([depth=1][, scope])` in `determined/agent/agent_tools.py`
-- `feature_shape(feature_path)` in `determined/agent/agent_tools.py`
-- Wire both into `determined/agent/tool_registry.py`
-- Regression tests in `tests/regression/test_feature_shape.py` (new file)
-- See TRACKER.md RM59 for full design
+**RM60 Phase 0 (two fixes, do both before corpus eval):**
 
-**Two RM59 implementation traps to avoid:**
+**Fix 1: Absolute path / prefix auto-strip**
+- `list_features`, `feature_shape`, `development_priorities` all need a `prefix` param
+- If omitted: auto-detect as the longest common path prefix across all `functions.file_path`
+- Strip prefix from path before computing depth and display labels
+- Goal: `list_features()` on any real corpus returns meaningful feature names like
+  `determined/agent` not `C:/Users/bartl/dev/Determined/determined/agent`
+- Where to add: extract a `_norm_and_strip(fp, prefix)` helper used by all three tools
+- Test: absolute-path corpus produces same feature names as equivalent relative-path corpus
 
-1. **Path normalization** -- DB file_paths use backslashes on Windows.
-   Directory prefix matching must normalize first:
-   `REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/')` then LIKE 'dir/%'.
-   Pattern already used in knowledge_status and ui_server.py mod_rows query.
+**Fix 2: External vs local "missing" callees**
+- Current: any callee not in functions table is "missing" -- inflates count hugely
+- Best proxy: callee name containing `.` is external (os.path.join, json.loads);
+  bare names without `.` are likely local gaps
+- Alternative (cleaner): drop "missing" from completeness% entirely; only stub count
+  drives the score. External deps are never actionable.
+- Whichever approach: test that stdlib/pip callees do not count as missing
 
-2. **`subgraph_around` is the path-tracing primitive** -- lives in
-   `determined/agent/graph_utils.py`. Use it (scoped) for feature_shape's
-   forward walk from entry points. Don't rewrite it.
+**RM60 Phase 1 evaluation order (after Phase 0):**
+1. end-of-eden (Go) - simplest, 0 stubs, verify entry point topology
+2. dungeoncrawler (TS) - small, 0 stubs, verify architecture match
+3. dnd-dungeon-gen (JS) - confirm 0-entry-point bug, file JS resolution gap item
+4. ruggrogue (Rust) - flat layout issue, evaluate file-level feature utility
+5. rotjs (TS library) - lib/src split, verify stubs and public API
+6. Determined (Python) - run depth=6 and depth=7, evaluate real gaps vs test noise
+7. dj2 (Python+JS) - feature_shape for world/ and dungeon/, find real stubs
 
-**Entry point SQL pattern (needed for feature_shape, not obvious):**
-```sql
--- entry points = local symbols called by at least one caller outside the directory
-SELECT DISTINCT callee FROM graph_edges
-WHERE callee IN (
-    SELECT name FROM functions WHERE REPLACE(file_path,'\\','/') LIKE 'dir/%'
-)
-AND caller NOT IN (
-    SELECT name FROM functions WHERE REPLACE(file_path,'\\','/') LIKE 'dir/%'
-)
-```
+**70% = after item 5 (rotjs). Flag for session switch after rotjs evaluation.**
+
+## Pre-audit findings [V]
+
+**Absolute path depth bug [V]:** All 7 corpus DBs store Windows absolute paths.
+`depth=1` produces single feature `C:` -- useless. Per-corpus correct depths:
+  | Corpus | Common prefix | Feature depth |
+  | Determined | C:/Users/bartl/dev/Determined | 6 |
+  | dj2 | C:/Users/bartl/dev/dj2 | 6 |
+  | end-of-eden | C:/Users/bartl/dev/corpora/end-of-eden | 7 |
+  | ruggrogue | C:/Users/bartl/dev/corpora/ruggrogue/src | 8 |
+  | dnd-dungeon-gen | C:/Users/bartl/dev/corpora/dnd-dungeon-gen/app | 8 |
+  | dungeoncrawler | C:/Users/bartl/dev/corpora/dungeoncrawler/src | 8 |
+  | rotjs | C:/Users/bartl/dev/corpora/rotjs | 7 |
+
+**dnd-dungeon-gen JS 0 entry points [?]:** All features show 0 entry points despite
+multi-directory structure. Likely JS cross-file call resolution is broken. Needs
+verification by checking a known cross-dir call exists in the source.
+
+**development_priorities score always 0.0 [V]:** Symptom of absolute path bug --
+everything in one `C:` feature means no cross-feature edges. Fixed by Fix 1.
 
 ## Corpus status [V]
 
 | Corpus | Syms | Edges | data_flow | Docs% | Typed% | Notes |
 |--------|------|-------|-----------|-------|--------|-------|
-| Determined (Python) | 1,904 | 16,588 | 2,503 | 39% | 36% | [V session 177] |
-| dj2 (Python+JS) | 1,399 | 9,931 | 1,336 | 43% | 33% | [V this session] |
-| end-of-eden (Go) | 533 | 7,494 | 4,148 | 39% | 88% | [V this session, was 60%] |
-| ruggrogue (Rust) | 337 | 2,741 | 439 | 29% | 83% | [V this session] |
-| dnd-dungeon-gen (JS) | 291 | 1,384 | 410 | 85% | 0% (N/A) | plain JS, correct |
-| dungeoncrawler (TS) | 78 | 192 | 29 | 88% | 56% | TypeScript, not plain JS |
-| rotjs (TS) | 626 | 2,239 | 353 | 37% | 31% | TypeScript, not plain JS |
+| Determined (Python) | 1,904 | 16,588 | 2,503 | 39% | 100% | [V session 177] |
+| dj2 (Python+JS) | 1,399 | 9,931 | 1,336 | 43% | 94% | [V session 178] |
+| end-of-eden (Go) | 533 | 7,494 | 4,148 | 40% | 89% | [V session 178] |
+| ruggrogue (Rust) | 337 | 2,741 | 439 | 30% | 83% | [V session 178] |
+| dnd-dungeon-gen (JS) | 291 | 1,384 | 410 | 86% | 0% (N/A) | plain JS |
+| dungeoncrawler (TS) | 78 | 192 | 29 | 88% | 56% | TypeScript |
+| rotjs (TS) | 626 | 2,239 | 353 | 37% | 31% | TypeScript library |
 
 ## Known issues (carried forward)
 
-**ingest route trap [V]:** Python corpora use EngineRunner (`python -m determined.engine.run_engine`).
-  ingest_lang_corpus.py is for pure Go/Rust/JS/TS only.
+**ingest route trap [V]:** Python corpora use EngineRunner. ingest_lang_corpus.py is Go/Rust/JS/TS only.
 **interface_dispatch caller_file empty [V]:** Interface types not in functions table.
 **addEventListener arrow fn not captured [V]:** Inline arrow callbacks not statically linkable.
-**RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
 **find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
 **GUIDE_DATA sync trap [V]:** guide_commonplace.json and console.html GUIDE_DATA separate.
 **Determined corpus DB path [V]:** C_Users_bartl_dev_Determined.db
@@ -95,6 +103,7 @@ AND caller NOT IN (
 **normalize_symbol strips :: [V]:** "Module::Fn" -> "Fn". Watch for Rust FQDN collisions.
 **Go resolution 15% [V]:** Correct -- unresolved are external libs (bubbletea, lipgloss).
 **JS typed params N/A [V]:** Plain JS has no type syntax. 0% is correct, not a gap.
-  dungeoncrawler and rotjs are TypeScript -- their typed% is real data, not noise.
+**RM59 tools need prefix param [V]:** list_features/feature_shape/development_priorities
+  assume relative paths; absolute Windows paths break depth=1. Fix is RM60 Phase 0.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
