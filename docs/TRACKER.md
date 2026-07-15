@@ -287,8 +287,13 @@ RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see a
 
    **Phase 2 - File gap items for confirmed problems**
    - [x] JS cross-file resolution gap - confirmed, filed as RM62
-   - [ ] Test-directory noise in development_priorities (filter option needed)
-   - [ ] Flat-layout usability (Rust src/ problem - auto-detect single-level flat?)
+   - [x] Test-directory noise in development_priorities (filter option needed)
+         Done 2026-07-15: exclude_tests=True default in list_features and development_priorities.
+         _is_test_feature() matches tests/, test/, spec/, __tests__/, test_*.py etc. 5 new tests.
+   - [x] Flat-layout usability (Rust src/ problem - auto-detect single-level flat?)
+         Resolved by Phase 0 prefix auto-detect: depth=1 after prefix strip gives individual
+         .rs files as features for ruggrogue, which is the correct Rust file-level granularity.
+         No additional code needed.
    - [ ] rotjs lib/src dual-representation confusion (document or auto-detect?)
    - [x] Language builtins as local-missing - confirmed, filed as RM61
    - [x] dj2 stubs identified: AIDungeonMaster/AdjudicationEngine/ActionQueue - real gaps

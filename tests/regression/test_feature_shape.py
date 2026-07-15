@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from determined.agent.agent_tools import (
     list_features, feature_shape, development_priorities,
     _detect_prefix, _strip_prefix, _is_external_callee, _detect_corpus_lang,
+    _is_test_feature,
 )
 
 
@@ -677,3 +678,107 @@ def test_development_priorities_py_builtins_not_counted_as_missing():
     # Miss column (index 3): only 'missing_local_fn' should count; builtins must not
     miss_val = int(parts[3])
     assert miss_val == 1, f"Expected Miss=1 (only missing_local_fn), got {miss_val}"
+
+
+# ---------------------------------------------------------------------------
+# RM60 Phase 2: test-directory noise filter
+# ---------------------------------------------------------------------------
+
+def _seed_test_dir_db(conn):
+    """
+    Corpus with both source and test directories.
+    tests/ has high EP (called by many) but should be excluded from analysis.
+    """
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        -- Source feature
+        INSERT INTO functions VALUES ('process',     'engine/core.py',          0, NULL, NULL);
+        INSERT INTO functions VALUES ('render',      'engine/render.py',        0, NULL, NULL);
+        -- Test directory (should be excluded by default)
+        INSERT INTO functions VALUES ('test_process','tests/test_engine.py',    0, NULL, NULL);
+        INSERT INTO functions VALUES ('test_render', 'tests/test_render.py',    0, NULL, NULL);
+        -- Standalone test file at root
+        INSERT INTO functions VALUES ('test_it',     'test_integration.py',     0, NULL, NULL);
+        -- engine calls an unresolved local (makes it incomplete)
+        INSERT INTO graph_edges VALUES ('process', 'missing_engine_fn', 'static', 0);
+        -- tests/ calls everything (high EP without filter)
+        INSERT INTO graph_edges VALUES ('test_process', 'process', 'static', 1);
+        INSERT INTO graph_edges VALUES ('test_render',  'render',  'static', 1);
+        INSERT INTO graph_edges VALUES ('test_it',      'process', 'static', 1);
+    """)
+
+
+def test_list_features_excludes_test_dirs_by_default():
+    """tests/ and test_integration.py must not appear in list_features output by default."""
+    conn = sqlite3.connect(":memory:")
+    _seed_test_dir_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1})
+    data_lines = [l for l in result.splitlines()
+                  if l.strip() and not l.startswith("Feature") and not l.startswith("-")
+                  and not l.startswith("  ")]
+    feature_names = [l.strip().split()[0] for l in data_lines if l.strip().split()]
+    assert any("engine" in n for n in feature_names), "engine feature missing"
+    assert not any(n.startswith("tests") for n in feature_names), "tests dir should be excluded"
+    assert not any("test_integration" in n for n in feature_names), "test file should be excluded"
+    assert "tests excluded" in result
+
+
+def test_list_features_includes_test_dirs_when_disabled():
+    """exclude_tests=false brings test dirs back."""
+    conn = sqlite3.connect(":memory:")
+    _seed_test_dir_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1, "exclude_tests": "false"})
+    assert "tests" in result
+
+
+def test_development_priorities_excludes_test_dirs_by_default():
+    """tests/ must not appear in development_priorities output by default."""
+    conn = sqlite3.connect(":memory:")
+    _seed_test_dir_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    data_lines = [l for l in result.splitlines()
+                  if "%" in l and l.strip() and not l.startswith("Feature") and not l.startswith("-")]
+    feature_names = [l.strip().split()[0] for l in data_lines if l.strip().split()]
+    assert any("engine" in n for n in feature_names), "engine feature missing"
+    assert not any(n.startswith("tests") for n in feature_names), "tests dir should be excluded"
+    assert not any("test_integration" in n for n in feature_names), "test file should be excluded"
+    assert "tests excluded" in result
+
+
+def test_development_priorities_includes_test_dirs_when_disabled():
+    """exclude_tests=false removes the 'tests excluded' header note."""
+    conn = sqlite3.connect(":memory:")
+    _seed_test_dir_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {"exclude_tests": "false"})
+    # Header should NOT mention 'tests excluded' when filter is off
+    assert "tests excluded" not in result
+
+
+def test_is_test_feature_patterns():
+    """_is_test_feature covers common test directory patterns."""
+    from determined.agent.agent_tools import _is_test_feature
+    assert _is_test_feature("tests/regression") is True
+    assert _is_test_feature("test") is True
+    assert _is_test_feature("tests") is True
+    assert _is_test_feature("__tests__") is True
+    assert _is_test_feature("spec") is True
+    assert _is_test_feature("test_integration.py") is True
+    assert _is_test_feature("engine") is False
+    assert _is_test_feature("determined/agent") is False
+    assert _is_test_feature("world") is False

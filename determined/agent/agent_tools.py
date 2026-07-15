@@ -6273,6 +6273,22 @@ def _detect_corpus_lang(conn) -> frozenset:
     return _LANG_BUILTINS.get(dominant, frozenset())
 
 
+_TEST_DIR_NAMES: frozenset = frozenset({
+    "test", "tests", "spec", "specs", "__tests__", "__test__",
+    "testing", "testcases", "test_cases",
+})
+
+
+def _is_test_feature(key: str) -> bool:
+    """True if the feature directory key looks like a test directory or file."""
+    if not key:
+        return False
+    first_seg = key.split("/")[0].lower()
+    # Strip trailing file extension for standalone test files (test_foo.py)
+    base = first_seg.split(".")[0] if "." in first_seg else first_seg
+    return base in _TEST_DIR_NAMES or base.startswith("test_") or base.startswith("spec_")
+
+
 def _is_external_callee(name: str, builtins: frozenset = frozenset()) -> bool:
     """
     True if the callee name looks like an external library call rather than a
@@ -6295,6 +6311,7 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     """
     depth = int(args.get("depth", 1))
     scope = args.get("scope", "").strip().replace("\\", "/").rstrip("/")
+    exclude_tests = str(args.get("exclude_tests", "true")).lower() not in ("false", "0", "no")
     conn = oracle.conn
 
     rows = conn.execute(
@@ -6320,6 +6337,8 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     for fp, name, is_stub in rows:
         key = dir_key(_fp_norm(fp))
         if scope and not key.startswith(scope):
+            continue
+        if exclude_tests and _is_test_feature(key):
             continue
         feat_symbols[key].add(name)
         if is_stub:
@@ -6358,7 +6377,8 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     )
 
     prefix_note = f" (prefix={prefix})" if prefix else ""
-    lines = [f"Features (depth={depth}" + (f", scope={scope}" if scope else "") + prefix_note + "):"]
+    test_note = ", tests excluded" if exclude_tests else ""
+    lines = [f"Features (depth={depth}" + (f", scope={scope}" if scope else "") + prefix_note + test_note + "):"]
     lines.append(f"{'Directory':<40} {'Syms':>5} {'Stubs':>5} {'EntryPts':>8} {'CrossEdges':>10}")
     lines.append("-" * 72)
     for feat in features:
@@ -6535,6 +6555,7 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     top_n = int(args.get("top_n", 10))
     depth = int(args.get("depth", 1))
     scope = args.get("scope", "").strip().replace("\\", "/").rstrip("/")
+    exclude_tests = str(args.get("exclude_tests", "true")).lower() not in ("false", "0", "no")
     conn = oracle.conn
     lang_builtins = _detect_corpus_lang(conn)
 
@@ -6563,6 +6584,8 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     for name, is_stub, fp in sym_rows:
         key = dir_key(_fp_norm(fp))
         if scope and not key.startswith(scope):
+            continue
+        if exclude_tests and _is_test_feature(key):
             continue
         sym_info[name] = {"feat": key, "is_stub": bool(is_stub)}
         all_known.add(name)
@@ -6695,8 +6718,9 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
         return "No incomplete features found" + (f" under scope '{scope}'" if scope else "") + "."
 
     prefix_note = f" prefix={prefix}" if prefix else ""
+    test_note = ", tests excluded" if exclude_tests else ""
     lines = ["Development priorities" + (f" scope={scope}" if scope else "")
-             + prefix_note + f", depth={depth}, top {len(top)} of {len(actionable)} incomplete:"]
+             + prefix_note + test_note + f", depth={depth}, top {len(top)} of {len(actionable)} incomplete:"]
     lines.append("")
     hdr = f"{'Feature':<35} {'Done%':>5} {'Stubs':>5} {'Miss':>4} {'EP':>4} {'Score':>6}  {'Flags'}"
     lines.append(hdr)
