@@ -226,13 +226,13 @@ RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see a
       completeness%.
 
    **Phase 0 - Fix structural problems first (prerequisite for accurate audit)**
-   - [ ] Add `prefix` param (auto-detected from common path prefix) to `list_features`,
+   - [x] Add `prefix` param (auto-detected from common path prefix) to `list_features`,
          `feature_shape`, and `development_priorities`. Labels strip the prefix.
-         Regression tests: relative and absolute path corpora both produce correct feature names.
-   - [ ] Fix "missing" inflation: distinguish local-missing from external-missing in
-         `feature_shape` and `development_priorities`. Local-missing = callee file path
-         starts with the corpus root; external = everything else.
-         Regression tests: external library callees do not count toward missing/completeness.
+         Done 2026-07-15: _detect_prefix/_strip_prefix/_dir_key_fn helpers. 14 new tests.
+   - [x] Fix "missing" inflation: _is_external_callee() filters dotted names (os.path.join
+         etc.) as external; only bare names count as local-missing in completeness%.
+         feature_shape distinguishes 'external' vs 'local-missing' in output.
+         Done 2026-07-15: 931 tests pass.
 
    **Phase 1 - Per-corpus evaluation (run after Phase 0)**
 
