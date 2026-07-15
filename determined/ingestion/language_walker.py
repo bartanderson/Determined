@@ -1438,12 +1438,18 @@ class LanguageWalker:
                     return None
                 return method
             if val_kind == "identifier":
-                return f"{value.text()}.{method}"
+                vt = value.text()
+                if vt.isdigit():  # tuple field: self.0.method() → skip
+                    return None
+                return f"{vt}.{method}"
             if val_kind == "field_expression":
                 # self.inner.method() — use inner field as receiver
                 inner_field = value.field("field")
                 if inner_field:
-                    return f"{inner_field.text()}.{method}"
+                    ft = inner_field.text()
+                    if ft.isdigit():  # tuple index: self.0.method() → skip
+                        return None
+                    return f"{ft}.{method}"
             # call_expression or deeper chain — skip to avoid garbage names
             return None
         return None

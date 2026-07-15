@@ -9,6 +9,8 @@ from __future__ import annotations
 import ast
 import builtins
 from pathlib import Path
+
+_PY_BUILTINS: frozenset = frozenset(dir(builtins))
 from typing import List, Optional
 from determined.ingestion.extract_symbols import extract_symbols
 from determined.identity.symbol_identity import SymbolIdentity
@@ -719,6 +721,7 @@ def _extract_symbol_references(
             # data_flow edges: fn_b(fn_a()) means fn_b calls fn_a and uses its
             # return value as an argument -- store as fn_b -> fn_a, edge_type='data_flow'
             outer_fqdn = fqdn
+            _py_builtins = _PY_BUILTINS
 
             def _extract_raw_name(func_node):
                 if isinstance(func_node, ast.Name):
@@ -747,6 +750,9 @@ def _extract_symbol_references(
             for arg in node.args:
                 if isinstance(arg, ast.Call):
                     # Level 1: fn_b(fn_a()) -> data_flow edge fn_b -> fn_a
+                    # Skip when outer is a Python builtin (len, list, set, etc.)
+                    if outer_fqdn in _py_builtins:
+                        continue
                     inner_raw = _extract_raw_name(arg.func)
                     if inner_raw:
                         inner_identity = SymbolIdentity(
@@ -767,6 +773,8 @@ def _extract_symbol_references(
                         ))
                 elif isinstance(arg, ast.Name):
                     # Level 2: fn_b(result) where result = fn_a() -> data_flow edge fn_b -> fn_a
+                    if outer_fqdn in _py_builtins:
+                        continue
                     bound_callee = self._fn_bindings.get(arg.id)
                     if bound_callee:
                         results.append((
@@ -789,6 +797,8 @@ def _extract_symbol_references(
             for kw in node.keywords:
                 if kw.arg is None:
                     continue  # **kwargs unpack, skip
+                if outer_fqdn in _py_builtins:
+                    continue
                 if isinstance(kw.value, ast.Name):
                     bound_callee = self._fn_bindings.get(kw.value.id)
                     if bound_callee:

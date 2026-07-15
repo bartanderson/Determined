@@ -926,9 +926,9 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                 _external_interface_dispatch_pass(cursor, ifaces, lang, file_paths, logger=logger)
 
     # Cross-file resolution post-pass: mark an edge resolved=1 when the callee
-    # matches a known JS/TS symbol (full fqdn OR the bare suffix after the last '.').
-    # This covers both same-file and cross-file calls.  The walker always emits
-    # resolved=False because it only sees one file at a time; this pass has the full set.
+    # matches a known symbol (full fqdn OR the bare suffix after the last '.' or '::').
+    # Covers JS/TS (dot separator), Go (pkg.Type), Rust (Type::method).
+    # The walker always emits resolved=False (single-file view); this pass has the full set.
     if file_paths:
         cursor.execute(f"""
             UPDATE graph_edges
@@ -943,6 +943,10 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                     OR (
                       INSTR(f.name, '.') > 0
                       AND SUBSTR(f.name, INSTR(f.name, '.') + 1) = graph_edges.callee
+                    )
+                    OR (
+                      INSTR(f.name, '::') > 0
+                      AND SUBSTR(f.name, INSTR(f.name, '::') + 2) = graph_edges.callee
                     )
                   )
               )
