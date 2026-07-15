@@ -6369,6 +6369,185 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def development_priorities(oracle: "DBOracle", args: dict) -> str:
+    """
+    development_priorities([scope][, top_n=10][, depth=1]) — ranked feature priority table.
+
+    For each feature directory:
+      completeness = implemented / (implemented + stub + missing_local)
+        where missing_local = callees of local symbols that have no functions row
+                              (external/unresolved are excluded from the count)
+      priority_score = (1 - completeness) * entry_point_caller_count
+    Cross-feature blockers (local stubs called by other features) rank above
+    self-contained gaps at the same priority score.
+    Flags features that lack any design_note coverage in knowledge_artifacts.
+    """
+    from collections import defaultdict
+
+    top_n = int(args.get("top_n", 10))
+    depth = int(args.get("depth", 1))
+    scope = args.get("scope", "").strip().replace("\\", "/").rstrip("/")
+    conn = oracle.conn
+
+    # --- 1. Load all symbols grouped by feature directory ---
+    sym_rows = conn.execute(
+        "SELECT name, is_stub, "
+        "REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp "
+        "FROM functions"
+    ).fetchall()
+
+    if not sym_rows:
+        return "No functions found in corpus."
+
+    def _dir_key(fp: str) -> str:
+        parts = fp.split("/")
+        return "/".join(parts[:depth]) if len(parts) > 1 else parts[0]
+
+    # sym_info: name -> {feat, is_stub}
+    sym_info: dict[str, dict] = {}
+    feat_impl: dict[str, int] = defaultdict(int)
+    feat_stub: dict[str, int] = defaultdict(int)
+    all_known: set[str] = set()
+
+    for name, is_stub, fp in sym_rows:
+        key = _dir_key(fp)
+        if scope and not key.startswith(scope):
+            continue
+        sym_info[name] = {"feat": key, "is_stub": bool(is_stub)}
+        all_known.add(name)
+        if is_stub:
+            feat_stub[key] += 1
+        else:
+            feat_impl[key] += 1
+
+    if not sym_info:
+        return "No features found" + (f" under scope '{scope}'" if scope else "") + "."
+
+    all_features = set(feat_impl.keys()) | set(feat_stub.keys())
+
+    # --- 2. Load all edges once ---
+    edge_rows = conn.execute("SELECT caller, callee FROM graph_edges").fetchall()
+
+    # --- 3. Compute per-feature metrics from edges ---
+    # entry_point_callers: count of edges where callee is in feature AND caller is from different feature
+    feat_ep_callers: dict[str, int] = defaultdict(int)
+    # missing_callees: callees of local symbols that don't appear in functions table
+    feat_missing: dict[str, set] = defaultdict(set)
+    # stub_caller_count: for each stub, how many callers it has from OTHER features
+    stub_cross_callers: dict[str, int] = defaultdict(int)
+
+    for caller, callee in edge_rows:
+        caller_info = sym_info.get(caller)
+        callee_info = sym_info.get(callee)
+
+        # Entry point: callee in a feature, caller from a different feature
+        if callee_info and caller_info and caller_info["feat"] != callee_info["feat"]:
+            feat_ep_callers[callee_info["feat"]] += 1
+
+        # Missing: caller is local, callee not in functions table at all
+        if caller_info and callee not in all_known:
+            feat_missing[caller_info["feat"]].add(callee)
+
+        # Cross-feature blocker: callee is a stub in a different feature than caller
+        if (callee_info and callee_info["is_stub"]
+                and caller_info and caller_info["feat"] != callee_info["feat"]):
+            stub_cross_callers[callee] += 1
+
+    # --- 4. Cross-feature blocker flag per feature ---
+    # A feature is a cross-feature blocker if any of its stubs are called from outside
+    feat_is_blocker: dict[str, bool] = defaultdict(bool)
+    for stub_name, count in stub_cross_callers.items():
+        if count > 0 and stub_name in sym_info:
+            feat = sym_info[stub_name]["feat"]
+            feat_is_blocker[feat] = True
+
+    # --- 5. Compute scores ---
+    # best blocking stub per feature = the local stub with most cross-feature callers
+    feat_blocking_stub: dict[str, str] = {}
+    for stub_name in stub_cross_callers:
+        if stub_name in sym_info:
+            feat = sym_info[stub_name]["feat"]
+            prev = feat_blocking_stub.get(feat)
+            if prev is None or stub_cross_callers[stub_name] > stub_cross_callers.get(prev, 0):
+                feat_blocking_stub[feat] = stub_name
+    # fallback: most-stubbed feature gets any stub as blocking node
+    for feat in all_features:
+        if feat not in feat_blocking_stub and feat_stub[feat] > 0:
+            # pick alphabetically-first stub in this feature
+            stubs_in_feat = [n for n, info in sym_info.items()
+                             if info["feat"] == feat and info["is_stub"]]
+            if stubs_in_feat:
+                feat_blocking_stub[feat] = sorted(stubs_in_feat)[0]
+
+    # --- 6. Design doc coverage ---
+    design_feats: set[str] = set()
+    try:
+        da_rows = conn.execute(
+            "SELECT content FROM knowledge_artifacts WHERE kind='design_note'"
+        ).fetchall()
+        for (content,) in da_rows:
+            if content:
+                for feat in all_features:
+                    if feat.split("/")[-1] in content or feat in content:
+                        design_feats.add(feat)
+    except Exception:
+        pass  # knowledge_artifacts may not exist in test DBs
+
+    # --- 7. Rank features ---
+    records = []
+    for feat in all_features:
+        impl = feat_impl[feat]
+        stub = feat_stub[feat]
+        missing = len(feat_missing[feat])
+        total = impl + stub + missing
+        completeness = impl / total if total > 0 else 1.0
+        ep = feat_ep_callers[feat]
+        priority = (1.0 - completeness) * ep
+        records.append({
+            "feat": feat,
+            "impl": impl,
+            "stub": stub,
+            "missing": missing,
+            "completeness": completeness,
+            "ep": ep,
+            "priority": priority,
+            "is_blocker": feat_is_blocker[feat],
+            "has_docs": feat in design_feats,
+            "blocking_stub": feat_blocking_stub.get(feat, "-"),
+        })
+
+    # Sort: cross-feature blockers first at same priority, then by priority desc, completeness asc
+    records.sort(key=lambda r: (-r["priority"], -r["is_blocker"], r["completeness"]))
+
+    # Only features with stubs or missing nodes are worth surfacing in priority list
+    actionable = [r for r in records if r["stub"] > 0 or r["missing"] > 0]
+    top = actionable[:top_n]
+
+    if not top:
+        return "No incomplete features found" + (f" under scope '{scope}'" if scope else "") + "."
+
+    lines = ["Development priorities" + (f" (scope={scope})" if scope else "")
+             + f", depth={depth}, top {len(top)} of {len(actionable)} incomplete:"]
+    lines.append("")
+    hdr = f"{'Feature':<35} {'Done%':>5} {'Stubs':>5} {'Miss':>4} {'EP':>4} {'Score':>6}  {'Flags'}"
+    lines.append(hdr)
+    lines.append("-" * len(hdr))
+    for r in top:
+        flags = []
+        if r["is_blocker"]:
+            flags.append("BLOCKER")
+        if not r["has_docs"]:
+            flags.append("no-docs")
+        flag_str = " ".join(flags)
+        lines.append(
+            f"{r['feat']:<35} {r['completeness']*100:>4.0f}% {r['stub']:>5} {r['missing']:>4} "
+            f"{r['ep']:>4} {r['priority']:>6.1f}  {flag_str}"
+        )
+        if r["blocking_stub"] != "-":
+            lines.append(f"  -> blocking stub: {r['blocking_stub']}")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------
 # RECONCILIATION TOOLS (RM19)
 # ------------------------------------------------------------------
@@ -6977,6 +7156,7 @@ TOOLS = {
     # Feature shape analysis (RM59)
     "list_features":                    (list_features,                    "oracle"),
     "feature_shape":                    (feature_shape,                    "oracle"),
+    "development_priorities":           (development_priorities,           "oracle"),
     # Reconciliation / duplicate detection (RM19)
     "find_duplicates":                  (find_duplicates,                  "assessor"),
     "list_reconciliation_findings":     (list_reconciliation_findings,     "assessor"),

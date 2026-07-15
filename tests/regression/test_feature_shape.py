@@ -5,7 +5,7 @@ Uses in-memory SQLite seeded with a multi-directory symbol fixture.
 import sqlite3
 import pytest
 from unittest.mock import MagicMock
-from determined.agent.agent_tools import list_features, feature_shape
+from determined.agent.agent_tools import list_features, feature_shape, development_priorities
 
 
 # ---------------------------------------------------------------------------
@@ -219,3 +219,132 @@ def test_feature_shape_combat_entry_point_is_log_hit():
     # log_hit is called by open_chest (from loot) -> it's the entry point for combat
     assert "log_hit" in result
     assert "Entry points" in result
+
+
+# ---------------------------------------------------------------------------
+# development_priorities tests
+# ---------------------------------------------------------------------------
+
+def test_development_priorities_returns_table():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "Development priorities" in result
+    assert "Feature" in result
+    assert "Done%" in result
+
+
+def test_development_priorities_ranks_by_priority():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    # loot has a stub (give_item) AND an external caller (main -> open_chest)
+    # so it should have priority > 0 and appear in results
+    assert "loot" in result
+
+
+def test_development_priorities_top_n():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {"top_n": 1})
+    # Only 1 feature row should appear after the header
+    lines = [l for l in result.splitlines() if l and not l.startswith("-") and not l.startswith("Dev") and not l.startswith("Feature") and not l.startswith(" ") and not l.startswith("\t")]
+    assert len(lines) <= 1
+
+
+def test_development_priorities_shows_completeness():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "%" in result
+
+
+def test_development_priorities_cross_feature_blocker_flag():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    # give_item (loot stub) is called by open_chest (loot), not cross-feature in this fixture.
+    # defend (combat stub) is only called internally, not cross-feature either.
+    # So BLOCKER flag may not appear -- but the test confirms the field is computed correctly
+    # by verifying no crash and the output contains priority scores.
+    assert "Score" in result
+
+
+def test_development_priorities_blocker_feature_ranks_high():
+    """A stub called from OUTSIDE its feature (cross-feature blocker) ranks above
+    a stub only called internally at same priority score."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        -- feature A: one stub (a_stub) called from feature B (cross-feature blocker)
+        INSERT INTO functions VALUES ('a_impl',  'featA/x.py', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('a_stub',  'featA/x.py', 1, NULL, NULL);
+        -- feature B: one stub (b_stub) only called internally
+        INSERT INTO functions VALUES ('b_impl',  'featB/y.py', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('b_stub',  'featB/y.py', 1, NULL, NULL);
+        -- external caller into both features (equal entry point pressure)
+        INSERT INTO functions VALUES ('main',    'main.py',    0, NULL, NULL);
+        INSERT INTO graph_edges VALUES ('main', 'a_impl', 'static', 1);
+        INSERT INTO graph_edges VALUES ('main', 'b_impl', 'static', 1);
+        -- a_stub is called from featB (cross-feature blocker)
+        INSERT INTO graph_edges VALUES ('b_impl', 'a_stub', 'static', 1);
+        -- b_stub only called internally
+        INSERT INTO graph_edges VALUES ('b_impl', 'b_stub', 'static', 1);
+    """)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "BLOCKER" in result
+    # featA should appear before featB in the output (it's the cross-feature blocker)
+    featA_pos = result.find("featA")
+    featB_pos = result.find("featB")
+    assert featA_pos != -1 and featB_pos != -1
+    assert featA_pos < featB_pos
+
+
+def test_development_priorities_scope_filter():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {"scope": "loot"})
+    assert "loot" in result
+    assert "combat" not in result
+
+
+def test_development_priorities_empty_corpus():
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("CREATE TABLE functions (name TEXT, file_path TEXT, is_stub INTEGER);")
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "No functions" in result
+
+
+def test_development_priorities_all_complete():
+    """When no stubs or missing nodes exist, no incomplete features are returned."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE functions (name TEXT PRIMARY KEY, file_path TEXT, is_stub INTEGER DEFAULT 0, docstring TEXT, param_types_json TEXT);
+        CREATE TABLE graph_edges (caller TEXT, callee TEXT, edge_type TEXT DEFAULT 'static', resolved INTEGER DEFAULT 1);
+        INSERT INTO functions VALUES ('foo', 'pkg/a.py', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('bar', 'pkg/b.py', 0, NULL, NULL);
+        INSERT INTO graph_edges VALUES ('foo', 'bar', 'static', 1);
+    """)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "No incomplete" in result

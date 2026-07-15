@@ -241,6 +241,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Understanding what a feature does end-to-end; finding which stubs block its completion; discovering its cross-feature dependencies.",
         "category": "understanding",
     },
+    "development_priorities": {
+        "purpose": "Rank all features by implementation priority. Score = (1 - completeness) × entry-point-caller-count. Cross-feature blockers (stubs called from other features) rank above self-contained gaps. Flags features without design doc coverage.",
+        "args": {
+            "top_n": "(optional) max features to return, default 10",
+            "depth": "(optional) directory depth for feature grouping, default 1",
+            "scope": "(optional) restrict to dirs matching this prefix",
+        },
+        "output": "ranked table: feature, completeness%, stub count, missing count, entry points, priority score, blocker/no-docs flags, top blocking stub",
+        "feeds": ["feature_shape", "list_stubs", "completion_contract", "readiness_check"],
+        "use_when": "Deciding what to work on next across the whole corpus; finding which incomplete features are blocking the most callers; getting a codebase-wide priority ordering.",
+        "category": "discovery",
+    },
     "find_abc_gaps": {
         "purpose": "Find abstract-interface methods (stubs on ABC classes) that have no non-stub override anywhere in the corpus — the unimplemented interface frontier.",
         "args": {},

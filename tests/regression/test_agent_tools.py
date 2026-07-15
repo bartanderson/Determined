@@ -552,6 +552,7 @@ def test_dispatch_all_tools_registered():
         # RM59: feature shape analysis
         "list_features",
         "feature_shape",
+        "development_priorities",
     }
 
     assert set(TOOLS.keys()) == expected
