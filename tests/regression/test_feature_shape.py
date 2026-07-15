@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import MagicMock
 from determined.agent.agent_tools import (
     list_features, feature_shape, development_priorities,
-    _detect_prefix, _strip_prefix, _is_external_callee,
+    _detect_prefix, _strip_prefix, _is_external_callee, _detect_corpus_lang,
 )
 
 
@@ -590,3 +590,90 @@ def test_development_priorities_external_not_counted_as_missing():
         miss_idx = 3  # Done% Stubs Miss EP Score columns
         miss_val = int(parts[miss_idx])
         assert miss_val == 0, f"Expected 0 local-missing for loot, got {miss_val}"
+
+
+# ---------------------------------------------------------------------------
+# RM61: language builtins classified as external (not local-missing)
+# ---------------------------------------------------------------------------
+
+def _seed_py_builtins_db(conn):
+    """
+    Python corpus where a function calls len, print, range, and isinstance —
+    all builtins that must NOT count as local-missing.
+    Also calls 'missing_local_fn' which IS a genuine local gap.
+    """
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        INSERT INTO functions VALUES ('process', 'utils/helpers.py', 0, NULL, NULL);
+        INSERT INTO graph_edges VALUES ('process', 'len',              'static', 0);
+        INSERT INTO graph_edges VALUES ('process', 'print',            'static', 0);
+        INSERT INTO graph_edges VALUES ('process', 'range',            'static', 0);
+        INSERT INTO graph_edges VALUES ('process', 'isinstance',       'static', 0);
+        INSERT INTO graph_edges VALUES ('process', 'missing_local_fn', 'static', 0);
+    """)
+
+
+def test_is_external_py_builtins():
+    """Python builtins are external when the builtin set is passed."""
+    from determined.agent.agent_tools import _PY_BUILTINS
+    assert _is_external_callee("len", _PY_BUILTINS) is True
+    assert _is_external_callee("print", _PY_BUILTINS) is True
+    assert _is_external_callee("range", _PY_BUILTINS) is True
+    assert _is_external_callee("isinstance", _PY_BUILTINS) is True
+
+
+def test_is_external_bare_not_builtin():
+    """A bare non-builtin name remains non-external (local-missing candidate)."""
+    from determined.agent.agent_tools import _PY_BUILTINS
+    assert _is_external_callee("missing_local_fn", _PY_BUILTINS) is False
+    assert _is_external_callee("give_item", _PY_BUILTINS) is False
+
+
+def test_detect_corpus_lang_python():
+    """_detect_corpus_lang returns Python builtins for a .py corpus."""
+    from determined.agent.agent_tools import _PY_BUILTINS
+    conn = sqlite3.connect(":memory:")
+    _seed_py_builtins_db(conn)
+    result = _detect_corpus_lang(conn)
+    assert result == _PY_BUILTINS
+
+
+def test_detect_corpus_lang_unknown_returns_empty():
+    """Corpus with no recognized extension returns empty frozenset."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE functions (name TEXT, file_path TEXT, is_stub INTEGER DEFAULT 0,
+            docstring TEXT, param_types_json TEXT);
+        INSERT INTO functions VALUES ('foo', 'module/bar.xyz', 0, NULL, NULL);
+    """)
+    result = _detect_corpus_lang(conn)
+    assert result == frozenset()
+
+
+def test_development_priorities_py_builtins_not_counted_as_missing():
+    """len/print/range/isinstance should not inflate Miss count in a Python corpus."""
+    conn = sqlite3.connect(":memory:")
+    _seed_py_builtins_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    # Feature label is relative to prefix (utils/); at depth=1 it shows as 'helpers.py'
+    # Skip header/separator lines by requiring the line NOT to start with 'Feature' or '-'
+    feat_lines = [l for l in result.splitlines()
+                  if "%" in l and l.strip() and not l.startswith("Feature") and not l.startswith("-")]
+    assert feat_lines, "No feature rows found in development_priorities output"
+    parts = feat_lines[0].split()
+    # Miss column (index 3): only 'missing_local_fn' should count; builtins must not
+    miss_val = int(parts[3])
+    assert miss_val == 1, f"Expected Miss=1 (only missing_local_fn), got {miss_val}"

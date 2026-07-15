@@ -6208,13 +6208,78 @@ def _dir_key_fn(depth: int, prefix: str):
     return key
 
 
-def _is_external_callee(name: str) -> bool:
+_PY_BUILTINS: frozenset = frozenset({
+    "abs", "aiter", "all", "anext", "any", "ascii", "bin", "bool", "breakpoint",
+    "bytearray", "bytes", "callable", "chr", "classmethod", "compile", "complex",
+    "copyright", "credits", "delattr", "dict", "dir", "divmod", "enumerate",
+    "eval", "exec", "exit", "filter", "float", "format", "frozenset", "getattr",
+    "globals", "hasattr", "hash", "help", "hex", "id", "input", "int", "isinstance",
+    "issubclass", "iter", "len", "license", "list", "locals", "map", "max",
+    "memoryview", "min", "next", "object", "oct", "open", "ord", "pow", "print",
+    "property", "quit", "range", "repr", "reversed", "round", "set", "setattr",
+    "slice", "sorted", "staticmethod", "str", "sum", "super", "tuple", "type",
+    "vars", "zip", "__import__",
+    # common exceptions
+    "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
+    "AttributeError", "RuntimeError", "StopIteration", "NotImplementedError",
+    "OSError", "IOError", "FileNotFoundError", "PermissionError", "AssertionError",
+    "NameError", "ImportError", "ArithmeticError", "ZeroDivisionError",
+    "OverflowError", "MemoryError", "RecursionError", "SystemExit",
+    "KeyboardInterrupt", "GeneratorExit", "BaseException", "Warning",
+})
+
+_GO_BUILTINS: frozenset = frozenset({
+    "make", "len", "cap", "new", "append", "copy", "delete", "close",
+    "panic", "recover", "print", "println", "real", "imag", "complex",
+    # primitive type names
+    "bool", "byte", "rune", "string", "error",
+    "int", "int8", "int16", "int32", "int64",
+    "uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+    "float32", "float64", "complex64", "complex128",
+})
+
+_RUST_BUILTINS: frozenset = frozenset({
+    # macros (without !)
+    "vec", "println", "print", "eprintln", "eprint", "format", "panic",
+    "assert", "assert_eq", "assert_ne", "debug_assert", "debug_assert_eq",
+    "debug_assert_ne", "todo", "unimplemented", "unreachable", "dbg",
+    "write", "writeln", "include", "include_str", "include_bytes",
+    "concat", "env", "option_env", "stringify", "cfg", "matches",
+})
+
+# Map dominant file extension -> builtin set
+_LANG_BUILTINS: dict = {
+    ".py": _PY_BUILTINS,
+    ".go": _GO_BUILTINS,
+    ".rs": _RUST_BUILTINS,
+}
+
+
+def _detect_corpus_lang(conn) -> frozenset:
+    """Return builtin set for the dominant language in the corpus, or empty set."""
+    try:
+        rows = conn.execute("SELECT file_path FROM files LIMIT 500").fetchall()
+    except Exception:
+        # Fallback: try functions table file_path
+        try:
+            rows = conn.execute("SELECT file_path FROM functions LIMIT 500").fetchall()
+        except Exception:
+            return frozenset()
+    counts: dict = {}
+    for (fp,) in rows:
+        ext = fp[fp.rfind("."):] if "." in fp else ""
+        counts[ext] = counts.get(ext, 0) + 1
+    dominant = max(counts, key=lambda e: counts[e], default="")
+    return _LANG_BUILTINS.get(dominant, frozenset())
+
+
+def _is_external_callee(name: str, builtins: frozenset = frozenset()) -> bool:
     """
     True if the callee name looks like an external library call rather than a
-    local symbol. Heuristic: dotted names (os.path.join, json.loads, bubbletea.Run)
-    are external; plain bare names are candidate local gaps.
+    local symbol. Dotted names (os.path.join, json.loads) are external; names
+    in the language-specific builtin set are also external.
     """
-    return "." in name
+    return "." in name or name in builtins
 
 
 def list_features(oracle: "DBOracle", args: dict) -> str:
@@ -6324,6 +6389,7 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
         return "ERROR: feature_path is required."
 
     conn = oracle.conn
+    lang_builtins = _detect_corpus_lang(conn)
 
     # Detect/apply prefix so feature_path can be relative even in absolute-path DBs
     all_fps_raw = [r[0] for r in conn.execute(
@@ -6406,7 +6472,7 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
                     queue.append(callee)
             elif callee in all_known:
                 cross_feature_edges.append((node, callee, "cross-feature"))
-            elif _is_external_callee(callee):
+            elif _is_external_callee(callee, lang_builtins):
                 cross_feature_edges.append((node, callee, "external"))
             else:
                 cross_feature_edges.append((node, callee, "local-missing"))
@@ -6470,6 +6536,7 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     depth = int(args.get("depth", 1))
     scope = args.get("scope", "").strip().replace("\\", "/").rstrip("/")
     conn = oracle.conn
+    lang_builtins = _detect_corpus_lang(conn)
 
     # --- 1. Load all symbols grouped by feature directory ---
     sym_rows = conn.execute(
@@ -6544,7 +6611,7 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
             feat_ep_callers[callee_info["feat"]] += 1
 
         # Local-missing: caller is local, callee not in functions, name looks local (no '.')
-        if caller_info and not _in_known(callee) and not _is_external_callee(callee):
+        if caller_info and not _in_known(callee) and not _is_external_callee(callee, lang_builtins):
             feat_missing[caller_info["feat"]].add(callee)
 
         # Cross-feature blocker: callee is a stub called from a different feature
