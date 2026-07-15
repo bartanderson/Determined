@@ -6386,6 +6386,22 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
             f"{feat:<40} {len(feat_symbols[feat]):>5} {feat_stubs[feat]:>5} "
             f"{feat_entry_points[feat]:>8} {feat_cross_edges[feat]:>10}"
         )
+
+    # Compiled-output warning: lib/dist/build/out dominates EP while src/ exists with symbols
+    if not scope:
+        _COMPILED_NAMES = {"lib", "dist", "build", "out"}
+        compiled_ep = {f: feat_entry_points[f] for f in features if f.split("/")[0] in _COMPILED_NAMES}
+        src_ep = feat_entry_points.get("src", 0)
+        src_syms = len(feat_symbols.get("src", set()))
+        for compiled_feat, ep in compiled_ep.items():
+            if ep >= 5 * max(src_ep, 1) and src_syms > 10:
+                lines.append(
+                    f"\nNote: '{compiled_feat}' ({ep} EP) appears to be compiled output "
+                    f"mirroring 'src/' ({src_syms} syms, {src_ep} EP). "
+                    f"For architecture analysis use: scope=src"
+                )
+                break
+
     return "\n".join(lines)
 
 

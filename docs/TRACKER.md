@@ -294,7 +294,10 @@ RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see a
          Resolved by Phase 0 prefix auto-detect: depth=1 after prefix strip gives individual
          .rs files as features for ruggrogue, which is the correct Rust file-level granularity.
          No additional code needed.
-   - [ ] rotjs lib/src dual-representation confusion (document or auto-detect?)
+   - [x] rotjs lib/src dual-representation confusion (document or auto-detect?)
+         Done 2026-07-15: list_features detects compiled-output pattern (lib/dist/build/out
+         EP >= 5x src/ EP, src/ has >10 syms) and appends a Note suggesting scope=src.
+         Warning suppressed when scope= already active. 3 new regression tests.
    - [x] Language builtins as local-missing - confirmed, filed as RM61
    - [x] dj2 stubs identified: AIDungeonMaster/AdjudicationEngine/ActionQueue - real gaps
 

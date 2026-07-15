@@ -782,3 +782,84 @@ def test_is_test_feature_patterns():
     assert _is_test_feature("engine") is False
     assert _is_test_feature("determined/agent") is False
     assert _is_test_feature("world") is False
+
+
+# ---------------------------------------------------------------------------
+# RM60 Phase 2: compiled-output warning (lib/src dual-representation)
+# ---------------------------------------------------------------------------
+
+def _seed_lib_src_db(conn):
+    """
+    Simulates a TS library with lib/ (compiled output, high EP) and src/ (source, low EP).
+    lib/ should trigger the compiled-output warning when EP >> src/ EP.
+    """
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        -- lib/ symbols (compiled output)
+        INSERT INTO functions VALUES ('lib.rng',   'lib/rng.js',  0, NULL, NULL);
+        INSERT INTO functions VALUES ('lib.util',  'lib/util.js', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('lib.map',   'lib/map.js',  0, NULL, NULL);
+        -- src/ symbols (TS source, many)
+        INSERT INTO functions VALUES ('src.rng',   'src/rng.ts',  0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.util',  'src/util.ts', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.map',   'src/map.ts',  0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.fov',   'src/fov.ts',  0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.path',  'src/path.ts', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.noise', 'src/noise.ts',0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.color', 'src/color.ts',0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.sched', 'src/sched.ts',0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.disp',  'src/disp.ts', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.event', 'src/event.ts',0, NULL, NULL);
+        INSERT INTO functions VALUES ('src.text',  'src/text.ts', 0, NULL, NULL);
+        -- examples all call lib/ (giving lib/ high EP)
+        INSERT INTO functions VALUES ('ex.demo1',  'examples/demo1.js', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('ex.demo2',  'examples/demo2.js', 0, NULL, NULL);
+        INSERT INTO graph_edges VALUES ('ex.demo1', 'lib.rng',  'static', 1);
+        INSERT INTO graph_edges VALUES ('ex.demo1', 'lib.util', 'static', 1);
+        INSERT INTO graph_edges VALUES ('ex.demo2', 'lib.rng',  'static', 1);
+        INSERT INTO graph_edges VALUES ('ex.demo2', 'lib.map',  'static', 1);
+        INSERT INTO graph_edges VALUES ('ex.demo2', 'lib.util', 'static', 1);
+        -- src/ has almost no cross-feature EP
+        INSERT INTO graph_edges VALUES ('src.map', 'src.rng', 'static', 1);
+    """)
+
+
+def test_list_features_compiled_output_warning():
+    """list_features emits a compiled-output warning when lib/ dominates EP over src/."""
+    conn = sqlite3.connect(":memory:")
+    _seed_lib_src_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1})
+    assert "Note:" in result
+    assert "lib" in result
+    assert "scope=src" in result
+
+
+def test_list_features_no_warning_without_src():
+    """No compiled-output warning when there is no matching src/ directory."""
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)  # standard fixture: combat/, loot/, main.py — no lib/
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1})
+    assert "Note:" not in result
+
+
+def test_list_features_no_warning_when_scoped():
+    """No compiled-output warning when scope= is active (user already narrowed view)."""
+    conn = sqlite3.connect(":memory:")
+    _seed_lib_src_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 2, "scope": "src"})
+    assert "Note:" not in result
