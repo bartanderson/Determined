@@ -200,7 +200,7 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see and miss across all 7 corpora**
+RM60. **[DONE 2026-07-15] Corpus analysis quality audit — evaluate what the tools see and miss across all 7 corpora**
 
    The goal: run the RM59 tools (and supporting tools) against every corpus DB,
    verify the output is accurate against ground truth, and file fix items for
