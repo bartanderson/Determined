@@ -6163,14 +6163,67 @@ def edit_file(assessor: "Assessor", args: dict) -> str:
 
 
 # ------------------------------------------------------------------
-# FEATURE SHAPE TOOLS (RM59)
+# FEATURE SHAPE TOOLS (RM59 / RM60)
 # ------------------------------------------------------------------
+
+def _fp_norm(fp: str) -> str:
+    """Normalise a stored file_path to forward slashes."""
+    return fp.replace("\\", "/")
+
+
+def _detect_prefix(fps: list[str]) -> str:
+    """
+    Return the longest common directory prefix shared by all paths.
+    E.g. ['C:/Users/bartl/dev/Foo/pkg/a.py', 'C:/Users/bartl/dev/Foo/pkg/b.py']
+    -> 'C:/Users/bartl/dev/Foo'
+    Always returns a prefix that ends at a directory boundary (no trailing slash).
+    """
+    if not fps:
+        return ""
+    parts_list = [fp.split("/") for fp in fps]
+    common = parts_list[0]
+    for parts in parts_list[1:]:
+        length = min(len(common), len(parts))
+        common = [common[i] for i in range(length) if common[i] == parts[i]]
+    # Drop the last segment if it looks like a file (has an extension)
+    prefix_parts = common
+    if prefix_parts and "." in prefix_parts[-1]:
+        prefix_parts = prefix_parts[:-1]
+    return "/".join(prefix_parts)
+
+
+def _strip_prefix(fp: str, prefix: str) -> str:
+    """Strip prefix from fp; return the remainder with no leading slash."""
+    if prefix and fp.startswith(prefix):
+        return fp[len(prefix):].lstrip("/")
+    return fp
+
+
+def _dir_key_fn(depth: int, prefix: str):
+    """Return a function that maps a normalised file_path to its feature key."""
+    def key(fp: str) -> str:
+        rel = _strip_prefix(fp, prefix)
+        parts = rel.split("/")
+        return "/".join(parts[:depth]) if len(parts) > 1 else (parts[0] if parts else "")
+    return key
+
+
+def _is_external_callee(name: str) -> bool:
+    """
+    True if the callee name looks like an external library call rather than a
+    local symbol. Heuristic: dotted names (os.path.join, json.loads, bubbletea.Run)
+    are external; plain bare names are candidate local gaps.
+    """
+    return "." in name
+
 
 def list_features(oracle: "DBOracle", args: dict) -> str:
     """
-    list_features([depth=1][, scope]) - directory-first feature grouping.
+    list_features([depth=1][, scope][, prefix]) - directory-first feature grouping.
 
-    Groups functions by the first `depth` path segments of their file_path.
+    Groups functions by the first `depth` path segments of their file_path
+    (after stripping the common corpus root prefix).  If `prefix` is omitted
+    it is auto-detected as the longest common directory prefix across all paths.
     Returns each feature directory with: symbol count, stub count, entry point
     count (symbols called from outside the directory), cross-feature edge count.
     Ranked by entry point count descending (most externally visible first).
@@ -6189,15 +6242,18 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
 
     from collections import defaultdict
 
-    def _dir_key(fp: str, d: int) -> str:
-        parts = fp.split("/")
-        return "/".join(parts[:d]) if len(parts) > 1 else parts[0]
+    fps = [r[0] for r in rows]
+    prefix = args.get("prefix", "").strip().replace("\\", "/").rstrip("/")
+    if not prefix:
+        prefix = _detect_prefix(fps)
+
+    dir_key = _dir_key_fn(depth, prefix)
 
     # Group symbols by feature directory
     feat_symbols: dict[str, set] = defaultdict(set)
     feat_stubs: dict[str, int] = defaultdict(int)
     for fp, name, is_stub in rows:
-        key = _dir_key(fp, depth)
+        key = dir_key(_fp_norm(fp))
         if scope and not key.startswith(scope):
             continue
         feat_symbols[key].add(name)
@@ -6208,16 +6264,15 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
         return f"No features found (depth={depth}" + (f", scope={scope}" if scope else "") + ")."
 
     # Entry points: local symbols called by callers outside the directory.
-    # Derive caller's directory from the functions table (graph_edges has no caller_file column).
     feat_entry_points: dict[str, int] = defaultdict(int)
     feat_cross_edges: dict[str, int] = defaultdict(int)
 
-    caller_fp_map = {name: fp for fp, name, _ in rows}
+    caller_fp_map = {name: _fp_norm(fp) for fp, name, _ in rows}
     for caller, callee in conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
-        caller_fp = caller_fp_map.get(caller, "").replace("\\", "/")
-        caller_key = _dir_key(caller_fp, depth) if caller_fp else ""
+        caller_fp = caller_fp_map.get(caller, "")
+        caller_k = dir_key(caller_fp) if caller_fp else ""
         for feat, syms in feat_symbols.items():
-            if callee in syms and caller_key != feat:
+            if callee in syms and caller_k != feat:
                 feat_entry_points[feat] += 1
                 feat_cross_edges[feat] += 1
 
@@ -6227,7 +6282,8 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
         key=lambda f: (-feat_entry_points[f], -len(feat_symbols[f]))
     )
 
-    lines = [f"Features (depth={depth}" + (f", scope={scope}" if scope else "") + "):"]
+    prefix_note = f" (prefix={prefix})" if prefix else ""
+    lines = [f"Features (depth={depth}" + (f", scope={scope}" if scope else "") + prefix_note + "):"]
     lines.append(f"{'Directory':<40} {'Syms':>5} {'Stubs':>5} {'EntryPts':>8} {'CrossEdges':>10}")
     lines.append("-" * 72)
     for feat in features:
@@ -6240,23 +6296,41 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
 
 def feature_shape(oracle: "DBOracle", args: dict) -> str:
     """
-    feature_shape(feature_path) - trace the call path through a feature directory.
+    feature_shape(feature_path[, prefix]) - trace the call path through a feature.
 
-    Identifies entry points (local symbols with external callers), then traces
-    forward through the call graph. Each node is annotated:
-      - implemented: has a functions row and is_stub=0
-      - stub: has a functions row and is_stub=1
-      - missing: appears in graph_edges as callee but has no functions row (external)
-    Cross-feature edges are flagged. Returns a structured path summary.
+    `feature_path` is a relative directory path (e.g. 'determined/agent' or 'combat').
+    If the corpus stores absolute paths, supply `prefix` (or let it be auto-detected)
+    to strip the root before matching.
+
+    Each node is annotated:
+      - implemented: has a functions row, is_stub=0
+      - stub: has a functions row, is_stub=1
+      - local-missing: callee has no functions row and looks like a local name (no '.')
+      - external: callee has no functions row and is a dotted external call
+    Completeness = implemented / (implemented + stub + local-missing).
     """
     feature_path = args.get("feature_path", "").strip().replace("\\", "/").rstrip("/")
     if not feature_path:
         return "ERROR: feature_path is required."
 
     conn = oracle.conn
-    norm_path = feature_path + "/"
 
-    # All local symbols
+    # Detect/apply prefix so feature_path can be relative even in absolute-path DBs
+    all_fps_raw = [r[0] for r in conn.execute(
+        "SELECT REPLACE(REPLACE(file_path,'\\','/'), '\\\\', '/') FROM functions"
+    ).fetchall()]
+    prefix = args.get("prefix", "").strip().replace("\\", "/").rstrip("/")
+    if not prefix and all_fps_raw:
+        prefix = _detect_prefix(all_fps_raw)
+
+    # norm_path is the absolute prefix + relative feature_path, used for LIKE matching
+    if prefix:
+        abs_feature = prefix + "/" + feature_path
+    else:
+        abs_feature = feature_path
+    norm_path = abs_feature + "/"
+
+    # All local symbols (match by absolute path)
     local_rows = conn.execute(
         "SELECT name, is_stub, REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp "
         "FROM functions WHERE REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') LIKE ?",
@@ -6268,9 +6342,9 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
 
     local_symbols: dict[str, dict] = {}
     for name, is_stub, fp in local_rows:
-        local_symbols[name] = {"is_stub": bool(is_stub), "file": fp}
+        local_symbols[name] = {"is_stub": bool(is_stub), "file": _strip_prefix(fp, prefix)}
 
-    # All symbol names in the entire corpus (for missing-node detection)
+    # All symbol names in the entire corpus
     all_known = {r[0] for r in conn.execute("SELECT name FROM functions").fetchall()}
 
     # Entry points: local symbols called by callers outside this directory
@@ -6283,7 +6357,6 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
     ).fetchall()
 
     for caller, callee in caller_rows:
-        # Determine if caller is outside the feature
         caller_row = conn.execute(
             "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') FROM functions WHERE name = ?",
             (caller,),
@@ -6292,13 +6365,12 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
             entry_points.add(callee)
 
     if not entry_points:
-        # No external callers -- treat all local symbols as entry points
         entry_points = set(local_symbols.keys())
         ep_note = " (no external callers; showing all local symbols as roots)"
     else:
         ep_note = ""
 
-    # Forward walk from entry points (BFS, stop at cross-feature boundary)
+    # Forward BFS from entry points
     from collections import deque
 
     visited_nodes: set[str] = set()
@@ -6313,45 +6385,44 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
 
     while queue:
         node = queue.popleft()
-        callee_rows = conn.execute(
+        for (callee,) in conn.execute(
             "SELECT callee FROM graph_edges WHERE caller = ?", (node,)
-        ).fetchall()
-        for (callee,) in callee_rows:
-            is_local = callee in local_symbols
-            if is_local:
+        ).fetchall():
+            if callee in local_symbols:
                 internal_edges.append((node, callee))
                 if callee not in visited_nodes:
                     visited_nodes.add(callee)
                     node_status[callee] = "stub" if local_symbols[callee]["is_stub"] else "implemented"
                     queue.append(callee)
+            elif callee in all_known:
+                cross_feature_edges.append((node, callee, "cross-feature"))
+            elif _is_external_callee(callee):
+                cross_feature_edges.append((node, callee, "external"))
             else:
-                if callee in all_known:
-                    cross_feature_edges.append((node, callee, "cross-feature"))
-                else:
-                    cross_feature_edges.append((node, callee, "external"))
+                cross_feature_edges.append((node, callee, "local-missing"))
 
-    # Summary stats
+    # Completeness: implemented / (implemented + stub + local-missing)
     impl_count = sum(1 for s in node_status.values() if s == "implemented")
     stub_count = sum(1 for s in node_status.values() if s == "stub")
-    total = len(node_status)
-    completeness = f"{impl_count / total * 100:.0f}%" if total else "N/A"
+    local_missing_count = sum(1 for _, _, k in cross_feature_edges if k == "local-missing")
+    denom = impl_count + stub_count + local_missing_count
+    completeness = f"{impl_count / denom * 100:.0f}%" if denom else "N/A"
 
     lines = [f"Feature shape: {feature_path}{ep_note}"]
-    lines.append(f"  Symbols: {total} total, {impl_count} implemented, {stub_count} stub")
+    lines.append(f"  Symbols: {len(node_status)} total, {impl_count} implemented, "
+                 f"{stub_count} stub, {local_missing_count} local-missing")
     lines.append(f"  Completeness: {completeness}  |  Entry points: {len(entry_points)}")
     lines.append("")
 
     lines.append("Entry points:")
     for ep in sorted(entry_points):
-        status = node_status.get(ep, "?")
-        lines.append(f"  [{status}] {ep}")
+        lines.append(f"  [{node_status.get(ep, '?')}] {ep}")
 
     if internal_edges:
         lines.append("")
         lines.append("Internal call edges:")
         for src, dst in sorted(internal_edges):
-            dst_status = node_status.get(dst, "?")
-            lines.append(f"  {src} -> [{dst_status}] {dst}")
+            lines.append(f"  {src} -> [{node_status.get(dst, '?')}] {dst}")
 
     if cross_feature_edges:
         lines.append("")
@@ -6371,16 +6442,17 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
 
 def development_priorities(oracle: "DBOracle", args: dict) -> str:
     """
-    development_priorities([scope][, top_n=10][, depth=1]) — ranked feature priority table.
+    development_priorities([scope][, top_n=10][, depth=1][, prefix]) — ranked feature priority.
 
     For each feature directory:
-      completeness = implemented / (implemented + stub + missing_local)
-        where missing_local = callees of local symbols that have no functions row
-                              (external/unresolved are excluded from the count)
+      completeness = implemented / (implemented + stub + local_missing)
+        local_missing = callees with no functions row AND no '.' in name
+        (dotted names like os.path.join are external library calls, not counted)
       priority_score = (1 - completeness) * entry_point_caller_count
     Cross-feature blockers (local stubs called by other features) rank above
     self-contained gaps at the same priority score.
-    Flags features that lack any design_note coverage in knowledge_artifacts.
+    `prefix` is auto-detected from the common path prefix if not supplied; it is
+    stripped from all labels so feature names are relative (e.g. 'determined/agent').
     """
     from collections import defaultdict
 
@@ -6399,9 +6471,11 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     if not sym_rows:
         return "No functions found in corpus."
 
-    def _dir_key(fp: str) -> str:
-        parts = fp.split("/")
-        return "/".join(parts[:depth]) if len(parts) > 1 else parts[0]
+    prefix = args.get("prefix", "").strip().replace("\\", "/").rstrip("/")
+    if not prefix:
+        prefix = _detect_prefix([r[2] for r in sym_rows])
+
+    dir_key = _dir_key_fn(depth, prefix)
 
     # sym_info: name -> {feat, is_stub}
     sym_info: dict[str, dict] = {}
@@ -6410,7 +6484,7 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     all_known: set[str] = set()
 
     for name, is_stub, fp in sym_rows:
-        key = _dir_key(fp)
+        key = dir_key(_fp_norm(fp))
         if scope and not key.startswith(scope):
             continue
         sym_info[name] = {"feat": key, "is_stub": bool(is_stub)}
@@ -6429,11 +6503,9 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     edge_rows = conn.execute("SELECT caller, callee FROM graph_edges").fetchall()
 
     # --- 3. Compute per-feature metrics from edges ---
-    # entry_point_callers: count of edges where callee is in feature AND caller is from different feature
     feat_ep_callers: dict[str, int] = defaultdict(int)
-    # missing_callees: callees of local symbols that don't appear in functions table
+    # local_missing: bare-name callees not in functions table (likely unimplemented locals)
     feat_missing: dict[str, set] = defaultdict(set)
-    # stub_caller_count: for each stub, how many callers it has from OTHER features
     stub_cross_callers: dict[str, int] = defaultdict(int)
 
     for caller, callee in edge_rows:
@@ -6444,11 +6516,11 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
         if callee_info and caller_info and caller_info["feat"] != callee_info["feat"]:
             feat_ep_callers[callee_info["feat"]] += 1
 
-        # Missing: caller is local, callee not in functions table at all
-        if caller_info and callee not in all_known:
+        # Local-missing: caller is local, callee not in functions, name looks local (no '.')
+        if caller_info and callee not in all_known and not _is_external_callee(callee):
             feat_missing[caller_info["feat"]].add(callee)
 
-        # Cross-feature blocker: callee is a stub in a different feature than caller
+        # Cross-feature blocker: callee is a stub called from a different feature
         if (callee_info and callee_info["is_stub"]
                 and caller_info and caller_info["feat"] != callee_info["feat"]):
             stub_cross_callers[callee] += 1
@@ -6526,8 +6598,9 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     if not top:
         return "No incomplete features found" + (f" under scope '{scope}'" if scope else "") + "."
 
-    lines = ["Development priorities" + (f" (scope={scope})" if scope else "")
-             + f", depth={depth}, top {len(top)} of {len(actionable)} incomplete:"]
+    prefix_note = f" prefix={prefix}" if prefix else ""
+    lines = ["Development priorities" + (f" scope={scope}" if scope else "")
+             + prefix_note + f", depth={depth}, top {len(top)} of {len(actionable)} incomplete:"]
     lines.append("")
     hdr = f"{'Feature':<35} {'Done%':>5} {'Stubs':>5} {'Miss':>4} {'EP':>4} {'Score':>6}  {'Flags'}"
     lines.append(hdr)

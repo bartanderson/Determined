@@ -5,7 +5,10 @@ Uses in-memory SQLite seeded with a multi-directory symbol fixture.
 import sqlite3
 import pytest
 from unittest.mock import MagicMock
-from determined.agent.agent_tools import list_features, feature_shape, development_priorities
+from determined.agent.agent_tools import (
+    list_features, feature_shape, development_priorities,
+    _detect_prefix, _strip_prefix, _is_external_callee,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -348,3 +351,181 @@ def test_development_priorities_all_complete():
     oracle = _make_oracle(conn)
     result = development_priorities(oracle, {})
     assert "No incomplete" in result
+
+
+# ---------------------------------------------------------------------------
+# RM60 Phase 0: prefix auto-detect and external callee filtering
+# ---------------------------------------------------------------------------
+
+def _seed_abs_db(conn):
+    """Same fixture as _seed_db but with Windows-style absolute paths."""
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        INSERT INTO functions VALUES ('Attack',     'C:/Users/dev/proj/combat/attack.py', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('defend',     'C:/Users/dev/proj/combat/attack.py', 1, NULL, NULL);
+        INSERT INTO functions VALUES ('log_hit',    'C:/Users/dev/proj/combat/utils.py',  0, NULL, NULL);
+        INSERT INTO functions VALUES ('open_chest', 'C:/Users/dev/proj/loot/chest.py',    0, NULL, NULL);
+        INSERT INTO functions VALUES ('give_item',  'C:/Users/dev/proj/loot/chest.py',    1, NULL, NULL);
+        INSERT INTO functions VALUES ('roll_rare',  'C:/Users/dev/proj/loot/rare.py',     0, NULL, NULL);
+        INSERT INTO functions VALUES ('main',       'C:/Users/dev/proj/main.py',          0, NULL, NULL);
+        INSERT INTO graph_edges VALUES ('main',       'open_chest', 'static', 1);
+        INSERT INTO graph_edges VALUES ('open_chest', 'give_item',  'static', 1);
+        INSERT INTO graph_edges VALUES ('open_chest', 'roll_rare',  'static', 1);
+        INSERT INTO graph_edges VALUES ('open_chest', 'log_hit',    'static', 1);
+        INSERT INTO graph_edges VALUES ('Attack',     'log_hit',    'static', 1);
+        INSERT INTO graph_edges VALUES ('defend',     'log_hit',    'static', 1);
+        -- external call that must NOT count as local-missing
+        INSERT INTO graph_edges VALUES ('open_chest', 'os.path.join', 'static', 1);
+        INSERT INTO graph_edges VALUES ('Attack',     'json.loads',   'static', 1);
+    """)
+
+
+# --- _detect_prefix unit tests ---
+
+def test_detect_prefix_strips_common_root():
+    fps = [
+        "C:/Users/dev/proj/combat/attack.py",
+        "C:/Users/dev/proj/loot/chest.py",
+        "C:/Users/dev/proj/main.py",
+    ]
+    assert _detect_prefix(fps) == "C:/Users/dev/proj"
+
+
+def test_detect_prefix_single_path():
+    fps = ["C:/Users/dev/proj/pkg/a.py"]
+    result = _detect_prefix(fps)
+    assert result == "C:/Users/dev/proj/pkg"
+
+
+def test_detect_prefix_empty():
+    assert _detect_prefix([]) == ""
+
+
+def test_detect_prefix_relative_paths_returns_empty_or_minimal():
+    fps = ["combat/a.py", "loot/b.py"]
+    # Common prefix of relative paths is empty (no shared leading segments)
+    result = _detect_prefix(fps)
+    assert result == ""
+
+
+# --- _is_external_callee unit tests ---
+
+def test_is_external_dotted():
+    assert _is_external_callee("os.path.join") is True
+    assert _is_external_callee("json.loads") is True
+    assert _is_external_callee("bubbletea.Run") is True
+
+
+def test_is_external_bare():
+    assert _is_external_callee("give_item") is False
+    assert _is_external_callee("_process_item") is False
+    assert _is_external_callee("open_chest") is False
+
+
+# --- list_features with absolute paths ---
+
+def test_list_features_absolute_paths_auto_prefix():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1})
+    # Feature row labels should be short relative names (not full Windows paths)
+    assert "combat" in result
+    assert "loot" in result
+    # No feature row should start with "C:" (header may mention prefix, that's fine)
+    data_lines = [l for l in result.splitlines() if l and not l.startswith("Feature") and not l.startswith("-")]
+    assert not any(l.strip().startswith("C:") for l in data_lines)
+
+
+def test_list_features_explicit_prefix():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1, "prefix": "C:/Users/dev/proj"})
+    assert "combat" in result
+    data_lines = [l for l in result.splitlines() if l and not l.startswith("Feature") and not l.startswith("-")]
+    assert not any(l.strip().startswith("C:") for l in data_lines)
+
+
+def test_list_features_relative_paths_unchanged():
+    """Relative-path corpora (regression) still produce correct names."""
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1})
+    assert "combat" in result
+    assert "loot" in result
+
+
+# --- feature_shape with absolute paths ---
+
+def test_feature_shape_absolute_path_auto_prefix():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    # Pass relative feature_path; prefix should be auto-detected
+    result = feature_shape(oracle, {"feature_path": "loot"})
+    assert "open_chest" in result
+    assert "give_item" in result
+    assert "No symbols found" not in result
+
+
+def test_feature_shape_external_not_counted_as_missing():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "loot"})
+    # os.path.join is external — should be labelled 'external', not 'local-missing'
+    assert "(external)" in result
+    assert "os.path.join" in result
+
+
+def test_feature_shape_external_excluded_from_completeness():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "combat"})
+    # json.loads is called by Attack — external, must not drag completeness down
+    # combat has no stubs and no local-missing, so completeness should be 100%
+    assert "100%" in result
+
+
+# --- development_priorities with absolute paths ---
+
+def test_development_priorities_absolute_paths_relative_labels():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "loot" in result or "combat" in result
+    # Feature rows must not start with "C:" (header may show the prefix, that's fine)
+    data_lines = [l for l in result.splitlines()
+                  if l and not l.startswith("Dev") and not l.startswith("Feature") and not l.startswith("-")]
+    assert not any(l.strip().startswith("C:") for l in data_lines)
+
+
+def test_development_priorities_external_not_counted_as_missing():
+    conn = sqlite3.connect(":memory:")
+    _seed_abs_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    # os.path.join / json.loads should not inflate Miss count or drive down completeness
+    # loot has give_item (1 stub), no local-missing bare names -> Miss should be 0
+    loot_lines = [l for l in result.splitlines() if "loot" in l and "%" in l]
+    if loot_lines:
+        parts = loot_lines[0].split()
+        miss_idx = 3  # Done% Stubs Miss EP Score columns
+        miss_val = int(parts[miss_idx])
+        assert miss_val == 0, f"Expected 0 local-missing for loot, got {miss_val}"

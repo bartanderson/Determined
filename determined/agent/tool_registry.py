@@ -221,10 +221,11 @@ REGISTRY: dict[str, dict] = {
         "category": "discovery",
     },
     "list_features": {
-        "purpose": "Group all corpus symbols by directory prefix (feature = directory). Returns symbol count, stub count, entry points (symbols with external callers), and cross-feature edge count per directory. Ranked by entry-point count.",
+        "purpose": "Group all corpus symbols by directory prefix (feature = directory). Returns symbol count, stub count, entry points (symbols with external callers), and cross-feature edge count per directory. Ranked by entry-point count. Prefix is auto-detected so labels are always relative.",
         "args": {
             "depth":  "(optional) path depth for grouping, default 1 (top-level dirs)",
             "scope":  "(optional) restrict to dirs matching this prefix",
+            "prefix": "(optional) path prefix to strip from labels; auto-detected if omitted",
         },
         "output": "table of features with symbol/stub/entry-point/cross-edge counts",
         "feeds": ["feature_shape", "list_stubs", "knowledge_status"],
@@ -232,9 +233,10 @@ REGISTRY: dict[str, dict] = {
         "category": "discovery",
     },
     "feature_shape": {
-        "purpose": "Trace the end-to-end call path through a feature directory. Identifies entry points (local symbols with external callers), walks forward, and annotates each node as implemented/stub/missing. Flags cross-feature dependencies.",
+        "purpose": "Trace the end-to-end call path through a feature directory. Identifies entry points (local symbols with external callers), walks forward, and annotates each node as implemented/stub/local-missing/external. Completeness = implemented/(implemented+stub+local-missing). Flags cross-feature dependencies.",
         "args": {
-            "feature_path": "directory path of the feature (e.g. 'determined/agent/' or 'combat')",
+            "feature_path": "relative directory path of the feature (e.g. 'determined/agent' or 'combat')",
+            "prefix": "(optional) corpus root path to strip; auto-detected if omitted",
         },
         "output": "entry points, internal call edges, cross-feature edges, blocking stubs, completeness %",
         "feeds": ["list_stubs", "readiness_check", "completion_contract"],
@@ -242,11 +244,12 @@ REGISTRY: dict[str, dict] = {
         "category": "understanding",
     },
     "development_priorities": {
-        "purpose": "Rank all features by implementation priority. Score = (1 - completeness) × entry-point-caller-count. Cross-feature blockers (stubs called from other features) rank above self-contained gaps. Flags features without design doc coverage.",
+        "purpose": "Rank all features by implementation priority. Score = (1 - completeness) × entry-point-caller-count. Completeness excludes external library calls (only local stubs and bare-name unresolved callees count). Cross-feature blockers rank above self-contained gaps. Prefix auto-detected so labels are always relative.",
         "args": {
             "top_n": "(optional) max features to return, default 10",
             "depth": "(optional) directory depth for feature grouping, default 1",
             "scope": "(optional) restrict to dirs matching this prefix",
+            "prefix": "(optional) corpus root path to strip; auto-detected if omitted",
         },
         "output": "ranked table: feature, completeness%, stub count, missing count, entry points, priority score, blocker/no-docs flags, top blocking stub",
         "feeds": ["feature_shape", "list_stubs", "completion_contract", "readiness_check"],
