@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-15, session 178):** Go receiver types in param_types_json (88% typed for end-of-eden, up from 60%). Plain JS excluded from annotation queue. dungeoncrawler/rotjs confirmed TS not JS. RM59 filed: feature shape analysis (list_features, feature_shape, development_priorities). All corpora re-ingested. 892 passed, 1 skipped.
+**Last session (2026-07-15, session 179):** RM59 done (list_features, feature_shape, development_priorities - 24 tests, 917 passed). RM60 filed: corpus quality audit. Pre-audit found 2 structural problems: (1) absolute Windows paths collapse depth=1 to "C:" - need prefix auto-strip; (2) "missing" count inflated by external library calls. Depth reference table in RM60 for all 7 corpora.
+
+**Previous (2026-07-15, session 178):** Go receiver types in param_types_json (88% typed for end-of-eden, up from 60%). Plain JS excluded from annotation queue. dungeoncrawler/rotjs confirmed TS not JS. RM59 filed: feature shape analysis (list_features, feature_shape, development_priorities). All corpora re-ingested. 892 passed, 1 skipped.
 
 **Previous (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
 
@@ -198,7 +200,114 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM59. **[ACTIVE] Feature shape analysis: directory-first feature grouping, path tracing, and completeness scoring**
+RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see and miss across all 7 corpora**
+
+   The goal: run the RM59 tools (and supporting tools) against every corpus DB,
+   verify the output is accurate against ground truth, and file fix items for
+   systematic gaps. Determined and dj2 are unknowns; the other 5 are known-complete
+   projects that serve as ground truth.
+
+   **Pre-audit finding (session 179, 2026-07-15):** Two structural problems found
+   before the per-corpus work even starts:
+
+   1. **Absolute path depth bug (P0):** All corpus DBs store Windows absolute paths.
+      `depth=1` collapses everything under `C:` — useless. The correct depth per
+      corpus is `common_prefix_depth + 1` (ranges from 6 to 8 across corpora). Fix:
+      add `prefix` parameter to `list_features`, `feature_shape`, and
+      `development_priorities` that strips the given path prefix before computing
+      depth and display labels. Auto-detect if omitted (use common prefix of all paths).
+
+   2. **"Missing" count inflation (P1):** Callees with no `functions` row include
+      stdlib, pip packages, and all external library calls — not just unimplemented
+      locals. This inflates the "missing" count and makes completeness% misleading
+      (Determined shows 50% when it is effectively feature-complete). Fix: separate
+      local-missing (callee not in functions AND its file would be under the corpus
+      root) from external-missing (library call). Only local-missing counts toward
+      completeness%.
+
+   **Phase 0 - Fix structural problems first (prerequisite for accurate audit)**
+   - [ ] Add `prefix` param (auto-detected from common path prefix) to `list_features`,
+         `feature_shape`, and `development_priorities`. Labels strip the prefix.
+         Regression tests: relative and absolute path corpora both produce correct feature names.
+   - [ ] Fix "missing" inflation: distinguish local-missing from external-missing in
+         `feature_shape` and `development_priorities`. Local-missing = callee file path
+         starts with the corpus root; external = everything else.
+         Regression tests: external library callees do not count toward missing/completeness.
+
+   **Phase 1 - Per-corpus evaluation (run after Phase 0)**
+
+   For each corpus: run `list_features` (correct depth), `development_priorities`,
+   and `knowledge_status`. Verify against ground truth. Record findings in this item.
+
+   Known-complete corpora (ground truth: should show 0 or near-0 stubs, meaningful
+   features, reasonable entry point topology):
+
+   - [ ] **end-of-eden (Go)** - depth=7 (one past `end-of-eden/`). Features: system,
+         game, internal, ui, cmd, debug. Verify: 0 stubs already confirmed. Check:
+         are entry points correct (system/game most connected)? Are cross-feature edges
+         meaningful? Is Go typed-params 88% accurate? Known issue: 15% unresolved =
+         external libs (bubbletea/lipgloss) - expected.
+
+   - [ ] **ruggrogue (Rust)** - depth=8, but src/ is flat: features = individual .rs files.
+         Verify: 0 stubs confirmed. Check: does file-level grouping give useful signal or
+         is it noise? Are entry point counts per file meaningful (map.rs 31 EP, experience.rs 28)?
+         Flag: if flat layout defeats the tool, this is a gap to file.
+
+   - [ ] **dungeoncrawler (TS)** - depth=8 (one past `dungeoncrawler/src/`). Features:
+         rendering, entities, ui, world, combat, core, utils. Verify: 0 stubs confirmed.
+         Check: rendering (9 EP), entities (8 EP), world (4 EP) - do these match the
+         actual architecture? core/utils at 0 EP is expected (they are consumed, not called).
+
+   - [ ] **dnd-dungeon-gen (JS)** - depth=8 (one past `dnd-dungeon-gen/app/`). Features:
+         controller, unit, dungeon, ui, utility, room, item. KNOWN PROBLEM: 0 entry
+         points across ALL features despite multi-directory structure. Verify by checking
+         a known cross-dir call in the source (e.g., controller calling dungeon/) and
+         confirming the edge is absent. File a JS resolution gap item if confirmed.
+
+   - [ ] **rotjs (TS library)** - depth=7. Features: lib, src, addons, examples. NOTE:
+         lib/ is compiled output (290 syms, 297 EP) and src/ is source (271 syms, 0 EP).
+         Tool sees lib/ as the public surface because that is what gets called. This is
+         architecturally correct for a compiled library but confusing. Check: do the 3
+         stubs in lib/ match anything in src/? Are the lib/ entry points real public API
+         methods?
+
+   Unknown-completeness corpora (what we are actually trying to understand):
+
+   - [ ] **Determined (Python)** - depth=6. Features: determined/, tests/, examples/.
+         KNOWN ISSUE: tests/ (731 syms) pollutes priorities - 9 "stubs" in test/ are
+         test skeleton functions, not real gaps. At depth=7: determined/agent,
+         determined/ingestion, determined/oracle, etc. Run at both depths. Evaluate:
+         are the 4 stubs in determined/ real gaps? Which sub-packages have the highest
+         entry-point count (most critical)? Does `development_priorities` correctly
+         surface agent/ as the core?
+
+   - [ ] **dj2 (Python+JS)** - depth=6. Features: world_app.py (107 syms), world/ (564
+         syms, 10 stubs), dungeon_app.py, meta_agent.py, tests/, etc. world_app.py having
+         107 symbols as a single-file "feature" with 160 entry points is suspicious -
+         verify. The 10 stubs in world/ are the interesting ones: which game systems are
+         incomplete? Run `feature_shape` for world/ and dungeon/ to trace paths.
+
+   **Phase 2 - File gap items for confirmed problems**
+   - [ ] JS cross-file resolution gap (if confirmed by dnd-dungeon-gen eval)
+   - [ ] Test-directory noise in development_priorities (filter option needed)
+   - [ ] Flat-layout usability (Rust src/ problem - auto-detect single-level flat?)
+   - [ ] rotjs lib/src dual-representation confusion (document or auto-detect?)
+   - [ ] Any dj2-specific gaps found in Phase 1
+
+   **Depth reference (for future sessions):**
+   | Corpus | Common prefix | Feature depth |
+   |--------|--------------|---------------|
+   | Determined | C:/Users/bartl/dev/Determined | 6 |
+   | dj2 | C:/Users/bartl/dev/dj2 | 6 |
+   | end-of-eden | C:/Users/bartl/dev/corpora/end-of-eden | 7 |
+   | ruggrogue | C:/Users/bartl/dev/corpora/ruggrogue/src | 8 |
+   | dnd-dungeon-gen | C:/Users/bartl/dev/corpora/dnd-dungeon-gen/app | 8 |
+   | dungeoncrawler | C:/Users/bartl/dev/corpora/dungeoncrawler/src | 8 |
+   | rotjs | C:/Users/bartl/dev/corpora/rotjs | 7 |
+
+---
+
+RM59. **[DONE 2026-07-15] Feature shape analysis: directory-first feature grouping, path tracing, and completeness scoring**
 
    Adds a corpus-agnostic layer that answers "what features exist, which are complete,
    and what should be worked on next" — a synthesis level above individual symbol tools.
