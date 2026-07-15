@@ -200,6 +200,53 @@ each step result. 293/293 tests passing.
 
 ---
 
+RM-Perf. **[TODO] Optimization Oracle: static purity analysis + profiling overlay**
+
+   **Origin:** Bart's idea (2026-07-15) — after the analysis/code-generation side is
+   complete, build an `OptimizationOracle` alongside `DBOracle`. Instead of answering
+   structural questions ("who references this?"), it answers performance questions:
+   which functions dominate runtime, which values are repeatedly recomputed, which
+   graph traversals could be cached, which semantic queries are duplicated, which
+   events never influence observable state, which deterministic computations are pure
+   and memoizable, which Python objects have stable layouts suitable for array-based
+   storage.
+
+   **Core insight:** the static call graph already has the symbol FQDNs and edge
+   topology. Profiling data (Python cProfile, V8 flame graphs, etc.) maps back to
+   the same FQDNs. A normalization layer that joins hot call-path data to existing
+   `functions` and `graph_edges` rows is the main new piece; the rest is queries.
+
+   **Two tiers — keep separate:**
+
+   - **Statically inferable (no profiling needed):** pure/memoizable functions
+     (no writes to shared state, no I/O, deterministic outputs), dead event handlers
+     (js_event_binding edges whose source never influences observable state), stable
+     object layouts (Python classes where `__init__` only assigns scalar attrs with
+     no dynamic keys). These are answerable from the existing DB today.
+
+   - **Profile-grounded (needs runtime traces):** hot-path dominance, repeated
+     recomputation on hot edges, traversals that fire on every query, duplicate
+     semantic queries. Requires an instrumentation hook (cProfile decorator injection
+     or sampling profiler output) to produce a `call_samples` table keyed by FQDN.
+     Static tier ships first; profile tier follows after instrumentation exists.
+
+   **Fit with existing architecture:**
+   - `DBOracle` stays structural. `OptimizationOracle` wraps the same DB + an optional
+     profiling DB and answers perf questions.
+   - Corpus-agnostic design holds: normalization maps any profiler's output to FQDNs
+     already in the DB. Language-specific only at the profiler adapter layer.
+   - The "make the engine observable so AI can continuously identify bottlenecks"
+     principle (Bart, 2026-07-15) is the design philosophy here — raw model speed
+     compounds less than persistent observability.
+
+   **Prerequisite:** analysis/code-generation arc complete (RM21, RM39-L3 done).
+   Static purity sub-tier could ship earlier as a standalone tool with no new infra.
+
+   **Estimated effort:** static tier ~1 session (graph walk for purity classification).
+   Profile-grounded tier: instrumentation adapter + query layer, ~2-3 sessions.
+
+---
+
 RM60. **[DONE 2026-07-15] Corpus analysis quality audit — evaluate what the tools see and miss across all 7 corpora**
 
    The goal: run the RM59 tools (and supporting tools) against every corpus DB,
