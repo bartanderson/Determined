@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-15, session 179):** RM59 done (list_features, feature_shape, development_priorities - 24 tests, 917 passed). RM60 filed: corpus quality audit. Pre-audit found 2 structural problems: (1) absolute Windows paths collapse depth=1 to "C:" - need prefix auto-strip; (2) "missing" count inflated by external library calls. Depth reference table in RM60 for all 7 corpora.
+**Last session (2026-07-15, session 181):** RM60 Phase 1 done: evaluated all 7 corpora. Key findings: (1) end-of-eden architecture correct, system/game most-connected; (2) dungeoncrawler clean; (3) dnd-dungeon-gen 0 EP bug confirmed - JS target_id is bare name not canonical_id, resolution info lost; (4) ruggrogue file-level grouping works; (5) rotjs lib/src dual-rep documented; (6) Determined depth=2 agent at 83%, structural_score blocking stub; (7) dj2 world/ 10 stubs real (AIDungeonMaster/AdjudicationEngine/ActionQueue). Two new bugs: RM61 (language builtins counted as local-missing), RM62 (JS callee file lost on resolution). Filed Phase 2 checkboxes.
 
 **Previous (2026-07-15, session 178):** Go receiver types in param_types_json (88% typed for end-of-eden, up from 60%). Plain JS excluded from annotation queue. dungeoncrawler/rotjs confirmed TS not JS. RM59 filed: feature shape analysis (list_features, feature_shape, development_priorities). All corpora re-ingested. 892 passed, 1 skipped.
 
@@ -242,57 +242,56 @@ RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see a
    Known-complete corpora (ground truth: should show 0 or near-0 stubs, meaningful
    features, reasonable entry point topology):
 
-   - [ ] **end-of-eden (Go)** - depth=7 (one past `end-of-eden/`). Features: system,
-         game, internal, ui, cmd, debug. Verify: 0 stubs already confirmed. Check:
-         are entry points correct (system/game most connected)? Are cross-feature edges
-         meaningful? Is Go typed-params 88% accurate? Known issue: 15% unresolved =
-         external libs (bubbletea/lipgloss) - expected.
+   - [x] **end-of-eden (Go)** - DONE 2026-07-15. system (270EP) and game (200EP) correctly
+         most-connected. 0 stubs confirmed. Cross-feature calls (game/fs.Walk -> assets,
+         system/audio -> assets) real and sensible. Finding: Go builtins (make, len,
+         uint64, string) classified as local-missing - false positives, see RM61.
 
-   - [ ] **ruggrogue (Rust)** - depth=8, but src/ is flat: features = individual .rs files.
-         Verify: 0 stubs confirmed. Check: does file-level grouping give useful signal or
-         is it noise? Are entry point counts per file meaningful (map.rs 31 EP, experience.rs 28)?
-         Flag: if flat layout defeats the tool, this is a gap to file.
+   - [x] **ruggrogue (Rust)** - DONE 2026-07-15. File-level grouping correct for Rust's
+         one-concept-per-file layout. map.rs (31EP), experience.rs (28EP) correctly identify
+         most-shared modules. gamekey.rs (1 sym, 17EP) = input key enum called everywhere.
+         0 stubs confirmed. Finding: Rust local-missing also inflated by builtins, see RM61.
 
-   - [ ] **dungeoncrawler (TS)** - depth=8 (one past `dungeoncrawler/src/`). Features:
-         rendering, entities, ui, world, combat, core, utils. Verify: 0 stubs confirmed.
-         Check: rendering (9 EP), entities (8 EP), world (4 EP) - do these match the
-         actual architecture? core/utils at 0 EP is expected (they are consumed, not called).
+   - [x] **dungeoncrawler (TS)** - DONE 2026-07-15. rendering (9EP), entities (8EP), ui (8EP)
+         correctly most-called. 0 stubs confirmed. core (5 local-missing, 0EP) is consumed
+         internally. Architecture matches TS dungeon crawler structure.
 
-   - [ ] **dnd-dungeon-gen (JS)** - depth=8 (one past `dnd-dungeon-gen/app/`). Features:
-         controller, unit, dungeon, ui, utility, room, item. KNOWN PROBLEM: 0 entry
-         points across ALL features despite multi-directory structure. Verify by checking
-         a known cross-dir call in the source (e.g., controller calling dungeon/) and
-         confirming the edge is absent. File a JS resolution gap item if confirmed.
+   - [x] **dnd-dungeon-gen (JS)** - DONE 2026-07-15. 0 EP bug CONFIRMED. Root cause:
+         JS ingester stores resolved=1 edges but target_id = bare callee name (e.g.
+         'generateDungeon') not canonical_id. canonical_id format is
+         'file:function:module.name:line'. These never match -> cross-feature edge
+         computation returns 0. Suffix match (s.name LIKE '%.' || ge.callee) correctly
+         resolves controller -> dungeon/generate.js. See RM62.
 
-   - [ ] **rotjs (TS library)** - depth=7. Features: lib, src, addons, examples. NOTE:
-         lib/ is compiled output (290 syms, 297 EP) and src/ is source (271 syms, 0 EP).
-         Tool sees lib/ as the public surface because that is what gets called. This is
-         architecturally correct for a compiled library but confusing. Check: do the 3
-         stubs in lib/ match anything in src/? Are the lib/ entry points real public API
-         methods?
+   - [x] **rotjs (TS library)** - DONE 2026-07-15. lib/ (290sy, 297EP) is compiled JS
+         output; src/ (271sy, 0EP) is TS source. All imports point to lib/ -> lib/ gets
+         all EP. Pattern documented: for TS libs that ship compiled output, analysis
+         should target src/ for architecture; lib/ EP shows public API usage. 3 stubs in
+         lib/ (Room.createRandomCenter, Room.createRandom, RNG.getItem) - real gaps in
+         compiled output. Term.computeFontSize is src/ blocking stub.
 
    Unknown-completeness corpora (what we are actually trying to understand):
 
-   - [ ] **Determined (Python)** - depth=6. Features: determined/, tests/, examples/.
-         KNOWN ISSUE: tests/ (731 syms) pollutes priorities - 9 "stubs" in test/ are
-         test skeleton functions, not real gaps. At depth=7: determined/agent,
-         determined/ingestion, determined/oracle, etc. Run at both depths. Evaluate:
-         are the 4 stubs in determined/ real gaps? Which sub-packages have the highest
-         entry-point count (most critical)? Does `development_priorities` correctly
-         surface agent/ as the core?
+   - [x] **Determined (Python)** - DONE 2026-07-15. depth=2 run: determined/agent (173EP,
+         83% complete, 1 stub), determined/ingestion (48EP, 72%), determined/graph (1 stub:
+         structural_score blocking). determined/resolution at 20% with 1 stub is concerning.
+         feature_shape completeness% (14%) inconsistent with dev_priorities% (83%) because
+         feature_shape counts all edge instances, dev_priorities counts distinct callees.
+         Python builtins (print, range, len, int, list) classified as local-missing - see RM61.
 
-   - [ ] **dj2 (Python+JS)** - depth=6. Features: world_app.py (107 syms), world/ (564
-         syms, 10 stubs), dungeon_app.py, meta_agent.py, tests/, etc. world_app.py having
-         107 symbols as a single-file "feature" with 160 entry points is suspicious -
-         verify. The 10 stubs in world/ are the interesting ones: which game systems are
-         incomplete? Run `feature_shape` for world/ and dungeon/ to trace paths.
+   - [x] **dj2 (Python+JS)** - DONE 2026-07-15. world/ 10 stubs are REAL: class methods
+         called but not defined - AIDungeonMaster (dialog, narrative), ActionQueue (dequeue,
+         is_empty), AdjudicationEngine (process, start_encounter, _handle_*). These are
+         genuine implementation gaps in the combat/adjudication layer. Blocking stub:
+         _get_combat_context. world_app.py (160EP) correctly identified as primary entry file.
 
    **Phase 2 - File gap items for confirmed problems**
-   - [ ] JS cross-file resolution gap (if confirmed by dnd-dungeon-gen eval)
+   - [x] JS cross-file resolution gap - confirmed, filed as RM62
    - [ ] Test-directory noise in development_priorities (filter option needed)
    - [ ] Flat-layout usability (Rust src/ problem - auto-detect single-level flat?)
    - [ ] rotjs lib/src dual-representation confusion (document or auto-detect?)
-   - [ ] Any dj2-specific gaps found in Phase 1
+   - [x] Language builtins as local-missing - confirmed, filed as RM61
+   - [x] dj2 stubs identified: AIDungeonMaster/AdjudicationEngine/ActionQueue - real gaps
 
    **Depth reference (for future sessions):**
    | Corpus | Common prefix | Feature depth |
@@ -304,6 +303,43 @@ RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see a
    | dnd-dungeon-gen | C:/Users/bartl/dev/corpora/dnd-dungeon-gen/app | 8 |
    | dungeoncrawler | C:/Users/bartl/dev/corpora/dungeoncrawler/src | 8 |
    | rotjs | C:/Users/bartl/dev/corpora/rotjs | 7 |
+
+---
+
+RM62. **[FILED 2026-07-15] JS ingester loses callee file on resolution - 0 entry points for all JS features**
+
+   **Problem:** The JS resolution post-pass (RM54) sets `resolved=1` on edges when it finds
+   the callee symbol, but does NOT update `target_id` to the symbol's `canonical_id` or store
+   the callee file. As a result, `graph_edges.target_id` = bare callee name ('generateDungeon')
+   while `symbols.canonical_id` = full path-based ID ('...dungeon/generate.js:function:...:147').
+   These never match -> entry point computation returns 0 for every JS feature.
+
+   **Verification (2026-07-15):** 640 resolved edges in dnd-dungeon-gen, all show 0 EP.
+   Suffix join (`s.name LIKE '%.' || ge.callee`) correctly resolves controller -> dungeon/generate.js
+   but that join is not used by the tool. `target_id` to `canonical_id` join: 0 rows.
+
+   **Fix:** In JS resolution post-pass, after setting `resolved=1`, also set
+   `target_id = s.canonical_id` where s is the resolved symbol. Then re-ingest dnd-dungeon-gen.
+
+   **Priority:** High. Makes all JS corpora blind to cross-feature architecture.
+
+---
+
+RM61. **[FILED 2026-07-15] Language builtins classified as local-missing, inflating miss counts**
+
+   **Problem:** `_is_external_callee()` filters dotted names but not bare language builtins.
+   Python builtins (print, range, len, int, list, str, set, hasattr, isinstance, enumerate, etc.)
+   and Go builtins (make, len, string, uint64) appear as bare unresolved callees and get counted
+   as local-missing. In dj2/world/, `print` appears 188x, `range` 116x, `len` 113x as
+   local-missing. Completeness% drops to ~10% for effectively-complete packages.
+
+   **Fix:** Add per-language builtin lists to `_is_external_callee()`:
+   - Python: builtins module (all names from `import builtins; dir(builtins)`) + common exceptions
+   - Go: make, len, cap, new, append, copy, delete, close, panic, recover, print, println,
+     and all primitive type names (uint8, int64, float64, string, bool, byte, rune, etc.)
+   - Rust: standard macros (vec!, println!, format!, panic!, assert!, etc.)
+
+   **Priority:** Medium. Affects Miss column and completeness% but not stub detection.
 
 ---
 
