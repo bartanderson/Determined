@@ -314,40 +314,24 @@ RM60. **[ACTIVE] Corpus analysis quality audit — evaluate what the tools see a
 
 ---
 
-RM62. **[FILED 2026-07-15] JS ingester loses callee file on resolution - 0 entry points for all JS features**
+RM62. **[DONE 2026-07-15] JS ingester loses callee file on resolution - 0 entry points for all JS features**
 
-   **Problem:** The JS resolution post-pass (RM54) sets `resolved=1` on edges when it finds
-   the callee symbol, but does NOT update `target_id` to the symbol's `canonical_id` or store
-   the callee file. As a result, `graph_edges.target_id` = bare callee name ('generateDungeon')
-   while `symbols.canonical_id` = full path-based ID ('...dungeon/generate.js:function:...:147').
-   These never match -> entry point computation returns 0 for every JS feature.
-
-   **Verification (2026-07-15):** 640 resolved edges in dnd-dungeon-gen, all show 0 EP.
-   Suffix join (`s.name LIKE '%.' || ge.callee`) correctly resolves controller -> dungeon/generate.js
-   but that join is not used by the tool. `target_id` to `canonical_id` join: 0 rows.
-
-   **Fix:** In JS resolution post-pass, after setting `resolved=1`, also set
-   `target_id = s.canonical_id` where s is the resolved symbol. Then re-ingest dnd-dungeon-gen.
-
-   **Priority:** High. Makes all JS corpora blind to cross-feature architecture.
+   Fixed 2026-07-15 (8452d9d): resolution post-pass UPDATE now also sets
+   callee and target_id to functions.name (qualified FQDN) in the same
+   statement. Bare-suffix fallback in list_features/development_priorities
+   (session 182, bc7ae69) was a tool-side workaround; this fixes the root
+   cause in the ingester. 2 new tests + 2 updated. 948 passed.
+   **TODO: re-ingest dnd-dungeon-gen** to pick up qualified callee names.
 
 ---
 
-RM61. **[FILED 2026-07-15] Language builtins classified as local-missing, inflating miss counts**
+RM61. **[DONE 2026-07-15] Language builtins classified as local-missing, inflating miss counts**
 
-   **Problem:** `_is_external_callee()` filters dotted names but not bare language builtins.
-   Python builtins (print, range, len, int, list, str, set, hasattr, isinstance, enumerate, etc.)
-   and Go builtins (make, len, string, uint64) appear as bare unresolved callees and get counted
-   as local-missing. In dj2/world/, `print` appears 188x, `range` 116x, `len` 113x as
-   local-missing. Completeness% drops to ~10% for effectively-complete packages.
-
-   **Fix:** Add per-language builtin lists to `_is_external_callee()`:
-   - Python: builtins module (all names from `import builtins; dir(builtins)`) + common exceptions
-   - Go: make, len, cap, new, append, copy, delete, close, panic, recover, print, println,
-     and all primitive type names (uint8, int64, float64, string, bool, byte, rune, etc.)
-   - Rust: standard macros (vec!, println!, format!, panic!, assert!, etc.)
-
-   **Priority:** Medium. Affects Miss column and completeness% but not stub detection.
+   Fixed 2026-07-15 (15469fb): added _PY_BUILTINS, _GO_BUILTINS, _RUST_BUILTINS
+   sets and _detect_corpus_lang() to identify dominant language from file extensions.
+   _is_external_callee() now accepts optional builtins set; feature_shape and
+   development_priorities detect corpus language once and pass it through.
+   5 new regression tests. 938 passed.
 
 ---
 

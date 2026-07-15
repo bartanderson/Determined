@@ -8,6 +8,20 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-15: RM62 ingester fix changes callee column from bare to qualified name post-resolution.
+After the resolution post-pass, graph_edges.callee is now the full qualified FQDN (e.g.
+'dungeon.generateDungeon') not the bare suffix ('generateDungeon'). Any test asserting bare
+callee names on resolved JS edges will need updating. The bare-suffix fallback in
+list_features/development_priorities (callee_feat_map) is now a safety net for unresolved
+edges only -- resolved edges match functions.name directly. dnd-dungeon-gen must be
+re-ingested to see correct EP counts.
+
+2026-07-15: exclude_tests=True is the default for list_features and development_priorities.
+Tests directories (tests/, test/, spec/, __tests__/, test_*.py) are filtered from symbol
+grouping so they can't inflate EP counts. Pass exclude_tests=false to include them.
+The Determined corpus had tests/regression at 236 EP topping the feature list above
+determined/agent at 173 EP -- that's what triggered this.
+
 2026-07-14: Non-Python corpora (JS/Go/Rust) must be ingested via tools/ingest_lang_corpus.py,
 NOT EngineRunner.run(). EngineRunner calls scan_project_files() which only discovers .py files
 and raises "Engine ingestion produced no analyses" on pure JS/Go/Rust corpora. ingest_lang_corpus.py
