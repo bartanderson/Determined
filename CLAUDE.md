@@ -227,26 +227,15 @@ How to use it:
 Do not score designs numerically. The tension sections exist because the
 interesting decisions are not binary.
 
-## Active work arc: items 6, 20, 1
+## Active work arc: RM59
 
-Items 9, 10, 19, 7, 22, 23, 24, 25 are all done (see TRACKER.md for details).
-Current open items in recommended order:
+All prior numbered items (6, 20, 1, etc.) are done. See TRACKER.md for the full
+history. Current active item:
 
-**Item 6 -- Live sync loop (MEDIUM)**
-Re-ingest a single changed file without full corpus re-run. Currently the only
-option is full re-ingest (fast at 150 files, but won't scale). Requires:
-incremental re-ingestion by file_path, edge delta propagation.
-SOTS: XIV (one source of truth for each file's facts), X (idempotent per-file
-re-ingest), XXI (don't add a watcher daemon if a simple on-demand call suffices).
-
-**Item 20 -- Call graph accuracy (MEDIUM)**
-Type annotation exploitation + __init__ attribute tracking. ~2 days.
-Do after item 6 since re-ingest is needed to populate new columns.
-See TRACKER.md for full 3-phase plan.
-
-**Item 1 -- files.role (LOW)**
-`parse_ast.py` sets role=None. Either implement role classification at ingestion
-or remove the column and tool parameter.
+**RM59 -- Feature shape analysis (ACTIVE)**
+Three new tools: list_features (directory scan), feature_shape (path tracing),
+development_priorities (completeness ranking). Corpus-agnostic, directory-first.
+See TRACKER.md RM59 for full design. Phase 1 first: list_features + feature_shape.
 
 ## Coding guidelines
 

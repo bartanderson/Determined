@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-14, session 174):** External interface annotation (18607fc): load_external_interfaces() + _external_interface_dispatch_pass(), 13 tests. RM38 done (4a20155): extract_js_addEventListener_bindings() + wired into run_cross_language_link, 6 tests. 877 passed. No open items remain in TRACKER.md.
+**Last session (2026-07-15, session 178):** Go receiver types in param_types_json (88% typed for end-of-eden, up from 60%). Plain JS excluded from annotation queue. dungeoncrawler/rotjs confirmed TS not JS. RM59 filed: feature shape analysis (list_features, feature_shape, development_priorities). All corpora re-ingested. 892 passed, 1 skipped.
 
 **Previous (2026-07-13, session 170):** LangSpec refactor (e939072): LangSpec dataclass + _shared_call_edges() replaces 3 duplicated walk loops. RM54 done: cross-file resolution post-pass, 2 new tests. dnd-dungeon-gen 974 edges, dungeoncrawler 163 edges. 816 passed, 1 skipped.
 
@@ -195,6 +195,90 @@ each step result. 293/293 tests passing.
 ---
 
 ## Open items
+
+---
+
+RM59. **[ACTIVE] Feature shape analysis: directory-first feature grouping, path tracing, and completeness scoring**
+
+   Adds a corpus-agnostic layer that answers "what features exist, which are complete,
+   and what should be worked on next" — a synthesis level above individual symbol tools.
+
+   **The gap:** all existing tools operate at symbol or file scope. No tool aggregates
+   symbols into features, traces the end-to-end path a feature takes through the call
+   graph, or scores path completeness. A human currently has to do that synthesis across
+   blast_radius + readiness_check + stub detection. This RM makes it a single call.
+
+   **Grouping strategy: directory-first**
+   Each directory (at configurable depth, default 1) is a candidate feature.
+   Directory name = feature label. Corpus-agnostic — works for Python, Go, Rust, JS/TS
+   without language-specific logic. Phase 2 can layer semantic re-clustering on top.
+
+   **Three new tools:**
+
+   `list_features([depth=1][, scope])` — directory scan
+   - Groups `files` table entries by first `depth` path segments
+   - For each group: symbol count, stub count, entry points (symbols called from outside
+     the directory), cross-feature dependency count
+   - Returns ranked list: most entry points first (= most externally visible features)
+   - Pure SQL, no LLM, fast
+
+   `feature_shape(feature_path)` — path tracing
+   - Takes a directory path (e.g. "combat/", "determined/agent/")
+   - Gets all local symbols: `SELECT ... FROM functions WHERE file_path LIKE 'feature_path%'`
+   - Entry points: local symbols with callers from outside the directory
+   - Traces forward from each entry point via call graph (uses existing `subgraph_around`
+     primitive, scoped to feature + one hop out)
+   - Each node annotated: implemented / stub / missing (callee has no symbol row)
+   - Each edge annotated: resolved / unresolved
+   - Cross-feature edges flagged as dependencies (feature A calls into feature B)
+   - Output: structured path DAG with per-node completeness status and blocking nodes
+
+   `development_priorities([scope][, top_n=10])` — priority ranking
+   - Runs list_features + feature_shape across all features (or scoped subset)
+   - Completeness score per feature = implemented_nodes / (implemented + stub + missing)
+   - Priority score = (1 - completeness) x entry_point_caller_count
+     (incomplete features with many callers blocked on them rank highest)
+   - Secondary sort: features whose stubs appear in other features' paths (cross-feature
+     blockers rank above self-contained gaps)
+   - Returns ranked table: feature, completeness%, blocking_node, priority_score
+   - Optional: flag which features have design doc coverage (RM48 delta) vs none
+
+   **Data already available (no new ingestion needed):**
+   - `files.file_path` — directory derivable by splitting on `/`
+   - `functions.is_stub`, `functions.docstring`, `functions.param_types_json`
+   - `graph_edges.caller`, `graph_edges.callee`, `graph_edges.resolved`
+   - `graph_edges.edge_type` — static vs data_flow, both count for path tracing
+   - Entry points already determinable: callers from outside directory in graph_edges
+   - `knowledge_artifacts` kind=design_note for design coverage signal
+
+   **What "missing node" means:**
+   A callee that appears in graph_edges but has no row in the functions table is an
+   unresolved external. A callee that HAS a row but is_stub=1 is a local stub — the
+   blocking kind. The distinction matters: external gaps are library calls (not actionable),
+   local stubs are implementation gaps (actionable).
+
+   **Cross-feature dependency graph:**
+   When feature A has edges into feature B's symbols, A depends on B. This is derivable
+   from the same data: graph_edges where caller_file_path prefix != callee_file_path prefix.
+   `development_priorities` uses this to surface cross-feature blockers.
+
+   **Implementation plan:**
+   - Phase 1: `list_features` + `feature_shape` in agent_tools.py. Wire into tool_registry.
+     Regression tests with in-memory DB seeded with multi-directory symbol sets.
+   - Phase 2: `development_priorities` aggregation. Cross-feature dependency graph.
+   - Phase 3 (future): semantic re-clustering as override for poorly-organized corpora.
+
+   **Regression tests:**
+   - list_features groups symbols by directory correctly
+   - list_features depth=2 gives sub-feature granularity
+   - feature_shape identifies entry points (external callers only)
+   - feature_shape marks stub nodes correctly
+   - feature_shape marks missing-callee nodes (not in functions table)
+   - feature_shape emits cross-feature dependency edges
+   - development_priorities ranks high-caller stubs above low-caller stubs
+   - development_priorities ranks cross-feature blockers above self-contained gaps
+
+   **Estimated effort:** Phase 1: 1 day. Phase 2: 0.5 day.
 
 ---
 
