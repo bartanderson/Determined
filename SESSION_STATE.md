@@ -1,75 +1,73 @@
-Written at commit: f2d1553
+Written at commit: 8b6ab5c
 
-# SESSION STATE - session 175
+# SESSION STATE - session 176
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 175, 2026-07-14)
+## What happened this session (session 176, 2026-07-14)
 
-**Step 0: Re-ingested dj2 and Determined [V]**
-- dj2: cross_language=33 (was 0), js_event_binding=15 (was 0).
-- Determined: data_flow=3,157 (was 0).
-- Key trap: non-Python corpora must use tools/ingest_lang_corpus.py, NOT
-  EngineRunner.run(). Documented in HISTORY.md.
+**JS data_flow was 0 -- diagnosed and fixed [V]**
+- Root cause: JS corpora were ingested before f2d1553 wired data_flow into persist layer.
+- Fix: re-ingest all three JS corpora. Now: dnd-dungeon-gen=410, dungeoncrawler=29, rotjs=353.
 
-**7432bf3 -- Go/Rust typed params [V]**
-- _go_param_types(): parameter_declaration nodes, strips leading *.
-- _rust_param_types(): parameter nodes in function_item; self skipped naturally.
-- Wired into _go_symbols() and _rust_symbols().
-- 8 new tests. 885 passed, 1 skipped.
+**Cross-corpus quality analysis [V]**
+- Queried all 7 corpus DBs for stubs, docstrings, typed params, orphans, edge density,
+  unresolved callees, data_flow hubs.
+- Key findings: Go/Rust/JS had 0% docstrings (extractor gap), dnd-dungeon-gen 99% unresolved
+  (name format mismatch + template literal bug), Python data_flow hubs dominated by builtins,
+  Determined DB has .min.js noise (cytoscape, socket.io), Rust tuple-field callee garbage.
 
-**3c68ec0 -- Go/Rust data_flow edges [V]**
-- _go_data_flow(): L1 nested call args, L2 short_var_declaration (:=).
-- _rust_data_flow(): L1 nested call args, L2 let_declaration.
-- 6 new tests. 891 passed, 1 skipped.
+**0780c65 -- Quality fixes round 1 [V]**
+- scan_project_files: skip *.min.js / *.min.ts from JS discovery.
+- language_walker: add _preceding_comment() helper; extracts Go // lines, Rust /// lines,
+  JS/TS JSDoc above declarations. Wired into _go_symbols, _rust_symbols, _js_symbols.
+- language_walker: _go_param_types now also captures variadic_parameter_declaration.
+- language_walker: _js_callee_name rejects multi-line or >120-char text (template literal
+  bug storing raw array join expressions as callee names in dnd-dungeon-gen).
+- Results after re-ingest: Go 0%->39% docs, Rust 0%->29% docs, dnd-dungeon-gen 0%->85%,
+  dungeoncrawler 0%->88%, rotjs 0%->37%.
 
-**f2d1553 -- Wire data_flow_edges() into persist layer [V]**
-- _persist_js_ts_files() was calling call_edges() but NOT data_flow_edges().
-- Added insert loop for data_flow_edges() after call_edges() loop.
-- 891 passed, 1 skipped.
+**8b6ab5c -- Quality fixes round 2 [V]**
+- parse_ast.py: _PY_BUILTINS module-level frozenset; filter builtins from data_flow callers.
+  len/list/isinstance were producing 65-229 phantom data_flow edges each.
+- language_walker: _rust_callee_name filters tuple-field callees (self.0.method() -> None).
+  Removed 41 garbage edges from ruggrogue (2782->2741 edges).
+- persistence_engine: resolution post-pass extended to handle :: separator for Rust.
+  Rust resolution rate: 7% -> 14%.
+- 891 tests passed, 1 skipped [V].
 
-**Gap 3: JS corpora ingested [V]**
-- dnd-dungeon-gen: 291 syms, 974 edges
-- dungeoncrawler: 78 syms, 163 edges
-- rotjs: 626 syms, 1,886 edges (6 js_event_binding)
+## Corpus status after this session [V]
 
-**Gap 4: ruggrogue external_interfaces.json [V]**
-- Created C:\Users\bartl\dev\corpora\ruggrogue\external_interfaces.json
-  with Iterator/From/Default/Display traits.
-- interface_dispatch: 0 → 12.
-
-## Corpus status (all current) [V]
-
-| Corpus | Syms | Edges | data_flow | dispatch |
-|--------|------|-------|-----------|----------|
-| dj2 (Python+JS) | 1,399 | 10,206 | 1,611 | cross_lang=33, js_event=15 |
-| Determined (Python) | 2,048 | 23,499 | 3,157 | polymorphic=18 |
-| end-of-eden (Go) | 533 | 7,494 | **4,148** | iface_dispatch=41 |
-| ruggrogue (Rust) | 337 | 2,782 | **439** | iface_dispatch=12, trait=4 |
-| dnd-dungeon-gen (JS) | 291 | 974 | 0 | - |
-| dungeoncrawler (JS) | 78 | 163 | 0 | - |
-| rotjs (JS) | 626 | 1,886 | 0 | js_event=6 |
-
-end-of-eden notable: data_flow (4,148) exceeds static (3,305) -- Go chains heavily.
+| Corpus | Syms | Edges | data_flow | Docs% | Typed% | Resolved% |
+|--------|------|-------|-----------|-------|--------|-----------|
+| dj2 (Python+JS) | 1,399 | 10,206 | 1,611 | 43% | 33% | ~4% (needs re-ingest) |
+| Determined (Python) | 2,048 | 23,499 | 3,157 | 36% | 33% | 3% (min.js noise, needs re-ingest) |
+| end-of-eden (Go) | 533 | 7,494 | 4,148 | 39% | 60% | 15% |
+| ruggrogue (Rust) | 337 | 2,741 | 439 | 29% | 83% | 14% |
+| dnd-dungeon-gen (JS) | 291 | 1,384 | 410 | 85% | 0% | 65% |
+| dungeoncrawler (JS) | 78 | 192 | 29 | 88% | 56% | 61% |
+| rotjs (JS) | 626 | 2,239 | 353 | 37% | 30% | 21% |
 
 ## NEXT SESSION -- start here
 
-**No open items in TRACKER.md. Next work: Item 6 or Item 20 (see CLAUDE.md).**
+**Two corpora need re-ingest to pick up this session's fixes:**
+1. Determined: close the UI first (DB locked), then:
+   `python tools/ingest_lang_corpus.py C:\Users\bartl\dev\Determined`
+   Drops cytoscape.min.js + socket.io.min.js (currently 163 fns, 6,453 edges of noise).
+2. dj2: re-ingest to apply builtin data_flow filter:
+   `python tools/ingest_lang_corpus.py C:\Users\bartl\dev\dj2`
+   Must use .determinedignore to exclude Lib/, archive/, tools/, etc.
 
-Item 6 (live sync loop): incremental re-ingest by file_path, edge delta propagation.
-Item 20 (call graph accuracy): type annotation exploitation + __init__ attribute tracking.
-  Item 6 should come first -- Item 20 needs re-ingest to populate new columns.
-
-**Optional follow-on: JS data_flow for pure-JS corpora**
-dnd-dungeon-gen, dungeoncrawler have 0 data_flow. JS data_flow IS implemented
-(_js_data_flow()) but these corpora may not trigger it -- check if the LanguageWalker
-is being called with the right language. rotjs has 0 too. May need investigation.
+**Remaining quality gaps (priority order):**
+1. Python 36-43% docstring coverage -- real source gap. RM49 annotate_function can fill via LLM.
+2. Go typed params 60% -- receiver types still not extracted from method declarations.
+3. dnd-dungeon-gen JS typed params 0% -- plain JS, no JSDoc @param types in source.
+4. No new TRACKER items filed this session. Next work per CLAUDE.md: nothing open.
 
 ## Known issues (carried forward)
 
-**ingest_lang_corpus.py for non-Python corpora [V]:** Use tools/ingest_lang_corpus.py,
-  NOT EngineRunner.run(). Documented in HISTORY.md.
+**ingest_lang_corpus.py for non-Python corpora [V]:** Use tools/ingest_lang_corpus.py.
 **interface_dispatch caller_file empty [V]:** Interface types not in functions table.
 **addEventListener arrow fn not captured [V]:** Inline arrow callbacks not statically linkable.
 **RM21 probes not re-run [?]:** Live LLM probe not re-run this session.
@@ -85,7 +83,8 @@ is being called with the right language. rotjs has 0 too. May need investigation
 **dj2 ignore dirs trap [V]:** Always exclude Lib/, archive/, tools/, tools.old/, og_system/,
   recovered_code/, codebase_analyzer/, Scripts/.
 **normalize_symbol strips :: [V]:** "Module::Fn" -> "Fn". Watch for Rust FQDN collisions.
-**JS corpora data_flow=0 [?]:** dnd-dungeon-gen, dungeoncrawler, rotjs show 0 data_flow
-  despite _js_data_flow() being implemented. Not investigated yet.
+**Go resolution 15% [V]:** Correct -- unresolved are external libs (bubbletea, lipgloss).
+**Rust tuple-field callees fixed [V]:** self.0.method() now returns None.
+**Determined min.js noise [?]:** Still present until re-ingest after UI closed.
 
 LLM server: llama-server.exe on port 8081 with Qwen3-8B-Q4_K_M.gguf, --ctx-size 32768.
