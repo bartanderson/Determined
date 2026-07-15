@@ -220,6 +220,27 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Finding which stubs are blocking the most callers; deciding what to implement next.",
         "category": "discovery",
     },
+    "list_features": {
+        "purpose": "Group all corpus symbols by directory prefix (feature = directory). Returns symbol count, stub count, entry points (symbols with external callers), and cross-feature edge count per directory. Ranked by entry-point count.",
+        "args": {
+            "depth":  "(optional) path depth for grouping, default 1 (top-level dirs)",
+            "scope":  "(optional) restrict to dirs matching this prefix",
+        },
+        "output": "table of features with symbol/stub/entry-point/cross-edge counts",
+        "feeds": ["feature_shape", "list_stubs", "knowledge_status"],
+        "use_when": "Getting a high-level map of the codebase features before diving in; finding which directories have the most external callers.",
+        "category": "discovery",
+    },
+    "feature_shape": {
+        "purpose": "Trace the end-to-end call path through a feature directory. Identifies entry points (local symbols with external callers), walks forward, and annotates each node as implemented/stub/missing. Flags cross-feature dependencies.",
+        "args": {
+            "feature_path": "directory path of the feature (e.g. 'determined/agent/' or 'combat')",
+        },
+        "output": "entry points, internal call edges, cross-feature edges, blocking stubs, completeness %",
+        "feeds": ["list_stubs", "readiness_check", "completion_contract"],
+        "use_when": "Understanding what a feature does end-to-end; finding which stubs block its completion; discovering its cross-feature dependencies.",
+        "category": "understanding",
+    },
     "find_abc_gaps": {
         "purpose": "Find abstract-interface methods (stubs on ABC classes) that have no non-stub override anywhere in the corpus — the unimplemented interface frontier.",
         "args": {},

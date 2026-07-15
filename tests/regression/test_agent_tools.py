@@ -549,6 +549,9 @@ def test_dispatch_all_tools_registered():
         "scaffold_from_pattern",
         # RM47: readiness gate
         "readiness_check",
+        # RM59: feature shape analysis
+        "list_features",
+        "feature_shape",
     }
 
     assert set(TOOLS.keys()) == expected

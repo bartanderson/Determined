@@ -6163,6 +6163,213 @@ def edit_file(assessor: "Assessor", args: dict) -> str:
 
 
 # ------------------------------------------------------------------
+# FEATURE SHAPE TOOLS (RM59)
+# ------------------------------------------------------------------
+
+def list_features(oracle: "DBOracle", args: dict) -> str:
+    """
+    list_features([depth=1][, scope]) - directory-first feature grouping.
+
+    Groups functions by the first `depth` path segments of their file_path.
+    Returns each feature directory with: symbol count, stub count, entry point
+    count (symbols called from outside the directory), cross-feature edge count.
+    Ranked by entry point count descending (most externally visible first).
+    """
+    depth = int(args.get("depth", 1))
+    scope = args.get("scope", "").strip().replace("\\", "/").rstrip("/")
+    conn = oracle.conn
+
+    rows = conn.execute(
+        "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp, "
+        "name, is_stub FROM functions"
+    ).fetchall()
+
+    if not rows:
+        return "No functions found in corpus."
+
+    from collections import defaultdict
+
+    def _dir_key(fp: str, d: int) -> str:
+        parts = fp.split("/")
+        return "/".join(parts[:d]) if len(parts) > 1 else parts[0]
+
+    # Group symbols by feature directory
+    feat_symbols: dict[str, set] = defaultdict(set)
+    feat_stubs: dict[str, int] = defaultdict(int)
+    for fp, name, is_stub in rows:
+        key = _dir_key(fp, depth)
+        if scope and not key.startswith(scope):
+            continue
+        feat_symbols[key].add(name)
+        if is_stub:
+            feat_stubs[key] += 1
+
+    if not feat_symbols:
+        return f"No features found (depth={depth}" + (f", scope={scope}" if scope else "") + ")."
+
+    # Entry points: local symbols called by callers outside the directory.
+    # Derive caller's directory from the functions table (graph_edges has no caller_file column).
+    feat_entry_points: dict[str, int] = defaultdict(int)
+    feat_cross_edges: dict[str, int] = defaultdict(int)
+
+    caller_fp_map = {name: fp for fp, name, _ in rows}
+    for caller, callee in conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
+        caller_fp = caller_fp_map.get(caller, "").replace("\\", "/")
+        caller_key = _dir_key(caller_fp, depth) if caller_fp else ""
+        for feat, syms in feat_symbols.items():
+            if callee in syms and caller_key != feat:
+                feat_entry_points[feat] += 1
+                feat_cross_edges[feat] += 1
+
+    # Build output ranked by entry points desc, then symbol count desc
+    features = sorted(
+        feat_symbols.keys(),
+        key=lambda f: (-feat_entry_points[f], -len(feat_symbols[f]))
+    )
+
+    lines = [f"Features (depth={depth}" + (f", scope={scope}" if scope else "") + "):"]
+    lines.append(f"{'Directory':<40} {'Syms':>5} {'Stubs':>5} {'EntryPts':>8} {'CrossEdges':>10}")
+    lines.append("-" * 72)
+    for feat in features:
+        lines.append(
+            f"{feat:<40} {len(feat_symbols[feat]):>5} {feat_stubs[feat]:>5} "
+            f"{feat_entry_points[feat]:>8} {feat_cross_edges[feat]:>10}"
+        )
+    return "\n".join(lines)
+
+
+def feature_shape(oracle: "DBOracle", args: dict) -> str:
+    """
+    feature_shape(feature_path) - trace the call path through a feature directory.
+
+    Identifies entry points (local symbols with external callers), then traces
+    forward through the call graph. Each node is annotated:
+      - implemented: has a functions row and is_stub=0
+      - stub: has a functions row and is_stub=1
+      - missing: appears in graph_edges as callee but has no functions row (external)
+    Cross-feature edges are flagged. Returns a structured path summary.
+    """
+    feature_path = args.get("feature_path", "").strip().replace("\\", "/").rstrip("/")
+    if not feature_path:
+        return "ERROR: feature_path is required."
+
+    conn = oracle.conn
+    norm_path = feature_path + "/"
+
+    # All local symbols
+    local_rows = conn.execute(
+        "SELECT name, is_stub, REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp "
+        "FROM functions WHERE REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') LIKE ?",
+        (norm_path + "%",),
+    ).fetchall()
+
+    if not local_rows:
+        return f"No symbols found under '{feature_path}'."
+
+    local_symbols: dict[str, dict] = {}
+    for name, is_stub, fp in local_rows:
+        local_symbols[name] = {"is_stub": bool(is_stub), "file": fp}
+
+    # All symbol names in the entire corpus (for missing-node detection)
+    all_known = {r[0] for r in conn.execute("SELECT name FROM functions").fetchall()}
+
+    # Entry points: local symbols called by callers outside this directory
+    entry_points: set[str] = set()
+    caller_rows = conn.execute(
+        "SELECT caller, callee FROM graph_edges WHERE callee IN ({})".format(
+            ",".join("?" * len(local_symbols))
+        ),
+        list(local_symbols.keys()),
+    ).fetchall()
+
+    for caller, callee in caller_rows:
+        # Determine if caller is outside the feature
+        caller_row = conn.execute(
+            "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') FROM functions WHERE name = ?",
+            (caller,),
+        ).fetchone()
+        if caller_row is None or not caller_row[0].startswith(norm_path):
+            entry_points.add(callee)
+
+    if not entry_points:
+        # No external callers -- treat all local symbols as entry points
+        entry_points = set(local_symbols.keys())
+        ep_note = " (no external callers; showing all local symbols as roots)"
+    else:
+        ep_note = ""
+
+    # Forward walk from entry points (BFS, stop at cross-feature boundary)
+    from collections import deque
+
+    visited_nodes: set[str] = set()
+    node_status: dict[str, str] = {}
+    cross_feature_edges: list[tuple] = []
+    internal_edges: list[tuple] = []
+
+    queue: deque = deque(entry_points)
+    for ep in entry_points:
+        visited_nodes.add(ep)
+        node_status[ep] = "stub" if local_symbols[ep]["is_stub"] else "implemented"
+
+    while queue:
+        node = queue.popleft()
+        callee_rows = conn.execute(
+            "SELECT callee FROM graph_edges WHERE caller = ?", (node,)
+        ).fetchall()
+        for (callee,) in callee_rows:
+            is_local = callee in local_symbols
+            if is_local:
+                internal_edges.append((node, callee))
+                if callee not in visited_nodes:
+                    visited_nodes.add(callee)
+                    node_status[callee] = "stub" if local_symbols[callee]["is_stub"] else "implemented"
+                    queue.append(callee)
+            else:
+                if callee in all_known:
+                    cross_feature_edges.append((node, callee, "cross-feature"))
+                else:
+                    cross_feature_edges.append((node, callee, "external"))
+
+    # Summary stats
+    impl_count = sum(1 for s in node_status.values() if s == "implemented")
+    stub_count = sum(1 for s in node_status.values() if s == "stub")
+    total = len(node_status)
+    completeness = f"{impl_count / total * 100:.0f}%" if total else "N/A"
+
+    lines = [f"Feature shape: {feature_path}{ep_note}"]
+    lines.append(f"  Symbols: {total} total, {impl_count} implemented, {stub_count} stub")
+    lines.append(f"  Completeness: {completeness}  |  Entry points: {len(entry_points)}")
+    lines.append("")
+
+    lines.append("Entry points:")
+    for ep in sorted(entry_points):
+        status = node_status.get(ep, "?")
+        lines.append(f"  [{status}] {ep}")
+
+    if internal_edges:
+        lines.append("")
+        lines.append("Internal call edges:")
+        for src, dst in sorted(internal_edges):
+            dst_status = node_status.get(dst, "?")
+            lines.append(f"  {src} -> [{dst_status}] {dst}")
+
+    if cross_feature_edges:
+        lines.append("")
+        lines.append("Cross-feature / external edges:")
+        for src, dst, kind in sorted(cross_feature_edges):
+            lines.append(f"  {src} -> {dst}  ({kind})")
+
+    stubs = [n for n, s in node_status.items() if s == "stub"]
+    if stubs:
+        lines.append("")
+        lines.append(f"Blocking stubs ({len(stubs)}):")
+        for s in sorted(stubs):
+            lines.append(f"  {s}")
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
 # RECONCILIATION TOOLS (RM19)
 # ------------------------------------------------------------------
 
@@ -6767,6 +6974,9 @@ TOOLS = {
     "search_web":              (search_web,              "assessor"),
     # File editing (RM11)
     "edit_file":               (edit_file,               "assessor"),
+    # Feature shape analysis (RM59)
+    "list_features":                    (list_features,                    "oracle"),
+    "feature_shape":                    (feature_shape,                    "oracle"),
     # Reconciliation / duplicate detection (RM19)
     "find_duplicates":                  (find_duplicates,                  "assessor"),
     "list_reconciliation_findings":     (list_reconciliation_findings,     "assessor"),
