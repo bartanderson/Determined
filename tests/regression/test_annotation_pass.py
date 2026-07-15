@@ -157,6 +157,24 @@ def test_queue_excludes_stubs():
     assert "a_complete" in names
 
 
+def test_queue_excludes_plain_js():
+    """Plain .js and .jsx files are excluded; .ts and .py are included."""
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    _seed_fn(conn, "js_fn",  "app.js")
+    _seed_fn(conn, "jsx_fn", "comp.jsx")
+    _seed_fn(conn, "ts_fn",  "app.ts")
+    _seed_fn(conn, "py_fn",  "util.py")
+
+    from determined.agent.agent_tools import _build_annotation_queue
+    queue = _build_annotation_queue(oracle)
+    names = [item["name"] for item in queue]
+    assert "js_fn"  not in names
+    assert "jsx_fn" not in names
+    assert "ts_fn"  in names
+    assert "py_fn"  in names
+
+
 def test_run_pass_annotates_functions():
     """run_annotation_pass with LLM mocked stores inferred_annotations."""
     conn = _make_db()

@@ -4859,6 +4859,8 @@ def _build_annotation_queue(oracle, scope: str = "") -> list:
         f"FROM functions f "
         f"WHERE f.is_stub=0 "
         f"  AND (f.param_types_json IS NULL OR f.param_types_json='{{}}' OR f.param_types_json='')"
+        # Plain JS/JSX have no type syntax; exclude them — TS/TSX stay in
+        f"  AND f.file_path NOT LIKE '%.js' AND f.file_path NOT LIKE '%.jsx'"
         f"{scope_clause} "
         f"ORDER BY caller_count DESC",
         scope_params,

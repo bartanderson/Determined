@@ -1210,11 +1210,25 @@ class LanguageWalker:
 
     def _go_param_types(self, fn_node) -> str | None:
         """Extract parameter types from a Go function/method node.
-        Returns JSON list of {"name": str, "type": str} or None if no typed params."""
+        Returns JSON list of {"name": str, "type": str} or None if no typed params.
+        For method_declaration nodes the receiver is prepended as the first entry."""
+        import json as _json
+        result = []
+
+        # Receiver: func (r *TypeName) Method(...) — present on method_declaration nodes only
+        receiver_node = fn_node.field("receiver")
+        if receiver_node is not None:
+            text = receiver_node.text().strip("()")
+            parts = text.split()
+            if len(parts) >= 2:
+                recv_name = parts[0]
+                recv_type = parts[-1].lstrip("*")
+                if recv_type and recv_type[0].isupper():
+                    result.append({"name": recv_name, "type": recv_type})
+
         params_node = fn_node.field("parameters")
         if params_node is None:
-            return None
-        result = []
+            return _json.dumps(result) if result else None
         for param in params_node.find_all({"rule": {"kind": "parameter_declaration"}}):
             type_node = param.field("type")
             if type_node is None:
@@ -1235,7 +1249,6 @@ class LanguageWalker:
             })
         if not result:
             return None
-        import json as _json
         return _json.dumps(result)
 
     def _go_callee_name(self, func_node) -> str | None:

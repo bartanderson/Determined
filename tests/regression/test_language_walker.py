@@ -715,13 +715,21 @@ type Server struct{}
 func (s *Server) Handle(req Request, w Writer) {}
 """
 
+def test_go_method_receiver_in_param_types():
+    w = LanguageWalker(GO_METHOD_PARAMS, "/fake/main.go", "go")
+    syms = {s["name"]: s for s in w.symbols()}
+    pt = _json.loads(syms["Server.Handle"]["param_types_json"])
+    # receiver (s *Server) is prepended as first entry
+    assert pt[0] == {"name": "s", "type": "Server"}
+
 def test_go_method_param_types():
     w = LanguageWalker(GO_METHOD_PARAMS, "/fake/main.go", "go")
     syms = {s["name"]: s for s in w.symbols()}
     pt = _json.loads(syms["Server.Handle"]["param_types_json"])
-    assert len(pt) == 2
-    assert pt[0]["type"] == "Request"
-    assert pt[1]["type"] == "Writer"
+    # receiver + 2 regular params
+    assert len(pt) == 3
+    assert pt[1]["type"] == "Request"
+    assert pt[2]["type"] == "Writer"
 
 
 # ---------------------------------------------------------------------------
