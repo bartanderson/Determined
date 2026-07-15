@@ -6267,12 +6267,22 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     feat_entry_points: dict[str, int] = defaultdict(int)
     feat_cross_edges: dict[str, int] = defaultdict(int)
 
+    # Build callee -> set-of-features map, supporting both full (module.name) and
+    # bare suffix (name) forms so JS/Go/Rust bare callees resolve correctly.
+    callee_feat_map: dict[str, set] = defaultdict(set)
+    for feat, syms in feat_symbols.items():
+        for sym in syms:
+            callee_feat_map[sym].add(feat)
+            sep = '.' if '.' in sym else ('::' if '::' in sym else '')
+            if sep:
+                callee_feat_map[sym.rsplit(sep, 1)[1]].add(feat)
+
     caller_fp_map = {name: _fp_norm(fp) for fp, name, _ in rows}
     for caller, callee in conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
         caller_fp = caller_fp_map.get(caller, "")
         caller_k = dir_key(caller_fp) if caller_fp else ""
-        for feat, syms in feat_symbols.items():
-            if callee in syms and caller_k != feat:
+        for feat in callee_feat_map.get(callee, set()):
+            if caller_k != feat:
                 feat_entry_points[feat] += 1
                 feat_cross_edges[feat] += 1
 
@@ -6499,6 +6509,23 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
 
     all_features = set(feat_impl.keys()) | set(feat_stub.keys())
 
+    # Build bare-suffix reverse lookup so JS/Go/Rust bare callees resolve to sym_info entries.
+    # e.g. 'generate.generateDungeon' -> bare key 'generateDungeon' also maps to same entry.
+    # First match wins when a bare name is ambiguous across features.
+    bare_sym_map: dict[str, str] = {}
+    for name in sym_info:
+        sep = '.' if '.' in name else ('::' if '::' in name else '')
+        if sep:
+            bare = name.rsplit(sep, 1)[1]
+            if bare not in bare_sym_map:
+                bare_sym_map[bare] = name
+
+    def _resolve_sym(name: str):
+        return sym_info.get(name) or sym_info.get(bare_sym_map.get(name, ''))
+
+    def _in_known(name: str) -> bool:
+        return name in all_known or name in bare_sym_map
+
     # --- 2. Load all edges once ---
     edge_rows = conn.execute("SELECT caller, callee FROM graph_edges").fetchall()
 
@@ -6509,15 +6536,15 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     stub_cross_callers: dict[str, int] = defaultdict(int)
 
     for caller, callee in edge_rows:
-        caller_info = sym_info.get(caller)
-        callee_info = sym_info.get(callee)
+        caller_info = _resolve_sym(caller)
+        callee_info = _resolve_sym(callee)
 
         # Entry point: callee in a feature, caller from a different feature
         if callee_info and caller_info and caller_info["feat"] != callee_info["feat"]:
             feat_ep_callers[callee_info["feat"]] += 1
 
         # Local-missing: caller is local, callee not in functions, name looks local (no '.')
-        if caller_info and callee not in all_known and not _is_external_callee(callee):
+        if caller_info and not _in_known(callee) and not _is_external_callee(callee):
             feat_missing[caller_info["feat"]].add(callee)
 
         # Cross-feature blocker: callee is a stub called from a different feature
@@ -6529,16 +6556,18 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     # A feature is a cross-feature blocker if any of its stubs are called from outside
     feat_is_blocker: dict[str, bool] = defaultdict(bool)
     for stub_name, count in stub_cross_callers.items():
-        if count > 0 and stub_name in sym_info:
-            feat = sym_info[stub_name]["feat"]
-            feat_is_blocker[feat] = True
+        if count > 0:
+            info = _resolve_sym(stub_name)
+            if info:
+                feat_is_blocker[info["feat"]] = True
 
     # --- 5. Compute scores ---
     # best blocking stub per feature = the local stub with most cross-feature callers
     feat_blocking_stub: dict[str, str] = {}
     for stub_name in stub_cross_callers:
-        if stub_name in sym_info:
-            feat = sym_info[stub_name]["feat"]
+        info = _resolve_sym(stub_name)
+        if info:
+            feat = info["feat"]
             prev = feat_blocking_stub.get(feat)
             if prev is None or stub_cross_callers[stub_name] > stub_cross_callers.get(prev, 0):
                 feat_blocking_stub[feat] = stub_name

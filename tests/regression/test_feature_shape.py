@@ -516,6 +516,67 @@ def test_development_priorities_absolute_paths_relative_labels():
     assert not any(l.strip().startswith("C:") for l in data_lines)
 
 
+# ---------------------------------------------------------------------------
+# RM62: bare-suffix callee resolution for JS-style cross-feature edges
+# ---------------------------------------------------------------------------
+
+def _seed_js_style_db(conn):
+    """
+    Simulates a JS corpus where graph_edges.callee is a bare name (e.g. 'generateDungeon')
+    but functions.name is module-qualified (e.g. 'dungeon.generateDungeon').
+    This is exactly what the JS ingester produces: resolved=1 but callee not updated to
+    the qualified name. The fix: bare-suffix matching in list_features and
+    development_priorities.
+    """
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        -- controller/ calls dungeon/ using bare name 'generateDungeon'
+        INSERT INTO functions VALUES ('controller.run',         'controller/controller.js', 0, NULL, NULL);
+        INSERT INTO functions VALUES ('dungeon.generateDungeon','dungeon/generate.js',      0, NULL, NULL);
+        INSERT INTO functions VALUES ('utility.toss',           'utility/tools.js',         1, NULL, NULL);
+        -- JS bare-callee edges (callee lacks module prefix)
+        INSERT INTO graph_edges VALUES ('controller.run', 'generateDungeon', 'static', 1);
+        INSERT INTO graph_edges VALUES ('controller.run', 'toss',            'static', 1);
+    """)
+
+
+def test_list_features_bare_suffix_callee_counts_as_entry_point():
+    """JS-style bare callee 'generateDungeon' should register as EP for dungeon/ feature."""
+    conn = sqlite3.connect(":memory:")
+    _seed_js_style_db(conn)
+    oracle = _make_oracle(conn)
+    result = list_features(oracle, {"depth": 1})
+    dungeon_lines = [l for l in result.splitlines() if l.strip().startswith("dungeon")]
+    assert dungeon_lines, "dungeon feature not found"
+    ep_count = int(dungeon_lines[0].split()[3])  # EntryPts column (0=name,1=syms,2=stubs,3=EP)
+    assert ep_count >= 1, f"Expected dungeon EP>=1 for bare callee, got {ep_count}"
+
+
+def test_development_priorities_bare_suffix_callee_counts_as_entry_point():
+    """JS-style bare callee 'toss' (stub in utility/) should register as EP and blocker."""
+    conn = sqlite3.connect(":memory:")
+    _seed_js_style_db(conn)
+    oracle = _make_oracle(conn)
+    result = development_priorities(oracle, {})
+    assert "utility" in result
+    utility_lines = [l for l in result.splitlines() if "utility" in l]
+    # utility has a stub (toss) called cross-feature -> should be BLOCKER
+    combined = " ".join(utility_lines)
+    assert "BLOCKER" in combined or "toss" in combined
+
+
 def test_development_priorities_external_not_counted_as_missing():
     conn = sqlite3.connect(":memory:")
     _seed_abs_db(conn)
