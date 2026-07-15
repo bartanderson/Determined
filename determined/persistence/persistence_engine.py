@@ -925,14 +925,46 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
             if ifaces:
                 _external_interface_dispatch_pass(cursor, ifaces, lang, file_paths, logger=logger)
 
-    # Cross-file resolution post-pass: mark an edge resolved=1 when the callee
-    # matches a known symbol (full fqdn OR the bare suffix after the last '.' or '::').
-    # Covers JS/TS (dot separator), Go (pkg.Type), Rust (Type::method).
+    # Cross-file resolution post-pass: mark an edge resolved=1 and write back the
+    # resolved callee's FQDN into callee (and target_id) so that tools can join on
+    # the canonical name.  Covers JS/TS (dot separator), Go (pkg.Type), Rust (Type::method).
     # The walker always emits resolved=False (single-file view); this pass has the full set.
     if file_paths:
         cursor.execute(f"""
             UPDATE graph_edges
-            SET resolved = 1
+            SET resolved = 1,
+                callee = (
+                  SELECT f.name FROM functions f
+                  WHERE f.file_path IN ({placeholders})
+                    AND (
+                      f.name = graph_edges.callee
+                      OR (
+                        INSTR(f.name, '.') > 0
+                        AND SUBSTR(f.name, INSTR(f.name, '.') + 1) = graph_edges.callee
+                      )
+                      OR (
+                        INSTR(f.name, '::') > 0
+                        AND SUBSTR(f.name, INSTR(f.name, '::') + 2) = graph_edges.callee
+                      )
+                    )
+                  LIMIT 1
+                ),
+                target_id = (
+                  SELECT f.name FROM functions f
+                  WHERE f.file_path IN ({placeholders})
+                    AND (
+                      f.name = graph_edges.callee
+                      OR (
+                        INSTR(f.name, '.') > 0
+                        AND SUBSTR(f.name, INSTR(f.name, '.') + 1) = graph_edges.callee
+                      )
+                      OR (
+                        INSTR(f.name, '::') > 0
+                        AND SUBSTR(f.name, INSTR(f.name, '::') + 2) = graph_edges.callee
+                      )
+                    )
+                  LIMIT 1
+                )
             WHERE caller_file IN ({placeholders})
               AND edge_type = 'static'
               AND EXISTS (
@@ -950,7 +982,7 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                     )
                   )
               )
-        """, file_paths + file_paths)
+        """, file_paths + file_paths + file_paths + file_paths)
 
     seen: set[tuple[str, str]] = set()
     for canonical_id, name, ntype in symbol_names_batch:

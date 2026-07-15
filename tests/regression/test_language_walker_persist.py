@@ -94,8 +94,8 @@ def test_js_call_edge_stored(db_with_js):
         "SELECT caller, callee FROM graph_edges WHERE edge_type = 'static'"
     ).fetchall()
     pairs = {(r[0], r[1]) for r in rows}
-    # dungeon.buildDungeon calls generateRooms
-    assert ("dungeon.buildDungeon", "generateRooms") in pairs
+    # dungeon.buildDungeon calls generateRooms (callee upgraded to qualified name after resolution)
+    assert ("dungeon.buildDungeon", "dungeon.generateRooms") in pairs
 
 
 def test_js_cross_file_call_edge(db_with_js):
@@ -103,8 +103,34 @@ def test_js_cross_file_call_edge(db_with_js):
         "SELECT caller, callee FROM graph_edges WHERE edge_type = 'static'"
     ).fetchall()
     pairs = {(r[0], r[1]) for r in rows}
-    # controller.run calls buildDungeon (cross-file, unresolved)
-    assert ("controller.run", "buildDungeon") in pairs
+    # controller.run calls buildDungeon (callee upgraded to qualified name after resolution)
+    assert ("controller.run", "dungeon.buildDungeon") in pairs
+
+
+# ---------------------------------------------------------------------------
+# Tests: RM62 - resolution post-pass writes back qualified callee name
+# ---------------------------------------------------------------------------
+
+def test_cross_file_callee_upgraded_to_qualified_name(db_with_js):
+    """After the resolution post-pass, bare callees are upgraded to the qualified FQDN.
+    controller.run -> 'buildDungeon' (bare) must become 'dungeon.buildDungeon' (qualified)."""
+    rows = db_with_js.execute(
+        "SELECT callee, resolved FROM graph_edges WHERE caller = 'controller.run'"
+    ).fetchall()
+    assert rows, "No edges from controller.run found"
+    callee, resolved = rows[0]
+    assert callee == "dungeon.buildDungeon", f"Expected qualified callee, got '{callee}'"
+    assert resolved == 1
+
+
+def test_same_file_callee_upgraded_to_qualified_name(db_with_js):
+    """Within-file callees are also upgraded: buildDungeon -> generateRooms (bare)
+    becomes dungeon.generateRooms (qualified)."""
+    rows = db_with_js.execute(
+        "SELECT callee FROM graph_edges WHERE caller = 'dungeon.buildDungeon'"
+    ).fetchall()
+    assert rows, "No edges from dungeon.buildDungeon found"
+    assert rows[0][0] == "dungeon.generateRooms", f"Expected qualified callee, got '{rows[0][0]}'"
 
 
 # ---------------------------------------------------------------------------
