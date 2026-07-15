@@ -68,6 +68,79 @@ answer is, which layer owns the fix, and a proposed approach. Bart decides
 priority. This keeps scope from expanding silently and ensures every addition
 solves a real observed problem.
 
+## LANGUAGE ROUTING -- Which path handles which language
+
+**Rule: update this table any time a new feature lands in any path.**
+If a feature exists for one language but not another, that is a known gap — note it here.
+
+### Ingest entry points
+
+| Corpus type | Entry point | When to use |
+|-------------|-------------|-------------|
+| Python-only or Python+JS/TS/Go/Rust | `determined/engine/run_engine.py` (EngineRunner) | Normal ingestion via UI or CLI (`python -m determined.engine.run_engine <path>`) |
+| Go/Rust/JS/TS only (no Python) | `tools/ingest_lang_corpus.py` | Non-Python corpora where EngineRunner would crash (requires ≥1 Python file) |
+
+### File discovery
+
+| Language | Discovery function | Key filters |
+|----------|--------------------|-------------|
+| Python | `scan_project_files.discover_python_files` | Skips `site-packages`, `__pycache__`, `.venv`, `Lib`; respects `.determinedignore` |
+| JS/TS/Go/Rust | `scan_project_files.discover_js_ts_files` | Extensions: `.js .ts .jsx .tsx .mjs .cjs .go .rs`; skips `node_modules`, `dist`, `build`, `.venv`, `*.min.js/ts` |
+
+### Symbol extraction
+
+| Language | Extractor | Docstrings | Typed params |
+|----------|-----------|------------|--------------|
+| Python | `parse_ast.py` | Yes (triple-quoted) | Yes (annotations) |
+| JS/TS | `LanguageWalker._js_symbols()` | Yes (JSDoc `/** */` above decl) | TS only (type annotations) |
+| Go | `LanguageWalker._go_symbols()` | Yes (`//` lines above func) | Yes (receiver + param types) |
+| Rust | `LanguageWalker._rust_symbols()` | Yes (`///` lines above fn) | Yes (param types) |
+
+### Call-edge extraction
+
+| Language | Extractor | Builtins filter | Resolved flag |
+|----------|-----------|-----------------|---------------|
+| Python | `parse_ast.py` symbol_references | `_PY_BUILTINS` (frozenset of `dir(builtins)`) | Yes (global symbol lookup) |
+| JS/TS | `LanguageWalker._shared_call_edges` via JS LangSpec | `_JS_BUILTINS` | Yes (`compute_resolved=True`) |
+| Go | `LanguageWalker._shared_call_edges` via Go LangSpec | `_GO_BUILTINS` | No |
+| Rust | `LanguageWalker._shared_call_edges` via Rust LangSpec | `_RUST_BUILTINS` | No (:: resolution post-pass in `persistence_engine`) |
+
+### Data-flow edge extraction
+
+All data_flow edges land in `graph_edges` with `edge_type='data_flow'`. There is no separate table.
+
+| Language | Extractor | Provenance tags |
+|----------|-----------|-----------------|
+| Python | `parse_ast.py` (4 levels: arg, var, for_iter, var_kwarg) | `data_flow_arg`, `data_flow_var`, `data_flow_for_iter`, `data_flow_var_kwarg` |
+| JS/TS | `LanguageWalker._js_data_flow()` | `data_flow_arg`, `data_flow_var`, `data_flow_for_iter`, `data_flow_var_kwarg` |
+| Go | `LanguageWalker._go_data_flow()` | same tags |
+| Rust | `LanguageWalker._rust_data_flow()` | same tags |
+
+### Dispatch post-passes (run after per-file walk)
+
+| Language | Pass | What it adds |
+|----------|------|--------------|
+| Go | `_go_interface_dispatch_pass` | Synthetic edges: interface method → concrete implementors |
+| Rust | `_rust_trait_dispatch_pass` | Synthetic edges: trait method → `impl Trait for Type` implementors |
+| Python | `_persist_cross_boundary_edges` | HTTP fetch + socketio cross-language edges (RM57) |
+| JS/TS | `run_cross_language_link` (RM57) | `cross_language` edges: JS fetch → Python Flask route, JS socket.emit → Python @socketio.on |
+
+### Persist path per language
+
+| Language | Persist function | Tables written |
+|----------|------------------|----------------|
+| Python | `persist_file_analysis` → `_persist_graph_edges` | `files`, `functions`, `classes`, `imports`, `symbol_references`, `graph_edges` (static + data_flow) |
+| JS/TS/Go/Rust | `_persist_js_ts_files` | `files`, `functions`, `graph_edges` (static + data_flow + dispatch) |
+
+### Adding a new language
+
+1. Add extension → language string mapping in `detect_language()` (`language_walker.py`)
+2. Add the extension to `_JS_TS_EXTENSIONS` in `scan_project_files.py`
+3. Implement `_<lang>_symbols()`, `_<lang>_callee_name()`, `_<lang>_fn_ranges()`, `_<lang>_data_flow()` in `LanguageWalker`
+4. Register a `LangSpec` in `_lang_spec()` — the shared walk loop handles the rest
+5. Add a builtins frozenset `_<LANG>_BUILTINS`
+6. Update this table
+
 **The invariant:**
 A small, deterministic, well-tested analyzer augmented by a thin semantic
 and narrative layer will outperform a large LLM on this domain -- because
