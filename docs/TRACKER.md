@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 191):** RM63 signature fix (param_types_json={} shows () not (?), arguments_json fallback for bare names). RM64 explore_stub: design exploration for BLOCKED stubs -- callers+args, ghost/bridge analysis, sibling stubs, design questions. 12 new tests. All pass.
+**Last session (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
+
+**Previous (2026-07-16, session 191):** RM63 signature fix (param_types_json={} shows () not (?), arguments_json fallback for bare names). RM64 explore_stub: design exploration for BLOCKED stubs -- callers+args, ghost/bridge analysis, sibling stubs, design questions. 12 new tests. All pass.
 
 **Previous (2026-07-16, session 188):** Re-ingested Commonplace corpus (31 syms, 168 edges, http_route populated for 3 routes). Fixed walk_call_chain BFS depth bug: was queuing FQDN callees (services.extractor.extract) for WHERE name=? against functions table which stores bare names -- rsplit fix. Traversal probes: search->DB now 4 nodes deep, capture->storage 16 nodes (full pipeline). 999 tests pass.
 
@@ -2430,7 +2432,7 @@ RM12. **[DONE 2026-07-05] Web search: SearXNG integration**
 
 ---
 
-RM10. **[TODO] goal_intake intent detection + trace routing**
+RM10. **[DONE 2026-07-16] goal_intake intent detection + trace routing**
 
    Probe run 2026-07-16 (session 191) against dj2. Embedding finds the RIGHT symbols.
    DeRe-CoT is the wrong fix -- the gap is in what goal_intake does with them.

@@ -1,49 +1,48 @@
-Written at commit: d2a8d10
+Written at commit: 74da033
 
-# SESSION STATE - session 191
+# SESSION STATE - session 192
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 191, 2026-07-16)
+## What happened this session (session 192, 2026-07-16)
 
-**RM63 signature fix [V]** (d2a8d10)
-feature_work_plan was showing (?) for stubs with param_types_json='{}' (known-empty).
-Fixed: distinguish SQL NULL (unknown -> ?) from {} (known-empty -> ()). Also added
-arguments_json fallback to show bare param names when types absent. Added arguments_json
-to fixture in test_feature_work_plan.py. 1 new test.
+**RM10 done [V]** (74da033)
+goal_intake intent classifier (2A) + trace routing (2B).
 
-**RM64 explore_stub [V]** (d2a8d10)
-New tool: explore_stub(symbol) -- design exploration for BLOCKED stubs. Surfaces callers
-+ what they pass, docstring contract, ghost/bridge analysis, sibling stubs, design
-questions. Feeds into completion_contract. 12 regression tests. Registry entry wired in
-tool_registry.py and test_agent_tools.py. 1011 tests pass.
+2A: `_classify_goal_type(goal)` -- keyword heuristic returns investigate|trace|explain|implement.
+Priority order: trace first (explicit "trace" keyword or >=2 trace terms), then explain
+("what is/does", "explain", "describe"), then investigate ("find", "where", "detect",
+"boundary", "violat", etc.), then implement (default). Explain wins over investigate so
+"what is the AI boundary" routes to explain, not investigate.
 
-**RM10 probe [V]**
-Ran goal_intake against 3 multi-hop goals on dj2. Key finding: embedding finds RIGHT
-symbols, wrong action plan. Two failure modes confirmed:
-1. Intent blindness -- "find where X" gets MODIFY plan, should be READ/blast_radius.
-2. Multi-hop gap -- "trace A to B" gets endpoint list, not path (walk_call_chain exists
-   but goal_intake never invokes it).
-DeRe-CoT is the wrong fix. Revised plan: 2A goal-type classifier + 2B trace routing.
-Findings saved in capn (0245de17) and memory (project_rm10_goal_intake.md). TRACKER
-updated with probe results and revised plan.
+Goal output now includes `Intent: <type>` line. Nav plan branches:
+- investigate: READ steps + BLAST_RADIUS on hot/warm symbols; no MODIFY/EXTEND
+- explain: READ steps only; no MODIFY/EXTEND
+- trace: READ steps + "Walk the call path" hint; no MODIFY/EXTEND
+- implement: original behavior (EXTEND stubs, MODIFY safe symbols)
+
+2B: For trace goals, `_extract_trace_endpoints(goal)` regex-extracts source+destination
+concepts. `_find_symbol_for_concept(oracle, concept)` SQL-matches concept words to
+function names. `walk_call_chain()` (existing, BFS) traverses the path; chain trimmed
+at dst_sym if found. Path shown inline as "Call path:" block before nav plan.
+
+19 new regression tests in tests/regression/test_goal_intake.py. 1030 pass, 1 skipped.
 
 ## NEXT SESSION -- start here
 
-**RM10 (ACTIVE):** Build 2A + 2B in goal_intake (agent_tools.py:3470).
-- 2A: keyword/embedding heuristic to classify goal as investigate | implement | trace |
-  explain. Adjust nav plan per type: investigate -> READ + blast_radius on found symbols;
-  implement -> EXTEND/MODIFY (current behavior); trace -> hand off to 2B.
-- 2B: for trace goals, extract two endpoint concepts from goal text, invoke
-  walk_call_chain between them, surface the path in the nav plan.
-- Test against probe goals: "find where AI boundary is violated" (investigate),
-  "trace how player input reaches the database" (trace), "add consequence tracking" (implement).
-- Regression tests required before commit.
+**RM10 live validation (RECOMMENDED):**
+Run goal_intake against dj2 with 3 probe goals to confirm real-world behavior:
+1. "find where AI boundary is violated" -> Intent: investigate + no MODIFY
+2. "trace how player input reaches the database" -> Call path: section populated
+3. "add consequence tracking" -> Intent: implement + EXTEND/MODIFY
+Use UI Ask bar with dj2 corpus loaded, or python script against dj2 DB.
 
-Then: RM64 remaining (close-the-loop, doc-drift) if RM10 is clean and quick.
+**RM64 remaining candidates (OPTIONAL, quick):**
+- Close-the-loop verification: after re-ingest, check implemented fn resolves stub.
+- Doc-drift detection: design_note artifacts vs call graph -- new EPs with no design note.
 
-## Corpus status [V] (unchanged from session 190)
+## Corpus status [V] (unchanged from session 191)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
@@ -80,10 +79,8 @@ Then: RM64 remaining (close-the-loop, doc-drift) if RM10 is clean and quick.
 **capn cache empty on fresh machine [V]:** .capn/ is gitignored; each machine starts cold.
 **trace_data_flow collision [V]:** "call path from X to db" routes to trace_data_flow not
   trace_call_chain (regex grabs X+db as symbol pair before scoring); benign, answer correct.
-**goal_intake intent blindness [V]:** investigation goals get implementation plan. Fix is
-  2A goal-type classifier. DeRe-CoT is NOT the right fix.
-**goal_intake trace gap [V]:** trace goals get endpoint list not path. walk_call_chain
-  exists but goal_intake never invokes it. Fix is 2B trace routing.
+**goal_intake BLAST_RADIUS fixture [V]:** Test requires patching _search_symbols_raw + fake
+  numpy model to inject HOT relevant_symbols without embedding. See test_goal_intake.py.
 
 LLM server: llama-server.exe at C:\Users\bartl\models\llama-server\llama-server.exe,
   model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081, --ctx-size 32768.
