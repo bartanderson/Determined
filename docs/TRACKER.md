@@ -309,6 +309,64 @@ RM64. **[TODO, gated on RM63] feature_work_plan follow-on considerations**
 
 ---
 
+RM65. **[TODO] find_missing_bridges: detect when a stub's inputs cannot reach the data it needs**
+
+   **Origin:** Surfaced 2026-07-15 while using feature_work_plan on dj2 world/.
+   `_get_encounter_context(session_id)` could not be implemented because no function
+   in the codebase maps session_id -> Encounter. That gap is invisible to readiness_check,
+   which only checks whether callees are stubs -- not whether the input-to-output route
+   exists at all.
+
+   **The check (deterministic):**
+   For each stub:
+   1. Take its input types (from param_types_json)
+   2. Take its return type (from return_type)
+   3. Walk the call graph: does any chain exist from a function that takes the same
+      input type to a function that returns or holds the needed output type?
+   4. If no path exists: emit "missing bridge: <input_type> -> <output_type>,
+      no path found -- add a function or field that connects them"
+
+   **New blocker tier:** add to readiness_check as Tier 0 (prerequisite data bridge),
+   or ship as a standalone tool first and integrate later.
+
+   **Validation target:** dj2 world/_get_encounter_context. Should surface:
+   "missing bridge: session_id -> Encounter, no path exists -- WorldController needs
+   session_encounters: dict[str, str] or equivalent."
+
+   **Estimated effort:** 1 session. Mostly graph traversal + type string matching.
+   LLM not required.
+
+---
+
+RM66. **[TODO] find_concept_ghosts: stubs that reference concepts with no symbol in the graph**
+
+   **Origin:** Surfaced 2026-07-15. `_get_combat_context` says "Query active CombatFSM"
+   in its docstring/contract, but CombatFSM does not exist as a class or symbol anywhere
+   in the corpus. That gap is invisible to all current tools -- the stub looks like any
+   other BLOCKED stub, with no signal that its entire prerequisite concept is absent.
+
+   **The check (deterministic):**
+   For each stub:
+   1. Extract noun phrases from docstring + contract text (simple regex: capitalized
+      runs, CamelCase tokens, words before "FSM"/"Manager"/"Engine"/"System")
+   2. For each candidate concept name, check whether any symbol in functions or classes
+      table matches or fuzzy-matches it
+   3. If no match: emit "concept ghost: '<ConceptName>' referenced in contract but no
+      symbol exists -- this stub may need a prerequisite class/module built first"
+
+   **Why it matters:** a concept ghost means the stub is not just BLOCKED, it is
+   UNGROUNDABLE -- you cannot implement it at all until the referenced concept exists.
+   That is categorically different from a missing callee and should be surfaced before
+   the user picks up the stub to implement.
+
+   **Validation target:** dj2 world/_get_combat_context. Should surface:
+   "concept ghost: 'CombatFSM' referenced in contract, no matching symbol found."
+
+   **Estimated effort:** 1 session. Regex extraction + symbol lookup. LLM optional
+   for fuzzy concept matching but not required for the core signal.
+
+---
+
 RM60. **[DONE 2026-07-15] Corpus analysis quality audit — evaluate what the tools see and miss across all 7 corpora**
 
    The goal: run the RM59 tools (and supporting tools) against every corpus DB,
