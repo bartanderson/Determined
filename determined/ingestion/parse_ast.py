@@ -843,6 +843,88 @@ def _extract_symbol_references(
     ]
 
 
+_CALLBACK_KWARGS: frozenset = frozenset({
+    "target", "key", "callback", "handler", "action", "func",
+    "on_success", "on_failure", "predicate", "fn", "function",
+})
+
+_REGISTER_ATTRS: frozenset = frozenset({
+    "register", "register_action", "register_handler",
+    "add_handler", "add_action",
+})
+
+
+def _fn_ref_name(node) -> str | None:
+    """Return dotted name from ast.Name or ast.Attribute, else None."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _fn_ref_name(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    return None
+
+
+def _extract_function_references(tree: ast.AST) -> list[SymbolReference]:
+    """
+    Detect function references passed as values (not call targets):
+      1. Dict literal values that are ast.Attribute (dotted refs like module.fn)
+      2. 2-arg register-style calls: obj.register('name', some_fn)
+      3. Callback kwargs: Thread(target=fn), sorted(key=fn)
+    Returns SymbolReference(edge_type='function_reference') for each.
+    """
+    refs: list[SymbolReference] = []
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self):
+            self.current_function = "<module>"
+
+        def visit_FunctionDef(self, node):
+            prev = self.current_function
+            self.current_function = node.name
+            self.generic_visit(node)
+            self.current_function = prev
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def _emit(self, callee_node, lineno: int):
+            name = _fn_ref_name(callee_node)
+            if name and name not in _PY_BUILTINS:
+                refs.append(SymbolReference(
+                    caller=self.current_function,
+                    callee=name,
+                    line_number=lineno,
+                    edge_type="function_reference",
+                ))
+
+        def visit_Dict(self, node):
+            # Only dotted refs (ast.Attribute) to avoid false positives from
+            # plain variable values like {'mode': some_string_var}.
+            for val in node.values:
+                if isinstance(val, ast.Attribute):
+                    self._emit(val, getattr(val, "lineno", 0))
+            self.generic_visit(node)
+
+        def visit_Call(self, node):
+            fn = node.func
+            fn_attr = getattr(fn, "attr", None) or getattr(fn, "id", None)
+
+            # Pattern 2: register_action('name', some_fn) — 2-arg register call
+            if fn_attr in _REGISTER_ATTRS and len(node.args) == 2:
+                arg = node.args[1]
+                if isinstance(arg, (ast.Name, ast.Attribute)):
+                    self._emit(arg, node.lineno)
+
+            # Pattern 3: Thread(target=fn), sorted(key=fn), etc.
+            for kw in node.keywords:
+                if kw.arg in _CALLBACK_KWARGS and isinstance(kw.value, (ast.Name, ast.Attribute)):
+                    self._emit(kw.value, node.lineno)
+
+            self.generic_visit(node)
+
+    _Visitor().visit(tree)
+    return refs
+
+
 def _classify_role(path: Path, source: str) -> str:
     import re as _re
     name = path.name
@@ -1116,6 +1198,9 @@ def parse_ast(
     from determined.ingestion.dynamic_edges import extract_all_dynamic_edges
     for caller, callee, etype in extract_all_dynamic_edges(source):
         symbol_references.append(SymbolReference(caller=caller, callee=callee, line_number=0, edge_type=etype))
+
+    for ref in _extract_function_references(tree):
+        symbol_references.append(ref)
 
     mutations = _extract_mutations(tree)
 
