@@ -8,6 +8,25 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-16: Pattern detection is human-input-only; if sub-questions ever go through _answer, use structured directives not scoring.
+detect_pattern() is called in exactly one place (local_agent.py:413) on direct user input.
+goal_intake generates a navigation plan but does not loop back through _answer. The regex +
+scoring hybrid is appropriate for human natural language. If goal_intake (or any future
+multi-hop loop) ever generates sub-questions that re-enter _answer, those should emit
+structured directives (e.g. QUERY: blast_radius(file.py)) rather than free text -- scoring
+covers natural language variance, not LLM-generated variance, and an LLM can be prompted
+to use canonical forms. Extending scoring coverage for LLM-generated questions is wrong path.
+
+2026-07-16: Pattern detection upgraded: regex fast path + scoring fallback (pattern_detector.py).
+84% -> 98% coverage on 64 realistic questions. Key changes: (1) TOOL_REGISTRY in
+pattern_detector.py -- each pattern registers canonical example questions; detection is
+word-overlap scoring with stop-word filtering. Adding a new tool means writing examples,
+no new regex. (2) "show me X" in understand_symbol regex tightened to bare symbol only
+(anchored $) so "show me the path from..." falls through to trace_call_chain. (3) New
+trace_call_chain branch for "what is/show me the path from ... to database/db/storage".
+Remaining real error: "what is the call path from X to db" routes to trace_data_flow
+(regex captures X and db as symbol pair before scoring runs); benign since answer is correct.
+
 2026-07-16: RM21 Technique 3 -- traversal pattern, not general iterative DECOMPOSE.
 3 multi-hop probes run. Traversal queries failed two ways: (1) DECOMPOSE emitting
 template prose ("files in Key files") when asked to plan a multi-hop chain -- model

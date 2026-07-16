@@ -1,4 +1,5 @@
 .venv/
+.capn/
 __pycache__/
 *.pyc
 *.pyo

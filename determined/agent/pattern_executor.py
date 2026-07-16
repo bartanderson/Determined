@@ -54,7 +54,10 @@ _DETECT_RULES: list[tuple] = [
     ), "orient_to_codebase", None),
 
     # symbol_context (direct single-tool path)
-    (re.compile(r"(?:context for|everything about|show me|what do you know about)\s+(?:the\s+)?(?:symbol\s+)?['\"]?(\S+)['\"]?", re.I),
+    # "show me" only when followed by a single bare symbol/path -- not a multi-word phrase
+    (re.compile(r"(?:context for|everything about|what do you know about)\s+(?:the\s+)?(?:symbol\s+)?['\"]?(\S+)['\"]?", re.I),
+     "understand_symbol", 1),
+    (re.compile(r"show me\s+['\"]?(\S+)['\"]?$", re.I),
      "understand_symbol", 1),
 
     # understand_symbol (alias)
@@ -82,7 +85,9 @@ _DETECT_RULES: list[tuple] = [
         r"(?:which|what)\s+functions?\s+run\s+between\s+.+?"
         r"\s+(?:and|to)\s+(?:the\s+)?(?:database|db|insert)|"
         r"(?:trace|walk)\s+(?:the\s+)?(?:full\s+)?(?:call\s+)?(?:path|chain)\s+from\s+"
-        r"(?:the\s+)?(?:http|route|web|endpoint|handler|entry)",
+        r"(?:the\s+)?(?:http|route|web|endpoint|handler|entry)|"
+        r"(?:what\s+is|show me|describe)\s+the\s+path\s+from\s+(?:the\s+)?(?:web|http|route|request|endpoint|handler|entry)\b.+?"
+        r"\s+(?:to|through|into)\s+(?:the\s+)?(?:database|db|storage)",
         re.I,
     ), "trace_call_chain", None),
 
@@ -140,6 +145,10 @@ def detect_pattern(user_input: str) -> tuple[str | None, object]:
     Returns (pattern_name, subject) if input matches a known pattern.
     subject is a string, tuple of strings (for two-subject patterns), or None.
     Returns (None, None) if no pattern matches.
+
+    Detection is two-stage:
+    1. Regex rules (_DETECT_RULES) -- fast, structurally certain, tried first.
+    2. Scoring fallback (pattern_detector) -- covers natural phrasings regex misses.
     """
     for pattern, name, group in _DETECT_RULES:
         m = pattern.search(user_input)
@@ -149,7 +158,9 @@ def detect_pattern(user_input: str) -> tuple[str | None, object]:
             if isinstance(group, tuple):
                 return name, tuple(m.group(g) for g in group)
             return name, m.group(group)
-    return None, None
+
+    from determined.agent.pattern_detector import detect_by_score
+    return detect_by_score(user_input)
 
 
 # ------------------------------------------------------------------
