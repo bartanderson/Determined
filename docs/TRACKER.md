@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 193):** RM64 remaining done: verify_implementation + detect_doc_drift. RM21-B gate probe: Q5 against Commonplace passes cleanly (no confabulation, honest "none found"). RM21-B closed -- Fix A sufficient. 1043 pass.
+**Last session (2026-07-16, session 194):** Full pipeline run on dj2 world/. Three gap fixes shipped: (1) verify_implementation body inspection (pass_only/return_empty/has_substance when still is_stub=1); (2) detect_doc_drift false-PASS fix + stub design_note sub-check; (3) explore_stub caller dedup. Then EP definition work: FQDN trap fixed (_has_callers bare+suffix), tier classifier (_ep_tier: explicit_http/explicit_tool/protocol/test/inferred), list_entry_points new tool. detect_doc_drift world/ now 8 explicit + 184 inferred gaps (was 638 undifferentiated). Next: function_reference edge type in parse_ast.py. 1043 pass.
 
 **Previous (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
 

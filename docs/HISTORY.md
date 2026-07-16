@@ -8,6 +8,38 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-16: FQDN trap in EP detection -- graph_edges callee is qualified after resolution.
+detect_doc_drift was querying `WHERE callee=bare_name` but graph_edges stores resolved
+callees as `ClassName.method` (e.g. `ActionQueue.dequeue`). This produced 463 false EPs
+in world/ out of 704 apparent no-callers. Fix: _has_callers() checks bare AND `%.name`
+suffix. Now 241 true no-callers remain. Pattern is documented in SESSION_STATE known issues
+(RM62 callee writeback trap) -- this was the same bug in EP detection, not just traversal.
+
+2026-07-16: EP definition -- three tiers, not a binary no-callers check.
+list_entry_points + detect_doc_drift now classify EPs as: explicit_http (http_route
+non-null), explicit_tool (tool( decorator), protocol (dunders, classmethods, serializers
+to_dict/from_dict/etc), test, inferred (true no-callers after FQDN fix). Protocol and
+test are excluded from drift checks. world/ result: 15 AI tool EPs + 185 inferred (down
+from 704 false). New tool list_entry_points is the canonical query surface for this.
+
+2026-07-16: Registration pattern -- function references in dict values are invisible to call graph.
+builtins.py (FSM guards/actions: price_lt, price_ge, etc.) are passed as dict values:
+`guard_registry={'price_too_low': builtins.price_lt}` in adjudication_engine.__init__.
+parse_ast.py only walks ast.Call nodes -- ast.Dict values with ast.Attribute/ast.Name
+function references are never emitted as graph edges. The fix belongs in parse_ast.py
+as a new `_extract_function_references` pass emitting edge_type='function_reference'.
+This is the Python-wall piece; JS already partially handles it via js_event_binding.
+Same edge type in the shared graph -- tools pick it up automatically via graph_edges.
+THREE registration patterns to handle: (1) dict literal values, (2) register_action(name, func)
+two-arg method calls, (3) Thread/callback keyword args (target=func, key=func, callback=func).
+DO NOT detect these in the tool layer -- they belong in parse_ast.py only.
+
+2026-07-16: UI has fallen behind pipeline capability -- defer UI fixes until pipeline shape is stable.
+Current UI was built tool-by-tool and is now behind the capability curve. Decision:
+run pipelines CLI-first to find real gaps; redesign UI after pipeline surface is stable.
+The redesigned UI must expose full pipeline power to both human drill-down and AI-driven
+interface. Don't patch the current UI piecemeal.
+
 2026-07-16: Pattern detection is human-input-only; if sub-questions ever go through _answer, use structured directives not scoring.
 detect_pattern() is called in exactly one place (local_agent.py:413) on direct user input.
 goal_intake generates a navigation plan but does not loop back through _answer. The regex +
