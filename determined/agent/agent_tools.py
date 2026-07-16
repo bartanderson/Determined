@@ -7699,7 +7699,7 @@ def feature_work_plan(assessor: "Assessor", args: dict) -> str:
 
             # fetch signature/docstring (used both by readiness tag and contract block)
             fn_row = conn.execute(
-                "SELECT param_types_json, return_type, docstring FROM functions "
+                "SELECT param_types_json, return_type, docstring, arguments_json FROM functions "
                 "WHERE name = ? LIMIT 1", (stub_name,)
             ).fetchone()
 
@@ -7722,12 +7722,22 @@ def feature_work_plan(assessor: "Assessor", args: dict) -> str:
             # contract: signature + docstring
             if fn_row:
                 import json as _json
-                param_json, ret_type, docstring = fn_row
+                param_json, ret_type, docstring, args_json = fn_row
                 try:
-                    params = _json.loads(param_json or "{}")
-                    sig = ", ".join(f"{k}: {v}" for k, v in params.items()) if params else "?"
+                    params = _json.loads(param_json) if param_json is not None else None
                 except Exception:
+                    params = None
+                if params is None:
                     sig = "?"
+                elif params:
+                    sig = ", ".join(f"{k}: {v}" for k, v in params.items())
+                else:
+                    # param_types_json is {} — try arguments_json for bare names (no types)
+                    try:
+                        arg_names = [a for a in _json.loads(args_json or "[]") if a != "self"]
+                    except Exception:
+                        arg_names = []
+                    sig = ", ".join(arg_names)
                 ret = ret_type or "[infer: return type unknown]"
                 doc = docstring.strip() if docstring else f"[infer: intent from name '{stub_name}']"
                 out.append(f"      Signature: ({sig}) -> {ret}")
@@ -7746,6 +7756,207 @@ def feature_work_plan(assessor: "Assessor", args: dict) -> str:
 
 
 TOOLS["feature_work_plan"] = (feature_work_plan, "assessor")
+
+
+def explore_stub(assessor: "Assessor", args: dict) -> str:
+    """
+    explore_stub(symbol) — design exploration for a BLOCKED stub.
+
+    For stubs where feature_work_plan says BLOCKED (no implementation path
+    is obvious from the call graph alone), this tool surfaces what IS known
+    so a human or large LLM can reason about the right implementation shape:
+
+      - Callers and where they live
+      - Arguments the caller passes at the call site (from param_types_json)
+      - The docstring contract
+      - Return type (or what must be inferred)
+      - Ghost concepts (referenced in docstring but not in codebase)
+      - Missing bridges (param -> type that no function returns)
+      - Sibling stubs in the same file (shared context)
+      - Design questions to resolve before implementing
+
+    Args:
+        symbol: stub function name to explore (required)
+    """
+    import json as _json
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    # ── 1. Fetch stub row ────────────────────────────────────────────────────
+    fn_row = conn.execute(
+        "SELECT name, file_path, line_number, param_types_json, arguments_json, "
+        "return_type, docstring, is_stub FROM functions WHERE name = ? LIMIT 1",
+        (symbol,)
+    ).fetchone()
+
+    if not fn_row:
+        return f"Symbol '{symbol}' not found in corpus."
+
+    name, file_path, line_number, ptj, aj, return_type, docstring, is_stub = fn_row
+    fp_short = (file_path or "").replace("\\", "/").split("/")[-1]
+
+    if not is_stub:
+        return f"'{symbol}' is not a stub — use completion_contract for implemented functions."
+
+    # ── 2. Build signature ───────────────────────────────────────────────────
+    try:
+        params = _json.loads(ptj) if ptj is not None else None
+    except Exception:
+        params = None
+
+    if params is None:
+        sig = "?"
+    elif params:
+        sig = ", ".join(f"{k}: {v}" for k, v in params.items())
+    else:
+        try:
+            arg_names = [a for a in _json.loads(aj or "[]") if a != "self"]
+        except Exception:
+            arg_names = []
+        sig = ", ".join(arg_names)
+
+    ret = return_type or "[unknown]"
+
+    # ── 3. Callers + what they pass ──────────────────────────────────────────
+    caller_rows = _list_callers_raw(oracle, symbol, resolved_only=True)
+    caller_info: list[dict] = []
+    for cr in caller_rows[:6]:
+        caller_name = cr.get("caller", "")
+        caller_file = (cr.get("file_path") or "").replace("\\", "/").split("/")[-1]
+        caller_line = cr.get("line_number", "")
+        # fetch caller's param_types_json to show what it might pass in
+        caller_fn = conn.execute(
+            "SELECT param_types_json, return_type FROM functions WHERE name = ? LIMIT 1",
+            (caller_name,)
+        ).fetchone()
+        caller_params: dict = {}
+        if caller_fn and caller_fn[0]:
+            try:
+                caller_params = _json.loads(caller_fn[0])
+            except Exception:
+                pass
+        caller_info.append({
+            "name": caller_name,
+            "file": caller_file,
+            "line": caller_line,
+            "passes": list(caller_params.keys()) if caller_params else [],
+        })
+
+    # ── 4. Ghost/bridge analysis ─────────────────────────────────────────────
+    class_names_lower = {
+        r[0].lower()
+        for r in conn.execute("SELECT name FROM classes").fetchall()
+    }
+
+    _param_to_fns: dict = {}
+    for _fn, _ptj2, _rt in conn.execute(
+        "SELECT name, param_types_json, return_type FROM functions WHERE is_stub = 0"
+    ).fetchall():
+        try:
+            _p = _json.loads(_ptj2) if _ptj2 else {}
+        except Exception:
+            _p = {}
+        for _pname in _p:
+            _param_to_fns.setdefault(_pname, []).append((_fn, _rt or ""))
+
+    concepts = _extract_docstring_concepts(docstring or "")
+    ghost_labels: list[str] = []
+    bridge_labels: list[str] = []
+    stub_params = list((params or {}).keys())
+    for concept in concepts:
+        base = _concept_base(concept)
+        base_lower = base.lower()
+        has_class = any(base_lower in cn or cn in base_lower for cn in class_names_lower)
+        if not has_class:
+            ghost_labels.append(concept)
+        elif stub_params:
+            for pname in stub_params:
+                has_bridge = any(
+                    base_lower in (rt or "").lower()
+                    for _, rt in _param_to_fns.get(pname, [])
+                )
+                if not has_bridge:
+                    bridge_labels.append(f"{pname} -> {base}")
+
+    # ── 5. Sibling stubs in same file ────────────────────────────────────────
+    sibling_stubs = [
+        r[0] for r in conn.execute(
+            "SELECT name FROM functions WHERE file_path = ? AND is_stub = 1 AND name != ?",
+            (file_path, symbol)
+        ).fetchall()
+    ]
+
+    # ── 6. Format output ─────────────────────────────────────────────────────
+    out: list[str] = [
+        f"Explore: {symbol}  ({fp_short}:{line_number or '?'})",
+        f"Signature: ({sig}) -> {ret}",
+        "",
+    ]
+
+    contract = (docstring or "").strip()
+    if contract:
+        out.append(f"Contract: {contract}")
+        out.append("")
+
+    if caller_info:
+        out.append("Callers:")
+        for ci in caller_info:
+            loc = f"{ci['file']}:{ci['line']}" if ci['line'] else ci['file']
+            passes = f"  passes: {', '.join(ci['passes'])}" if ci['passes'] else ""
+            out.append(f"  {ci['name']}  ({loc}){passes}")
+        out.append("")
+    else:
+        out.append("Callers: [none resolved — may be called dynamically or dead code]")
+        out.append("")
+
+    if sibling_stubs:
+        out.append(f"Sibling stubs in {fp_short}: {', '.join(sibling_stubs[:5])}" +
+                   (f"  (+{len(sibling_stubs)-5} more)" if len(sibling_stubs) > 5 else ""))
+        out.append("")
+
+    uncertain: list[str] = []
+    if not return_type:
+        uncertain.append("return type — not annotated, must be inferred from contract")
+    if ghost_labels:
+        uncertain.append(f"concept ghost(s): {', '.join(ghost_labels)} — referenced in contract but not in codebase")
+    if bridge_labels:
+        uncertain.append(f"missing bridge(s): {', '.join(bridge_labels)} — no function returns this type for this param")
+    if not caller_info:
+        uncertain.append("call context — no resolved callers, cannot infer expected inputs/outputs from call sites")
+
+    if uncertain:
+        out.append("Uncertain (resolve before implementing):")
+        for u in uncertain:
+            out.append(f"  - {u}")
+        out.append("")
+
+    # Design questions
+    questions: list[str] = []
+    if ghost_labels:
+        questions.append(f"Where does {ghost_labels[0]} state live? (not found in codebase)")
+    if not return_type:
+        questions.append("What should this return, and who consumes it?")
+    if not caller_info:
+        questions.append("Is this dead code, or called dynamically? Check event handlers / plugin registries.")
+    if bridge_labels:
+        questions.append(f"How does the caller get a {bridge_labels[0].split('->')[1].strip()} to pass in?")
+
+    if questions:
+        out.append("Design questions:")
+        for q in questions:
+            out.append(f"  ? {q}")
+        out.append("")
+
+    out.append("Next: answer the design questions above, then run completion_contract to get an implementation brief.")
+    return "\n".join(out)
+
+
+TOOLS["explore_stub"] = (explore_stub, "assessor")
 
 
 # ── RM65 / RM66: shared concept extractor ────────────────────────────────────

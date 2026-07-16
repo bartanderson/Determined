@@ -920,6 +920,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Starting work on a feature directory and need to know what to implement, in what order, and what each piece requires. Re-run after re-ingest to advance the plan as stubs are closed.",
         "category": "planning",
     },
+
+    # ── RM64: EXPLORE STUB ────────────────────────────────────────────
+    "explore_stub": {
+        "purpose": "Design exploration for a BLOCKED stub where the implementation path isn't obvious from the call graph alone. Surfaces what IS known: callers and what they pass, docstring contract, return type, ghost concepts (referenced but not in codebase), missing data bridges, sibling stubs in the same file. Ends with concrete design questions to resolve before implementing.",
+        "args": {
+            "symbol": "stub function name to explore (required)",
+        },
+        "output": "structured exploration: signature, contract, callers+args, sibling stubs, uncertain slots, design questions",
+        "feeds": ["completion_contract", "find_missing_bridges", "find_ungroundable_concepts"],
+        "use_when": "feature_work_plan shows a stub as BLOCKED and you need to reason about the right implementation shape before writing code. Run per-stub, not per-feature.",
+        "category": "planning",
+    },
 }
 
 

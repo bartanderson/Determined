@@ -5,7 +5,7 @@ Uses in-memory SQLite seeded with a multi-directory fixture.
 import sqlite3
 import pytest
 from unittest.mock import MagicMock
-from determined.agent.agent_tools import feature_work_plan
+from determined.agent.agent_tools import feature_work_plan, explore_stub
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +48,7 @@ def _seed_db(conn):
             line_number INTEGER,
             is_stub INTEGER DEFAULT 0,
             param_types_json TEXT,
+            arguments_json TEXT,
             return_type TEXT,
             docstring TEXT
         );
@@ -83,16 +84,18 @@ def _seed_db(conn):
     """)
 
     fns = [
-        ("resolve_combat",  "C:/proj/world/combat.py",  10, 1, '{"attacker":"str","defender":"str"}', "dict",  "Resolve a combat round between two units."),
-        ("apply_damage",    "C:/proj/world/combat.py",  30, 1, '{"target":"str","amount":"int"}',     "None",  None),
-        ("choose_action",   "C:/proj/world/ai.py",      10, 1, '{"unit":"str"}',                     "str",   "Choose the next action for an AI unit."),
-        ("roll_dice",       "C:/proj/engine/rules.py",  5,  0, '{"sides":"int"}',                    "int",   "Roll a die with given sides."),
-        ("check_hit",       "C:/proj/engine/rules.py",  15, 0, '{"attack":"int","defense":"int"}',   "bool",  "Return True if attack beats defense."),
-        ("get_state",       "C:/proj/engine/state.py",  5,  0, '{"key":"str"}',                     "Any",   "Retrieve a value from global state."),
-        ("run_game",        "C:/proj/main.py",           1,  0, '{}',                                "None",  "Main game loop entry point."),
+        # (name, file_path, line, is_stub, param_types_json, arguments_json, return_type, docstring)
+        ("resolve_combat",  "C:/proj/world/combat.py",  10, 1, '{"attacker":"str","defender":"str"}', '["attacker","defender"]', "dict",  "Resolve a combat round between two units."),
+        ("apply_damage",    "C:/proj/world/combat.py",  30, 1, '{"target":"str","amount":"int"}',     '["target","amount"]',     "None",  None),
+        ("choose_action",   "C:/proj/world/ai.py",      10, 1, '{"unit":"str"}',                     '["unit"]',                "str",   "Choose the next action for an AI unit."),
+        ("roll_dice",       "C:/proj/engine/rules.py",  5,  0, '{"sides":"int"}',                    '["sides"]',               "int",   "Roll a die with given sides."),
+        ("check_hit",       "C:/proj/engine/rules.py",  15, 0, '{"attack":"int","defense":"int"}',   '["attack","defense"]',    "bool",  "Return True if attack beats defense."),
+        ("get_state",       "C:/proj/engine/state.py",  5,  0, '{"key":"str"}',                     '["key"]',                 "Any",   "Retrieve a value from global state."),
+        ("run_game",        "C:/proj/main.py",           1,  0, '{}',                                '[]',                      "None",  "Main game loop entry point."),
+        ("no_params_stub",  "C:/proj/world/combat.py",  50, 1, '{}',                                '[]',                      "None",  "No parameters stub."),
     ]
     conn.executemany(
-        "INSERT INTO functions (name,file_path,line_number,is_stub,param_types_json,return_type,docstring) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO functions (name,file_path,line_number,is_stub,param_types_json,arguments_json,return_type,docstring) VALUES (?,?,?,?,?,?,?,?)",
         fns,
     )
 
@@ -191,3 +194,87 @@ def test_feature_work_plan_missing_feature_path():
 def test_feature_work_plan_rerun_footer(assessor):
     result = feature_work_plan(assessor, {"feature_path": "world"})
     assert "Re-run after re-ingest" in result
+
+
+def test_feature_work_plan_empty_params_shows_parens_not_question(assessor):
+    # no_params_stub has param_types_json='{}' — should show () not (?)
+    result = feature_work_plan(assessor, {"feature_path": "world"})
+    lines = [l for l in result.splitlines() if "no_params_stub" in l or
+             (result.splitlines().index(l) > 0 and
+              "no_params_stub" in result.splitlines()[result.splitlines().index(l)-2:result.splitlines().index(l)])]
+    # simpler: the output must not contain (?) anywhere
+    assert "(?)" not in result
+
+
+# ---------------------------------------------------------------------------
+# explore_stub tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def explore_assessor():
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    return _make_assessor(conn)
+
+
+def test_explore_stub_basic_output(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "resolve_combat"})
+    assert "Explore: resolve_combat" in result
+    assert "combat.py" in result
+    assert "Resolve a combat round" in result
+
+
+def test_explore_stub_shows_signature(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "resolve_combat"})
+    assert "attacker: str" in result
+    assert "dict" in result
+
+
+def test_explore_stub_shows_callers(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "resolve_combat"})
+    assert "run_game" in result
+
+
+def test_explore_stub_no_callers_message(explore_assessor):
+    # no_params_stub has no callers in graph_edges
+    result = explore_stub(explore_assessor, {"symbol": "no_params_stub"})
+    assert "none resolved" in result
+
+
+def test_explore_stub_sibling_stubs(explore_assessor):
+    # resolve_combat and no_params_stub are siblings in world/combat.py
+    result = explore_stub(explore_assessor, {"symbol": "resolve_combat"})
+    assert "no_params_stub" in result
+
+
+def test_explore_stub_design_questions_when_no_callers(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "no_params_stub"})
+    assert "Design questions" in result
+    assert "dead code" in result.lower() or "dynamically" in result.lower()
+
+
+def test_explore_stub_next_step_hint(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "resolve_combat"})
+    assert "completion_contract" in result
+
+
+def test_explore_stub_missing_symbol(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "nonexistent_fn"})
+    assert "not found" in result
+
+
+def test_explore_stub_requires_symbol_arg(explore_assessor):
+    result = explore_stub(explore_assessor, {})
+    assert "ERROR" in result
+
+
+def test_explore_stub_rejects_non_stub(explore_assessor):
+    result = explore_stub(explore_assessor, {"symbol": "roll_dice"})
+    assert "not a stub" in result
+
+
+def test_explore_stub_empty_params_shows_parens(explore_assessor):
+    # no_params_stub has param_types_json='{}' — should show () not (?)
+    result = explore_stub(explore_assessor, {"symbol": "no_params_stub"})
+    assert "(?)" not in result
+    assert "Signature: ()" in result

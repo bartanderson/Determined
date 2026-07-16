@@ -555,6 +555,8 @@ def test_dispatch_all_tools_registered():
         "development_priorities",
         # RM63: feature work plan
         "feature_work_plan",
+        # RM64: explore stub
+        "explore_stub",
         # RM65: missing bridge detection
         "find_missing_bridges",
         # RM66: concept ghost detection

@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 188):** Re-ingested Commonplace corpus (31 syms, 168 edges, http_route populated for 3 routes). Fixed walk_call_chain BFS depth bug: was queuing FQDN callees (services.extractor.extract) for WHERE name=? against functions table which stores bare names -- rsplit fix. Traversal probes: search->DB now 4 nodes deep, capture->storage 16 nodes (full pipeline). 999 tests pass.
+**Last session (2026-07-16, session 191):** RM63 signature fix (param_types_json={} shows () not (?), arguments_json fallback for bare names). RM64 explore_stub: design exploration for BLOCKED stubs -- callers+args, ghost/bridge analysis, sibling stubs, design questions. 12 new tests. All pass.
+
+**Previous (2026-07-16, session 188):** Re-ingested Commonplace corpus (31 syms, 168 edges, http_route populated for 3 routes). Fixed walk_call_chain BFS depth bug: was queuing FQDN callees (services.extractor.extract) for WHERE name=? against functions table which stores bare names -- rsplit fix. Traversal probes: search->DB now 4 nodes deep, capture->storage 16 nodes (full pipeline). 999 tests pass.
 
 **Previous (2026-07-16, session 187):** RM21 Technique 3 done: trace_call_chain pattern + heuristic bug fix. walk_call_chain BFS in agent_tools.py, trace_call_chain detect rule in pattern_executor.py, run_traversal() finds HTTP handlers via http_route col. 14 new regression tests. 999 passed.
 
@@ -287,29 +289,22 @@ RM63. **[DONE 2026-07-15] feature_work_plan: ordered work plan for a feature fro
 
 ---
 
-RM64. **[TODO, gated on RM63] feature_work_plan follow-on considerations**
+RM64. **[PARTIAL 2026-07-16] feature_work_plan follow-on considerations**
 
-   Do not start until RM63 is validated on dj2 and real gaps are observed.
-   These emerged during RM63 design discussion (2026-07-15) but are premature
-   to build until the base tool proves itself.
+   Validated on dj2 world/ (session 191). 10 stubs, all BLOCKED, all land in
+   world/placeholder axis (axis-grouping only differentiates when stubs have callees).
 
-   **Candidate extensions (in rough priority order):**
+   **Done:**
+   - RM63 signature fix: param_types_json={} shows () not (?); arguments_json fallback
+     for bare param names when types absent.
+   - explore_stub (Explore mode): surfaces callers+args, contract, ghost/bridge analysis,
+     sibling stubs, design questions for BLOCKED stubs. 12 regression tests.
 
-   - **Close-the-loop verification:** after re-ingest, check that the implemented
-     function resolves its stub, satisfies its callers, and didn't introduce new
-     unresolved callees. Emit "closed" vs "structurally present but incomplete."
-
-   - **Explore mode:** stub exists but design isn't fully determined. Tool flags
-     uncertain slots explicitly and surfaces what's known so user + large LLM can
-     reason about the right shape. Decision feeds back as a design note.
-
-   - **Doc-drift detection:** compare knowledge artifacts (kind=design_note) against
-     current call graph. New public entry points with no design note = flag.
-     Stub closed in a way that changes expected callers = flag. Tells user when
-     docs need updating due to new features or direction changes.
-
-   None of these change the RM63 design. They are additive follow-ons.
-   Revive manually or after RM63 completion.
+   **Remaining candidates:**
+   - **Close-the-loop verification:** after re-ingest, check implemented fn resolves
+     stub, satisfies callers, no new unresolved callees.
+   - **Doc-drift detection:** design_note artifacts vs call graph -- new EPs with no
+     design note, stub closed in way that changes expected callers.
 
 ---
 
