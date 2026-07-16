@@ -73,6 +73,19 @@ _DETECT_RULES: list[tuple] = [
     (re.compile(r"(?:explore|look at|what(?:'s| is) in)\s+['\"]?(\S+\.py)['\"]?", re.I),
      "explore_file", 1),
 
+    # trace_call_chain — traversal queries with high-level source/sink descriptions
+    # Matches before trace_data_flow so "path from HTTP route to database" is handled
+    # deterministically (graph walk) rather than treated as symbol-to-symbol.
+    (re.compile(
+        r"(?:trace|walk|follow)\s+(?:\w+\s+){0,3}(?:path|chain|route|flow)\s+from\s+.+?"
+        r"\s+(?:to|through|into)\s+(?:the\s+)?(?:database|db|storage)|"
+        r"(?:which|what)\s+functions?\s+run\s+between\s+.+?"
+        r"\s+(?:and|to)\s+(?:the\s+)?(?:database|db|insert)|"
+        r"(?:trace|walk)\s+(?:the\s+)?(?:full\s+)?(?:call\s+)?(?:path|chain)\s+from\s+"
+        r"(?:the\s+)?(?:http|route|web|endpoint|handler|entry)",
+        re.I,
+    ), "trace_call_chain", None),
+
     # trace_data_flow
     (re.compile(r"(?:trace|how does|path from)\s+(?:a\s+|an\s+|the\s+)?['\"]?(\S+)['\"]?\s+(?:to|reach)\s+(?:a\s+|an\s+|the\s+)?['\"]?(\S+)['\"]?", re.I),
      "trace_data_flow", (1, 2)),
@@ -294,6 +307,116 @@ class PatternExecutor:
             print(f"\n[pattern-executor complete]\n", flush=True)
 
         return answer
+
+    def run_traversal(
+        self,
+        question: str,
+        oracle: "DBOracle",
+        verbose: bool = False,
+    ) -> str:
+        """
+        RM21 Technique 3: deterministic call-chain walk + one LLM synthesis.
+
+        1. Find HTTP route handlers from the corpus (http_route column).
+        2. Pick the best match for the question's intent (keyword search).
+        3. walk_call_chain() from the matched handler, depth 5.
+        4. One LLM synthesis call over the structured chain.
+        """
+        from determined.agent.agent_tools import walk_call_chain
+
+        # Find HTTP route handlers — prefer http_route column, fall back to name heuristics
+        route_rows = []
+        try:
+            route_rows = oracle.conn.execute(
+                "SELECT name, file_path, http_route FROM functions "
+                "WHERE http_route IS NOT NULL AND http_route != '' ORDER BY name"
+            ).fetchall()
+        except Exception:
+            pass
+
+        if not route_rows:
+            # Fallback: function names that look like web handlers
+            _handler_pat = (
+                "name LIKE '%_get' OR name LIKE '%_post' OR name LIKE '%_put' OR "
+                "name LIKE '%_delete' OR name LIKE '%route%' OR name LIKE '%view%' OR "
+                "name LIKE '%handler%' OR name LIKE '%endpoint%' OR name LIKE '%capture%'"
+            )
+            try:
+                rows = oracle.conn.execute(
+                    f"SELECT name, file_path, NULL FROM functions WHERE {_handler_pat} ORDER BY name"
+                ).fetchall()
+                route_rows = rows
+            except Exception:
+                pass
+
+        if verbose:
+            print(f"\n[trace_call_chain] found {len(route_rows)} HTTP route handlers", flush=True)
+
+        # Pick best handler: score by keyword overlap with question
+        question_lower = question.lower()
+        keywords = re.findall(r"[a-z]{3,}", question_lower)
+
+        def _score(row) -> int:
+            name, fp, route = row
+            target = f"{name} {fp or ''} {route or ''}".lower()
+            return sum(1 for kw in keywords if kw in target)
+
+        start_symbol = None
+        if route_rows:
+            best = max(route_rows, key=_score)
+            start_symbol = best[0]
+            if verbose:
+                print(f"[trace_call_chain] start node: {start_symbol} ({best[2]})", flush=True)
+
+        if start_symbol is None:
+            return (
+                "No HTTP route handlers found in this corpus. "
+                "The corpus may not include a web layer, or routes may not have been captured during ingestion."
+            )
+
+        # Walk the call chain
+        chain = walk_call_chain(start_symbol, oracle, max_depth=5)
+
+        if not chain:
+            return f"Could not trace a call chain from '{start_symbol}' — symbol may have no recorded callees."
+
+        if verbose:
+            print(f"[trace_call_chain] chain length: {len(chain)} nodes", flush=True)
+
+        # Build structured summary for LLM synthesis
+        lines = [f"Call chain from HTTP handler '{start_symbol}':"]
+        for node in chain:
+            indent = "  " * node["depth"]
+            stub_tag = " [STUB]" if node["is_stub"] else " [impl]"
+            ret = f" -> {node['returns']}" if node["returns"] else ""
+            lines.append(f"{indent}{node['symbol']} in {node['file']}{stub_tag}{ret}")
+            if node["docstring"]:
+                lines.append(f"{indent}  doc: {node['docstring']}")
+            if node["callees"]:
+                callee_list = ", ".join(node["callees"][:6])
+                lines.append(f"{indent}  calls: {callee_list}")
+
+        chain_text = "\n".join(lines)
+
+        if verbose:
+            print(f"\n[trace_call_chain chain]\n{chain_text}\n", flush=True)
+
+        synthesis_msgs = [
+            {"role": "system", "content": (
+                "You are a codebase analysis assistant. "
+                "A call chain has been traced deterministically from the database. "
+                "Summarize it clearly: for each function in the chain, state what it does "
+                "(from docstring if present), whether it is implemented or a stub, "
+                "and what data it passes to the next hop. Be factual — only use what is in the chain."
+            )},
+            {"role": "user", "content": (
+                f"Question: {question}\n\n"
+                f"=== CALL CHAIN ===\n{chain_text}\n=== END ===\n\n"
+                "Describe the full path from the HTTP handler to the deepest layer reached, "
+                "noting stub vs implemented status for each function."
+            )},
+        ]
+        return self._call_ollama(synthesis_msgs, label="trace-synthesis", verbose=verbose)
 
     def run_no_llm(
         self,

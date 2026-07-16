@@ -415,7 +415,10 @@ def _answer(
         if verbose:
             print(f"\n[pattern detected] {pattern_name} / subject={subject}", flush=True)
         executor = PatternExecutor()
-        answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
+        if pattern_name == "trace_call_chain":
+            answer = executor.run_traversal(user_input, oracle, verbose=verbose)
+        else:
+            answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
         if _trace is not None:
             _trace.update({"pattern": pattern_name, "subject": subject, "needs": [], "tools": []})
         history.append({"role": "user",      "content": user_input})

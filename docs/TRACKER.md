@@ -1986,6 +1986,18 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    edges -- if symbol doesn't exist in corpus, emits correction. Same for HAS_METHOD.
    Catches Q5-style confabulation of symbols from training weights.
 
+   **Technique 3 DONE (2026-07-16):** Traversal pattern (`trace_call_chain`) + heuristic bug fix.
+   Probe results: 3 multi-hop queries run. Failures were (1) DECOMPOSE emitting template prose
+   for traversal queries ("files in Key files"), (2) "each" extracted as a symbol name by the
+   "what does X do" heuristic. Blast-radius + implementation-status query (probe 3) passed --
+   DECOMPOSE was correct, impact bypass fired, answer was honest. General iterative DECOMPOSE
+   loop has no evidence of being needed; gated on observing a non-traversal multi-hop failure.
+   Fix: (a) negative lookahead in "what does X do" heuristic blocks common English words;
+   (b) `walk_call_chain()` in agent_tools.py: deterministic BFS from start symbol, annotates
+   stub/impl/missing per node; (c) `trace_call_chain` pattern in pattern_executor.py detects
+   traversal intent, finds HTTP route handlers via `http_route` column, walks chain, one LLM
+   synthesis call over the structured result.
+
    **RM21-B [TODO, gated on live Q5 probe failing] Prose-style confabulation escape:**
    Claim verifier only intercepts confabulation expressed as "X calls Y". If the model
    writes "the request flows through query_router" (no explicit "calls"), the escape

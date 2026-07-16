@@ -493,6 +493,64 @@ def _list_callees_raw(oracle: "DBOracle", symbol: str, resolved_only: bool = Fal
     ]
 
 
+def walk_call_chain(
+    start: str,
+    oracle: "DBOracle",
+    max_depth: int = 5,
+) -> list[dict]:
+    """
+    BFS from start symbol through its callees, up to max_depth hops.
+
+    Returns a list of node dicts in traversal order:
+      { symbol, file, is_stub, params, returns, docstring, depth, parent, callees }
+
+    Only project symbols (those with a row in functions) are included.
+    Builtins and external callees are recorded in the node's `callees` list
+    but not expanded further.
+    """
+    visited: set[str] = set()
+    chain: list[dict] = []
+    queue: list[tuple[str, int, str | None]] = [(start, 0, None)]
+
+    while queue:
+        symbol, depth, parent = queue.pop(0)
+        if symbol in visited or depth > max_depth:
+            continue
+        visited.add(symbol)
+
+        row = oracle.conn.execute(
+            """
+            SELECT name, file_path, is_stub, param_types_json, return_type, docstring
+            FROM functions WHERE name = ? LIMIT 1
+            """,
+            (symbol,),
+        ).fetchone()
+        if row is None:
+            continue
+
+        callee_rows = _list_callees_raw(oracle, symbol)
+        callee_names = [r["callee"] for r in callee_rows]
+
+        node = {
+            "symbol":    row[0],
+            "file":      (row[1] or "").replace("\\", "/").split("/")[-1],
+            "is_stub":   bool(row[2]),
+            "params":    row[3],
+            "returns":   row[4] or "",
+            "docstring": (row[5] or "")[:120],
+            "depth":     depth,
+            "parent":    parent,
+            "callees":   callee_names,
+        }
+        chain.append(node)
+
+        for callee in callee_names:
+            if callee not in visited:
+                queue.append((callee, depth + 1, symbol))
+
+    return chain
+
+
 def _graph_most_connected_raw(
     oracle: "DBOracle", filter_str: str = "", n: int = 15
 ) -> list[dict]:

@@ -625,12 +625,14 @@ _HEURISTICS: list[tuple] = [
         ],
     ),
     # "what does X [Y] do" / "explain X [Y]" / "purpose of X [Y]" / "describe X" (symbol form)
-    # Captures optional second word for compound terms like "escalation engine"
+    # Captures optional second word for compound terms like "escalation engine".
+    # Negative lookahead blocks common English words that aren't symbol names.
     (
         re.compile(
             r"(?:what\s+does\s+|explain\s+|purpose\s+of\s+|describe\s+(?:the\s+)?)"
             r"(?:a\s+|an\s+|the\s+)?"
-            r"['\"]?([A-Za-z_]\w*)['\"]?(?:\s+([A-Za-z_]\w*))?",
+            r"['\"]?(?!(?:each|every|one|it|this|that|they|we|you|all|any|its)\b)([A-Za-z_]\w*)['\"]?"
+            r"(?:\s+([A-Za-z_]\w*))?",
             re.I,
         ),
         lambda m: _explain_needs(m.group(1), m.group(2)),
