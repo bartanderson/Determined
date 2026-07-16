@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 193):** RM64 remaining done: verify_implementation (close-the-loop check after re-ingest) + detect_doc_drift (EP/design_note gaps + doc-stale symbols). Both registered in TOOLS + tool_registry. 13 new tests. 1043 pass.
+**Last session (2026-07-16, session 193):** RM64 remaining done: verify_implementation + detect_doc_drift. RM21-B gate probe: Q5 against Commonplace passes cleanly (no confabulation, honest "none found"). RM21-B closed -- Fix A sufficient. 1043 pass.
 
 **Previous (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
 
@@ -2005,13 +2005,10 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    Fixed with rsplit('.', 1)[-1] before queuing. Probes after Commonplace re-ingest: search->DB
    4 nodes deep, capture->storage 16 nodes (full pipeline end-to-end).
 
-   **RM21-B [TODO, gated on live Q5 probe failing] Prose-style confabulation escape:**
-   Claim verifier only intercepts confabulation expressed as "X calls Y". If the model
-   writes "the request flows through query_router" (no explicit "calls"), the escape
-   is undetected. Fix: scan all \b[A-Z][a-z]\w+\b / snake_case tokens in the assembled
-   answer against the functions table; emit corrections for any that don't exist. Gate:
-   run Q5 live against Commonplace after Fix A ships -- if confabulation is gone, this
-   is not needed. If prose-style confabulation is still observed, implement the scan.
+   **RM21-B [CLOSED 2026-07-16] Prose-style confabulation escape:**
+   Gate probe run: Q5 against Commonplace. trace_call_chain pattern fired, found 0
+   HTTP handlers (correct -- Commonplace has no web layer), returned honest "none found".
+   No invented symbols, no prose confabulation. Fix A sufficient. Scan not needed.
 
    **RM21 probe re-run 2026-07-10 (after RM31-34):**
    - Q3 (name collision/search centrality): PASS -- RM32 tagging works, model answered correctly
