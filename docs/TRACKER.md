@@ -2430,44 +2430,30 @@ RM12. **[DONE 2026-07-05] Web search: SearXNG integration**
 
 ---
 
-RM10. **[FUTURE] DeRe-CoT recomposition pass in goal_intake**
+RM10. **[TODO] goal_intake intent detection + trace routing**
 
-   `goal_intake` currently decomposes a natural-language goal into sub-queries
-   and retrieves relevant symbols for each. It has no recomposition or coherence
-   verification step -- it cannot confirm that the sub-queries together actually
-   cover the original goal.
+   Probe run 2026-07-16 (session 191) against dj2. Embedding finds the RIGHT symbols.
+   DeRe-CoT is the wrong fix -- the gap is in what goal_intake does with them.
 
-   **Source:** "Automatic prompt generation via semantic decomposition-and-recomposition
-   for multi-hop question answering" (Seungyeon Lee & Dong-Gyu Lee, Engineering
-   Applications of Artificial Intelligence, Vol. 181, Part 3, October 2026).
+   **Two confirmed failure modes:**
+   1. Intent blindness: "find where AI boundary is violated" -> found AIBoundary correctly
+      but plan says MODIFY it. Investigation goals need READ/BLAST_RADIUS, not EXTEND/MODIFY.
+   2. Multi-hop gap: "trace player input to DB" -> got both endpoints but no path between
+      them + noise. walk_call_chain already exists; goal_intake doesn't invoke it.
+   Single-concept goals ("add consequence tracking") work fine -- no fix needed there.
 
-   **The DeRe-CoT mechanism:**
-   1. Decompose the goal into N candidate single-hop sub-questions (currently done)
-   2. Recompose pairs of candidates into new composite questions
-   3. Compute semantic similarity between each recomposed question and the original goal
-   4. Select the sub-question pair with highest alignment as the canonical decomposition
-   5. Proceed with that pair -- not the original arbitrary decomposition
+   **Plan:**
+   - 2A: Goal-type classifier -- keyword/embedding heuristic to detect intent as
+     investigate | implement | trace | explain. Adjust action plan per type:
+     investigate -> READ + blast_radius; implement -> EXTEND/MODIFY; trace -> 2B.
+   - 2B: Trace routing -- extract two endpoint concepts from trace goals, invoke
+     walk_call_chain between them, surface the path in the nav plan.
 
-   **Why this matters for Determined:** goal_intake's decomposition is currently
-   unchecked. A goal like "find where the AI boundary is violated" could decompose
-   into sub-queries that individually make sense but miss the core constraint. The
-   recompose-then-select step verifies coherence before committing to a reasoning path.
+   **DeRe-CoT (original framing):** still valid if embedding starts finding wrong symbols,
+   but not the current bottleneck. Keep in reserve.
 
-   **Related frameworks also shared by Bart (for context, not separate items):**
-   - 4-phase decomposition: Goal Formulation -> Semantic Factoring -> Sequential
-     Planning -> Unit Execution. Strategies: CoT, DECOMP, ToT.
-   - Deterministic + semantic decomposition: deterministic skeleton (constraint
-     satisfaction, idempotent subtasks) + semantic brain (meaning-based chunking,
-     hierarchical parsing).
-   - ACONIC: models tasks as constraint problems using formal complexity measures
-     (graph size, tree-width) to guide decomposition granularity.
-
-   **Prerequisite:** flat goal_intake must be proving insufficient in practice
-   before adding this complexity. Do not implement speculatively.
-
-   **Effort:** Medium. Recomposition is a second LLM pass (3B model, fast).
-   Semantic similarity uses the existing embedding infrastructure.
-   See [[project-analysis-workflow]] for full paper details.
+   **Effort:** Small-medium. 2A is keyword matching + plan branch (~40 lines).
+   2B reuses walk_call_chain; endpoint extraction is a regex/heuristic (~30 lines).
 
 14. **[DONE 2026-07-01] Semantic speculative decoding** - once item 10 (structured output)
     is in place, explore using the 3B model as a reasoning-step predictor: 3B

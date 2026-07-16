@@ -1,42 +1,49 @@
-Written at commit: 4c5ef80
+Written at commit: d2a8d10
 
-# SESSION STATE - session 190
+# SESSION STATE - session 191
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 190, 2026-07-16)
+## What happened this session (session 191, 2026-07-16)
 
-**capn reframed as trap registry + lookup cache [V]** (4c5ef80)
-Two explicit use cases:
-- TRAPS: non-obvious facts that cause wrong answers (wrong column names, silent defaults,
-  schema quirks, routing collisions). Chart after getting burned.
-- FREQUENT LOOKUPS: things that take more than a grep to re-derive (entry points,
-  non-obvious call chains). Chart after locating.
-Updated docstring and context output. Pruned fileless/fake-anchored entries.
-5 clean entries remain, all properly file-anchored.
+**RM63 signature fix [V]** (d2a8d10)
+feature_work_plan was showing (?) for stubs with param_types_json='{}' (known-empty).
+Fixed: distinguish SQL NULL (unknown -> ?) from {} (known-empty -> ()). Also added
+arguments_json fallback to show bare param names when types absent. Added arguments_json
+to fixture in test_feature_work_plan.py. 1 new test.
 
-**capn usage discipline established [V]**
-Was being ignored entirely. Reframed trigger: run `ask` before DB queries, symbol
-resolution, ingestion routing, or any known-tricky area -- not before every grep.
-Chart after hitting a trap or completing a high-cost lookup.
+**RM64 explore_stub [V]** (d2a8d10)
+New tool: explore_stub(symbol) -- design exploration for BLOCKED stubs. Surfaces callers
++ what they pass, docstring contract, ghost/bridge analysis, sibling stubs, design
+questions. Feeds into completion_contract. 12 regression tests. Registry entry wired in
+tool_registry.py and test_agent_tools.py. 1011 tests pass.
 
-**capn seeded from SESSION_STATE.md known traps [V]**
-Entries: normalize_symbol strips ::, resolved_only defaults False, trace_data_flow
-routing collision, graph_edges column names (caller/callee not callee_fqdn),
-where is the pattern detector.
+**RM10 probe [V]**
+Ran goal_intake against 3 multi-hop goals on dj2. Key finding: embedding finds RIGHT
+symbols, wrong action plan. Two failure modes confirmed:
+1. Intent blindness -- "find where X" gets MODIFY plan, should be READ/blast_radius.
+2. Multi-hop gap -- "trace A to B" gets endpoint list, not path (walk_call_chain exists
+   but goal_intake never invokes it).
+DeRe-CoT is the wrong fix. Revised plan: 2A goal-type classifier + 2B trace routing.
+Findings saved in capn (0245de17) and memory (project_rm10_goal_intake.md). TRACKER
+updated with probe results and revised plan.
 
 ## NEXT SESSION -- start here
 
-Priority order (unchanged):
-1. **RM64** -- feature_work_plan follow-ons. Gate: validate feature_work_plan on dj2
-   first and observe real gaps. Run it against dj2, see what's missing, then decide
-   which of the 3 candidate extensions to build.
-2. **RM21-B** -- prose confabulation scan. Still gated -- not observed in live probe.
-3. **RM21 remaining techniques** (2, 4, 5, 6) -- gated on T1+T3 failures.
-4. **RM10** -- DeRe-CoT recomposition in goal_intake. Long-horizon, read TRACKER first.
+**RM10 (ACTIVE):** Build 2A + 2B in goal_intake (agent_tools.py:3470).
+- 2A: keyword/embedding heuristic to classify goal as investigate | implement | trace |
+  explain. Adjust nav plan per type: investigate -> READ + blast_radius on found symbols;
+  implement -> EXTEND/MODIFY (current behavior); trace -> hand off to 2B.
+- 2B: for trace goals, extract two endpoint concepts from goal text, invoke
+  walk_call_chain between them, surface the path in the nav plan.
+- Test against probe goals: "find where AI boundary is violated" (investigate),
+  "trace how player input reaches the database" (trace), "add consequence tracking" (implement).
+- Regression tests required before commit.
 
-## Corpus status [V] (unchanged from session 189)
+Then: RM64 remaining (close-the-loop, doc-drift) if RM10 is clean and quick.
+
+## Corpus status [V] (unchanged from session 190)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
@@ -66,13 +73,17 @@ Priority order (unchanged):
 **dj2 ignore dirs trap [V]:** .determinedignore in dj2 repo covers all exclusions.
 **normalize_symbol strips :: [V]:** "Module::Fn" -> "Fn". Watch for Rust FQDN collisions.
 **Go resolution 15% [V]:** Correct -- unresolved are external libs (bubbletea, lipgloss).
-**JS typed params N/A [V]:** Plain JS has no type syntax. 0% is correct, not a gap.
+**JS typed params N/A [V]:** Plain JS has no type syntax. 0% is correct, not a bug.
 **RM62 callee writeback trap [V]:** After resolution post-pass, callee is qualified FQDN.
 **feature_work_plan axis grouping [V]:** Axes derived from unresolved callees only.
 **claim_verifier prose escape [V]:** RM21-B, gated on observing in live probe. Not observed.
 **capn cache empty on fresh machine [V]:** .capn/ is gitignored; each machine starts cold.
 **trace_data_flow collision [V]:** "call path from X to db" routes to trace_data_flow not
   trace_call_chain (regex grabs X+db as symbol pair before scoring); benign, answer correct.
+**goal_intake intent blindness [V]:** investigation goals get implementation plan. Fix is
+  2A goal-type classifier. DeRe-CoT is NOT the right fix.
+**goal_intake trace gap [V]:** trace goals get endpoint list not path. walk_call_chain
+  exists but goal_intake never invokes it. Fix is 2B trace routing.
 
 LLM server: llama-server.exe at C:\Users\bartl\models\llama-server\llama-server.exe,
   model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081, --ctx-size 32768.
