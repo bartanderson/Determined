@@ -1,4 +1,4 @@
-Written at commit: 1e4b71f
+Written at commit: fb1f728
 
 # SESSION STATE - session 193
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
@@ -7,38 +7,37 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 ## What happened this session (session 193, 2026-07-16)
 
-**RM10 done [V]** (74da033) -- see session 192 notes
+**RM10 done [V]** (74da033)
 goal_intake intent classifier (2A) + trace routing (2B). Live-validated against dj2:
-all 3 probes behave correctly (investigate/trace/implement).
+all 3 probes pass (investigate/trace/implement). 19 regression tests.
 
 **RM64 fully done [V]** (1e4b71f)
-verify_implementation(symbol): post-ingest close-the-loop check.
-  - Confirms is_stub=0, callers resolve, no new unresolved callees, docstring not stale.
-  - PASS / WARN / FAIL verdict with specifics.
+verify_implementation(symbol): post-ingest close-the-loop check (is_stub=0, callers
+resolve, no new unresolved callees, docstring not stale). PASS/WARN/FAIL verdict.
+detect_doc_drift(feature_path): flags EP/design_note gaps and doc-stale symbols after
+stubs are closed. Both in TOOLS + tool_registry. 13 regression tests. 1043 pass.
 
-detect_doc_drift(feature_path): flags doc gaps after stubs are closed.
-  - Check 1: entry points (no callers, not stub) with no design_note artifact.
-  - Check 2: implemented symbols (is_stub=0) with stub language in docstring.
-  - PASS or DRIFT with counts.
-
-Both registered in TOOLS dict and tool_registry.py. 13 new regression tests.
-1043 pass, 1 skipped.
+**RM21-B closed [V]** (fb1f728)
+Gate probe: Q5 ("what is the path from the web route to the database for a new entry?")
+run against Commonplace. trace_call_chain pattern fired correctly, found 0 HTTP handlers
+(correct -- Commonplace has no web layer), returned honest "none found" answer.
+No invented symbols, no prose-style confabulation. Fix A (session 191) was sufficient.
+Prose-escape token scan not needed. RM21-B closed in TRACKER.
 
 ## NEXT SESSION -- start here
 
-All RM10 and RM64 items are complete and committed. Open items to consider:
+No urgent open items. Candidates:
 
-**RM21-B [gated]:** Prose-style confabulation escape in claim_verifier. Gated on
-observing Q5-style confabulation in a live probe after Fix A ships. Run Q5 against
-Commonplace first -- if confabulation is gone, skip this. If prose escape is observed,
-implement the snake_case/CamelCase token scan.
+**RM21 Techniques 2-6 [future, low urgency]:** Constrained decoding, MCTS, speculative
+verification, large-model fallback. Build only when Technique 1 proves insufficient on
+real queries. No evidence of that yet.
 
-**RM21 Techniques 2-6 [future]:** Constrained decoding, MCTS, speculative verification,
-large-model fallback. Build only after Technique 1 proves insufficient.
+**New work:** consider what Determined is missing for the next dj2 development push.
+Good time to run feature_work_plan on a specific dj2 feature and see what the full
+pipeline (feature_work_plan -> explore_stub -> verify_implementation -> detect_doc_drift)
+surfaces end-to-end.
 
-Check TRACKER.md for any other open items. No urgent items were filed this session.
-
-## Corpus status [V] (unchanged from session 192)
+## Corpus status [V] (unchanged)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
@@ -71,7 +70,7 @@ Check TRACKER.md for any other open items. No urgent items were filed this sessi
 **JS typed params N/A [V]:** Plain JS has no type syntax. 0% is correct, not a bug.
 **RM62 callee writeback trap [V]:** After resolution post-pass, callee is qualified FQDN.
 **feature_work_plan axis grouping [V]:** Axes derived from unresolved callees only.
-**claim_verifier prose escape [V]:** RM21-B, gated on observing in live probe. Not observed.
+**claim_verifier prose escape [V]:** RM21-B CLOSED -- Fix A sufficient, not observed.
 **capn cache empty on fresh machine [V]:** .capn/ is gitignored; each machine starts cold.
 **trace_data_flow collision [V]:** "call path from X to db" routes to trace_data_flow not
   trace_call_chain (regex grabs X+db as symbol pair before scoring); benign, answer correct.
