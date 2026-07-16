@@ -1,4 +1,4 @@
-Written at commit: 1981f49
+Written at commit: b25eb6c
 
 # SESSION STATE - session 184
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
@@ -8,42 +8,48 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 ## What happened this session (session 184, 2026-07-15)
 
 **dnd-dungeon-gen re-ingested [V]** (f7c5460)
-291 symbols, 1,384 edges. EP counts now non-zero post-RM62 fix.
-
-**RM60 marked DONE [V]** (f7c5460)
+EP counts now non-zero post-RM62 fix. RM60 marked DONE.
 
 **RM-Perf filed [V]** (d9f7da4)
-Optimization Oracle future item: static purity analysis + profiling overlay. Two tiers.
-Gated on analysis/code-gen arc complete.
+Optimization Oracle: static purity + profiling overlay. Gated on arc complete.
 
 **RM63 built and validated [V]** (1981f49)
-feature_work_plan(assessor, {feature_path, depth, top_axes}): axis-clustered ordered work
-plan. Groups stubs by destination directory of unresolved callees (axes), ranks by
-EP-weighted impact, topo-sorts within axis, emits grounded completion contract per stub.
-Uncertain contracts flagged [infer: ...]. Validated on dj2 world/: all 10 stubs surface
-with correct order and contracts. Ready to paste any item into large LLM for implementation.
-11 new tests. 959 passed. Registered in TOOLS + tool_registry.
+feature_work_plan(assessor, {feature_path, depth, top_axes}): axis-clustered ordered
+work plan. Groups stubs by destination of unresolved callees (axes), ranks by EP-weighted
+impact, topo-sorts within axis, emits grounded completion contract per stub. Uncertain
+contracts flagged [infer: ...]. Validated on dj2 world/: all 10 stubs surface with
+correct order and contracts. 11 tests. 959 passed. In TOOLS + tool_registry.
 
-**RM63 marked DONE, RM64 filed (gated follow-ons) [V]**
+**RM63 marked DONE. RM64 filed (gated follow-ons). [V]**
+
+**First real use of feature_work_plan on dj2 world/ [V]**
+Surfaced two tool gaps not detectable by any current tool:
+- _get_encounter_context: no session->Encounter data bridge exists in WorldController
+- _get_combat_context: CombatFSM referenced in contract but no such symbol exists
+
+**RM65 + RM66 filed [V]** (b25eb6c)
+RM65: find_missing_bridges -- stub inputs can't reach needed data. Tier 0 readiness blocker.
+RM66: find_concept_ghosts -- stub contract references concept with no symbol in graph (UNGROUNDABLE).
+Both deterministic, ~1 session each.
 
 ## NEXT SESSION -- start here
 
-**Open items:**
-- RM39-L3: Data flow Level 3 (for-loop + kwarg patterns) -- [TODO], no urgency flagged
-- RM21: Small-model reasoning enhancement -- [ACTIVE], Q5 confabulation deferred
-- RM64: feature_work_plan follow-ons (close-the-loop, explore mode, doc-drift) -- gated on RM63 use
-- RM-Perf: Optimization Oracle -- future, gated on arc complete
+Priority order:
+1. **RM65** (find_missing_bridges) -- 1 session, high value, validates on dj2 _get_encounter_context
+2. **RM66** (find_concept_ghosts) -- 1 session, high value, validates on dj2 _get_combat_context
+3. **RM39-L3** (data flow Level 3, for-loop/kwarg) -- [TODO], no urgency
+4. **RM21** (small-model reasoning, Q5 confabulation) -- [ACTIVE], deferred
+5. **RM64** (feature_work_plan follow-ons) -- gated, use after more real-world exercise
 
-**Suggested next:** use feature_work_plan on dj2 world/ to drive actual combat layer
-implementation. That exercises RM63 in the real workflow and surfaces any output gaps
-before tackling RM64.
+After RM65+66: re-run feature_work_plan on dj2 world/ -- output should now distinguish
+BLOCKED / UNGROUNDABLE / MISSING_BRIDGE clearly, making each stub's status actionable.
 
 ## Corpus status [V]
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
 | Determined (Python) | 1,904 | 16,588 | 4 real | agent 83%, structural_score blocking |
-| dj2 (Python+JS) | 1,399 | 9,931 | 13 | world/ 10 stubs = combat layer -- RM63 validated here |
+| dj2 (Python+JS) | 1,399 | 9,931 | 13 | world/ 10 stubs; 2 ungroundable (CombatFSM), 1 missing bridge (session->Encounter) |
 | end-of-eden (Go) | 533 | 7,494 | 0 | complete |
 | ruggrogue (Rust) | 337 | 2,741 | 0 | complete |
 | dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested, EP counts correct |
