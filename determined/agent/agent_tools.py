@@ -7551,7 +7551,60 @@ def feature_work_plan(assessor: "Assessor", args: dict) -> str:
     ranked_axes = sorted(axis_stubs.items(), key=lambda kv: _axis_score(kv[1]), reverse=True)
     ranked_axes = ranked_axes[:top_axes]
 
-    # ── 7. Emit work plan ─────────────────────────────────────────────────
+    # ── 7. Pre-compute bridge/ghost status for each stub ─────────────────
+    # Reuse the shared helpers without a second DB round-trip per stub.
+    import json as _json2
+
+    # param_name -> [(fn_name, return_type)] for all non-stubs
+    _param_to_fns: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for _fn, _ptj, _rt in conn.execute(
+        "SELECT name, param_types_json, return_type FROM functions WHERE is_stub = 0"
+    ).fetchall():
+        try:
+            _params = _json2.loads(_ptj) if _ptj else {}
+        except Exception:
+            _params = {}
+        for _pname in _params:
+            _param_to_fns[_pname].append((_fn, _rt or ""))
+
+    _class_names_lower = {
+        r[0].lower()
+        for r in conn.execute("SELECT name FROM classes").fetchall()
+    }
+
+    def _stub_readiness_tag(stub_name: str, doc: str, ptj: str) -> str:
+        """Return MISSING_BRIDGE, UNGROUNDABLE, or empty string (plain BLOCKED)."""
+        try:
+            stub_params = list((_json2.loads(ptj) if ptj else {}).keys())
+        except Exception:
+            stub_params = []
+        concepts = _extract_docstring_concepts(doc or "")
+        if not concepts:
+            return ""
+        ghost_labels: list[str] = []
+        bridge_labels: list[str] = []
+        for concept in concepts:
+            base = _concept_base(concept)
+            base_lower = base.lower()
+            has_class = any(base_lower in cn or cn in base_lower
+                            for cn in _class_names_lower)
+            if not has_class:
+                ghost_labels.append(concept)
+            elif stub_params:
+                for pname in stub_params:
+                    has_bridge = any(
+                        base_lower in (rt or "").lower()
+                        for _, rt in _param_to_fns.get(pname, [])
+                    )
+                    if not has_bridge:
+                        bridge_labels.append(f"{pname} -> {base}")
+        if ghost_labels:
+            return f"UNGROUNDABLE — concept ghost: {', '.join(ghost_labels)}"
+        if bridge_labels:
+            return f"MISSING_BRIDGE — {'; '.join(bridge_labels)}"
+        return ""
+
+    # ── 8. Emit work plan ─────────────────────────────────────────────────
     out: list[str] = [
         f"Feature work plan: {feature_path}",
         f"{len(stubs_in_scope)} incomplete function(s) across {len(axis_stubs)} axis/axes",
@@ -7585,21 +7638,29 @@ def feature_work_plan(assessor: "Assessor", args: dict) -> str:
                 out.append(f"      Needs: {', '.join(missing[:5])}" +
                             ("  ..." if len(missing) > 5 else ""))
 
+            # fetch signature/docstring (used both by readiness tag and contract block)
+            fn_row = conn.execute(
+                "SELECT param_types_json, return_type, docstring FROM functions "
+                "WHERE name = ? LIMIT 1", (stub_name,)
+            ).fetchone()
+
             # readiness
             ready_str = readiness_check(assessor, {"symbol": stub_name})
             if "READY" in ready_str.split("\n")[0]:
                 out.append(f"      Readiness: READY")
             else:
-                blockers = [l.strip() for l in ready_str.splitlines()
-                            if l.strip().startswith("-") or "BLOCKED" in l][:2]
-                out.append(f"      Readiness: BLOCKED — " + "; ".join(blockers) if blockers
-                           else f"      Readiness: BLOCKED")
+                fn_doc = fn_row[2] if fn_row else ""
+                fn_ptj = fn_row[0] if fn_row else ""
+                tag = _stub_readiness_tag(stub_name, fn_doc, fn_ptj)
+                if tag:
+                    out.append(f"      Readiness: {tag}")
+                else:
+                    blockers = [l.strip() for l in ready_str.splitlines()
+                                if l.strip().startswith("-") or "BLOCKED" in l][:2]
+                    out.append(f"      Readiness: BLOCKED — " + "; ".join(blockers) if blockers
+                               else f"      Readiness: BLOCKED")
 
-            # contract: pull signature + docstring only (grounded, no LLM)
-            fn_row = conn.execute(
-                "SELECT param_types_json, return_type, docstring FROM functions "
-                "WHERE name = ? LIMIT 1", (stub_name,)
-            ).fetchone()
+            # contract: signature + docstring
             if fn_row:
                 import json as _json
                 param_json, ret_type, docstring = fn_row
