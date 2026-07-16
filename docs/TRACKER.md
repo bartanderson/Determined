@@ -1975,13 +1975,24 @@ RM16. **[DONE 2026-07-05] UI concept documentation: explain what each panel/mode
 
 RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its natural ceiling**
 
-   **Technique 1 DONE (2026-07-08 + extended 2026-07-10):** Verification loop wired into
+   **Technique 1 DONE (2026-07-08 + extended 2026-07-10 + Fix A 2026-07-15):** Verification loop wired into
    `_answer()` in `local_agent.py`. After ASSEMBLE, `claim_verifier.py` extracts structural
    claims (CALLS, NO_CALLERS, HAS_METHOD) via regex, checks each against `graph_edges` /
    `classes.methods_json`, and builds a correction block if any are wrong. One re-assembly
    pass with corrections prepended to facts. RM31-34 also done as part of this arc:
    blast-radius and traversal routing fixed (RM31), name-collision tagging in facts (RM32),
    comparative synthesis hint in ASSEMBLE (RM33), method confabulation detection (RM34).
+   Fix A (2026-07-15): verify_claim now checks functions table when CALLS subject has no
+   edges -- if symbol doesn't exist in corpus, emits correction. Same for HAS_METHOD.
+   Catches Q5-style confabulation of symbols from training weights.
+
+   **RM21-B [TODO, gated on live Q5 probe failing] Prose-style confabulation escape:**
+   Claim verifier only intercepts confabulation expressed as "X calls Y". If the model
+   writes "the request flows through query_router" (no explicit "calls"), the escape
+   is undetected. Fix: scan all \b[A-Z][a-z]\w+\b / snake_case tokens in the assembled
+   answer against the functions table; emit corrections for any that don't exist. Gate:
+   run Q5 live against Commonplace after Fix A ships -- if confabulation is gone, this
+   is not needed. If prose-style confabulation is still observed, implement the scan.
 
    **RM21 probe re-run 2026-07-10 (after RM31-34):**
    - Q3 (name collision/search centrality): PASS -- RM32 tagging works, model answered correctly
