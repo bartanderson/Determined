@@ -140,7 +140,23 @@ def verify_claim(claim: Claim, conn: sqlite3.Connection) -> Optional[Correction]
             (claim.subject,),
         ).fetchall()]
         if not actual:
-            return None  # no edges at all — can't refute confidently
+            # Check if subject exists in the corpus at all
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM functions WHERE name = ? LIMIT 1", (claim.subject,)
+                ).fetchone()
+                if not exists:
+                    return Correction(
+                        original_claim=f"{claim.subject} calls {claim.object_}",
+                        actual_fact=f"{claim.subject} does not exist in this codebase",
+                        correction_text=(
+                            f"CORRECTION: '{claim.subject}' does not exist in this codebase. "
+                            f"Do not reference it."
+                        ),
+                    )
+            except Exception:
+                pass
+            return None  # symbol exists but no outgoing edges, or table missing — can't refute
 
         return Correction(
             original_claim=f"{claim.subject} calls {claim.object_}",
@@ -174,7 +190,23 @@ def verify_claim(claim: Claim, conn: sqlite3.Connection) -> Optional[Correction]
             (claim.subject,),
         ).fetchone()
         if row is None:
-            return None  # class not in DB — can't refute
+            # Check if the class name exists as a function at all
+            try:
+                fn_exists = conn.execute(
+                    "SELECT 1 FROM functions WHERE name = ? LIMIT 1", (claim.subject,)
+                ).fetchone()
+                if not fn_exists:
+                    return Correction(
+                        original_claim=f"{claim.subject} has method {claim.object_}",
+                        actual_fact=f"{claim.subject} does not exist in this codebase",
+                        correction_text=(
+                            f"CORRECTION: '{claim.subject}' does not exist in this codebase. "
+                            f"Do not reference it."
+                        ),
+                    )
+            except Exception:
+                pass
+            return None  # symbol not a known class, or table missing — can't refute
 
         try:
             methods = json.loads(row[0] or "[]")

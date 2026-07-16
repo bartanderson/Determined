@@ -207,3 +207,78 @@ def test_verify_answer_catches_method_confabulation(db_with_classes):
     answer = "SearchEngine has a flush method to clear the cache."
     corrections = verify_answer(answer, db_with_classes)
     assert any("flush" in c.correction_text for c in corrections)
+
+
+# ---------------------------------------------------------------------------
+# Fixture: DB with functions table (for confabulation-of-nonexistent-symbol tests)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def db_with_functions():
+    """In-memory DB with graph_edges, functions, and classes tables."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE graph_edges "
+        "(caller TEXT, callee TEXT, caller_file TEXT, line_number INTEGER, resolved INTEGER)"
+    )
+    conn.execute(
+        "CREATE TABLE functions "
+        "(id INTEGER PRIMARY KEY, name TEXT, file_path TEXT, docstring TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE classes "
+        "(id INTEGER PRIMARY KEY, file_path TEXT, name TEXT, line_number INTEGER, "
+        "methods_json TEXT, base_classes_json TEXT, docstring TEXT)"
+    )
+    import json
+    conn.executemany(
+        "INSERT INTO graph_edges (caller, callee) VALUES (?, ?)",
+        [
+            ("add_entry", "save_to_db"),
+            ("save_to_db", "sqlite_insert"),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO functions (name) VALUES (?)",
+        [("add_entry",), ("save_to_db",), ("sqlite_insert",)],
+    )
+    conn.executemany(
+        "INSERT INTO classes (name, methods_json) VALUES (?, ?)",
+        [("EntryStore", json.dumps(["save", "load"]))],
+    )
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+def test_calls_confabulated_symbol_emits_correction(db_with_functions):
+    # Model claims a symbol not in the corpus calls something
+    claim = Claim(text="", kind="CALLS", subject="query_router", object_="process_query")
+    result = verify_claim(claim, db_with_functions)
+    assert result is not None
+    assert "does not exist" in result.correction_text
+    assert "query_router" in result.correction_text
+
+
+def test_calls_real_symbol_no_correction_when_no_edges(db_with_functions):
+    # Real symbol with no outgoing edges: can't refute, return None
+    claim = Claim(text="", kind="CALLS", subject="sqlite_insert", object_="something")
+    result = verify_claim(claim, db_with_functions)
+    assert result is None  # sqlite_insert exists, just has no outgoing edges
+
+
+def test_has_method_confabulated_class_emits_correction(db_with_functions):
+    # Model claims a class that doesn't exist has a method
+    claim = Claim(text="", kind="HAS_METHOD", subject="query_session", object_="run")
+    result = verify_claim(claim, db_with_functions)
+    assert result is not None
+    assert "does not exist" in result.correction_text
+    assert "query_session" in result.correction_text
+
+
+def test_verify_answer_catches_nonexistent_symbol_confabulation(db_with_functions):
+    # Q5-style confabulation: model invents a pipeline using nonexistent symbols.
+    # Model writes "X calls Y" where X doesn't exist in the corpus.
+    answer = "query_router calls process_query, then query_session handles the result."
+    corrections = verify_answer(answer, db_with_functions)
+    assert any("query_router" in c.correction_text for c in corrections)

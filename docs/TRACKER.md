@@ -884,44 +884,6 @@ RM52. **[DONE] Multi-method ingestion pre-pass: structure-induction gate for des
    LP² and L* can be simplified for the restricted grammar class of design documents (0.5 day).
    Gate logic and storage integration (0.5 day).
 
----
-
-
-RM39-L3. **[TODO] Data flow Level 3: for-loop and keyword-arg patterns (Python + JS ESTree)**
-
-   **Why:** Coverage audit (session 166) showed 382 untracked data-flow occurrences in dj2
-   game source: 41 for-loops over call results, 341 keyword-arg variable passes. Combined
-   with the earlier kwarg estimate this represents ~24% additional coverage on top of the
-   current 1,189 data_flow edges. For-loops are concentrated in generator_neo.py and
-   world_app.py; keyword args dominate constructor calls (Character, Quest, DialogResponse).
-
-   **Python side (parse_ast.py):**
-   - `visit_For`: if `node.iter` is a `Call`, get callee name, check _fn_bindings for
-     loop var, emit data_flow edge with provenance `["data_flow_for_iter"]`. Bind loop
-     target variable(s) in _fn_bindings so downstream uses are also tracked.
-   - `visit_Call` keyword extension: iterate `node.keywords`, skip `kw.arg is None`
-     (**kwargs), if `kw.value` is an `ast.Name` in `_fn_bindings`, emit data_flow edge
-     with provenance `["data_flow_var_kwarg"]`.
-
-   **Deterministic counts (AST-verified, game source only, excludes .determinedignore dirs):**
-   - For-loop call iters: 41 occurrences across 15 files
-   - Keyword arg variable passes: 341 occurrences across 56 files
-   - For-loop name iters (already partial-covered by L2): 127 occurrences
-
-   **JS ESTree equivalents (TODO — implement after Python side, gated on JS corpus need):**
-   - ForOf / ForIn where init.right is a CallExpression → same semantic as Python for-loop
-   - CallExpression arguments where type is Identifier (named arg in object destructuring
-     patterns, or direct variable reference) → equivalent to Python keyword arg pass
-   - Requires ESTree walker in determined/ingestion/parse_js.py (or equivalent) mirroring
-     the Python AST visitor pattern. JS has no keyword args natively but named object
-     literal args `fn({key: var})` serve the same role and are common in dj2's JS.
-   - Gate: implement when a JS corpus (dj2 client-side or another project) is the active
-     analysis target and for-of/named-obj patterns appear in blind spot queries.
-
-   **Estimated effort:** Python side 0.5 day + tests. JS side 1 day when gated.
-
----
-
 
 RM48. **[DONE] Design-to-code delta: surface what the design says should exist that the code does not yet implement**
 
