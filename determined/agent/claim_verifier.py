@@ -70,6 +70,7 @@ _HAS_METHOD_PATS = [
 _NOISE_WORDS = frozenset({
     "it", "this", "that", "the", "and", "or", "not", "also", "which",
     "then", "when", "if", "is", "are", "was", "were", "be", "a", "an",
+    "what", "who", "where", "how", "why", "via", "its", "any", "all",
 })
 
 
