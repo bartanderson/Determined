@@ -1,45 +1,30 @@
-Written at commit: 8c62c79
+Written at commit: 38ed639
 
-# SESSION STATE - session 187
+# SESSION STATE - session 188
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 187, 2026-07-16)
+## What happened this session (session 188, 2026-07-16)
 
-**RM21 Technique 3: trace_call_chain + heuristic bug fix [V]** (8c62c79)
+**Re-ingest Commonplace + fix walk_call_chain BFS depth bug [V]** (38ed639)
 
-Three multi-hop probes run against Commonplace corpus to gate the work:
-- Probe 1 (search path trace): FAIL -- DECOMPOSE emitted template prose ("files in Key files",
-  "files in Entry points") instead of real lookups. Model can't plan a 4-hop traversal in one pass.
-- Probe 2 (entry save trace): FAIL -- "what does each one do" matched "what does X do" heuristic,
-  extracted "each" as symbol name, wasted all tool calls on symbol_intent('each').
-- Probe 3 (blast-radius + implementation status): PASS -- DECOMPOSE correct, impact bypass fired,
-  answer honest. General iterative DECOMPOSE loop has no evidence of being needed.
+Re-ingested `C:\Users\bartl\dev\commonplace-walk` using EngineRunner.
+New DB: 31 functions, 168 edges, http_route populated for 3 routes (/, /capture, /search).
 
-Fixes shipped:
-1. **Heuristic bug**: negative lookahead `(?!(?:each|every|one|it|this|that|they|we|you|all|any|its)\b)`
-   added to "what does X do" regex in agent_resolver.py.
-2. **walk_call_chain(start, oracle, max_depth=5)** in agent_tools.py: deterministic BFS from a
-   start symbol, annotates stub/impl per node, cycle-safe, returns list[dict] with callees.
-3. **trace_call_chain detect rule** in pattern_executor.py: fires before trace_data_flow on
-   traversal queries ("trace path from HTTP route through to database", etc.).
-4. **run_traversal()** in PatternExecutor: finds HTTP route handlers via http_route column
-   (falls back to name heuristics -- *_get, *_post, *handler, *route, *capture -- for older
-   corpora where column wasn't populated at ingest time). Walks chain deterministically.
-   One LLM synthesis call over the structured chain.
-5. **Hooked in local_agent._answer()** as a new branch alongside existing pattern bypasses.
-6. **14 new regression tests** in tests/regression/test_technique3.py. 999 passed, 1 skipped [V].
+Bug found and fixed in `walk_call_chain` (agent_tools.py:547):
+- BFS was queuing FQDN callee names (e.g. `services.extractor.extract`) for `WHERE name = ?`
+  lookup against functions table, which stores bare names (`extract`). No match → depth stays 1.
+- Fix: `bare = callee.rsplit(".", 1)[-1]` before queuing next hops.
 
-Known limitation: Commonplace corpus was ingested before http_route column was extracted --
-http_route IS NULL for all functions. Fallback finds 2 handlers by name heuristic (capture,
-capture_post). Chain is shallow (1 node) because graph_edges from capture only captured
-library calls (Blueprint, flask.request.*), not project-level calls. Re-ingest would fix both.
+Traversal probes re-run with fix:
+- Probe 1 (search → DB): **4 nodes** -- search → search_entries → get_db → sqlite3.connect.
+  Correctly identifies storage.queries.search_entries as the DB-touching callee.
+- Probe 2 (capture → storage): **16 nodes** -- full traversal through validate_url, extract,
+  extract_metadata/full_content, run_processors, enrich_entry, insert_entry, find_connections,
+  suggest_tags, get_db. Complete end-to-end capture pipeline traced.
 
-**TRACKER.md updated [V]**: Technique 3 block added to RM21 entry; general iterative DECOMPOSE
-gated on non-traversal multi-hop failure (not yet observed).
-
-**HISTORY.md updated [V]**: Technique 3 decision and limitation recorded.
+999 passed, 1 skipped [V]. Committed.
 
 ## NEXT SESSION -- start here
 
@@ -51,13 +36,10 @@ Priority order:
 3. **RM64 follow-ons** -- gated on more real-world exercise of feature_work_plan.
 4. **RM10** -- DeRe-CoT recomposition pass in goal_intake, long-horizon.
 
-If next session wants to test trace_call_chain properly: re-ingest Commonplace corpus first
-so http_route is populated. Then run the two traversal queries from this session again.
-Re-ingest command: use EngineRunner (Python corpus), NOT ingest_lang_corpus.py.
+trace_call_chain is now working correctly on a properly ingested Commonplace corpus.
+No re-ingest needed next session unless corpus changes.
 
-## Corpus status [?]
-
-(Unchanged from session 186 -- no re-ingest this session)
+## Corpus status [V]
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
@@ -68,16 +50,12 @@ Re-ingest command: use EngineRunner (Python corpus), NOT ingest_lang_corpus.py.
 | dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested, EP counts correct |
 | dungeoncrawler (TS) | 78 | 192 | 0 | complete |
 | rotjs (TS) | 626 | 2,239 | 6 | lib/src warning in list_features |
-| Commonplace (Python) | ~64 | ? | 0 | OLD ingest -- no http_route col; re-ingest needed |
+| Commonplace (Python) | 31 | 168 | 0 | re-ingested session 188; http_route populated [V] |
 
 ## Known issues (carried forward)
 
-**trace_call_chain start node [V]:** Uses http_route col; falls back to name heuristics for old
-  corpora. Commonplace DB needs re-ingest to populate http_route. Start node selection is
-  approximate when http_route is absent -- picks handler whose name scores highest on question
-  keywords; both handlers score 0 on "search", picks alphabetically first ("capture").
-**trace_call_chain shallow chain [V]:** graph_edges from old Commonplace capture() only has
-  library calls (Blueprint, flask.request.*), not project calls. Re-ingest fixes.
+**walk_call_chain FQDN trap [V]:** FIXED session 188. BFS now strips FQDN to bare name before
+  queuing. Callee display in node dict still shows FQDN (correct for informational use).
 **concept extraction scope [V]:** _extract_docstring_concepts: single-word capitalised English
   words excluded by design (match prose verbs, not class-like concept names).
 **feature_shape vs dev_priorities% inconsistency [V]:** Different counting methods, not a bug.
