@@ -545,8 +545,9 @@ def walk_call_chain(
         chain.append(node)
 
         for callee in callee_names:
-            if callee not in visited:
-                queue.append((callee, depth + 1, symbol))
+            bare = callee.rsplit(".", 1)[-1]
+            if bare not in visited:
+                queue.append((bare, depth + 1, symbol))
 
     return chain
 
