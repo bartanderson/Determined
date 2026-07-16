@@ -247,7 +247,7 @@ RM-Perf. **[TODO] Optimization Oracle: static purity analysis + profiling overla
 
 ---
 
-RM63. **[TODO] feature_work_plan: ordered work plan for a feature from graph + contracts**
+RM63. **[DONE 2026-07-15] feature_work_plan: ordered work plan for a feature from graph + contracts**
 
    **Goal:** given a feature path, produce a handoff-ready work plan that drives
    development without requiring the user to hold the whole project in their head.
