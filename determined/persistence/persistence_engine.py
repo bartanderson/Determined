@@ -29,6 +29,8 @@ def _migrate(connection):
         cursor.execute("ALTER TABLE functions ADD COLUMN decorators_json TEXT")
     if "http_route" not in fn_existing:
         cursor.execute("ALTER TABLE functions ADD COLUMN http_route TEXT")
+    if "is_tool" not in fn_existing:
+        cursor.execute("ALTER TABLE functions ADD COLUMN is_tool INTEGER DEFAULT 0")
     f_existing = {row[1] for row in cursor.execute("PRAGMA table_info(files)").fetchall()}
     if "ingested_at" not in f_existing:
         cursor.execute("ALTER TABLE files ADD COLUMN ingested_at TEXT")
@@ -111,7 +113,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         is_stub INTEGER DEFAULT 0,
         param_types_json TEXT,
         decorators_json TEXT,
-        http_route TEXT
+        http_route TEXT,
+        is_tool INTEGER DEFAULT 0
     )
     """)
 
@@ -438,9 +441,10 @@ def persist_file_analysis(
             docstring,
             is_stub,
             decorators_json,
-            http_route
+            http_route,
+            is_tool
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             analysis.file_path,
             _canonical_symbol(function.name),
@@ -452,6 +456,7 @@ def persist_file_analysis(
             1 if getattr(function, "is_stub", False) else 0,
             json.dumps(getattr(function, "decorators", [])) or None,
             getattr(function, "http_route", None),
+            1 if getattr(function, "is_tool", False) else 0,
         ))
 
         # CLAUDE-EDIT 2026-06-17: was gated on
@@ -847,13 +852,14 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
             cursor.execute("""
             INSERT INTO functions (
                 file_path, name, line_number, return_type, arguments_json,
-                param_types_json, docstring, is_stub, decorators_json, http_route
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                param_types_json, docstring, is_stub, decorators_json, http_route, is_tool
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 sym["file_path"], sym["name"], sym["line_number"],
                 sym["return_type"], sym["arguments_json"], sym["param_types_json"],
                 sym["docstring"], 1 if sym["is_stub"] else 0,
                 sym["decorators_json"], sym["http_route"],
+                1 if sym.get("is_tool") else 0,
             ))
             _insert_symbol(cursor, sym["file_path"], "function", sym["name"], sym["line_number"])
 

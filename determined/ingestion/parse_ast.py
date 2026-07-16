@@ -255,6 +255,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
             stub_by_doc = bool(docstring and docstring.strip().upper().startswith("STUB:"))
             decorators = []
             http_route: str | None = None
+            is_tool = False
             for dec in node.decorator_list:
                 try:
                     decorators.append(ast.unparse(dec))
@@ -271,6 +272,12 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     and isinstance(dec.args[0].value, str)
                 ):
                     http_route = dec.args[0].value
+                # Detect AI tool decorator: @tool(...) or @<module>.tool(...)
+                if not is_tool and isinstance(dec, ast.Call):
+                    fn = dec.func
+                    bare = getattr(fn, "id", None) or getattr(fn, "attr", None)
+                    if bare == "tool":
+                        is_tool = True
 
             inline_notes: list = []
             if comment_map is not None:
@@ -297,6 +304,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     inline_notes=inline_notes,
                     http_route=http_route,
                     response_shape=response_shape,
+                    is_tool=is_tool,
                 )
             )
 

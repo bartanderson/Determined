@@ -8335,28 +8335,22 @@ def _has_callers(conn, name: str) -> bool:
     return bool(fqdn)
 
 
-def _ep_tier(name: str, file_path: str, decorators_json: str | None, http_route: str | None) -> str:
+def _ep_tier(name: str, file_path: str, is_tool: int | bool, http_route: str | None) -> str:
     """Classify a function's entry-point tier.
 
     Returns one of:
       explicit_http   -- has http_route (Flask/web route)
-      explicit_tool   -- decorated as an AI tool
+      explicit_tool   -- decorated as an AI tool (is_tool column set at ingest)
       protocol        -- dunder method, classmethod serializer, or staticmethod helper
       test            -- test function or in test file
       inferred        -- no callers found; candidate EP (after FQDN-aware check)
     """
-    import json as _j
     # Explicit HTTP
     if http_route:
         return "explicit_http"
-    # Explicit AI tool decorator
-    if decorators_json:
-        try:
-            decs = _j.loads(decorators_json) if isinstance(decorators_json, str) else decorators_json
-            if any("tool(" in str(d) or "tool_def" in str(d) for d in decs):
-                return "explicit_tool"
-        except Exception:
-            pass
+    # Explicit AI tool decorator — resolved at ingest time, not by string matching
+    if is_tool:
+        return "explicit_tool"
     # Protocol: dunder methods
     if name.startswith("__") and name.endswith("__"):
         return "protocol"
@@ -8566,11 +8560,11 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
     # Use fallback query for older fixture DBs that may lack these columns
     try:
         impl_rows = conn.execute(
-            "SELECT name, file_path, decorators_json, http_route FROM functions WHERE is_stub=0"
+            "SELECT name, file_path, is_tool, http_route FROM functions WHERE is_stub=0"
         ).fetchall()
     except Exception:
         impl_rows = [
-            (r[0], r[1], None, None)
+            (r[0], r[1], 0, None)
             for r in conn.execute("SELECT name, file_path FROM functions WHERE is_stub=0").fetchall()
         ]
     impl_fns = [(r[0], r[1]) for r in impl_rows if _in_feature(r[1])]
@@ -8588,8 +8582,8 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
     ep_total = 0
 
     for name, fp in impl_fns:
-        decs, http = impl_meta.get(name, (None, None))
-        tier = _ep_tier(name, fp, decs, http)
+        is_tool, http = impl_meta.get(name, (0, None))
+        tier = _ep_tier(name, fp, is_tool, http)
         if tier == "protocol" or tier == "test":
             continue
         if _has_callers(conn, name):
@@ -8739,11 +8733,11 @@ def list_entry_points(assessor: "Assessor", args: dict) -> str:
 
     try:
         rows = conn.execute(
-            "SELECT name, file_path, decorators_json, http_route FROM functions WHERE is_stub=0"
+            "SELECT name, file_path, is_tool, http_route FROM functions WHERE is_stub=0"
         ).fetchall()
     except Exception:
         rows = [
-            (r[0], r[1], None, None)
+            (r[0], r[1], 0, None)
             for r in conn.execute("SELECT name, file_path FROM functions WHERE is_stub=0").fetchall()
         ]
 
@@ -8751,10 +8745,10 @@ def list_entry_points(assessor: "Assessor", args: dict) -> str:
     explicit_tool: list[tuple[str, str]] = []
     inferred: list[tuple[str, str]] = []
 
-    for name, fp, decs, http in rows:
+    for name, fp, is_tool, http in rows:
         if not _in_scope(fp):
             continue
-        tier = _ep_tier(name, fp, decs, http)
+        tier = _ep_tier(name, fp, is_tool, http)
         if tier == "protocol" or tier == "test":
             continue
         if tier == "explicit_http":

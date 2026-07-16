@@ -50,6 +50,7 @@ class FunctionRepresentation:
     inline_notes: List[Dict[str, Any]] = field(default_factory=list)  # {text, position, marker}
     http_route: Optional[str] = None  # Flask route URL extracted from @<x>.route(...)
     response_shape: List[str] = field(default_factory=list)  # JSON keys returned by this route handler
+    is_tool: bool = False  # True when decorated with tool(...) — set at parse time, not agent layer
 
 
 @dataclass
