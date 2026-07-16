@@ -555,6 +555,10 @@ def test_dispatch_all_tools_registered():
         "development_priorities",
         # RM63: feature work plan
         "feature_work_plan",
+        # RM65: missing bridge detection
+        "find_missing_bridges",
+        # RM66: concept ghost detection
+        "find_concept_ghosts",
     }
 
     assert set(TOOLS.keys()) == expected

@@ -883,6 +883,30 @@ REGISTRY: dict[str, dict] = {
         "category": "edit",
     },
 
+    # ── RM65: MISSING BRIDGES ─────────────────────────────────────────
+    "find_missing_bridges": {
+        "purpose": "Detect stubs whose input parameters cannot reach the data type they need. Extracts concepts from each stub's docstring, then checks whether any non-stub function bridges the stub's input parameter name(s) to those concepts. Flags stubs where no such bridge function exists as MISSING_BRIDGE -- a Tier 0 readiness blocker.",
+        "args": {
+            "feature_path": "(optional) directory prefix to restrict the search, e.g. 'world/'",
+        },
+        "output": "per-stub list of MISSING_BRIDGE gaps: param_name -> ConceptName with explanation",
+        "feeds": ["readiness_check", "feature_work_plan"],
+        "use_when": "After feature_work_plan surfaces BLOCKED stubs -- run this to check if any stubs are unimplementable because required data bridges don't exist yet.",
+        "category": "planning",
+    },
+
+    # ── RM66: CONCEPT GHOSTS ──────────────────────────────────────────
+    "find_concept_ghosts": {
+        "purpose": "Find stubs whose docstrings reference concepts (CamelCase nouns, class names, FSM/Manager/System names) that have no matching symbol anywhere in the graph. A concept ghost means the stub is UNGROUNDABLE -- it cannot be implemented until the referenced concept is designed and built first.",
+        "args": {
+            "feature_path": "(optional) directory prefix to restrict the search, e.g. 'world/'",
+        },
+        "output": "per-stub list of CONCEPT_GHOST findings: concept name, what was searched, what was missing",
+        "feeds": ["readiness_check", "feature_work_plan", "find_missing_bridges"],
+        "use_when": "After feature_work_plan or find_missing_bridges -- run to check if any stubs reference concepts that simply don't exist yet. These stubs need prerequisite design work before implementation can begin.",
+        "category": "planning",
+    },
+
     # ── RM63: FEATURE WORK PLAN ───────────────────────────────────────
     "feature_work_plan": {
         "purpose": "Produce a handoff-ready, ordered work plan for a feature directory: finds all stubs and missing callees, groups them into axes (by destination directory of unresolved callees), ranks axes by EP-weighted impact, sorts functions within each axis by topo order, and emits a grounded completion contract for each. Uncertain contracts are flagged [infer: ...]. Output is ready to paste into a large LLM prompt for the narrow implementation step.",

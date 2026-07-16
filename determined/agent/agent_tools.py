@@ -7628,6 +7628,237 @@ def feature_work_plan(assessor: "Assessor", args: dict) -> str:
 TOOLS["feature_work_plan"] = (feature_work_plan, "assessor")
 
 
+# ── RM65 / RM66: shared concept extractor ────────────────────────────────────
+
+_CONCEPT_SKIP = frozenset({
+    "None", "True", "False", "Optional", "List", "Dict", "Any", "Union",
+    "Query", "Get", "Set", "Use", "The", "This", "For", "Return", "Note",
+    "Args", "Returns", "Raises", "Example", "Check", "Call", "Handle",
+    "Active", "Current", "New", "Old", "Data", "Info", "Type",
+})
+
+_CONCEPT_SUFFIXES = ("FSM", "Manager", "Engine", "System", "Controller", "Service",
+                     "Handler", "Registry", "Store", "State", "Model")
+
+
+def _extract_docstring_concepts(text: str) -> list[str]:
+    """Return distinct domain concept names from docstring text.
+
+    Matches compound CamelCase names (e.g. WorldController, PlayerState) and names
+    with known architectural suffixes (e.g. CombatFSM, SessionManager).  Single
+    capitalised English words like Process or Register are excluded on purpose --
+    they are action verbs in prose, not class-like concept names.
+    """
+    import re
+    if not text:
+        return []
+    # Compound CamelCase: at least one mid-word uppercase letter
+    compound = re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-zA-Z0-9]+)+\b', text)
+    # Suffix-tagged names: any word immediately before a known architectural suffix
+    suffixed = re.findall(
+        r'\b[A-Za-z][a-zA-Z0-9]*(?:FSM|Manager|Engine|Controller|Service|Handler|Registry|Store)\b',
+        text,
+    )
+    combined = compound + [s for s in suffixed if s not in compound]
+    return list(dict.fromkeys(t for t in combined if t not in _CONCEPT_SKIP))
+
+
+def _concept_base(name: str) -> str:
+    """Strip known architectural suffixes to get the bare concept name."""
+    for suf in _CONCEPT_SUFFIXES:
+        if name.endswith(suf) and len(name) > len(suf):
+            return name[: -len(suf)]
+    return name
+
+
+# ── RM65: find_missing_bridges ────────────────────────────────────────────────
+
+def find_missing_bridges(assessor: "Assessor", args: dict) -> str:
+    """
+    find_missing_bridges([feature_path]) — detect stubs whose input parameters
+    cannot reach the data type they need.
+
+    For each stub, extracts concepts from its docstring, then checks whether any
+    non-stub function bridges the stub's input parameter name(s) to those concepts
+    (i.e. takes the same param and returns a matching type).  If no bridge exists,
+    the stub is flagged MISSING_BRIDGE — it cannot be implemented until a connecting
+    function or data accessor is added.
+
+    Args:
+        feature_path: (optional) directory prefix to restrict the search, e.g. "world/"
+    """
+    import json
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    feature_path = args.get("feature_path", "").strip().replace("\\", "/").rstrip("/")
+
+    # Collect stubs
+    stub_rows = conn.execute(
+        "SELECT name, file_path, line_number, param_types_json, return_type, docstring "
+        "FROM functions WHERE is_stub = 1"
+    ).fetchall()
+
+    if feature_path:
+        fp_norm = feature_path.lower()
+        stub_rows = [r for r in stub_rows
+                     if fp_norm in (r[1] or "").replace("\\", "/").lower()]
+
+    if not stub_rows:
+        scope = f"under '{feature_path}'" if feature_path else "in corpus"
+        return f"No stubs found {scope}."
+
+    # Pre-load non-stub functions: name, param_types_json, return_type
+    non_stubs = conn.execute(
+        "SELECT name, param_types_json, return_type FROM functions WHERE is_stub = 0"
+    ).fetchall()
+
+    # Build index: param_name -> list of (fn_name, return_type)
+    param_to_fns: dict[str, list[tuple[str, str]]] = {}
+    for fn_name, ptj, rt in non_stubs:
+        try:
+            params = json.loads(ptj) if ptj else {}
+        except Exception:
+            params = {}
+        for pname in params:
+            param_to_fns.setdefault(pname, []).append((fn_name, rt or ""))
+
+    # Pre-load class names (lower-cased) to gate bridge checks: only flag
+    # MISSING_BRIDGE when the concept's base name exists as a class.
+    # If the concept has no matching class, that's RM66 territory (concept ghost).
+    class_names_lower = {r[0].lower() for r in conn.execute("SELECT name FROM classes").fetchall()}
+
+    out: list[str] = []
+    bridges_found = 0
+
+    for stub_name, fp, ln, ptj, rt, doc in stub_rows:
+        try:
+            stub_params = list(json.loads(ptj).keys()) if ptj else []
+        except Exception:
+            stub_params = []
+
+        concepts = _extract_docstring_concepts(doc or "")
+        if not concepts or not stub_params:
+            continue
+
+        stub_bridges: list[str] = []
+        for concept in concepts:
+            base = _concept_base(concept)
+            base_lower = base.lower()
+            # Only check bridge if the concept's base name exists as a class --
+            # otherwise it's a concept ghost (RM66) not a missing bridge (RM65).
+            concept_has_class = any(base_lower in cn or cn in base_lower
+                                    for cn in class_names_lower)
+            if not concept_has_class:
+                continue
+            for pname in stub_params:
+                # Check: any non-stub function takes pname AND returns base-like type?
+                candidates = param_to_fns.get(pname, [])
+                has_bridge = any(
+                    base_lower in (ret or "").lower()
+                    for _, ret in candidates
+                )
+                if not has_bridge:
+                    stub_bridges.append(
+                        f"  MISSING_BRIDGE: {pname} -> {base}  "
+                        f"(no function takes '{pname}' and returns a {base}-like type)"
+                    )
+                    bridges_found += 1
+
+        if stub_bridges:
+            short_fp = "/".join((fp or "").replace("\\", "/").split("/")[-2:])
+            out.append(f"{stub_name}  ({short_fp}:{ln})")
+            out.extend(stub_bridges)
+            out.append("")
+
+    if not out:
+        scope = f"under '{feature_path}'" if feature_path else "in corpus"
+        return f"No missing bridges detected {scope} -- all stub inputs can reach the data they reference."
+
+    header = f"find_missing_bridges: {bridges_found} bridge gap(s) found\n"
+    return header + "\n".join(out)
+
+
+TOOLS["find_missing_bridges"] = (find_missing_bridges, "assessor")
+
+
+# ── RM66: find_concept_ghosts ─────────────────────────────────────────────────
+
+def find_concept_ghosts(assessor: "Assessor", args: dict) -> str:
+    """
+    find_concept_ghosts([feature_path]) — find stubs whose docstrings reference
+    concepts that have no matching symbol anywhere in the graph.
+
+    For each stub, extracts CamelCase concept names from its docstring/contract,
+    then checks whether those concepts exist as class names or function names in
+    the corpus.  A concept with no match at all is a GHOST -- the stub cannot be
+    implemented until that concept is designed and built first.
+
+    Args:
+        feature_path: (optional) directory prefix to restrict the search, e.g. "world/"
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    feature_path = args.get("feature_path", "").strip().replace("\\", "/").rstrip("/")
+
+    stub_rows = conn.execute(
+        "SELECT name, file_path, line_number, docstring FROM functions WHERE is_stub = 1"
+    ).fetchall()
+
+    if feature_path:
+        fp_norm = feature_path.lower()
+        stub_rows = [r for r in stub_rows
+                     if fp_norm in (r[1] or "").replace("\\", "/").lower()]
+
+    if not stub_rows:
+        scope = f"under '{feature_path}'" if feature_path else "in corpus"
+        return f"No stubs found {scope}."
+
+    # Check class names only: a concept ghost means no CLASS with that name exists.
+    # Functions with related names don't count -- CombatFSM requires a Combat class,
+    # not just combat_* helper functions.
+    class_names_lower = {r[0].lower() for r in conn.execute("SELECT name FROM classes").fetchall()}
+
+    out: list[str] = []
+    ghost_count = 0
+
+    for stub_name, fp, ln, doc in stub_rows:
+        concepts = _extract_docstring_concepts(doc or "")
+        if not concepts:
+            continue
+
+        stub_ghosts: list[str] = []
+        for concept in concepts:
+            base = _concept_base(concept)
+            base_lower = base.lower()
+            # Ghost: no class whose name overlaps with the concept's base name
+            matched = any(base_lower in cn or cn in base_lower for cn in class_names_lower)
+            if not matched:
+                stub_ghosts.append(
+                    f"  CONCEPT_GHOST: '{concept}' referenced in docstring -- "
+                    f"no class matching '{base}' exists in the graph"
+                )
+                ghost_count += 1
+
+        if stub_ghosts:
+            short_fp = "/".join((fp or "").replace("\\", "/").split("/")[-2:])
+            out.append(f"{stub_name}  ({short_fp}:{ln})")
+            out.extend(stub_ghosts)
+            out.append("")
+
+    if not out:
+        scope = f"under '{feature_path}'" if feature_path else "in corpus"
+        return f"No concept ghosts detected {scope} -- all docstring concepts have matching symbols."
+
+    header = f"find_concept_ghosts: {ghost_count} ghost(s) found\n"
+    return header + "\n".join(out)
+
+
+TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.
