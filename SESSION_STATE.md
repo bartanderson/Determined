@@ -1,55 +1,49 @@
-Written at commit: b25eb6c
+Written at commit: c671ed8
 
-# SESSION STATE - session 184
+# SESSION STATE - session 185
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 184, 2026-07-15)
+## What happened this session (session 185, 2026-07-15)
 
-**dnd-dungeon-gen re-ingested [V]** (f7c5460)
-EP counts now non-zero post-RM62 fix. RM60 marked DONE.
+**RM65 built and validated [V]** (41f267c)
+find_missing_bridges(assessor, {feature_path}): for each stub, extracts compound-CamelCase
+/ suffix-tagged concepts from docstring, checks whether any non-stub function bridges the
+stub's input param names to those concept types (via param_types_json key match + return_type
+substring match). Only flags MISSING_BRIDGE when concept exists as a class (otherwise RM66
+territory). 22 new tests. Validated: _get_encounter_context -> MISSING_BRIDGE: session_id -> Encounter.
 
-**RM-Perf filed [V]** (d9f7da4)
-Optimization Oracle: static purity + profiling overlay. Gated on arc complete.
+**RM66 built and validated [V]** (41f267c)
+find_concept_ghosts(assessor, {feature_path}): same concept extraction, but checks class names
+only -- if concept's base name has no matching class -> CONCEPT_GHOST. Validated: _get_combat_context
+-> CONCEPT_GHOST: CombatFSM. 981 tests pass.
 
-**RM63 built and validated [V]** (1981f49)
-feature_work_plan(assessor, {feature_path, depth, top_axes}): axis-clustered ordered
-work plan. Groups stubs by destination of unresolved callees (axes), ranks by EP-weighted
-impact, topo-sorts within axis, emits grounded completion contract per stub. Uncertain
-contracts flagged [infer: ...]. Validated on dj2 world/: all 10 stubs surface with
-correct order and contracts. 11 tests. 959 passed. In TOOLS + tool_registry.
-
-**RM63 marked DONE. RM64 filed (gated follow-ons). [V]**
-
-**First real use of feature_work_plan on dj2 world/ [V]**
-Surfaced two tool gaps not detectable by any current tool:
-- _get_encounter_context: no session->Encounter data bridge exists in WorldController
-- _get_combat_context: CombatFSM referenced in contract but no such symbol exists
-
-**RM65 + RM66 filed [V]** (b25eb6c)
-RM65: find_missing_bridges -- stub inputs can't reach needed data. Tier 0 readiness blocker.
-RM66: find_concept_ghosts -- stub contract references concept with no symbol in graph (UNGROUNDABLE).
-Both deterministic, ~1 session each.
+**RM64 wired in [V]** (c671ed8)
+feature_work_plan now runs bridge/ghost logic inline per stub and upgrades Readiness from
+generic BLOCKED to:
+  MISSING_BRIDGE -- concept class exists, no bridge function from input params to it
+  UNGROUNDABLE   -- concept referenced in docstring has no matching class at all
+Validated on dj2 world/: stubs 3 and 4 now show distinct statuses; 8 others stay BLOCKED.
+981 tests pass. [V]
 
 ## NEXT SESSION -- start here
 
 Priority order:
-1. **RM65** (find_missing_bridges) -- 1 session, high value, validates on dj2 _get_encounter_context
-2. **RM66** (find_concept_ghosts) -- 1 session, high value, validates on dj2 _get_combat_context
-3. **RM39-L3** (data flow Level 3, for-loop/kwarg) -- [TODO], no urgency
-4. **RM21** (small-model reasoning, Q5 confabulation) -- [ACTIVE], deferred
-5. **RM64** (feature_work_plan follow-ons) -- gated, use after more real-world exercise
+1. **RM39-L3** (data flow Level 3, for-loop/kwarg) -- [TODO], no urgency
+2. **RM21** (small-model reasoning, Q5 confabulation) -- [ACTIVE], deferred
+3. **RM64** (feature_work_plan follow-ons) -- gated, use after more real-world exercise
 
-After RM65+66: re-run feature_work_plan on dj2 world/ -- output should now distinguish
-BLOCKED / UNGROUNDABLE / MISSING_BRIDGE clearly, making each stub's status actionable.
+RM65 and RM66 are DONE. The dj2 world/ work plan now gives actionable per-stub status.
 
-## Corpus status [V]
+## Corpus status [?]
+
+(Unchanged from session 184 -- no re-ingest this session)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
 | Determined (Python) | 1,904 | 16,588 | 4 real | agent 83%, structural_score blocking |
-| dj2 (Python+JS) | 1,399 | 9,931 | 13 | world/ 10 stubs; 2 ungroundable (CombatFSM), 1 missing bridge (session->Encounter) |
+| dj2 (Python+JS) | 1,399 | 9,931 | 13 | world/ 10 stubs; 1 UNGROUNDABLE (CombatFSM), 1 MISSING_BRIDGE (session->Encounter), 8 BLOCKED |
 | end-of-eden (Go) | 533 | 7,494 | 0 | complete |
 | ruggrogue (Rust) | 337 | 2,741 | 0 | complete |
 | dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested, EP counts correct |
@@ -58,6 +52,9 @@ BLOCKED / UNGROUNDABLE / MISSING_BRIDGE clearly, making each stub's status actio
 
 ## Known issues (carried forward)
 
+**concept extraction scope [V]:** _extract_docstring_concepts uses compound-CamelCase regex
+  + architectural-suffix regex. Single-word capitalised English words (Process, Register, System)
+  are excluded by design -- they match prose verbs, not class-like concept names.
 **feature_shape vs dev_priorities% inconsistency [V]:** Different counting methods, not a bug.
 **ingest route trap [V]:** Python corpora use EngineRunner. ingest_lang_corpus.py is Go/Rust/JS/TS only.
 **interface_dispatch caller_file empty [V]:** Interface types not in functions table.
