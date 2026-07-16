@@ -8,6 +8,15 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-16: RM21 Q5 confabulation was Determined-internal symbols leaking into corpus answers.
+claim_verifier returns None when a CALLS subject has no edges ("can't refute confidently").
+This let invented symbols (query_router, query_session -- real Determined modules but not in
+Commonplace) escape undetected. Fix: check functions table existence before returning None.
+Also: "what", "who", "where", "how", "why" were missing from _NOISE_WORDS, causing followup
+suggestion text ("what calls Entry") to be parsed as CALLS claims. Q5 now passes -- no
+Determined internals appear in Commonplace answers. RM21-B (prose-style scan) gated until
+prose confabulation is observed in a live probe.
+
 2026-07-15: RM62 ingester fix changes callee column from bare to qualified name post-resolution.
 After the resolution post-pass, graph_edges.callee is now the full qualified FQDN (e.g.
 'dungeon.generateDungeon') not the bare suffix ('generateDungeon'). Any test asserting bare
