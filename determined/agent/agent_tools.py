@@ -7374,6 +7374,260 @@ TOOLS = {
 }
 
 
+def feature_work_plan(assessor: "Assessor", args: dict) -> str:
+    """
+    feature_work_plan(feature_path[, depth=1][, top_axes=5]) — ordered work plan
+    for a feature directory.
+
+    Finds all stubs and missing callees in feature_path, groups them by destination
+    axis (the directory their unresolved callees land in), ranks axes by EP-weighted
+    impact, sorts functions within each axis by implementation order (topo sort),
+    and emits a completion_contract slot for each. Uncertain contracts are flagged
+    [infer: ...]. Output is handoff-ready: paste the relevant axis directly into a
+    large LLM prompt for the narrow implementation step.
+
+    Args:
+        feature_path: directory prefix to analyse (required, e.g. "world/" or "determined/agent")
+        depth:        directory grouping depth for axis labels (default 1)
+        top_axes:     max axes to show (default 5)
+    """
+    from collections import defaultdict
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    feature_path = args.get("feature_path", "").strip().replace("\\", "/").rstrip("/")
+    if not feature_path:
+        return "ERROR: feature_path argument required"
+    depth = int(args.get("depth", 1))
+    top_axes = int(args.get("top_axes", 5))
+
+    lang_builtins = _detect_corpus_lang(conn)
+
+    # ── 1. Collect stubs in feature_path ─────────────────────────────────
+    stub_rows = conn.execute(
+        "SELECT name, file_path, line_number FROM functions "
+        "WHERE is_stub = 1",
+    ).fetchall()
+
+    # normalise paths
+    feature_norm = feature_path.lower()
+    stubs_in_scope: list[dict] = []
+    for name, fp, ln in stub_rows:
+        fp_norm = (fp or "").replace("\\", "/").lower()
+        if feature_norm in fp_norm:
+            stubs_in_scope.append({"name": name, "file_path": fp or "", "line_number": ln or 0})
+
+    if not stubs_in_scope:
+        return f"No stubs found under '{feature_path}'."
+
+    stub_names = {s["name"] for s in stubs_in_scope}
+
+    # ── 2. Find missing callees for each stub ─────────────────────────────
+    # A missing callee: edge exists but target not in functions table
+    all_fn_names: set[str] = {
+        r[0] for r in conn.execute("SELECT name FROM functions").fetchall()
+    }
+
+    # Build bare-name lookup (for JS/Go qualified names)
+    bare_map: dict[str, str] = {}
+    for n in all_fn_names:
+        sep = "." if "." in n else ("::" if "::" in n else "")
+        if sep:
+            bare = n.rsplit(sep, 1)[1]
+            if bare not in bare_map:
+                bare_map[bare] = n
+
+    def _is_known(name: str) -> bool:
+        return name in all_fn_names or name in bare_map
+
+    # For each stub, collect its unresolved callees and their caller_file
+    stub_missing: dict[str, list[str]] = defaultdict(list)
+    callee_rows = conn.execute(
+        "SELECT caller, callee, caller_file FROM graph_edges WHERE resolved = 0"
+    ).fetchall()
+    for caller, callee, caller_file in callee_rows:
+        cf = (caller_file or "").replace("\\", "/").lower()
+        if feature_norm not in cf:
+            continue
+        if callee and not _is_known(callee) and not _is_external_callee(callee, lang_builtins):
+            stub_missing[caller].append(callee)
+
+    # ── 3. Compute entry-point count per stub (impact weight) ────────────
+    ep_rows = conn.execute(
+        "SELECT DISTINCT caller FROM graph_edges WHERE resolved = 1"
+    ).fetchall()
+    # proxy: how many distinct resolved callers reach this stub transitively?
+    # Fast approximation: direct caller count from graph_edges
+    direct_caller_count: dict[str, int] = defaultdict(int)
+    for (c,) in conn.execute(
+        "SELECT callee FROM graph_edges WHERE resolved = 1"
+    ).fetchall():
+        direct_caller_count[c] += 1
+
+    # ── 4. Topo-sort stubs within scope using implementation_order data ───
+    # Build dependency graph among stubs: stub A depends on stub B if B is
+    # a callee of A and B is also in stubs_in_scope.
+    stub_callee_edges = conn.execute(
+        "SELECT caller, callee FROM graph_edges WHERE resolved = 1"
+    ).fetchall()
+    callee_of: dict[str, set[str]] = defaultdict(set)
+    for caller, callee in stub_callee_edges:
+        callee_of[caller].add(callee)
+
+    # Kahn's topo sort over stubs_in_scope
+    in_degree: dict[str, int] = {s["name"]: 0 for s in stubs_in_scope}
+    for s in stubs_in_scope:
+        for dep in callee_of.get(s["name"], set()):
+            if dep in in_degree:
+                in_degree[s["name"]] += 1
+
+    from collections import deque
+    queue = deque(n for n, d in in_degree.items() if d == 0)
+    topo_order: list[str] = []
+    visited: set[str] = set()
+    while queue:
+        n = queue.popleft()
+        topo_order.append(n)
+        visited.add(n)
+        for s in stubs_in_scope:
+            if s["name"] not in visited and n in callee_of.get(s["name"], set()):
+                in_degree[s["name"]] -= 1
+                if in_degree[s["name"]] == 0:
+                    queue.append(s["name"])
+    # append any remaining (cycles)
+    for s in stubs_in_scope:
+        if s["name"] not in visited:
+            topo_order.append(s["name"])
+
+    topo_rank = {name: i for i, name in enumerate(topo_order)}
+
+    # ── 5. Group stubs into axes by destination directory of missing callees ──
+    stub_fps = [s["file_path"].replace("\\", "/") for s in stubs_in_scope]
+    prefix = _detect_prefix(stub_fps) if stub_fps else ""
+
+    dir_key = _dir_key_fn(depth, prefix)
+
+    # For each missing callee, find its destination feature by looking up
+    # which file a callee with that bare name lives in
+    callee_dest: dict[str, str] = {}
+    for row in conn.execute(
+        "SELECT name, file_path FROM functions WHERE file_path IS NOT NULL"
+    ).fetchall():
+        name, fp = row
+        fp_n = (fp or "").replace("\\", "/")
+        callee_dest[name] = dir_key(_fp_norm(fp_n))
+        # also register bare name
+        sep = "." if "." in name else ("::" if "::" in name else "")
+        if sep:
+            bare = name.rsplit(sep, 1)[1]
+            if bare not in callee_dest:
+                callee_dest[bare] = callee_dest[name]
+
+    def _dest_axis(callee_name: str) -> str:
+        return callee_dest.get(callee_name, "[external]")
+
+    # axis -> list of stub names
+    axis_stubs: dict[str, list[str]] = defaultdict(list)
+    # stubs with no missing callees still belong to their own feature axis
+    own_axis = dir_key(_fp_norm(feature_path + "/placeholder"))
+
+    for s in stubs_in_scope:
+        missing = stub_missing.get(s["name"], [])
+        if missing:
+            # assign stub to the axis of its most-common destination
+            dest_counts: dict[str, int] = defaultdict(int)
+            for m in missing:
+                dest_counts[_dest_axis(m)] += 1
+            primary_axis = max(dest_counts, key=lambda k: dest_counts[k])
+        else:
+            primary_axis = own_axis
+        axis_stubs[primary_axis].append(s["name"])
+
+    # ── 6. Rank axes by EP-weighted impact ───────────────────────────────
+    def _axis_score(stubs: list[str]) -> float:
+        return sum(direct_caller_count.get(n, 0) + 1 for n in stubs)
+
+    ranked_axes = sorted(axis_stubs.items(), key=lambda kv: _axis_score(kv[1]), reverse=True)
+    ranked_axes = ranked_axes[:top_axes]
+
+    # ── 7. Emit work plan ─────────────────────────────────────────────────
+    out: list[str] = [
+        f"Feature work plan: {feature_path}",
+        f"{len(stubs_in_scope)} incomplete function(s) across {len(axis_stubs)} axis/axes",
+        "",
+    ]
+
+    for axis_label, stub_list in ranked_axes:
+        # sort stubs within axis by topo rank
+        ordered = sorted(stub_list, key=lambda n: topo_rank.get(n, 999))
+        axis_score = _axis_score(ordered)
+        out.append(f"━━ Axis: {axis_label}  (impact score {axis_score:.0f}) ━━")
+        out.append("")
+
+        for stub_name in ordered:
+            # find file/line
+            s_meta = next((s for s in stubs_in_scope if s["name"] == stub_name), {})
+            short_fp = s_meta.get("file_path", "").replace("\\", "/").split("/")[-1]
+            ln = s_meta.get("line_number", 0)
+            missing = stub_missing.get(stub_name, [])
+            callers_raw = _list_callers_raw(oracle, stub_name, resolved_only=True)
+            caller_names = [c["caller"] for c in callers_raw[:4]]
+
+            out.append(f"  [{topo_rank.get(stub_name, '?')+1}] {stub_name}  ({short_fp}:{ln})")
+
+            if caller_names:
+                out.append(f"      Called by: {', '.join(caller_names)}")
+            else:
+                out.append(f"      Called by: [none resolved yet]")
+
+            if missing:
+                out.append(f"      Needs: {', '.join(missing[:5])}" +
+                            ("  ..." if len(missing) > 5 else ""))
+
+            # readiness
+            ready_str = readiness_check(assessor, {"symbol": stub_name})
+            if "READY" in ready_str.split("\n")[0]:
+                out.append(f"      Readiness: READY")
+            else:
+                blockers = [l.strip() for l in ready_str.splitlines()
+                            if l.strip().startswith("-") or "BLOCKED" in l][:2]
+                out.append(f"      Readiness: BLOCKED — " + "; ".join(blockers) if blockers
+                           else f"      Readiness: BLOCKED")
+
+            # contract: pull signature + docstring only (grounded, no LLM)
+            fn_row = conn.execute(
+                "SELECT param_types_json, return_type, docstring FROM functions "
+                "WHERE name = ? LIMIT 1", (stub_name,)
+            ).fetchone()
+            if fn_row:
+                import json as _json
+                param_json, ret_type, docstring = fn_row
+                try:
+                    params = _json.loads(param_json or "{}")
+                    sig = ", ".join(f"{k}: {v}" for k, v in params.items()) if params else "?"
+                except Exception:
+                    sig = "?"
+                ret = ret_type or "[infer: return type unknown]"
+                doc = docstring.strip() if docstring else f"[infer: intent from name '{stub_name}']"
+                out.append(f"      Signature: ({sig}) -> {ret}")
+                out.append(f"      Contract:  {doc}")
+
+            out.append("")
+
+    if len(axis_stubs) > top_axes:
+        remaining = len(axis_stubs) - top_axes
+        out.append(f"  ... {remaining} more axis/axes not shown (increase top_axes to see)")
+        out.append("")
+
+    out.append("Re-run after re-ingest to advance the plan as stubs are closed.")
+
+    return "\n".join(out)
+
+
+TOOLS["feature_work_plan"] = (feature_work_plan, "assessor")
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.

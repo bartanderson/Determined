@@ -882,6 +882,20 @@ REGISTRY: dict[str, dict] = {
         "use_when": "After reasoning produces a proposed change (e.g. from score_stub or docstring_health) and you want to apply it without leaving the agent loop.",
         "category": "edit",
     },
+
+    # ── RM63: FEATURE WORK PLAN ───────────────────────────────────────
+    "feature_work_plan": {
+        "purpose": "Produce a handoff-ready, ordered work plan for a feature directory: finds all stubs and missing callees, groups them into axes (by destination directory of unresolved callees), ranks axes by EP-weighted impact, sorts functions within each axis by topo order, and emits a grounded completion contract for each. Uncertain contracts are flagged [infer: ...]. Output is ready to paste into a large LLM prompt for the narrow implementation step.",
+        "args": {
+            "feature_path": "directory prefix to analyse (required), e.g. 'world/' or 'determined/agent'",
+            "depth":        "(optional) directory grouping depth for axis labels, default 1",
+            "top_axes":     "(optional) max axes to show, default 5",
+        },
+        "output": "work plan grouped by axis: axis label, impact score, then per-stub: topo rank, callers, missing callees, readiness, signature, contract",
+        "feeds": ["completion_contract", "scaffold_from_pattern", "readiness_check"],
+        "use_when": "Starting work on a feature directory and need to know what to implement, in what order, and what each piece requires. Re-run after re-ingest to advance the plan as stubs are closed.",
+        "category": "planning",
+    },
 }
 
 

@@ -553,6 +553,8 @@ def test_dispatch_all_tools_registered():
         "list_features",
         "feature_shape",
         "development_priorities",
+        # RM63: feature work plan
+        "feature_work_plan",
     }
 
     assert set(TOOLS.keys()) == expected
