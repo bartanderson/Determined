@@ -247,6 +247,68 @@ RM-Perf. **[TODO] Optimization Oracle: static purity analysis + profiling overla
 
 ---
 
+RM63. **[TODO] feature_work_plan: ordered work plan for a feature from graph + contracts**
+
+   **Goal:** given a feature path, produce a handoff-ready work plan that drives
+   development without requiring the user to hold the whole project in their head.
+   The tool that makes the invisible visible: what's incomplete, what order to tackle
+   it, what each piece needs to do, and a scaffold to start from.
+
+   **Output:** structured data formatted like a SESSION_STATE "NEXT SESSION" block --
+   decisive, ordered, each item actionable. Ready to paste into a large LLM prompt
+   for the narrow implementation step without reformatting.
+
+   **Algorithm:**
+   1. Find all stubs + missing functions in feature_path (deterministic, DB query)
+   2. For each, look up outbound graph_edges callees -> group by destination directory = axes
+   3. Sort axes by EP-weighted impact (how many entry points unblock when axis is complete)
+   4. Within each axis, sort by implementation_order (topo sort, existing tool)
+   5. For each function: emit completion_contract slot (grounded) + scaffold reference
+      if a pattern match exists (scaffold_from_pattern, existing tool)
+   6. Uncertain behavioral contracts flagged [infer: ...], not stated as fact
+
+   **Loop:** user implements, re-ingests, re-runs feature_work_plan. Resolved stubs
+   drop off; next item advances automatically.
+
+   **Validation target:** dj2 world/ feature. Known ground truth: 10 real stubs,
+   combat layer is the primary axis. Tool is working when it surfaces that axis
+   clearly with correct order and grounded contracts.
+
+   **New code:** axis-clustering step + composition wrapper. Everything else is calls
+   to existing tools (implementation_order, completion_contract, scaffold_from_pattern,
+   readiness_check).
+
+   **Estimated effort:** 1 session.
+   **Gate for RM64:** validate on dj2 before considering follow-ons.
+
+---
+
+RM64. **[TODO, gated on RM63] feature_work_plan follow-on considerations**
+
+   Do not start until RM63 is validated on dj2 and real gaps are observed.
+   These emerged during RM63 design discussion (2026-07-15) but are premature
+   to build until the base tool proves itself.
+
+   **Candidate extensions (in rough priority order):**
+
+   - **Close-the-loop verification:** after re-ingest, check that the implemented
+     function resolves its stub, satisfies its callers, and didn't introduce new
+     unresolved callees. Emit "closed" vs "structurally present but incomplete."
+
+   - **Explore mode:** stub exists but design isn't fully determined. Tool flags
+     uncertain slots explicitly and surfaces what's known so user + large LLM can
+     reason about the right shape. Decision feeds back as a design note.
+
+   - **Doc-drift detection:** compare knowledge artifacts (kind=design_note) against
+     current call graph. New public entry points with no design note = flag.
+     Stub closed in a way that changes expected callers = flag. Tells user when
+     docs need updating due to new features or direction changes.
+
+   None of these change the RM63 design. They are additive follow-ons.
+   Revive manually or after RM63 completion.
+
+---
+
 RM60. **[DONE 2026-07-15] Corpus analysis quality audit — evaluate what the tools see and miss across all 7 corpora**
 
    The goal: run the RM59 tools (and supporting tools) against every corpus DB,
