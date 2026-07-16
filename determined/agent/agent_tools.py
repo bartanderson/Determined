@@ -8314,6 +8314,63 @@ TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
 # RM64: verify_implementation -- close-the-loop check after re-ingest
 # ------------------------------------------------------------------
 
+_SERIAL_NAMES = frozenset({
+    "to_dict", "from_dict", "to_json", "from_json", "to_yaml", "from_yaml",
+    "serialize", "deserialize", "encode", "decode", "from_db", "to_db",
+    "to_string", "from_string",
+})
+_SERIAL_PREFIXES = ("from_", "to_")
+
+
+def _has_callers(conn, name: str) -> bool:
+    """FQDN-aware caller check: matches bare name OR ClassName.name."""
+    bare = conn.execute(
+        "SELECT 1 FROM graph_edges WHERE callee=? LIMIT 1", (name,)
+    ).fetchone()
+    if bare:
+        return True
+    fqdn = conn.execute(
+        "SELECT 1 FROM graph_edges WHERE callee LIKE ? LIMIT 1", (f"%.{name}",)
+    ).fetchone()
+    return bool(fqdn)
+
+
+def _ep_tier(name: str, file_path: str, decorators_json: str | None, http_route: str | None) -> str:
+    """Classify a function's entry-point tier.
+
+    Returns one of:
+      explicit_http   -- has http_route (Flask/web route)
+      explicit_tool   -- decorated as an AI tool
+      protocol        -- dunder method, classmethod serializer, or staticmethod helper
+      test            -- test function or in test file
+      inferred        -- no callers found; candidate EP (after FQDN-aware check)
+    """
+    import json as _j
+    # Explicit HTTP
+    if http_route:
+        return "explicit_http"
+    # Explicit AI tool decorator
+    if decorators_json:
+        try:
+            decs = _j.loads(decorators_json) if isinstance(decorators_json, str) else decorators_json
+            if any("tool(" in str(d) or "tool_def" in str(d) for d in decs):
+                return "explicit_tool"
+        except Exception:
+            pass
+    # Protocol: dunder methods
+    if name.startswith("__") and name.endswith("__"):
+        return "protocol"
+    # Protocol: classmethod/staticmethod serializers and data converters
+    if name in _SERIAL_NAMES or name.startswith(_SERIAL_PREFIXES):
+        return "protocol"
+    # Test
+    fp = (file_path or "").replace("\\", "/")
+    if name.startswith("test_") or "/test" in fp or "\\test" in fp:
+        return "test"
+    # Inferred EP (caller check done at call site)
+    return "inferred"
+
+
 def _read_stub_body(file_path: str, line_number: int) -> str:
     """Classify a stub's source body: pass_only | return_empty | has_substance | unreadable."""
     try:
@@ -8502,46 +8559,89 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
     def _short(fp: str) -> str:
         return "/".join((fp or "").replace("\\", "/").split("/")[-2:])
 
+    top_n: int = int(args.get("top_n", 20))
+
     # -- Check 1: Entry points with no design_note --------------------------------
-    # Entry point = implemented (is_stub=0), no callers in graph_edges
-    impl_fns = [
-        (r[0], r[1]) for r in conn.execute(
-            "SELECT name, file_path FROM functions WHERE is_stub=0"
-        ).fetchall() if _in_feature(r[1])
-    ]
+    # Fetch all impl fns with decorator/http info for tier classification
+    # Use fallback query for older fixture DBs that may lack these columns
+    try:
+        impl_rows = conn.execute(
+            "SELECT name, file_path, decorators_json, http_route FROM functions WHERE is_stub=0"
+        ).fetchall()
+    except Exception:
+        impl_rows = [
+            (r[0], r[1], None, None)
+            for r in conn.execute("SELECT name, file_path FROM functions WHERE is_stub=0").fetchall()
+        ]
+    impl_fns = [(r[0], r[1]) for r in impl_rows if _in_feature(r[1])]
+    impl_meta = {r[0]: (r[2], r[3]) for r in impl_rows if _in_feature(r[1])}
+
     stub_fns = [
         (r[0], r[1]) for r in conn.execute(
             "SELECT name, file_path FROM functions WHERE is_stub=1"
         ).fetchall() if _in_feature(r[1])
     ]
 
-    ep_list: list[tuple[str, str]] = []
-    ep_no_note: list[tuple[str, str]] = []
+    # Classify each impl fn; skip those with callers (FQDN-aware)
+    explicit_no_note: list[tuple[str, str, str]] = []   # (name, fp, tier_label)
+    inferred_no_note: list[tuple[str, str]] = []        # (name, fp)
+    ep_total = 0
+
     for name, fp in impl_fns:
-        has_caller = conn.execute(
-            "SELECT 1 FROM graph_edges WHERE callee = ? LIMIT 1", (name,)
-        ).fetchone()
-        if has_caller:
+        decs, http = impl_meta.get(name, (None, None))
+        tier = _ep_tier(name, fp, decs, http)
+        if tier == "protocol" or tier == "test":
             continue
-        ep_list.append((name, fp))
+        if _has_callers(conn, name):
+            continue
+        ep_total += 1
         has_note = conn.execute(
             "SELECT 1 FROM knowledge_artifacts "
             "WHERE kind='design_note' AND (subject=? OR subject LIKE ?) LIMIT 1",
             (name, f"%{name}%"),
         ).fetchone()
-        if not has_note:
-            ep_no_note.append((name, fp))
+        if has_note:
+            continue
+        if tier in ("explicit_http", "explicit_tool"):
+            explicit_no_note.append((name, fp, tier))
+        else:
+            inferred_no_note.append((name, fp))
 
-    if ep_no_note:
-        out.append(f"Entry points with no design_note ({len(ep_no_note)} of {len(ep_list)}):")
-        for name, fp in ep_no_note:
-            out.append(f"  {name}  ({_short(fp)})")
+    if explicit_no_note:
+        out.append(f"Explicit entry points with no design_note ({len(explicit_no_note)}):")
+        for name, fp, tier in explicit_no_note:
+            label = "HTTP route" if tier == "explicit_http" else "AI tool"
+            out.append(f"  {name}  ({_short(fp)})  [{label}]")
         out.append("")
-    elif ep_list:
-        out.append(f"Entry points: all {len(ep_list)} have design_note coverage")
+
+    if inferred_no_note:
+        from collections import defaultdict as _dd
+        by_file: dict = _dd(list)
+        for name, fp in inferred_no_note:
+            by_file[_short(fp)].append(name)
+        shown = 0
+        truncated = 0
+        file_lines: list[str] = []
+        for file_short, names in sorted(by_file.items()):
+            if shown >= top_n:
+                truncated += len(names)
+                continue
+            cap = min(len(names), top_n - shown)
+            extra = len(names) - cap
+            file_lines.append(f"  {file_short}: {', '.join(names[:cap])}" +
+                               (f"  (+{extra} more)" if extra else ""))
+            shown += cap
+        out.append(f"Inferred entry points with no design_note ({len(inferred_no_note)} of {ep_total - len(explicit_no_note)} candidates"
+                   + (f", showing top {top_n}" if len(inferred_no_note) > top_n else "") + "):")
+        out.extend(file_lines)
+        if truncated:
+            out.append(f"  ... and {truncated} more across other files (use top_n=N to see more)")
+        out.append("")
+    elif ep_total > 0:
+        out.append(f"Entry points: all {ep_total} have design_note coverage")
         out.append("")
     else:
-        out.append(f"Entry points: none found ({len(impl_fns)} implemented fns, all have callers)")
+        out.append(f"Entry points: none found ({len(impl_fns)} implemented fns — all have callers or are protocol/test)")
         out.append("")
 
     # -- Check 2: Doc-stale symbols -----------------------------------------------
@@ -8587,7 +8687,7 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
             out.append(f"Stubs: all {len(stub_fns)} have design_note coverage")
             out.append("")
 
-    total = len(ep_no_note) + len(doc_stale) + len(stubs_no_note)
+    total = len(explicit_no_note) + len(inferred_no_note) + len(doc_stale) + len(stubs_no_note)
     if total == 0:
         out.append("PASS: no doc-drift detected")
     else:
@@ -8597,6 +8697,121 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
 
 
 TOOLS["detect_doc_drift"] = (detect_doc_drift, "assessor")
+
+
+# ------------------------------------------------------------------
+# list_entry_points -- surface architecturally significant EPs
+# ------------------------------------------------------------------
+
+def list_entry_points(assessor: "Assessor", args: dict) -> str:
+    """
+    list_entry_points([feature_path][, tier=all|explicit|inferred]) -- show
+    architecturally significant entry points in a corpus or directory.
+
+    Tiers:
+      explicit_http  -- Flask/web routes (http_route non-null)
+      explicit_tool  -- AI tool decorators (tool(name=...) decorator)
+      inferred       -- no callers after FQDN-aware check, non-protocol, non-test
+
+    Protocol methods (dunders, classmethods, serializers) and test functions
+    are excluded. Use tier= to filter to a specific category.
+
+    Args:
+        feature_path: directory prefix to filter (optional; all files if omitted)
+        tier:         'all' | 'explicit' | 'inferred' (default 'all')
+        top_n:        max inferred EPs to show (default 30)
+    """
+    from collections import defaultdict as _dd
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    feature_path = args.get("feature_path", "").strip().replace("\\", "/")
+    tier_filter = args.get("tier", "all").lower()
+    top_n = int(args.get("top_n", 30))
+
+    def _in_scope(fp: str) -> bool:
+        if not feature_path:
+            return True
+        norm = (fp or "").replace("\\", "/")
+        prefix = feature_path if feature_path.endswith("/") else feature_path + "/"
+        return prefix in norm or norm.endswith("/" + feature_path)
+
+    try:
+        rows = conn.execute(
+            "SELECT name, file_path, decorators_json, http_route FROM functions WHERE is_stub=0"
+        ).fetchall()
+    except Exception:
+        rows = [
+            (r[0], r[1], None, None)
+            for r in conn.execute("SELECT name, file_path FROM functions WHERE is_stub=0").fetchall()
+        ]
+
+    explicit_http: list[tuple[str, str]] = []
+    explicit_tool: list[tuple[str, str]] = []
+    inferred: list[tuple[str, str]] = []
+
+    for name, fp, decs, http in rows:
+        if not _in_scope(fp):
+            continue
+        tier = _ep_tier(name, fp, decs, http)
+        if tier == "protocol" or tier == "test":
+            continue
+        if tier == "explicit_http":
+            explicit_http.append((name, fp))
+        elif tier == "explicit_tool":
+            explicit_tool.append((name, fp))
+        else:
+            if not _has_callers(conn, name):
+                inferred.append((name, fp))
+
+    scope_label = feature_path or "(all files)"
+    out: list[str] = [f"Entry points: {scope_label}", ""]
+
+    def _short(fp: str) -> str:
+        return "/".join((fp or "").replace("\\", "/").split("/")[-2:])
+
+    if tier_filter in ("all", "explicit"):
+        if explicit_http:
+            out.append(f"HTTP routes ({len(explicit_http)}):")
+            for name, fp in explicit_http:
+                out.append(f"  {name}  ({_short(fp)})")
+            out.append("")
+        if explicit_tool:
+            out.append(f"AI tool entries ({len(explicit_tool)}):")
+            for name, fp in explicit_tool:
+                out.append(f"  {name}  ({_short(fp)})")
+            out.append("")
+
+    if tier_filter in ("all", "inferred"):
+        if inferred:
+            by_file: dict = _dd(list)
+            for name, fp in inferred:
+                by_file[_short(fp)].append(name)
+            shown = 0
+            truncated = 0
+            out.append(f"Inferred EPs ({len(inferred)}" +
+                       (f", showing top {top_n}" if len(inferred) > top_n else "") + "):")
+            for file_short, names in sorted(by_file.items()):
+                if shown >= top_n:
+                    truncated += len(names)
+                    continue
+                cap = min(len(names), top_n - shown)
+                extra = len(names) - cap
+                out.append(f"  {file_short}: {', '.join(names[:cap])}" +
+                           (f"  (+{extra} more)" if extra else ""))
+                shown += cap
+            if truncated:
+                out.append(f"  ... {truncated} more (use top_n=N to expand)")
+            out.append("")
+
+    total_exp = len(explicit_http) + len(explicit_tool)
+    total_inf = len(inferred)
+    out.append(f"Total: {total_exp} explicit + {total_inf} inferred EPs")
+    return "\n".join(out)
+
+
+TOOLS["list_entry_points"] = (list_entry_points, "assessor")
 
 
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:

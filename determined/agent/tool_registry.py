@@ -947,14 +947,29 @@ REGISTRY: dict[str, dict] = {
 
     # ── RM64: DETECT DOC DRIFT ────────────────────────────────────────
     "detect_doc_drift": {
-        "purpose": "Flag documentation gaps that accumulate as stubs are closed: entry points with no design_note artifact (externally reachable but no stated intent), and implemented symbols whose docstrings still contain stub language (TODO, placeholder, not implemented). Run after a batch of stubs are closed.",
+        "purpose": "Flag documentation gaps: explicit EPs (HTTP routes, AI tools) and inferred EPs with no design_note, doc-stale symbols, and stubs with no stated design intent. Uses FQDN-aware caller detection and EP tier classification (excludes protocol/test/serialization methods).",
         "args": {
             "feature_path": "directory prefix to scan (required), e.g. 'world/'",
+            "top_n": "max inferred EPs to list per run (default 20)",
         },
-        "output": "PASS or DRIFT with two lists: entry-points missing design_note, doc-stale symbols",
+        "output": "PASS or DRIFT: explicit EP gaps (always), inferred EP gaps (grouped by file, capped), doc-stale symbols, stubs with no design_note",
         "feeds": ["verify_implementation"],
         "use_when": "After closing a batch of stubs and re-ingesting -- run to catch documentation gaps before the feature is considered complete.",
         "category": "planning",
+    },
+
+    # ── EP DEFINITION ────────────────────────────────────────────────
+    "list_entry_points": {
+        "purpose": "Surface architecturally significant entry points: HTTP routes, AI tool entries, and inferred EPs (no callers, non-protocol, non-test). Uses FQDN-aware caller detection so class method dispatch doesn't inflate the count.",
+        "args": {
+            "feature_path": "directory prefix to filter (optional; all files if omitted)",
+            "tier": "'all' | 'explicit' | 'inferred' (default 'all')",
+            "top_n": "max inferred EPs to show (default 30)",
+        },
+        "output": "HTTP routes, AI tool entries, and inferred EPs grouped by file",
+        "feeds": ["detect_doc_drift", "feature_work_plan"],
+        "use_when": "When you need to know where the system receives external inputs -- what can be called from outside the corpus. Answer to 'what are the entry points of world/?'",
+        "category": "exploration",
     },
 }
 

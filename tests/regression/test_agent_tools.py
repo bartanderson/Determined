@@ -559,6 +559,7 @@ def test_dispatch_all_tools_registered():
         "explore_stub",
         "verify_implementation",
         "detect_doc_drift",
+            "list_entry_points",
         # RM65: missing bridge detection
         "find_missing_bridges",
         # RM66: concept ghost detection
