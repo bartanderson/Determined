@@ -932,6 +932,30 @@ REGISTRY: dict[str, dict] = {
         "use_when": "feature_work_plan shows a stub as BLOCKED and you need to reason about the right implementation shape before writing code. Run per-stub, not per-feature.",
         "category": "planning",
     },
+
+    # ── RM64: VERIFY IMPLEMENTATION ───────────────────────────────────
+    "verify_implementation": {
+        "purpose": "Close-the-loop check after implementing a stub and re-ingesting. Confirms the symbol is no longer marked as a stub, that existing callers still resolve, and that no new unresolved callees were introduced. Also flags if the docstring still contains stub language.",
+        "args": {
+            "symbol": "function name to verify (required)",
+        },
+        "output": "PASS / WARN / FAIL with specifics: stub status, caller count, unresolved callees, doc-stale flag",
+        "feeds": ["detect_doc_drift"],
+        "use_when": "After implementing a stub and re-ingesting the corpus -- run to confirm the implementation is clean before moving to the next stub.",
+        "category": "planning",
+    },
+
+    # ── RM64: DETECT DOC DRIFT ────────────────────────────────────────
+    "detect_doc_drift": {
+        "purpose": "Flag documentation gaps that accumulate as stubs are closed: entry points with no design_note artifact (externally reachable but no stated intent), and implemented symbols whose docstrings still contain stub language (TODO, placeholder, not implemented). Run after a batch of stubs are closed.",
+        "args": {
+            "feature_path": "directory prefix to scan (required), e.g. 'world/'",
+        },
+        "output": "PASS or DRIFT with two lists: entry-points missing design_note, doc-stale symbols",
+        "feeds": ["verify_implementation"],
+        "use_when": "After closing a batch of stubs and re-ingesting -- run to catch documentation gaps before the feature is considered complete.",
+        "category": "planning",
+    },
 }
 
 

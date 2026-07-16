@@ -8304,6 +8304,212 @@ def find_concept_ghosts(assessor: "Assessor", args: dict) -> str:
 TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
 
 
+# ------------------------------------------------------------------
+# RM64: verify_implementation -- close-the-loop check after re-ingest
+# ------------------------------------------------------------------
+
+def verify_implementation(assessor: "Assessor", args: dict) -> str:
+    """
+    verify_implementation(symbol) -- close-the-loop check after implementing a stub.
+
+    Run after re-ingesting the corpus to confirm:
+      1. Symbol is no longer a stub (is_stub=0).
+      2. All previous callers still resolve (edges where callee=symbol exist).
+      3. No new unresolved callees introduced (callees not in functions table).
+
+    Returns PASS / WARN / FAIL with specifics.
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    fn_row = conn.execute(
+        "SELECT name, file_path, is_stub, docstring FROM functions WHERE name = ? LIMIT 1",
+        (symbol,),
+    ).fetchone()
+
+    if not fn_row:
+        return f"FAIL: '{symbol}' not found in corpus -- re-ingest may not have run yet."
+
+    name, file_path, is_stub, docstring = fn_row
+    issues: list[str] = []
+    warnings: list[str] = []
+    out: list[str] = [f"verify_implementation: {symbol}", f"  file: {(file_path or '').replace(chr(92), '/')}"]
+
+    # Check 1: no longer a stub
+    if is_stub:
+        issues.append("still marked is_stub=1 -- implementation not detected by ingest")
+    else:
+        out.append("  [OK] is_stub=0 -- implementation detected")
+
+    # Check 2: callers still present
+    caller_rows = conn.execute(
+        "SELECT caller, caller_file FROM graph_edges WHERE callee = ?",
+        (symbol,),
+    ).fetchall()
+    if caller_rows:
+        out.append(f"  [OK] {len(caller_rows)} caller(s) resolve to this symbol:")
+        for caller, caller_file in caller_rows[:5]:
+            short = "/".join((caller_file or "").replace("\\", "/").split("/")[-2:])
+            out.append(f"       {caller}  ({short})")
+        if len(caller_rows) > 5:
+            out.append(f"       ... and {len(caller_rows) - 5} more")
+    else:
+        warnings.append("no callers found -- may be an entry point or the symbol is unreferenced")
+
+    # Check 3: unresolved callees
+    callee_rows = conn.execute(
+        "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?",
+        (symbol,),
+    ).fetchall()
+    unresolved = []
+    for (callee,) in callee_rows:
+        bare = callee.rsplit(".", 1)[-1]
+        exists = conn.execute(
+            "SELECT 1 FROM functions WHERE name = ? LIMIT 1", (bare,)
+        ).fetchone()
+        if not exists:
+            unresolved.append(callee)
+
+    if unresolved:
+        issues.append(f"{len(unresolved)} unresolved callee(s) introduced:")
+        for c in unresolved[:5]:
+            issues.append(f"    {c}")
+    else:
+        out.append(f"  [OK] all {len(callee_rows)} callee(s) resolve")
+
+    # Docstring stale check
+    stale_words = {"todo", "stub", "placeholder", "not implemented", "pass"}
+    if docstring and any(w in docstring.lower() for w in stale_words):
+        warnings.append("docstring still contains stub language -- update after implementation")
+
+    # Verdict
+    out.append("")
+    if issues:
+        out.append("FAIL:")
+        for i in issues:
+            out.append(f"  {i}")
+    elif warnings:
+        out.append("WARN:")
+        for w in warnings:
+            out.append(f"  {w}")
+    else:
+        out.append("PASS: implementation looks clean")
+
+    return "\n".join(out)
+
+
+TOOLS["verify_implementation"] = (verify_implementation, "assessor")
+
+
+# ------------------------------------------------------------------
+# RM64: detect_doc_drift -- flag EP/design_note mismatches after re-ingest
+# ------------------------------------------------------------------
+
+def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
+    """
+    detect_doc_drift(feature_path) -- flag documentation gaps after stubs are closed.
+
+    Two checks:
+      1. Entry points (no callers) under feature_path with no design_note artifact.
+         These are functions that have become externally reachable but lack a stated
+         design intent -- a gap that grows silently as stubs are implemented.
+      2. Implemented functions (is_stub=0) whose docstring still contains stub
+         language (TODO, placeholder, not implemented) -- doc-stale symbols.
+
+    Args:
+        feature_path: directory prefix to scan, e.g. 'world/' (required)
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+
+    feature_path = args.get("feature_path", "").strip().replace("\\", "/")
+    if not feature_path:
+        return "ERROR: feature_path argument required (e.g. 'world/')"
+
+    out: list[str] = [f"detect_doc_drift: {feature_path}", ""]
+
+    # Normalise: ensure trailing slash for prefix match
+    if not feature_path.endswith("/"):
+        feature_path += "/"
+
+    # -- Check 1: Entry points with no design_note --------------------------------
+    # Entry point = no row in graph_edges as callee, not a stub
+    all_fns = conn.execute(
+        "SELECT name, file_path FROM functions WHERE is_stub=0",
+    ).fetchall()
+
+    # Filter to feature_path
+    feature_fns = [
+        (name, fp) for name, fp in all_fns
+        if feature_path in (fp or "").replace("\\", "/")
+    ]
+
+    # Which have no callers?
+    ep_no_note: list[tuple[str, str]] = []
+    for name, fp in feature_fns:
+        has_caller = conn.execute(
+            "SELECT 1 FROM graph_edges WHERE callee = ? LIMIT 1", (name,)
+        ).fetchone()
+        if has_caller:
+            continue
+        # Entry point -- does it have a design_note?
+        has_note = conn.execute(
+            "SELECT 1 FROM knowledge_artifacts "
+            "WHERE kind='design_note' AND (subject=? OR subject LIKE ?) LIMIT 1",
+            (name, f"%{name}%"),
+        ).fetchone()
+        if not has_note:
+            ep_no_note.append((name, fp))
+
+    if ep_no_note:
+        out.append(f"Entry points with no design_note ({len(ep_no_note)}):")
+        for name, fp in ep_no_note:
+            short = "/".join(fp.replace("\\", "/").split("/")[-2:])
+            out.append(f"  {name}  ({short})")
+        out.append("")
+    else:
+        out.append("Entry points: all have design_note coverage (or none found)")
+        out.append("")
+
+    # -- Check 2: Doc-stale symbols -----------------------------------------------
+    stale_words = {"todo", "stub", "placeholder", "not implemented"}
+    doc_stale: list[tuple[str, str, str]] = []
+    for name, fp in feature_fns:
+        row = conn.execute(
+            "SELECT docstring FROM functions WHERE name=? LIMIT 1", (name,)
+        ).fetchone()
+        if not row or not row[0]:
+            continue
+        matched = [w for w in stale_words if w in row[0].lower()]
+        if matched:
+            short = "/".join(fp.replace("\\", "/").split("/")[-2:])
+            doc_stale.append((name, short, ", ".join(matched)))
+
+    if doc_stale:
+        out.append(f"Doc-stale symbols (is_stub=0 but docstring has stub language) ({len(doc_stale)}):")
+        for name, short, words in doc_stale:
+            out.append(f"  {name}  ({short})  -- contains: {words}")
+        out.append("")
+    else:
+        out.append("Doc-stale: no implemented symbols with stub language in docstring")
+        out.append("")
+
+    total = len(ep_no_note) + len(doc_stale)
+    if total == 0:
+        out.append("PASS: no doc-drift detected")
+    else:
+        out.append(f"DRIFT: {total} issue(s) found -- update design_notes and docstrings before next review")
+
+    return "\n".join(out)
+
+
+TOOLS["detect_doc_drift"] = (detect_doc_drift, "assessor")
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.
