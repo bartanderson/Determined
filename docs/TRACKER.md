@@ -309,7 +309,7 @@ RM64. **[TODO, gated on RM63] feature_work_plan follow-on considerations**
 
 ---
 
-RM65. **[TODO] find_missing_bridges: detect when a stub's inputs cannot reach the data it needs**
+RM65. **[DONE 2026-07-15] find_missing_bridges: detect when a stub's inputs cannot reach the data it needs**
 
    **Origin:** Surfaced 2026-07-15 while using feature_work_plan on dj2 world/.
    `_get_encounter_context(session_id)` could not be implemented because no function
@@ -338,7 +338,7 @@ RM65. **[TODO] find_missing_bridges: detect when a stub's inputs cannot reach th
 
 ---
 
-RM66. **[TODO] find_concept_ghosts: stubs that reference concepts with no symbol in the graph**
+RM66. **[DONE 2026-07-15] find_concept_ghosts: stubs that reference concepts with no symbol in the graph**
 
    **Origin:** Surfaced 2026-07-15. `_get_combat_context` says "Query active CombatFSM"
    in its docstring/contract, but CombatFSM does not exist as a class or symbol anywhere
