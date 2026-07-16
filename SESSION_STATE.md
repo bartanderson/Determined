@@ -1,50 +1,60 @@
-Written at commit: 38ed639
+Written at commit: 0514b63
 
-# SESSION STATE - session 188
+# SESSION STATE - session 189
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 188, 2026-07-16)
+## What happened this session (session 189, 2026-07-16)
 
-**Re-ingest Commonplace + fix walk_call_chain BFS depth bug [V]** (38ed639)
+**capn discovery cache (scripts/capn.py) [V]** (0514b63)
+Adapted from cap'n hook (github.com/cyrusNuevoDia/capn-hook), pure Python, no deps.
+Commands: ask / chart / prune / context / list.
+SHA256 staleness detection per entry (auto-expires when referenced files change).
+est_tokens stored at chart time (len(question+details)//4); accumulated in stats.json.
+Inline savings line on cache hits: `[capn: ~N tokens | lifetime: ~XK across N hits]`.
+Session hook updated: session_start_hook.py calls `capn context` and appends to context.
+.capn/ added to .gitignore. Cache starts empty on each machine.
 
-Re-ingested `C:\Users\bartl\dev\commonplace-walk` using EngineRunner.
-New DB: 31 functions, 168 edges, http_route populated for 3 routes (/, /capture, /search).
+**Pattern detection upgrade [V]** (0514b63)
+New: determined/agent/pattern_detector.py -- TOOL_REGISTRY with canonical example
+questions per pattern. detect_pattern() tries regex first (fast, structurally certain),
+then falls back to stop-word-filtered word-overlap scoring against examples.
+Coverage: 84% -> 98% on 64 realistic questions; all 6 prior misses eliminated.
+Key regex fixes: "show me X" in understand_symbol anchored to bare symbol ($);
+new trace_call_chain branch for "what is/show me the path from web/http/route to db".
+One known remaining error: "what is the call path from X to db" routes to
+trace_data_flow (regex grabs X+db as symbol pair before scoring); benign, answer correct.
+36 targeted tests pass [V].
 
-Bug found and fixed in `walk_call_chain` (agent_tools.py:547):
-- BFS was queuing FQDN callee names (e.g. `services.extractor.extract`) for `WHERE name = ?`
-  lookup against functions table, which stores bare names (`extract`). No match → depth stays 1.
-- Fix: `bare = callee.rsplit(".", 1)[-1]` before queuing next hops.
+**RM21 probe suite run on Commonplace [V]**
+Q1 PASS (orient_to_codebase), Q2 PASS (blast_radius, fixed path to storage/queries.py),
+Q3 PASS, Q4 PASS, Q5 PASS (no confabulation, Fix A working), Q6 CORRECT (no Entry class).
+RM21-B stays gated -- no prose confabulation observed in Q5.
 
-Traversal probes re-run with fix:
-- Probe 1 (search → DB): **4 nodes** -- search → search_entries → get_db → sqlite3.connect.
-  Correctly identifies storage.queries.search_entries as the DB-touching callee.
-- Probe 2 (capture → storage): **16 nodes** -- full traversal through validate_url, extract,
-  extract_metadata/full_content, run_processors, enrich_entry, insert_entry, find_connections,
-  suggest_tags, get_db. Complete end-to-end capture pipeline traced.
+**Architecture note logged [V]**
+detect_pattern() is human-input-only. If goal_intake ever generates sub-questions that
+re-enter _answer(), use structured directives (QUERY: blast_radius(file.py)) not scoring.
+See HISTORY.md.
 
-999 passed, 1 skipped [V]. Committed.
+**Test targeting rule updated [V]**
+memory/feedback_test_targeting.md: targeted tests only for non-load-bearing changes.
+Full suite only for persistence/ingestion/resolver changes. Grep affected test files first.
 
 ## NEXT SESSION -- start here
 
-Priority order:
-1. **RM21-B** -- prose confabulation scan, gated on observing it in live probe. Not yet seen.
-2. **RM21 remaining techniques** -- Technique 2 (constrained decoding), 4 (MCTS), 5 (speculative
-   verification), 6 (large-model fallback). Build only after observing a failure Technique 1+3
-   can't fix. No current evidence any of these are needed.
+Priority order (unchanged from session 188):
+1. **RM21-B** -- prose confabulation scan. Stays gated -- not observed in live probe.
+2. **RM21 remaining techniques** (2, 4, 5, 6) -- gated on failures T1+T3 can't fix.
 3. **RM64 follow-ons** -- gated on more real-world exercise of feature_work_plan.
-4. **RM10** -- DeRe-CoT recomposition pass in goal_intake, long-horizon.
-
-trace_call_chain is now working correctly on a properly ingested Commonplace corpus.
-No re-ingest needed next session unless corpus changes.
+4. **RM10** -- DeRe-CoT recomposition pass in goal_intake. Long-horizon, read TRACKER first.
 
 ## Corpus status [V]
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
 | Determined (Python) | 1,904 | 16,588 | 4 real | agent 83%, structural_score blocking |
-| dj2 (Python+JS) | 1,399 | 9,931 | 13 | world/ 10 stubs; 1 UNGROUNDABLE (CombatFSM), 1 MISSING_BRIDGE (session->Encounter), 8 BLOCKED |
+| dj2 (Python+JS) | 1,399 | 9,931 | 13 | world/ 10 stubs; 1 UNGROUNDABLE, 1 MISSING_BRIDGE, 8 BLOCKED |
 | end-of-eden (Go) | 533 | 7,494 | 0 | complete |
 | ruggrogue (Rust) | 337 | 2,741 | 0 | complete |
 | dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested, EP counts correct |
@@ -54,11 +64,9 @@ No re-ingest needed next session unless corpus changes.
 
 ## Known issues (carried forward)
 
-**walk_call_chain FQDN trap [V]:** FIXED session 188. BFS now strips FQDN to bare name before
-  queuing. Callee display in node dict still shows FQDN (correct for informational use).
-**concept extraction scope [V]:** _extract_docstring_concepts: single-word capitalised English
-  words excluded by design (match prose verbs, not class-like concept names).
-**feature_shape vs dev_priorities% inconsistency [V]:** Different counting methods, not a bug.
+**walk_call_chain FQDN trap [V]:** FIXED session 188.
+**concept extraction scope [V]:** single-word capitalised English words excluded by design.
+**feature_shape vs dev_priorities% inconsistency [V]:** different counting methods, not a bug.
 **ingest route trap [V]:** Python corpora use EngineRunner. ingest_lang_corpus.py is Go/Rust/JS/TS only.
 **interface_dispatch caller_file empty [V]:** Interface types not in functions table.
 **addEventListener arrow fn not captured [V]:** Inline arrow callbacks not statically linkable.
@@ -73,12 +81,11 @@ No re-ingest needed next session unless corpus changes.
 **Go resolution 15% [V]:** Correct -- unresolved are external libs (bubbletea, lipgloss).
 **JS typed params N/A [V]:** Plain JS has no type syntax. 0% is correct, not a gap.
 **RM62 callee writeback trap [V]:** After resolution post-pass, callee is qualified FQDN.
-  Tests asserting bare JS callee names on resolved edges will fail.
-**feature_work_plan axis grouping [V]:** Axes derived from unresolved callees only. Stubs
-  with no unresolved callees land in the feature's own axis, not a destination axis.
-**claim_verifier prose escape [V]:** Verifier only catches confabulation expressed as "X calls Y".
-  Prose-style confabulation escapes. Filed as RM21-B, gated on observing it in live probe.
-  Not yet observed.
+**feature_work_plan axis grouping [V]:** Axes derived from unresolved callees only.
+**claim_verifier prose escape [V]:** RM21-B, gated on observing in live probe. Not observed.
+**capn cache empty on fresh machine [V]:** .capn/ is gitignored; each machine starts cold.
+**trace_data_flow collision [V]:** "call path from X to db" routes to trace_data_flow not
+  trace_call_chain (regex grabs X+db as symbol pair before scoring); benign, answer correct.
 
 LLM server: llama-server.exe at C:\Users\bartl\models\llama-server\llama-server.exe,
   model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081, --ctx-size 32768.
