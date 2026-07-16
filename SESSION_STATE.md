@@ -1,55 +1,42 @@
-Written at commit: 0514b63
+Written at commit: 4c5ef80
 
-# SESSION STATE - session 189
+# SESSION STATE - session 190
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 189, 2026-07-16)
+## What happened this session (session 190, 2026-07-16)
 
-**capn trap registry (scripts/capn.py) [V]** (0514b63)
-Reframed session 190: not a discovery cache, a trap registry.
-Stores non-obvious gotchas (wrong column names, routing quirks, schema facts) that cause
-wrong answers -- not file locations (grep is faster). File-anchored for staleness detection.
-Commands: ask / chart / prune / context / list.
-SHA256 staleness detection per entry (auto-expires when referenced files change).
-Session hook updated: session_start_hook.py calls `capn context` and appends to context.
-.capn/ added to .gitignore. Cache starts empty on each machine.
+**capn reframed as trap registry + lookup cache [V]** (4c5ef80)
+Two explicit use cases:
+- TRAPS: non-obvious facts that cause wrong answers (wrong column names, silent defaults,
+  schema quirks, routing collisions). Chart after getting burned.
+- FREQUENT LOOKUPS: things that take more than a grep to re-derive (entry points,
+  non-obvious call chains). Chart after locating.
+Updated docstring and context output. Pruned fileless/fake-anchored entries.
+5 clean entries remain, all properly file-anchored.
 
-**Pattern detection upgrade [V]** (0514b63)
-New: determined/agent/pattern_detector.py -- TOOL_REGISTRY with canonical example
-questions per pattern. detect_pattern() tries regex first (fast, structurally certain),
-then falls back to stop-word-filtered word-overlap scoring against examples.
-Coverage: 84% -> 98% on 64 realistic questions; all 6 prior misses eliminated.
-Key regex fixes: "show me X" in understand_symbol anchored to bare symbol ($);
-new trace_call_chain branch for "what is/show me the path from web/http/route to db".
-One known remaining error: "what is the call path from X to db" routes to
-trace_data_flow (regex grabs X+db as symbol pair before scoring); benign, answer correct.
-36 targeted tests pass [V].
+**capn usage discipline established [V]**
+Was being ignored entirely. Reframed trigger: run `ask` before DB queries, symbol
+resolution, ingestion routing, or any known-tricky area -- not before every grep.
+Chart after hitting a trap or completing a high-cost lookup.
 
-**RM21 probe suite run on Commonplace [V]**
-Q1 PASS (orient_to_codebase), Q2 PASS (blast_radius, fixed path to storage/queries.py),
-Q3 PASS, Q4 PASS, Q5 PASS (no confabulation, Fix A working), Q6 CORRECT (no Entry class).
-RM21-B stays gated -- no prose confabulation observed in Q5.
-
-**Architecture note logged [V]**
-detect_pattern() is human-input-only. If goal_intake ever generates sub-questions that
-re-enter _answer(), use structured directives (QUERY: blast_radius(file.py)) not scoring.
-See HISTORY.md.
-
-**Test targeting rule updated [V]**
-memory/feedback_test_targeting.md: targeted tests only for non-load-bearing changes.
-Full suite only for persistence/ingestion/resolver changes. Grep affected test files first.
+**capn seeded from SESSION_STATE.md known traps [V]**
+Entries: normalize_symbol strips ::, resolved_only defaults False, trace_data_flow
+routing collision, graph_edges column names (caller/callee not callee_fqdn),
+where is the pattern detector.
 
 ## NEXT SESSION -- start here
 
-Priority order (unchanged from session 188):
-1. **RM21-B** -- prose confabulation scan. Stays gated -- not observed in live probe.
-2. **RM21 remaining techniques** (2, 4, 5, 6) -- gated on failures T1+T3 can't fix.
-3. **RM64 follow-ons** -- gated on more real-world exercise of feature_work_plan.
-4. **RM10** -- DeRe-CoT recomposition pass in goal_intake. Long-horizon, read TRACKER first.
+Priority order (unchanged):
+1. **RM64** -- feature_work_plan follow-ons. Gate: validate feature_work_plan on dj2
+   first and observe real gaps. Run it against dj2, see what's missing, then decide
+   which of the 3 candidate extensions to build.
+2. **RM21-B** -- prose confabulation scan. Still gated -- not observed in live probe.
+3. **RM21 remaining techniques** (2, 4, 5, 6) -- gated on T1+T3 failures.
+4. **RM10** -- DeRe-CoT recomposition in goal_intake. Long-horizon, read TRACKER first.
 
-## Corpus status [V]
+## Corpus status [V] (unchanged from session 189)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
