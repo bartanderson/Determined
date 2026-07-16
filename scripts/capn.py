@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
 """
-capn -- codebase discovery cache for Determined sessions.
+capn -- trap registry and lookup cache for Determined sessions.
 Adapted from cap'n hook (github.com/cyrusNuevoDia/capn-hook), reimplemented in Python.
 No external dependencies beyond stdlib.
 
+Two use cases:
+
+  TRAPS: Non-obvious facts that cause wrong answers when unknown -- wrong column names,
+  silent defaults, schema quirks, routing collisions. Invisible until you hit them.
+  Chart after getting burned. Consult before touching that area again.
+
+  FREQUENT LOOKUPS: Things re-derived from scratch every session that cost more than
+  a single grep -- entry points requiring multiple files to locate, non-obvious call
+  chains, places where the obvious file isn't the right one.
+
+File-anchored: entries auto-expire when the referenced source files change.
+Not for simple file locations (grep is faster).
+
 Commands:
   ask "question"                                    search cache, log hit/miss
-  chart "question" --files f1 [f2] [--details ""]  save discovery with file hashes
+  chart "question" --files f1 [f2] [--details ""]  record a trap or lookup with file hashes
   prune                                             remove stale entries
-  context                                           print session-start instructions + stats
+  context                                           print session-start summary + stats
   list                                              list all entries with freshness
 """
 
@@ -263,14 +276,17 @@ def cmd_context():
 
     stale_note = f" ({stale_count} stale -- run capn prune)" if stale_count else ""
 
-    print(f"""=== CAP'N HOOK: codebase discovery cache ===
-{fresh_count} fresh entries{stale_note} | {charted} charted | {hits}/{total} queries hit ({hit_rate}) | est. {saved_display} tokens saved
+    print(f"""=== CAP'N HOOK: trap registry + lookup cache ===
+{fresh_count} entries{stale_note} | {charted} recorded | {hits}/{total} lookups hit ({hit_rate}) | est. {saved_display} tokens saved
 
-BEFORE exploring the codebase for any question, run:
-  python scripts/capn.py ask "<question>"
+Before touching DB queries, symbol resolution, ingestion routing, or re-deriving any
+entry point or call chain you've looked up before:
+  python scripts/capn.py ask "<what you're about to do or find>"
 
-If you find something (a function location, a pattern, a trap), record it:
-  python scripts/capn.py chart "<question>" --files path1 [path2] [--details "context"]
+Chart when you:
+  - hit a non-obvious trap (wrong column, silent default, schema quirk, routing collision)
+  - locate something that took more than a grep to find (entry point, non-obvious chain)
+  python scripts/capn.py chart "<description>" --files path1 [path2] [--details "specifics"]
 
 Entries auto-expire when referenced files change. Run prune to clean stale entries.""")
 

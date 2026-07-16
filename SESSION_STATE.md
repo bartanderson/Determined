@@ -7,12 +7,12 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 
 ## What happened this session (session 189, 2026-07-16)
 
-**capn discovery cache (scripts/capn.py) [V]** (0514b63)
-Adapted from cap'n hook (github.com/cyrusNuevoDia/capn-hook), pure Python, no deps.
+**capn trap registry (scripts/capn.py) [V]** (0514b63)
+Reframed session 190: not a discovery cache, a trap registry.
+Stores non-obvious gotchas (wrong column names, routing quirks, schema facts) that cause
+wrong answers -- not file locations (grep is faster). File-anchored for staleness detection.
 Commands: ask / chart / prune / context / list.
 SHA256 staleness detection per entry (auto-expires when referenced files change).
-est_tokens stored at chart time (len(question+details)//4); accumulated in stats.json.
-Inline savings line on cache hits: `[capn: ~N tokens | lifetime: ~XK across N hits]`.
 Session hook updated: session_start_hook.py calls `capn context` and appends to context.
 .capn/ added to .gitignore. Cache starts empty on each machine.
 
