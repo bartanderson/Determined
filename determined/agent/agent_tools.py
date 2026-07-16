@@ -3467,6 +3467,78 @@ def reingest_file(assessor: "Assessor", args: dict) -> str:
 # GOAL INTAKE
 # ------------------------------------------------------------------
 
+_INVESTIGATE_WORDS = {
+    "find", "where", "locate", "detect", "identify", "discover", "check",
+    "violat", "leak", "expose", "boundary", "investigat", "search", "audit",
+    "inspect", "diagnos",
+}
+_TRACE_WORDS = {
+    "trace", "follow", "path", "flow", "how does", "how do", "reach",
+    "from", "to", "travels", "propagat", "pipeline",
+}
+_EXPLAIN_WORDS = {
+    "explain", "what is", "what does", "describe", "summarize", "overview",
+    "understand", "tell me",
+}
+
+
+def _classify_goal_type(goal: str) -> str:
+    """Classify goal as investigate | trace | explain | implement."""
+    gl = goal.lower()
+    trace_score = sum(1 for w in _TRACE_WORDS if w in gl)
+    inv_score   = sum(1 for w in _INVESTIGATE_WORDS if w in gl)
+    exp_score   = sum(1 for w in _EXPLAIN_WORDS if w in gl)
+    # trace requires at least 2 matching terms or explicit "trace"
+    if "trace" in gl or trace_score >= 2:
+        return "trace"
+    if exp_score >= 1:
+        return "explain"
+    if inv_score >= 1:
+        return "investigate"
+    return "implement"
+
+
+def _extract_trace_endpoints(goal: str) -> tuple[str, str]:
+    """
+    Extract (source, destination) concept pair from a trace goal.
+    E.g. "trace player input to database" -> ("player input", "database")
+    Returns ("", "") if extraction fails.
+    """
+    import re
+    gl = goal.lower()
+    # Pattern: "trace/follow X to/into/through Y" or "how does X reach Y"
+    m = re.search(
+        r"(?:trace|follow|how (?:does|do)|path from|flow from)\s+(.+?)\s+(?:to|into|through|reach(?:es)?|until)\s+(.+?)(?:\s*\?|$)",
+        gl,
+    )
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    # Fallback: "X to Y" near verb
+    m = re.search(r"\b(\w[\w\s]{1,30}?)\s+(?:to|into)\s+([\w\s]{1,30}?)(?:\s*\?|$)", gl)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return "", ""
+
+
+def _find_symbol_for_concept(oracle: "DBOracle", concept: str) -> str | None:
+    """
+    Match concept string to the best symbol name in the corpus.
+    Returns bare symbol name or None.
+    """
+    if not concept:
+        return None
+    words = concept.lower().split()
+    # Try exact name match first
+    for w in reversed(words):  # last word is often most specific
+        rows = oracle.conn.execute(
+            "SELECT name FROM functions WHERE lower(name) LIKE ? LIMIT 1",
+            (f"%{w}%",),
+        ).fetchall()
+        if rows:
+            return rows[0][0]
+    return None
+
+
 def goal_intake(assessor: "Assessor", args: dict) -> str:
     """
     goal_intake(goal) - translate a developer's natural language goal into a
@@ -3477,6 +3549,7 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
     if not goal:
         return "ERROR: goal argument required (describe what you want to build or change)"
 
+    goal_type = _classify_goal_type(goal)
     oracle = assessor.oracle
     _root = (oracle.get_project_root() or "").replace("\\", "/").rstrip("/")
 
@@ -3484,7 +3557,7 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
         fp = (fp or "").replace("\\", "/")
         return fp[len(_root) + 1:] if _root and fp.startswith(_root + "/") else fp
 
-    out = [f"Goal: {goal}", ""]
+    out = [f"Goal: {goal}", f"Intent: {goal_type}", ""]
 
     # --- Step 1: Find relevant symbols via semantic search ---
     # Use _search_symbols_raw (XIV: one source of truth for symbol lookup + docstring join)
@@ -3580,6 +3653,32 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
             out.append("  (none found near relevant area)")
         out.append("")
 
+    # --- Step 4b: Trace path (2B) -- only for trace goals ---
+    trace_chain: list[dict] = []
+    if goal_type == "trace":
+        src_concept, dst_concept = _extract_trace_endpoints(goal)
+        src_sym = _find_symbol_for_concept(oracle, src_concept)
+        if src_sym:
+            trace_chain = walk_call_chain(src_sym, oracle, max_depth=8)
+            dst_sym = _find_symbol_for_concept(oracle, dst_concept)
+            # Trim chain to stop at dst_sym if found
+            if dst_sym:
+                cutoff = next(
+                    (i for i, n in enumerate(trace_chain) if n["symbol"] == dst_sym), None
+                )
+                if cutoff is not None:
+                    trace_chain = trace_chain[: cutoff + 1]
+        if trace_chain:
+            out.append("Call path:")
+            for node in trace_chain:
+                indent = "  " * (node["depth"] + 1)
+                stub_tag = " [STUB]" if node["is_stub"] else ""
+                out.append(f"{indent}{node['symbol']}  ({node['file']}){stub_tag}")
+            out.append("")
+        else:
+            out.append("Call path: (could not resolve -- check start symbol name)")
+            out.append("")
+
     # --- Step 5: Navigation plan ---
     out.append("Suggested approach:")
     step = 1
@@ -3592,27 +3691,42 @@ def goal_intake(assessor: "Assessor", args: dict) -> str:
     safe = [(n, f) for n, f, _ in relevant_symbols
             if risk_cache.get(n, {}).get("level") in ("SAFE", "UNKNOWN")]
 
-    if hot:
-        for sym_name, sym_file in hot[:2]:
+    if goal_type in ("investigate", "explain", "trace"):
+        # Investigation/explain/trace: read-first, no modify steps
+        for sym_name, sym_file in (hot + warm + safe)[:4]:
             fp = _rel(sym_file)
-            out.append(f"  {step}. READ (do not modify): {sym_name} in {fp} -- HOT, understand the boundary first")
+            out.append(f"  {step}. READ: {sym_name} in {fp}")
             step += 1
-    if warm:
-        for sym_name, sym_file in warm[:2]:
-            fp = _rel(sym_file)
-            out.append(f"  {step}. REVIEW: {sym_name} in {fp} -- WARM, check callers before changing")
+        if goal_type == "investigate":
+            for sym_name, sym_file in (hot + warm)[:2]:
+                fp = _rel(sym_file)
+                out.append(f"  {step}. BLAST_RADIUS: {sym_name} -- map what depends on this")
+                step += 1
+        if goal_type == "trace" and trace_chain:
+            out.append(f"  {step}. Walk the call path above to understand the full flow")
             step += 1
+    else:
+        # implement: original behavior
+        if hot:
+            for sym_name, sym_file in hot[:2]:
+                fp = _rel(sym_file)
+                out.append(f"  {step}. READ (do not modify): {sym_name} in {fp} -- HOT, understand the boundary first")
+                step += 1
+        if warm:
+            for sym_name, sym_file in warm[:2]:
+                fp = _rel(sym_file)
+                out.append(f"  {step}. REVIEW: {sym_name} in {fp} -- WARM, check callers before changing")
+                step += 1
 
-    # Stubs and safe symbols are the insertion points
-    for sym_name, sym_file in stub_syms[:3]:
-        fp = _rel(sym_file)
-        out.append(f"  {step}. EXTEND: {sym_name} in {fp} -- no callers, safe insertion point")
-        step += 1
-    if safe:
-        for sym_name, sym_file in safe[:1]:
+        for sym_name, sym_file in stub_syms[:3]:
             fp = _rel(sym_file)
-            out.append(f"  {step}. MODIFY: {sym_name} in {fp} -- SAFE zone")
+            out.append(f"  {step}. EXTEND: {sym_name} in {fp} -- no callers, safe insertion point")
             step += 1
+        if safe:
+            for sym_name, sym_file in safe[:1]:
+                fp = _rel(sym_file)
+                out.append(f"  {step}. MODIFY: {sym_name} in {fp} -- SAFE zone")
+                step += 1
 
     if step == 1:
         out.append("  No clear insertion point found. Run orient_to_codebase first to populate knowledge.")
