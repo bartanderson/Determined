@@ -7939,11 +7939,17 @@ def explore_stub(assessor: "Assessor", args: dict) -> str:
     # ── 3. Callers + what they pass ──────────────────────────────────────────
     caller_rows = _list_callers_raw(oracle, symbol, resolved_only=True)
     caller_info: list[dict] = []
-    for cr in caller_rows[:6]:
+    _seen_callers: set[tuple[str, str]] = set()
+    for cr in caller_rows:
         caller_name = cr.get("caller", "")
         caller_file = (cr.get("file_path") or "").replace("\\", "/").split("/")[-1]
+        key = (caller_name, caller_file)
+        if key in _seen_callers:
+            continue
+        _seen_callers.add(key)
+        if len(caller_info) >= 6:
+            break
         caller_line = cr.get("line_number", "")
-        # fetch caller's param_types_json to show what it might pass in
         caller_fn = conn.execute(
             "SELECT param_types_json, return_type FROM functions WHERE name = ? LIMIT 1",
             (caller_name,)
@@ -8308,6 +8314,47 @@ TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
 # RM64: verify_implementation -- close-the-loop check after re-ingest
 # ------------------------------------------------------------------
 
+def _read_stub_body(file_path: str, line_number: int) -> str:
+    """Classify a stub's source body: pass_only | return_empty | has_substance | unreadable."""
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return "unreadable"
+    if not line_number or line_number < 1 or line_number > len(lines):
+        return "unreadable"
+    def_line = lines[line_number - 1]
+    fn_indent = len(def_line) - len(def_line.lstrip())
+    body_lines: list[str] = []
+    in_docstring = False
+    ds_char: str | None = None
+    for raw in lines[line_number:]:
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        line_indent = len(raw) - len(raw.lstrip())
+        if stripped and line_indent <= fn_indent:
+            break
+        if not in_docstring:
+            if stripped.startswith('"""') or stripped.startswith("'''"):
+                ds_char = stripped[:3]
+                if stripped.count(ds_char) >= 2 and len(stripped) > 3:
+                    continue  # single-line docstring
+                in_docstring = True
+                continue
+            body_lines.append(stripped)
+        else:
+            if ds_char and ds_char in stripped:
+                in_docstring = False
+    non_trivial = [l for l in body_lines if l != "pass" and not l.startswith("#")]
+    if not non_trivial:
+        return "pass_only"
+    _empty = {"return {}", "return None", "return []", 'return ""', "return ''", "return ()"}
+    if all(l in _empty or l == "pass" for l in non_trivial):
+        return "return_empty"
+    return "has_substance"
+
+
 def verify_implementation(assessor: "Assessor", args: dict) -> str:
     """
     verify_implementation(symbol) -- close-the-loop check after implementing a stub.
@@ -8335,13 +8382,26 @@ def verify_implementation(assessor: "Assessor", args: dict) -> str:
         return f"FAIL: '{symbol}' not found in corpus -- re-ingest may not have run yet."
 
     name, file_path, is_stub, docstring = fn_row
+    try:
+        line_number = conn.execute(
+            "SELECT line_number FROM functions WHERE name = ? LIMIT 1", (symbol,)
+        ).fetchone()[0]
+    except Exception:
+        line_number = None
     issues: list[str] = []
     warnings: list[str] = []
     out: list[str] = [f"verify_implementation: {symbol}", f"  file: {(file_path or '').replace(chr(92), '/')}"]
 
-    # Check 1: no longer a stub
+    # Check 1: no longer a stub — if still marked, inspect body to distinguish ingest miss from genuine stub
     if is_stub:
-        issues.append("still marked is_stub=1 -- implementation not detected by ingest")
+        body_class = _read_stub_body(file_path or "", line_number or 0)
+        body_desc = {
+            "pass_only":     "body is `pass` — pure stub, nothing to detect yet",
+            "return_empty":  "body returns empty value (return {}/None/[]) — minimal stub",
+            "has_substance": "body has real content — possible ingest miss, check parse_ast stub detection",
+            "unreadable":    "source file not readable — check file_path in corpus",
+        }.get(body_class, "unknown")
+        issues.append(f"still marked is_stub=1 -- {body_desc}")
     else:
         out.append("  [OK] is_stub=0 -- implementation detected")
 
@@ -8436,27 +8496,34 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
     if not feature_path.endswith("/"):
         feature_path += "/"
 
-    # -- Check 1: Entry points with no design_note --------------------------------
-    # Entry point = no row in graph_edges as callee, not a stub
-    all_fns = conn.execute(
-        "SELECT name, file_path FROM functions WHERE is_stub=0",
-    ).fetchall()
+    def _in_feature(fp: str) -> bool:
+        return feature_path in (fp or "").replace("\\", "/")
 
-    # Filter to feature_path
-    feature_fns = [
-        (name, fp) for name, fp in all_fns
-        if feature_path in (fp or "").replace("\\", "/")
+    def _short(fp: str) -> str:
+        return "/".join((fp or "").replace("\\", "/").split("/")[-2:])
+
+    # -- Check 1: Entry points with no design_note --------------------------------
+    # Entry point = implemented (is_stub=0), no callers in graph_edges
+    impl_fns = [
+        (r[0], r[1]) for r in conn.execute(
+            "SELECT name, file_path FROM functions WHERE is_stub=0"
+        ).fetchall() if _in_feature(r[1])
+    ]
+    stub_fns = [
+        (r[0], r[1]) for r in conn.execute(
+            "SELECT name, file_path FROM functions WHERE is_stub=1"
+        ).fetchall() if _in_feature(r[1])
     ]
 
-    # Which have no callers?
+    ep_list: list[tuple[str, str]] = []
     ep_no_note: list[tuple[str, str]] = []
-    for name, fp in feature_fns:
+    for name, fp in impl_fns:
         has_caller = conn.execute(
             "SELECT 1 FROM graph_edges WHERE callee = ? LIMIT 1", (name,)
         ).fetchone()
         if has_caller:
             continue
-        # Entry point -- does it have a design_note?
+        ep_list.append((name, fp))
         has_note = conn.execute(
             "SELECT 1 FROM knowledge_artifacts "
             "WHERE kind='design_note' AND (subject=? OR subject LIKE ?) LIMIT 1",
@@ -8466,19 +8533,21 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
             ep_no_note.append((name, fp))
 
     if ep_no_note:
-        out.append(f"Entry points with no design_note ({len(ep_no_note)}):")
+        out.append(f"Entry points with no design_note ({len(ep_no_note)} of {len(ep_list)}):")
         for name, fp in ep_no_note:
-            short = "/".join(fp.replace("\\", "/").split("/")[-2:])
-            out.append(f"  {name}  ({short})")
+            out.append(f"  {name}  ({_short(fp)})")
+        out.append("")
+    elif ep_list:
+        out.append(f"Entry points: all {len(ep_list)} have design_note coverage")
         out.append("")
     else:
-        out.append("Entry points: all have design_note coverage (or none found)")
+        out.append(f"Entry points: none found ({len(impl_fns)} implemented fns, all have callers)")
         out.append("")
 
     # -- Check 2: Doc-stale symbols -----------------------------------------------
     stale_words = {"todo", "stub", "placeholder", "not implemented"}
     doc_stale: list[tuple[str, str, str]] = []
-    for name, fp in feature_fns:
+    for name, fp in impl_fns:
         row = conn.execute(
             "SELECT docstring FROM functions WHERE name=? LIMIT 1", (name,)
         ).fetchone()
@@ -8486,8 +8555,7 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
             continue
         matched = [w for w in stale_words if w in row[0].lower()]
         if matched:
-            short = "/".join(fp.replace("\\", "/").split("/")[-2:])
-            doc_stale.append((name, short, ", ".join(matched)))
+            doc_stale.append((name, _short(fp), ", ".join(matched)))
 
     if doc_stale:
         out.append(f"Doc-stale symbols (is_stub=0 but docstring has stub language) ({len(doc_stale)}):")
@@ -8498,7 +8566,28 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
         out.append("Doc-stale: no implemented symbols with stub language in docstring")
         out.append("")
 
-    total = len(ep_no_note) + len(doc_stale)
+    # -- Check 3: Stubs with no design_note (pre-implementation doc gap) ----------
+    stubs_no_note: list[tuple[str, str]] = []
+    for name, fp in stub_fns:
+        has_note = conn.execute(
+            "SELECT 1 FROM knowledge_artifacts "
+            "WHERE kind='design_note' AND (subject=? OR subject LIKE ?) LIMIT 1",
+            (name, f"%{name}%"),
+        ).fetchone()
+        if not has_note:
+            stubs_no_note.append((name, fp))
+
+    if stub_fns:
+        if stubs_no_note:
+            out.append(f"Stubs with no design_note ({len(stubs_no_note)} of {len(stub_fns)}) -- implement these AFTER documenting intent:")
+            for name, fp in stubs_no_note:
+                out.append(f"  {name}  ({_short(fp)})")
+            out.append("")
+        else:
+            out.append(f"Stubs: all {len(stub_fns)} have design_note coverage")
+            out.append("")
+
+    total = len(ep_no_note) + len(doc_stale) + len(stubs_no_note)
     if total == 0:
         out.append("PASS: no doc-drift detected")
     else:
