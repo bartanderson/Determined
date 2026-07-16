@@ -1,48 +1,44 @@
-Written at commit: 74da033
+Written at commit: 1e4b71f
 
-# SESSION STATE - session 192
+# SESSION STATE - session 193
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 192, 2026-07-16)
+## What happened this session (session 193, 2026-07-16)
 
-**RM10 done [V]** (74da033)
-goal_intake intent classifier (2A) + trace routing (2B).
+**RM10 done [V]** (74da033) -- see session 192 notes
+goal_intake intent classifier (2A) + trace routing (2B). Live-validated against dj2:
+all 3 probes behave correctly (investigate/trace/implement).
 
-2A: `_classify_goal_type(goal)` -- keyword heuristic returns investigate|trace|explain|implement.
-Priority order: trace first (explicit "trace" keyword or >=2 trace terms), then explain
-("what is/does", "explain", "describe"), then investigate ("find", "where", "detect",
-"boundary", "violat", etc.), then implement (default). Explain wins over investigate so
-"what is the AI boundary" routes to explain, not investigate.
+**RM64 fully done [V]** (1e4b71f)
+verify_implementation(symbol): post-ingest close-the-loop check.
+  - Confirms is_stub=0, callers resolve, no new unresolved callees, docstring not stale.
+  - PASS / WARN / FAIL verdict with specifics.
 
-Goal output now includes `Intent: <type>` line. Nav plan branches:
-- investigate: READ steps + BLAST_RADIUS on hot/warm symbols; no MODIFY/EXTEND
-- explain: READ steps only; no MODIFY/EXTEND
-- trace: READ steps + "Walk the call path" hint; no MODIFY/EXTEND
-- implement: original behavior (EXTEND stubs, MODIFY safe symbols)
+detect_doc_drift(feature_path): flags doc gaps after stubs are closed.
+  - Check 1: entry points (no callers, not stub) with no design_note artifact.
+  - Check 2: implemented symbols (is_stub=0) with stub language in docstring.
+  - PASS or DRIFT with counts.
 
-2B: For trace goals, `_extract_trace_endpoints(goal)` regex-extracts source+destination
-concepts. `_find_symbol_for_concept(oracle, concept)` SQL-matches concept words to
-function names. `walk_call_chain()` (existing, BFS) traverses the path; chain trimmed
-at dst_sym if found. Path shown inline as "Call path:" block before nav plan.
-
-19 new regression tests in tests/regression/test_goal_intake.py. 1030 pass, 1 skipped.
+Both registered in TOOLS dict and tool_registry.py. 13 new regression tests.
+1043 pass, 1 skipped.
 
 ## NEXT SESSION -- start here
 
-**RM10 live validation (RECOMMENDED):**
-Run goal_intake against dj2 with 3 probe goals to confirm real-world behavior:
-1. "find where AI boundary is violated" -> Intent: investigate + no MODIFY
-2. "trace how player input reaches the database" -> Call path: section populated
-3. "add consequence tracking" -> Intent: implement + EXTEND/MODIFY
-Use UI Ask bar with dj2 corpus loaded, or python script against dj2 DB.
+All RM10 and RM64 items are complete and committed. Open items to consider:
 
-**RM64 remaining candidates (OPTIONAL, quick):**
-- Close-the-loop verification: after re-ingest, check implemented fn resolves stub.
-- Doc-drift detection: design_note artifacts vs call graph -- new EPs with no design note.
+**RM21-B [gated]:** Prose-style confabulation escape in claim_verifier. Gated on
+observing Q5-style confabulation in a live probe after Fix A ships. Run Q5 against
+Commonplace first -- if confabulation is gone, skip this. If prose escape is observed,
+implement the snake_case/CamelCase token scan.
 
-## Corpus status [V] (unchanged from session 191)
+**RM21 Techniques 2-6 [future]:** Constrained decoding, MCTS, speculative verification,
+large-model fallback. Build only after Technique 1 proves insufficient.
+
+Check TRACKER.md for any other open items. No urgent items were filed this session.
+
+## Corpus status [V] (unchanged from session 192)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|

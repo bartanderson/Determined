@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
+**Last session (2026-07-16, session 193):** RM64 remaining done: verify_implementation (close-the-loop check after re-ingest) + detect_doc_drift (EP/design_note gaps + doc-stale symbols). Both registered in TOOLS + tool_registry. 13 new tests. 1043 pass.
+
+**Previous (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
 
 **Previous (2026-07-16, session 191):** RM63 signature fix (param_types_json={} shows () not (?), arguments_json fallback for bare names). RM64 explore_stub: design exploration for BLOCKED stubs -- callers+args, ghost/bridge analysis, sibling stubs, design questions. 12 new tests. All pass.
 
@@ -291,7 +293,7 @@ RM63. **[DONE 2026-07-15] feature_work_plan: ordered work plan for a feature fro
 
 ---
 
-RM64. **[PARTIAL 2026-07-16] feature_work_plan follow-on considerations**
+RM64. **[DONE 2026-07-16] feature_work_plan follow-on considerations**
 
    Validated on dj2 world/ (session 191). 10 stubs, all BLOCKED, all land in
    world/placeholder axis (axis-grouping only differentiates when stubs have callees).
