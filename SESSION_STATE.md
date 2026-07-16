@@ -1,52 +1,63 @@
-Written at commit: 89510d7
+Written at commit: 8c62c79
 
-# SESSION STATE - session 186
+# SESSION STATE - session 187
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 186, 2026-07-16)
+## What happened this session (session 187, 2026-07-16)
 
-**RM39-L3 TRACKER cleanup [V]** (in 04cd225)
-Stale [TODO] block for RM39-L3 deleted from TRACKER.md. Code was done in session 167
-(commit 486dbf2). SESSION_STATE had carried it forward as [TODO] in error.
+**RM21 Technique 3: trace_call_chain + heuristic bug fix [V]** (8c62c79)
 
-**RM21 Fix A: confabulated-symbol detection [V]** (04cd225)
-claim_verifier.verify_claim now checks functions table when a CALLS subject has no
-outgoing edges. If symbol doesn't exist in corpus at all -> emit correction ("does not
-exist in this codebase. Do not reference it."). Same check for HAS_METHOD when class
-not in classes table. Both checks wrapped in try/except for graceful degradation if
-table missing (older fixtures). 4 new regression tests. 985 passed [V].
+Three multi-hop probes run against Commonplace corpus to gate the work:
+- Probe 1 (search path trace): FAIL -- DECOMPOSE emitted template prose ("files in Key files",
+  "files in Entry points") instead of real lookups. Model can't plan a 4-hop traversal in one pass.
+- Probe 2 (entry save trace): FAIL -- "what does each one do" matched "what does X do" heuristic,
+  extracted "each" as symbol name, wasted all tool calls on symbol_intent('each').
+- Probe 3 (blast-radius + implementation status): PASS -- DECOMPOSE correct, impact bypass fired,
+  answer honest. General iterative DECOMPOSE loop has no evidence of being needed.
 
-**RM21-B filed as gated TODO [V]** (59ced74)
-Prose-style confabulation escape ("the request flows through query_router" without
-"calls" keyword) added to RM21 block in TRACKER.md. Gated: implement only if live
-Q5 probe still shows prose confabulation after Fix A.
+Fixes shipped:
+1. **Heuristic bug**: negative lookahead `(?!(?:each|every|one|it|this|that|they|we|you|all|any|its)\b)`
+   added to "what does X do" regex in agent_resolver.py.
+2. **walk_call_chain(start, oracle, max_depth=5)** in agent_tools.py: deterministic BFS from a
+   start symbol, annotates stub/impl per node, cycle-safe, returns list[dict] with callees.
+3. **trace_call_chain detect rule** in pattern_executor.py: fires before trace_data_flow on
+   traversal queries ("trace path from HTTP route through to database", etc.).
+4. **run_traversal()** in PatternExecutor: finds HTTP route handlers via http_route column
+   (falls back to name heuristics -- *_get, *_post, *handler, *route, *capture -- for older
+   corpora where column wasn't populated at ingest time). Walks chain deterministically.
+   One LLM synthesis call over the structured chain.
+5. **Hooked in local_agent._answer()** as a new branch alongside existing pattern bypasses.
+6. **14 new regression tests** in tests/regression/test_technique3.py. 999 passed, 1 skipped [V].
 
-**RM21 noise words expanded [V]** (89510d7)
-Added "what", "who", "where", "how", "why", "via", "its", "any", "all" to _NOISE_WORDS.
-Prevents followup suggestion text ("what calls Entry") from being parsed as CALLS claims.
+Known limitation: Commonplace corpus was ingested before http_route column was extracted --
+http_route IS NULL for all functions. Fallback finds 2 handlers by name heuristic (capture,
+capture_post). Chain is shallow (1 node) because graph_edges from capture only captured
+library calls (Blueprint, flask.request.*), not project-level calls. Re-ingest would fix both.
 
-**Live Q5 probe: PASS [V]**
-Ran "what is the path from the web route to the database for a new entry?" against
-C_Users_bartl_dev_Determined_examples_commonplace.db. Answer: capture_post ->
-extractor/tagger -> enrich_entry -> queries.insert. No query_router, no query_session,
-no Determined internals. Claim verifier fired no corrections after noise words fix.
-RM21-B gate: prose confabulation not observed -> RM21-B stays gated.
+**TRACKER.md updated [V]**: Technique 3 block added to RM21 entry; general iterative DECOMPOSE
+gated on non-traversal multi-hop failure (not yet observed).
+
+**HISTORY.md updated [V]**: Technique 3 decision and limitation recorded.
 
 ## NEXT SESSION -- start here
 
 Priority order:
-1. **RM21 remaining techniques** -- Technique 3 (prompt chaining/decomposition) is next
-   tractable layer. Tractability order: 1 -> 3 -> 2 -> 5 -> 4 -> 6. Only pursue if a
-   real multi-hop query still fails after Technique 1.
-2. **RM21-B** -- prose confabulation scan, gated on observing it in practice. Not yet seen.
-3. **RM64 follow-ons** -- gated, use after more real-world exercise of feature_work_plan.
+1. **RM21-B** -- prose confabulation scan, gated on observing it in live probe. Not yet seen.
+2. **RM21 remaining techniques** -- Technique 2 (constrained decoding), 4 (MCTS), 5 (speculative
+   verification), 6 (large-model fallback). Build only after observing a failure Technique 1+3
+   can't fix. No current evidence any of these are needed.
+3. **RM64 follow-ons** -- gated on more real-world exercise of feature_work_plan.
 4. **RM10** -- DeRe-CoT recomposition pass in goal_intake, long-horizon.
+
+If next session wants to test trace_call_chain properly: re-ingest Commonplace corpus first
+so http_route is populated. Then run the two traversal queries from this session again.
+Re-ingest command: use EngineRunner (Python corpus), NOT ingest_lang_corpus.py.
 
 ## Corpus status [?]
 
-(Unchanged from session 185 -- no re-ingest this session)
+(Unchanged from session 186 -- no re-ingest this session)
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
@@ -57,12 +68,18 @@ Priority order:
 | dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested, EP counts correct |
 | dungeoncrawler (TS) | 78 | 192 | 0 | complete |
 | rotjs (TS) | 626 | 2,239 | 6 | lib/src warning in list_features |
+| Commonplace (Python) | ~64 | ? | 0 | OLD ingest -- no http_route col; re-ingest needed |
 
 ## Known issues (carried forward)
 
-**concept extraction scope [V]:** _extract_docstring_concepts uses compound-CamelCase regex
-  + architectural-suffix regex. Single-word capitalised English words (Process, Register, System)
-  are excluded by design -- they match prose verbs, not class-like concept names.
+**trace_call_chain start node [V]:** Uses http_route col; falls back to name heuristics for old
+  corpora. Commonplace DB needs re-ingest to populate http_route. Start node selection is
+  approximate when http_route is absent -- picks handler whose name scores highest on question
+  keywords; both handlers score 0 on "search", picks alphabetically first ("capture").
+**trace_call_chain shallow chain [V]:** graph_edges from old Commonplace capture() only has
+  library calls (Blueprint, flask.request.*), not project calls. Re-ingest fixes.
+**concept extraction scope [V]:** _extract_docstring_concepts: single-word capitalised English
+  words excluded by design (match prose verbs, not class-like concept names).
 **feature_shape vs dev_priorities% inconsistency [V]:** Different counting methods, not a bug.
 **ingest route trap [V]:** Python corpora use EngineRunner. ingest_lang_corpus.py is Go/Rust/JS/TS only.
 **interface_dispatch caller_file empty [V]:** Interface types not in functions table.

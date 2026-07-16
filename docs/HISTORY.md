@@ -8,6 +8,22 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-16: RM21 Technique 3 -- traversal pattern, not general iterative DECOMPOSE.
+3 multi-hop probes run. Traversal queries failed two ways: (1) DECOMPOSE emitting
+template prose ("files in Key files") when asked to plan a multi-hop chain -- model
+can't hold 4-hop traversal plan in one output pass. (2) "what does each one do" heuristic
+extracted "each" as a symbol name (the "what does X do" regex has no guard against English
+pronouns/determiners). Blast-radius + implementation-status query (probe 3) PASSED --
+DECOMPOSE was correct, impact bypass handled it. Conclusion: general iterative DECOMPOSE
+loop has no evidence of being needed; gated on observing a non-traversal multi-hop failure.
+Fix: (a) negative lookahead in "what does X do" heuristic; (b) walk_call_chain() BFS in
+agent_tools.py; (c) trace_call_chain pattern in pattern_executor.py; (d) run_traversal()
+finds HTTP route handlers via http_route col (falls back to name heuristics for older
+corpora where column didn't exist at ingest time), walks chain, one LLM synthesis call.
+Known limitation: start node selection is approximate for old corpora (no http_route col).
+Commonplace DB needs re-ingest to populate http_route. Chain is also shallow if graph_edges
+for the handler only captured library calls (Blueprint, flask.request.*) not project calls.
+
 2026-07-16: RM21 Q5 confabulation was Determined-internal symbols leaking into corpus answers.
 claim_verifier returns None when a CALLS subject has no edges ("can't refute confidently").
 This let invented symbols (query_router, query_session -- real Determined modules but not in
