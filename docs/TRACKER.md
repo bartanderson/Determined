@@ -14,7 +14,11 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-15, session 181):** RM60 Phase 1 done: evaluated all 7 corpora. Key findings: (1) end-of-eden architecture correct, system/game most-connected; (2) dungeoncrawler clean; (3) dnd-dungeon-gen 0 EP bug confirmed - JS target_id is bare name not canonical_id, resolution info lost; (4) ruggrogue file-level grouping works; (5) rotjs lib/src dual-rep documented; (6) Determined depth=2 agent at 83%, structural_score blocking stub; (7) dj2 world/ 10 stubs real (AIDungeonMaster/AdjudicationEngine/ActionQueue). Two new bugs: RM61 (language builtins counted as local-missing), RM62 (JS callee file lost on resolution). Filed Phase 2 checkboxes.
+**Last session (2026-07-16, session 188):** Re-ingested Commonplace corpus (31 syms, 168 edges, http_route populated for 3 routes). Fixed walk_call_chain BFS depth bug: was queuing FQDN callees (services.extractor.extract) for WHERE name=? against functions table which stores bare names -- rsplit fix. Traversal probes: search->DB now 4 nodes deep, capture->storage 16 nodes (full pipeline). 999 tests pass.
+
+**Previous (2026-07-16, session 187):** RM21 Technique 3 done: trace_call_chain pattern + heuristic bug fix. walk_call_chain BFS in agent_tools.py, trace_call_chain detect rule in pattern_executor.py, run_traversal() finds HTTP handlers via http_route col. 14 new regression tests. 999 passed.
+
+**Previous (2026-07-15, session 181):** RM60 Phase 1 done: evaluated all 7 corpora. Key findings: (1) end-of-eden architecture correct, system/game most-connected; (2) dungeoncrawler clean; (3) dnd-dungeon-gen 0 EP bug confirmed - JS target_id is bare name not canonical_id, resolution info lost; (4) ruggrogue file-level grouping works; (5) rotjs lib/src dual-rep documented; (6) Determined depth=2 agent at 83%, structural_score blocking stub; (7) dj2 world/ 10 stubs real (AIDungeonMaster/AdjudicationEngine/ActionQueue). Two new bugs: RM61 (language builtins counted as local-missing), RM62 (JS callee file lost on resolution). Filed Phase 2 checkboxes.
 
 **Previous (2026-07-15, session 178):** Go receiver types in param_types_json (88% typed for end-of-eden, up from 60%). Plain JS excluded from annotation queue. dungeoncrawler/rotjs confirmed TS not JS. RM59 filed: feature shape analysis (list_features, feature_shape, development_priorities). All corpora re-ingested. 892 passed, 1 skipped.
 
@@ -1997,6 +2001,10 @@ RM21. **[ACTIVE] Small-model reasoning enhancement: push Qwen3-8B beyond its nat
    stub/impl/missing per node; (c) `trace_call_chain` pattern in pattern_executor.py detects
    traversal intent, finds HTTP route handlers via `http_route` column, walks chain, one LLM
    synthesis call over the structured result.
+   BFS depth fix (session 188, 2026-07-16): walk_call_chain was queuing FQDN callee names
+   (e.g. services.extractor.extract) for WHERE name=? lookup; functions table stores bare names.
+   Fixed with rsplit('.', 1)[-1] before queuing. Probes after Commonplace re-ingest: search->DB
+   4 nodes deep, capture->storage 16 nodes (full pipeline end-to-end).
 
    **RM21-B [TODO, gated on live Q5 probe failing] Prose-style confabulation escape:**
    Claim verifier only intercepts confabulation expressed as "X calls Y". If the model
