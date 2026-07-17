@@ -153,8 +153,8 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | Corpus | Target | Status |
 |--------|--------|--------|
 | Determined (Python) | Full convergence | structural integrity done; probe TBD |
-| dj2 (Python+JS) | Full convergence | 170 inferred EPs open; 13 stubs; probe TBD |
-| Commonplace (Python) | Full convergence | 1 stub (suggest_tags); probe TBD |
+| dj2 (Python+JS) | Full convergence | 331 inferred EPs (accepted ceiling); 10 stubs split: 5 RM68-remove, 5 AI-layer (RM69 to classify) |
+| Commonplace (Python) | Full convergence | 1 stub (suggest_tags); deferred to RM69 |
 | rotjs (TS) | Probe-passes | 6 stubs; lib/src dual-rep known |
 | dungeoncrawler (TS) | Probe-passes | 0 stubs; appears clean |
 | dnd-dungeon-gen (JS) | Probe-passes | 6 stubs; JS callee resolution gap known |
@@ -179,15 +179,14 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 
 ### Open questions (need Bart's input)
 
-- [ ] dj2 170 inferred EPs: close aggressively or accept as dynamic-dispatch ceiling?
-- [ ] suggest_tags: real feature to implement, or intentional demo placeholder?
-- [ ] Demonstration corpora (Go/Rust/TS): important beyond "proof it works"?
+- [x] dj2 331 inferred EPs: accepted as dynamic-dispatch ceiling (2026-07-17)
+- [x] suggest_tags / Go/Rust/TS corpora / all deferred: answers may emerge from judgment layer (RM69) rather than requiring human input now (2026-07-17)
 
 ### Convergence status
 
 - [ ] Determined: structural integrity DONE; probe pending
-- [ ] dj2: partial; 170 inferred EPs + 13 stubs open
-- [ ] Commonplace: partial; 1 stub open
+- [ ] dj2: stub sweep DONE — 5 RM68-remove, 5 AI-layer gaps; judgment classification pending RM69
+- [ ] Commonplace: stub sweep DONE — 1 stub (suggest_tags); judgment pending RM69
 - [ ] rotjs: probe pending
 - [ ] dungeoncrawler: probe pending
 - [ ] dnd-dungeon-gen: probe pending
