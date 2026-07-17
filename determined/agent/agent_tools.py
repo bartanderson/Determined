@@ -8311,6 +8311,14 @@ TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
 
 
 # ------------------------------------------------------------------
+# RM69: classify_stub -- judgment layer
+# ------------------------------------------------------------------
+
+from determined.agent.classify_stub import classify_stub  # noqa: E402
+TOOLS["classify_stub"] = (classify_stub, "assessor")
+
+
+# ------------------------------------------------------------------
 # RM64: verify_implementation -- close-the-loop check after re-ingest
 # ------------------------------------------------------------------
 

@@ -564,6 +564,8 @@ def test_dispatch_all_tools_registered():
         "find_missing_bridges",
         # RM66: concept ghost detection
         "find_concept_ghosts",
+        # RM69: judgment layer
+        "classify_stub",
     }
 
     assert set(TOOLS.keys()) == expected

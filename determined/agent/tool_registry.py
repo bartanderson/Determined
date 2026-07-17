@@ -907,6 +907,18 @@ REGISTRY: dict[str, dict] = {
         "category": "planning",
     },
 
+    # ── RM69: CLASSIFY STUB ──────────────────────────────────────────
+    "classify_stub": {
+        "purpose": "Judgment layer: classify why a stub exists. Runs deterministic signal extraction (body shape, intent language, caller count, concept presence, sibling density, file character) then scores four competing hypotheses with evidence: concept-not-applicable, blocked-on-prerequisite, design-intent-stated, genuinely-unknown. Shows ranked hypotheses with confidence scores. When top score < 0.4, returns UNCERTAIN with raw signals.",
+        "args": {
+            "symbol": "stub function name to classify (required)",
+        },
+        "output": "ranked competing hypotheses with confidence scores and supporting evidence signals",
+        "feeds": ["explore_stub", "find_missing_bridges", "find_concept_ghosts", "feature_work_plan"],
+        "use_when": "After stub sweep identifies real stubs -- run to understand WHY each stub exists before deciding how to handle it. Distinguishes dead code from design skeletons from genuine gaps.",
+        "category": "planning",
+    },
+
     # ── RM63: FEATURE WORK PLAN ───────────────────────────────────────
     "feature_work_plan": {
         "purpose": "Produce a handoff-ready, ordered work plan for a feature directory: finds all stubs and missing callees, groups them into axes (by destination directory of unresolved callees), ranks axes by EP-weighted impact, sorts functions within each axis by topo order, and emits a grounded completion contract for each. Uncertain contracts are flagged [infer: ...]. Output is ready to paste into a large LLM prompt for the narrow implementation step.",
