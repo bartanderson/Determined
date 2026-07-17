@@ -8,6 +8,20 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-17: Tool findings vs. steerer knowledge -- hard discipline established.
+classify_stub and all RM69 judgment output must be the tool's own conclusions
+from graph signals only. Prior manual code archaeology (e.g. knowing dj2's
+EncounterFSM exists in config/fsms/encounter.json) is used to steer probe
+questions but never injected into tool output or TRACKER findings.
+"Don't spoil the tool's enjoyment of season 2 episode 3."
+
+2026-07-17: classify_stub caller-count modifies concept-not-applicable weight.
+If a stub has callers AND all referenced concepts are absent from the corpus,
+prefer blocked-on-prerequisite over concept-not-applicable. Callers mean
+something is waiting -- concept-not-applicable implies nobody should call it.
+Score: absent+no_callers → concept-not-applicable +1.2; absent+callers →
+blocked-on-prerequisite +0.8, concept-not-applicable +0.5 only.
+
 2026-07-16: FQDN trap in EP detection -- graph_edges callee is qualified after resolution.
 detect_doc_drift was querying `WHERE callee=bare_name` but graph_edges stores resolved
 callees as `ClassName.method` (e.g. `ActionQueue.dequeue`). This produced 463 false EPs
