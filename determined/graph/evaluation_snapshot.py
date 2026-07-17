@@ -24,10 +24,6 @@ BUCKET_NORMALIZER = {
 }
 
 
-def structural_score(node_name: str) -> int:
-    return 0
-
-
 def node_semantic_tag(node_name: str) -> str:
     if not node_name:
         return "unknown"
