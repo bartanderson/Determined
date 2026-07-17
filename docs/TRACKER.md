@@ -12,6 +12,103 @@ know where things stand.
 
 ---
 
+---
+
+## RM68 — Remove subrace concept from dj2 (DEFERRED)
+
+**Context:** The OG system rewrite replaced the original D&D data model with a more
+consistent system that has no subraces. The original D&D data had subraces; the OG
+system intentionally dropped them. The current dnd_data.py stubs (subraces,
+get_subraces_for_race, get_race_for_subrace, semantic_match_subrace,
+semantic_match_fighting_style) are not compatibility shims waiting to be filled --
+they are dead concept remnants. The concept should not exist, not be stubbed.
+
+**Design decision:** Remove the subrace concept entirely from dj2. Do not implement.
+
+**Scope (grep confirmed -- 3 files):**
+- `world/dnd_data.py` -- 5 stub functions + subrace references in data structures
+- `world/character_generator.py` -- subrace references (callers to remove)
+- `world/authority_system.py` -- subrace references (callers to remove)
+
+**Approach:**
+1. Trace all callers of subrace functions via Determined (blast_radius on subrace stubs)
+2. Remove subrace stubs from dnd_data.py
+3. Remove callers in character_generator.py and authority_system.py
+4. Verify no remaining references
+
+**Why deferred:** Correct thing to do but not blocking anything. Low blast radius.
+No other system depends on subraces returning real data (they already return []/None).
+
+---
+
+## RM67 — Convergence protocol (ACTIVE)
+
+Standing operating procedure. Not a feature — acceptance criteria and a per-session
+probe loop. Goal: finish the tool cleanly enough to get back to building the game.
+
+### Convergence definition
+
+**Per corpus:**
+1. Structural integrity — stub/is_tool/function_reference detection has no false positives;
+   real gaps are found; entry point detection is trustworthy.
+2. Probe passes — six canonical questions (entry points, blast radius, feature shape,
+   stubs, design drift, call chains) answered without confabulation or misrouting.
+3. Known gap ceiling — inferred EPs and open stubs are closed OR explicitly acknowledged
+   as "not statically resolvable, acceptable." No open unknowns.
+
+**Tool self-model:**
+- Determined analyzing Determined finds no false positives in its own detection.
+- Adversarial probe (session 140 pattern: 6 representative questions) passes.
+- No TRACKER items that actively break the canonical questions.
+
+### Language scope
+
+| Corpus | Target | Status |
+|--------|--------|--------|
+| Determined (Python) | Full convergence | structural integrity done; probe TBD |
+| dj2 (Python+JS) | Full convergence | 170 inferred EPs open; 13 stubs; probe TBD |
+| Commonplace (Python) | Full convergence | 1 stub (suggest_tags); probe TBD |
+| rotjs (TS) | Probe-passes | 6 stubs; lib/src dual-rep known |
+| dungeoncrawler (TS) | Probe-passes | 0 stubs; appears clean |
+| dnd-dungeon-gen (JS) | Probe-passes | 6 stubs; JS callee resolution gap known |
+| end-of-eden (Go) | Probe-passes | 0 stubs; 15% unresolved (external libs, correct) |
+| ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
+
+HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
+
+### Per-session probe loop (deterministic, no LLM)
+
+Run before any other work. Surface findings + what needs human input.
+
+1. **Stub sweep** — is_stub=1 across active corpora; classify: real gap / test mock /
+   Protocol false positive / dead code.
+2. **Unresolved edge ratio** — files with highest unresolved callee %; trust floor for
+   call chain answers.
+3. **ABC gaps** — find_abc_gaps on key subsystems; interface contract drift.
+4. **EP inferred count** — inferred vs. explicit EPs; movement signals real graph improvement.
+5. **Docstring health** — top-N missing + staleness; where is the knowledge layer thinnest?
+
+Report: "here's what I found / here's what needs your input / here's what I can close."
+
+### Open questions (need Bart's input)
+
+- [ ] dj2 170 inferred EPs: close aggressively or accept as dynamic-dispatch ceiling?
+- [ ] suggest_tags: real feature to implement, or intentional demo placeholder?
+- [ ] Demonstration corpora (Go/Rust/TS): important beyond "proof it works"?
+
+### Convergence status
+
+- [ ] Determined: structural integrity DONE; probe pending
+- [ ] dj2: partial; 170 inferred EPs + 13 stubs open
+- [ ] Commonplace: partial; 1 stub open
+- [ ] rotjs: probe pending
+- [ ] dungeoncrawler: probe pending
+- [ ] dnd-dungeon-gen: probe pending
+- [ ] end-of-eden: probe pending
+- [ ] ruggrogue: probe pending
+
+---
+
 ## Dashboard - at a glance
 
 **Last session (2026-07-16, session 196):** Determined corpus re-ingested (functions: 1904->2160, edges: 16588->18693). Fixed 2 stub detection bugs: (1) Protocol method ... bodies were false-positive stubs -- _is_protocol_class() + in_protocol param added to _is_stub; (2) readiness_check ORDER BY is_stub DESC to prefer stub rows on name collision. 5 new tests, 1063 total pass. resolve/suggest_tags now correctly detected; structural_score is confirmed dead code (no callers).
