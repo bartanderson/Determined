@@ -37,66 +37,13 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# Intent / removal classification — delegated to stub_classifier
 # ---------------------------------------------------------------------------
+# stub_classifier uses the SetFit-trained model when available and falls back
+# to the hybrid embedding+modal approach when the model file is not present.
 
-# Prototype sentences for embedding-based intent / removal detection.
-# Add new prototypes here when edge cases are found — never use regex patterns.
-_INTENT_PROTOTYPES = [
-    "implement this when the dependency is ready",
-    "to be implemented",
-    "returns placeholder until wired up",
-    "stub: fill in when prerequisite is built",
-    "this should do X once Y exists",
-    "not yet implemented, waiting on upstream",
-    "frontier: implement against endpoint",
-]
-
-_REMOVAL_PROTOTYPES = [
-    "this concept was removed and does not belong",
-    "deliberately absent, not part of this system",
-    "return empty, concept dropped by design",
-    "for compatibility only, not used",
-    "deprecated and no longer applicable",
-    "this feature does not exist in the new system",
-    "always returns empty, concept was eliminated",
-]
-
-# Similarity threshold for prototype matching (per-sentence, tuned against known cases)
-_INTENT_THRESHOLD = 0.35
-_REMOVAL_THRESHOLD = 0.35
-
-
-_MODAL_INTENT_RE = re.compile(
-    r'\b(would|should|could|meant to|intended to|is supposed to|is meant to)\b',
-    re.IGNORECASE,
-)
-
-
-def _embedding_match(text: str, prototypes: list, threshold: float) -> bool:
-    """
-    Return True if any sentence in text embeds close enough to any prototype.
-    Sentence-level matching avoids dilution from domain content in multi-sentence
-    docstrings pulling the full-text embedding away from the intent signal.
-    """
-    if not text or not text.strip():
-        return False
-    try:
-        from determined.oracle.embedding_model import embed_text, cosine_similarity
-        proto_vecs = [embed_text(p) for p in prototypes]
-        sentences = [s.strip() for s in re.split(r'[.\n]', text) if s.strip()]
-        for sentence in sentences:
-            vec = embed_text(sentence)
-            if any(cosine_similarity(vec, pv) >= threshold for pv in proto_vecs):
-                return True
-        return False
-    except Exception:
-        return False
-
-
-def _has_intent(text: str) -> bool:
-    """Semantic incompleteness markers (embedding) OR grammatical mood markers (modal verbs)."""
-    return _embedding_match(text, _INTENT_PROTOTYPES, _INTENT_THRESHOLD) or bool(_MODAL_INTENT_RE.search(text))
+from determined.agent.stub_classifier import has_intent as _has_intent
+from determined.agent.stub_classifier import has_removal as _has_removal
 
 # Body shapes: ordered from most- to least-specific
 _BODY_TRIVIAL_RETURN_RE = re.compile(
@@ -144,7 +91,7 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
     # ── 3. Intent / removal language ────────────────────────────────────
     all_text = " ".join(filter(None, [docstring, inline_comments]))
     has_intent = _has_intent(all_text)
-    has_removal = _embedding_match(all_text, _REMOVAL_PROTOTYPES, _REMOVAL_THRESHOLD)
+    has_removal = _has_removal(all_text)
     intent_text = all_text.strip() or None
 
     # ── 4. Caller / callee counts ────────────────────────────────────────
@@ -191,7 +138,7 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
         for sib_name, sib_doc, sib_line in sibling_rows:
             _, sib_inline = _extract_body(file_path, sib_line)
             sib_text = " ".join(filter(None, [sib_doc, sib_inline]))
-            if _embedding_match(sib_text, _REMOVAL_PROTOTYPES, _REMOVAL_THRESHOLD):
+            if _has_removal(sib_text):
                 removal_count += 1
         sibling_removal_trend = removal_count / sibling_stub_count
     else:
