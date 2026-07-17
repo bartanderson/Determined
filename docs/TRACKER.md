@@ -14,7 +14,7 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 194):** Full pipeline run on dj2 world/. Three gap fixes shipped: (1) verify_implementation body inspection (pass_only/return_empty/has_substance when still is_stub=1); (2) detect_doc_drift false-PASS fix + stub design_note sub-check; (3) explore_stub caller dedup. Then EP definition work: FQDN trap fixed (_has_callers bare+suffix), tier classifier (_ep_tier: explicit_http/explicit_tool/protocol/test/inferred), list_entry_points new tool. detect_doc_drift world/ now 8 explicit + 184 inferred gaps (was 638 undifferentiated). Next: function_reference edge type in parse_ast.py. 1043 pass.
+**Last session (2026-07-16, session 195):** RM65 + RM66 done. is_tool column added to functions table (parse_ast.py detects @tool() at ingest; agent_tools._ep_tier now reads column, not decorators_json string). _extract_function_references(): 3 patterns (dict Attribute values, 2-arg register calls, callback kwargs); depth==1 + no-self/cls guard limits false positives. 140 function_reference edges on dj2. builtins.py: 17/18 fns now have callers (was 0). Inferred EPs world/: 185->170. 20 new tests. 1063 pass.
 
 **Previous (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
 
@@ -210,55 +210,23 @@ each step result. 293/293 tests passing.
 
 ---
 
-RM65. **[TODO] function_reference edge type in parse_ast.py**
+RM65. **[DONE 2026-07-16] function_reference edge type in parse_ast.py**
 
-   **Origin:** Session 194 pipeline gap analysis. parse_ast.py only walks ast.Call
-   nodes. Function references passed as values -- dict literals, register_action()
-   calls, callback kwargs -- are invisible to the call graph. This causes real
-   registered functions (dj2 world/fsm/builtins.py: price_lt, price_ge, etc.) to
-   appear as EPs with no callers when they are in fact wired into the FSM registry
-   by adjudication_engine.__init__.
-
-   **Three patterns to detect (all Python-wall, all in parse_ast.py):**
-   1. ast.Dict values that are ast.Name/ast.Attribute resolving to a known function
-      -- `{'price_too_low': builtins.price_lt}` in a function call argument
-   2. Two-arg method calls of the form `obj.register(name, func)` /
-      `obj.register_action(name, func)` where second arg is a function reference
-   3. Callback keyword args: `Thread(target=func)`, `sorted(key=func)`,
-      `event_log.on_any(callback)` where the value is a function reference
-
-   **Edge type:** `function_reference` -- already in graph_edges schema.
-   _has_callers() queries graph_edges generically and picks it up automatically.
-   No tool-layer changes needed; just ingest and re-run list_entry_points.
-
-   **Files:** determined/ingestion/parse_ast.py (new _extract_function_references
-   pass), determined/ingestion/persistence_engine.py (wire into pipeline), new
-   regression tests.
-
-   **Verify:** re-ingest dj2, run list_entry_points world/ -- builtins.py functions
-   should gain callers and drop from inferred EP list.
+   _extract_function_references() in parse_ast.py: 3 patterns (dict Attribute values
+   depth==1 non-self/cls, 2-arg register calls, callback kwargs target=/key=/callback=).
+   Wired into parse_ast() after dynamic edges. 140 edges on dj2. builtins.py 17/18
+   fns gain callers. Inferred EPs world/ 185->170. 20 regression tests. 3 commits:
+   91dc6e9 (is_tool layer fix), 9993e06 (function_reference), 6f6cd36 (fp tightening).
 
 ---
 
-RM66. **[TODO] Layer audit: move Python-specific detection out of tool layer**
+RM66. **[DONE 2026-07-16] Layer audit: move Python-specific detection out of tool layer**
 
-   **Origin:** Session 194 architectural review. During EP definition work, some
-   Python-specific pattern detection crept into agent_tools.py (_ep_tier reads
-   decorators_json and checks for "tool(" string). The decorator case is borderline
-   (reads data the parser already extracted) but the principle is: language-specific
-   detection belongs behind the language wall, not in the shared tool layer.
-
-   **Scope:** Audit agent_tools.py for any Python-specific AST/syntax assumptions:
-   - String matching on decorator content (e.g. "tool(" in decorators_json)
-   - Name patterns specific to Python conventions (e.g. dunder detection, from_/to_ prefixes)
-   - Any logic that should instead be expressed as an edge_type or column set at ingest time
-
-   **Goal:** Tool layer queries graph data; it does not detect Python patterns.
-   Where detection is currently in agent_tools.py, either (a) move it to parse_ast.py
-   and store the result as a column/edge, or (b) confirm it's genuinely language-agnostic
-   (works correctly for Go/Rust/JS corpora too) and keep it.
-
-   **Do after RM65** -- function_reference edges may resolve some of these naturally.
+   is_tool INTEGER DEFAULT 0 added to functions table. parse_ast.py detects @tool(...)
+   via isinstance AST check at ingest time. _ep_tier() signature changed: takes is_tool
+   bool instead of decorators_json. Both list_entry_points and detect_doc_drift SELECT
+   is_tool; no more string matching in tool layer. Migration guard added for existing DBs.
+   Commit: 91dc6e9.
 
 ---
 
