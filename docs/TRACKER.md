@@ -14,7 +14,9 @@ know where things stand.
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 195):** RM65 + RM66 done. is_tool column added to functions table (parse_ast.py detects @tool() at ingest; agent_tools._ep_tier now reads column, not decorators_json string). _extract_function_references(): 3 patterns (dict Attribute values, 2-arg register calls, callback kwargs); depth==1 + no-self/cls guard limits false positives. 140 function_reference edges on dj2. builtins.py: 17/18 fns now have callers (was 0). Inferred EPs world/: 185->170. 20 new tests. 1063 pass.
+**Last session (2026-07-16, session 196):** Determined corpus re-ingested (functions: 1904->2160, edges: 16588->18693). Fixed 2 stub detection bugs: (1) Protocol method ... bodies were false-positive stubs -- _is_protocol_class() + in_protocol param added to _is_stub; (2) readiness_check ORDER BY is_stub DESC to prefer stub rows on name collision. 5 new tests, 1063 total pass. resolve/suggest_tags now correctly detected; structural_score is confirmed dead code (no callers).
+
+**Previous (2026-07-16, session 195):** RM65 + RM66 done. is_tool column added to functions table (parse_ast.py detects @tool() at ingest; agent_tools._ep_tier now reads column, not decorators_json string). _extract_function_references(): 3 patterns (dict Attribute values, 2-arg register calls, callback kwargs); depth==1 + no-self/cls guard limits false positives. 140 function_reference edges on dj2. builtins.py: 17/18 fns now have callers (was 0). Inferred EPs world/: 185->170. 20 new tests. 1063 pass.
 
 **Previous (2026-07-16, session 192):** RM10 done: goal_intake intent classifier (2A) + trace routing (2B). _classify_goal_type() detects investigate|trace|explain|implement. Investigate goals get READ + BLAST_RADIUS plan (no MODIFY/EXTEND). Trace goals call walk_call_chain() and surface the call path inline. 19 new tests. 1030 pass.
 
