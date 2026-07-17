@@ -330,7 +330,7 @@ def test_classify_stub_missing_arg():
 def test_classify_stub_not_stub():
     conn = _make_db(non_stubs=[{"name": "real_fn"}])
     result = classify_stub(_FakeAssessor(conn), {"symbol": "real_fn"})
-    assert "not a stub" in result
+    assert "not found" in result
 
 
 def test_classify_stub_output_contains_symbol():

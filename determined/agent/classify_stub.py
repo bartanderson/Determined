@@ -40,37 +40,63 @@ if TYPE_CHECKING:
 # Constants
 # ---------------------------------------------------------------------------
 
-# Intent language: phrases that signal the author described the behaviour
-# but left implementation for later.  Language-agnostic.
-# RULE: all patterns must be generic structural/semantic language any author
-# would use.  Never add corpus-specific terms (class names, system names,
-# domain nouns) — they overfit to one codebase and mislead on others.
-_INTENT_PATTERNS = [
-    r'\bwould\b', r'\bwill\b', r'\bshould\b', r'\bintended to\b',
-    r'\bis meant to\b', r'\bneeds to\b', r'\bwhen .+ is built\b',
-    r'\bcan be added\b', r'\badditional .+ here\b', r'\btrigger\b',
-    r'\bhandle\b', r'\bprocess\b', r'\bpull from\b', r'\bquery\b',
-    r'\bimplemented when\b', r'\bto be implemented\b',
+# Prototype sentences for embedding-based intent / removal detection.
+# Add new prototypes here when edge cases are found — never use regex patterns.
+_INTENT_PROTOTYPES = [
+    "implement this when the dependency is ready",
+    "to be implemented",
+    "returns placeholder until wired up",
+    "stub: fill in when prerequisite is built",
+    "this should do X once Y exists",
+    "not yet implemented, waiting on upstream",
+    "frontier: implement against endpoint",
 ]
-_INTENT_RE = re.compile('|'.join(_INTENT_PATTERNS), re.IGNORECASE)
 
-# Removal/obsolescence language: author explicitly states the concept doesn't
-# belong, was removed, or is a compatibility placeholder.
-# RULE: all patterns must be generic structural/semantic language any author
-# would use.  Never add corpus-specific terms (class names, system names,
-# domain nouns) — they overfit to one codebase and mislead on others.
-_REMOVAL_PATTERNS = [
-    r"\bdoesn'?t have\b", r'\bnot (have|applicable|used|supported|needed)\b',
-    r'\bno longer\b', r'\bremoved\b', r'\bobsolete\b', r'\bdeprecated\b',
-    r'\bnot in\b', r'\bnot part of\b', r'\bdropped\b',
-    r'\bfor compatibility\b', r'\bcompat(ibility)? (stub|shim|placeholder)\b',
-    r'\breturn empty\b', r'\balways empty\b', r'\bnever used\b',
-    r'\bnot implement', r'\bdoes not exist\b',
-    r'\bno \w+ in\b',   # "No X in [system/context]" — author stating concept absence
-    # All patterns above must be corpus-agnostic structural/semantic language.
-    # Never add project-specific terms (class names, system names, domain nouns).
+_REMOVAL_PROTOTYPES = [
+    "this concept was removed and does not belong",
+    "deliberately absent, not part of this system",
+    "return empty, concept dropped by design",
+    "for compatibility only, not used",
+    "deprecated and no longer applicable",
+    "this feature does not exist in the new system",
+    "always returns empty, concept was eliminated",
 ]
-_REMOVAL_RE = re.compile('|'.join(_REMOVAL_PATTERNS), re.IGNORECASE)
+
+# Similarity threshold for prototype matching (per-sentence, tuned against known cases)
+_INTENT_THRESHOLD = 0.35
+_REMOVAL_THRESHOLD = 0.35
+
+
+_MODAL_INTENT_RE = re.compile(
+    r'\b(would|should|could|meant to|intended to|is supposed to|is meant to)\b',
+    re.IGNORECASE,
+)
+
+
+def _embedding_match(text: str, prototypes: list, threshold: float) -> bool:
+    """
+    Return True if any sentence in text embeds close enough to any prototype.
+    Sentence-level matching avoids dilution from domain content in multi-sentence
+    docstrings pulling the full-text embedding away from the intent signal.
+    """
+    if not text or not text.strip():
+        return False
+    try:
+        from determined.oracle.embedding_model import embed_text, cosine_similarity
+        proto_vecs = [embed_text(p) for p in prototypes]
+        sentences = [s.strip() for s in re.split(r'[.\n]', text) if s.strip()]
+        for sentence in sentences:
+            vec = embed_text(sentence)
+            if any(cosine_similarity(vec, pv) >= threshold for pv in proto_vecs):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _has_intent(text: str) -> bool:
+    """Semantic incompleteness markers (embedding) OR grammatical mood markers (modal verbs)."""
+    return _embedding_match(text, _INTENT_PROTOTYPES, _INTENT_THRESHOLD) or bool(_MODAL_INTENT_RE.search(text))
 
 # Body shapes: ordered from most- to least-specific
 _BODY_TRIVIAL_RETURN_RE = re.compile(
@@ -103,25 +129,22 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
     # ── 1. Fetch stub row ────────────────────────────────────────────────
     row = conn.execute(
         "SELECT name, file_path, line_number, docstring, param_types_json, "
-        "return_type, is_stub FROM functions WHERE name = ? LIMIT 1",
+        "return_type, is_stub FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1",
         (fqdn,)
     ).fetchone()
 
     if not row:
-        return {"error": f"symbol '{fqdn}' not found"}
+        return {"error": f"stub '{fqdn}' not found"}
 
     name, file_path, line_number, docstring, ptj, return_type, is_stub = row
-
-    if not is_stub:
-        return {"error": f"'{fqdn}' is not a stub"}
 
     # ── 2. Body shape ────────────────────────────────────────────────────
     body_shape, inline_comments = _extract_body(file_path, line_number)
 
     # ── 3. Intent / removal language ────────────────────────────────────
     all_text = " ".join(filter(None, [docstring, inline_comments]))
-    has_intent = bool(_INTENT_RE.search(all_text))
-    has_removal = bool(_REMOVAL_RE.search(all_text))
+    has_intent = _has_intent(all_text)
+    has_removal = _embedding_match(all_text, _REMOVAL_PROTOTYPES, _REMOVAL_THRESHOLD)
     intent_text = all_text.strip() or None
 
     # ── 4. Caller / callee counts ────────────────────────────────────────
@@ -168,7 +191,7 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
         for sib_name, sib_doc, sib_line in sibling_rows:
             _, sib_inline = _extract_body(file_path, sib_line)
             sib_text = " ".join(filter(None, [sib_doc, sib_inline]))
-            if sib_text and _REMOVAL_RE.search(sib_text):
+            if _embedding_match(sib_text, _REMOVAL_PROTOTYPES, _REMOVAL_THRESHOLD):
                 removal_count += 1
         sibling_removal_trend = removal_count / sibling_stub_count
     else:
@@ -181,7 +204,7 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
     doc = (docstring or "").strip()
     if not doc:
         docstring_quality = "none"
-    elif _INTENT_RE.search(doc):
+    elif _has_intent(doc):
         docstring_quality = "behavioral"
     else:
         docstring_quality = "placeholder"
