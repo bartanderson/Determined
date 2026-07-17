@@ -1,135 +1,130 @@
-Written at commit: b4c0b6f
+Written at commit: 8129447
 
-# SESSION STATE - session 196
+# SESSION STATE - session 197
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 196, 2026-07-17)
+## What happened this session (session 197, 2026-07-17)
 
-**Determined corpus re-ingested [V]** (no commit -- DB only)
-  functions: 1,904 -> 2,160 (+256 from new sessions' code)
-  graph_edges: 16,588 -> 18,693 (+2,105)
-  function_reference edges: 54
-  is_tool=1: 0 (correct -- Determined doesn't use @tool() decorator)
-  BOM parse errors on ~25 test files are pre-existing/benign.
+**Commonplace re-ingested [V]** (9a50ef8)
+  functions: 61, edges: 292 (+51 from cross-file resolution), 1 stub (suggest_tags).
 
-**Stub audit: used the tool on itself [V]**
-  Ran readiness_check + explore_stub + completion_contract on all 3 "real" stubs.
-  Found 2 bugs in the tool's own stub detection before touching any implementation.
+**RM67 filed: Convergence protocol [V]** (b8dd169)
+  Standing operating procedure. Convergence definition (structural integrity +
+  probe passes + known gap ceiling). Language scope table. Per-session probe loop
+  (5 probes, deterministic, no LLM). Three open questions for Bart.
+  See TRACKER.md RM67.
 
-**Fix 1: Protocol false-positive stubs [V]** (6a44058)
-  SymbolOriginResolver.resolve (a Protocol abstract method with ... body) was
-  flagged is_stub=1. Fix: _is_protocol_class() helper detects Protocol base;
-  _iter_top_level_functions now yields (node, in_protocol) tuple;
-  _is_stub(node, in_protocol=False) returns False for Protocol methods.
-  Files: determined/ingestion/parse_ast.py
-  5 new tests added to test_stub_detection.py.
+**RM67 first probe pass run [V]** (no commit -- probe scripts in scratchpad)
+  Ran against Determined, dj2, Commonplace. Found two bad queries:
+  - unresolved ratio was measuring annotation-resolution (resolved col), not unknown callees
+  - EP query used nonexistent edge types
+  Fixed in probe_pass2.py. Key findings surfaced (see below).
 
-**Fix 2: readiness_check name collision [V]** (6a44058)
-  suggest_tags exists in 3 example subdirs (seed/, commonplace/, enhanced/).
-  LIMIT 1 with no ordering returned the seed version (is_stub=0) instead of
-  the actual stub. Fix: ORDER BY is_stub DESC LIMIT 1.
-  File: determined/agent/agent_tools.py
+**RM68 filed: Remove subrace concept from dj2 [V]** (b8dd169)
+  OG system rewrite intentionally dropped subraces. 5 stubs in dnd_data.py are
+  dead concept remnants, not implementation gaps. Remove entirely.
+  Scope: dnd_data.py, character_generator.py, authority_system.py.
+  Capn charted: e9cfb9d1. DEFERRED.
 
-**Delete structural_score dead code [V]** (b4c0b6f)
-  evaluation_snapshot.py:27 -- stub returning 0, no callers anywhere.
-  build_evaluation_snapshot already computes node degree/high-fanout directly.
-  Confirmed dead via grep + explore_stub "no callers resolved".
-  File: determined/graph/evaluation_snapshot.py
-
-**Test results [V]**
-  1068 passed, 1 skipped (after all three commits).
-
-**Capn charted [V]**
-  a99b8bb7: Protocol stub false positive pattern + readiness_check name collision fix.
-
-## Stub status after this session [V]
-
-All 3 previously flagged "real stubs" resolved:
-  - structural_score: DELETED (dead code)
-  - resolve: FALSE POSITIVE fixed (Protocol method, not an implementation gap)
-  - suggest_tags: now correctly detected as READY; callees _call_llm, _parse_tags, _keyword_tags
-
-Remaining is_stub=1 in Determined DB: test fixture mocks (find_symbols, find_files,
-  discover_seed_symbols, etc.) -- intentional, not gaps. Nothing actionable.
+**RM69 filed: Judgment layer design [V]** (8129447)
+  classify_stub: scored competing hypotheses (concept-not-applicable,
+  blocked-on-prerequisite, design-intent-stated, genuinely-unknown).
+  Deterministic signals first (comment patterns, concept presence, caller graph,
+  sibling density, body shape). LLM as tie-breaker only.
+  Corpus-level projections: file shape, subsystem shape, prerequisite map,
+  concept ghost map. Three presentation modes.
+  Validation set: dj2 stubs (known answers). UI surface: depends on UI redesign.
+  See TRACKER.md RM69.
 
 ## NEXT SESSION -- start here
 
-Options in priority order:
+**Continue RM67 probe pass -- remaining dj2 stubs classified:**
 
-1. **Implement suggest_tags** (LOW-MEDIUM priority)
-   File: examples/commonplace/services/tagger.py
-   Callees already exist: _call_llm, _parse_tags, _keyword_tags
-   Run: python scratchpad/probe_contracts.py (or completion_contract('suggest_tags'))
-   Blocked on: decide if LLM integration is wanted now vs. later.
+dj2 real implementation gaps (5) -- all in AI/adjudication layer:
+  - process_consequences    (ai_dungeon_master.py:282) -- design-intent-stated
+  - _register_world_tools   (ai_integration.py:219)   -- design-intent-stated (extension point)
+  - _get_encounter_context  (context_builder.py:167)  -- blocked-on-prerequisite (EncounterFSM)
+  - _get_combat_context     (context_builder.py:172)  -- blocked-on-prerequisite (CombatFSM)
+  - on_arc_completed        (narrative_engine.py:52)  -- design-intent-stated
 
-2. **Re-ingest Commonplace corpus**
-   Hasn't been re-ingested since is_tool + function_reference were added.
-   Same EngineRunner pattern as Determined re-ingest. Script in scratchpad/reingest_determined.py
-   -- copy and adjust CORPUS_ROOT + DB_PATH.
+dj2 compatibility stubs (5 in dnd_data.py) -- RM68, remove not implement.
 
-3. **Continue dj2 stub work**
-   170 inferred EPs remain in world/. 8 BLOCKED stubs from session 194 still open.
-   Next target: AdjudicationEngine._execute_purchase / _execute_sell.
+**Three open questions from RM67 (need Bart's input):**
+  - [ ] dj2 331 inferred EPs: accept as dynamic-dispatch ceiling?
+  - [ ] suggest_tags: implement or permanent demo placeholder?
+  - [ ] Go/Rust/TS corpora: important beyond "proof it works"?
 
-4. **Alias-map filter for function_reference (low priority)**
-   ~10 residual false edges (state.party_position, event.actor_id) from depth-1 local vars.
-   Fix: pass alias_map into _extract_function_references.
-   File: determined/ingestion/parse_ast.py. No correctness impact.
+**RM69 is next implementation item after probe pass complete:**
+  Start with signal extractor pass (deterministic). Use dj2 stubs as test set.
+  Do NOT design UI surface yet -- UI redesign not started.
 
-## Meta: what improved this session [V]
+**Probe scripts in scratchpad (reuse next session):**
+  probe_pass2.py -- fixed queries, runs against all 3 Python corpora
+  reingest_determined.py, reingest_commonplace.py -- for re-ingests
 
-"Probe with the tool first" loop worked:
-  - ran readiness_check/explore_stub BEFORE writing code
-  - found 2 bugs in the tool itself, fixed them first
-  - entry point for probing: determined/ask.py or scratchpad/probe_stubs.py
+## Key probe findings (session 197) [V]
 
-Capn charting gap identified: under-charting non-obvious findings. agent_tools call
-pattern (assessor + args_dict) now charted. Chart aggressively after any re-derivation.
+**Determined:**
+  3 real stubs: 2 empty __init__ (borderline), 1 suggest_tags (known)
+  EP inferred: 126 (LLM orchestration layer, expected ceiling)
+  Docstring missing: 464/1097 (42%, excl __init__ and tests)
 
-## Corpus status [V] (Determined re-ingested this session; others from session 195)
+**dj2:**
+  10 real stubs: 5 OG-compat (RM68 remove), 5 AI-layer gaps
+  EP inferred: 331 (ai_boundary.py functions, likely dynamic dispatch ceiling)
+  Docstring missing: 566/1116 (50%, JS pulls this up -- JS has 0% docstrings)
+  is_tool=23, function_reference=140
+
+**Commonplace:**
+  1 real stub: suggest_tags
+  Unknown callee ratio varies 72-100% (Flask/SQLite external calls, expected)
+  Docstring missing: 40/58 (68%, small corpus)
+
+## Design decisions recorded this session [V]
+
+"Probe before implement" loop validated -- running readiness_check/explore_stub
+  found 2 bugs last session before any code was written. Capn entry a99b8bb7.
+
+Judgment layer rationale: differential diagnosis model, abductive reasoning,
+  spectrum-based fault localization. Show competing hypotheses with evidence,
+  not single confident answer. Developer supplies domain axioms.
+
+Sparse array insight (Bart): individual stub judgments aggregate into corpus
+  shapes (subsystem skeletons, concept ghosts, prerequisite maps). This is the
+  corpus-level projection layer in RM69.
+
+## Corpus status [V]
 
 | Corpus | Syms | Edges | Stubs | Notes |
 |--------|------|-------|-------|-------|
-| Determined (Python) | 2,160 | 18,693 | 0 real | re-ingested [V]; Protocol fix applied |
-| dj2 (Python+JS) | ~1,400 | ~10,000+ | 13 | re-ingested session 195; world/ 170 inferred EPs |
-| end-of-eden (Go) | 533 | 7,494 | 0 | complete |
-| ruggrogue (Rust) | 337 | 2,741 | 0 | complete |
-| dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested session 195 |
-| dungeoncrawler (TS) | 78 | 192 | 0 | complete |
-| rotjs (TS) | 626 | 2,239 | 6 | lib/src warning in list_features |
-| Commonplace (Python) | 61 | 292 | 1 | re-ingested session 196; 1 stub: suggest_tags (tagger.py) |
+| Determined (Python) | 2,159 | 18,693 | 0 real | re-ingested; Protocol fix applied |
+| dj2 (Python+JS) | ~1,400 | 10,071 | 10 real | 5 RM68-remove, 5 AI-layer gaps |
+| Commonplace (Python) | 61 | 292 | 1 | suggest_tags |
+| end-of-eden (Go) | 533 | 7,494 | 0 | probe pending |
+| ruggrogue (Rust) | 337 | 2,741 | 0 | probe pending |
+| dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | probe pending |
+| dungeoncrawler (TS) | 78 | 192 | 0 | probe pending |
+| rotjs (TS) | 626 | 2,239 | 6 | probe pending |
 
 ## Known issues (carried forward)
 
-**walk_call_chain FQDN trap [V]:** FIXED session 188.
-**concept extraction scope [V]:** single-word capitalised English words excluded by design.
-**ingest route trap [V]:** Python corpora use EngineRunner. ingest_lang_corpus.py is Go/Rust/JS/TS only.
-**interface_dispatch caller_file empty [V]:** Interface types not in functions table.
-**addEventListener arrow fn not captured [V]:** Inline arrow callbacks not statically linkable.
-**find_abc_gaps same-file blind spot [V]:** Base + subclasses in same file = false gap.
-**GUIDE_DATA sync trap [V]:** guide_commonplace.json and console.html GUIDE_DATA separate.
-**Determined corpus DB path [V]:** C_Users_bartl_dev_Determined.db
-**RM40 opt-in trap [V]:** resolved_only defaults False. Pass resolved_only=True explicitly.
-**DB schema trap [V]:** graph_edges: caller/callee cols not callee_fqdn; no callee_file for JS.
-  knowledge_artifacts uses 'kind' not 'artifact_type'. files uses 'file_path' not 'path'.
-**dj2 ignore dirs trap [V]:** .determinedignore in dj2 repo covers all exclusions.
-**normalize_symbol strips :: [V]:** "Module::Fn" -> "Fn". Watch for Rust FQDN collisions.
-**Go resolution 15% [V]:** Correct -- unresolved are external libs.
-**JS typed params N/A [V]:** Plain JS has no type syntax. 0% is correct.
-**RM62 callee writeback trap [V]:** After resolution post-pass, callee is qualified FQDN.
-  EP detection must use bare OR '%.name' suffix.
-**trace_data_flow collision [V]:** "call path from X to db" routes to trace_data_flow not
-  trace_call_chain; benign, answer correct.
-**function_reference residual noise [V]:** ~10 false edges from depth-1 local vars (state.x,
-  event.y). No correctness impact. Fix: pass alias_map to _extract_function_references.
-**EP inferred count floor [V]:** 170 inferred EPs remain in dj2 world/. Not a bug.
-**agent_tools call pattern trap [V]:** Tools take (assessor, args_dict) not (db_path=...).
-  Entry point: determined/ask.py ask(db_path, question) wraps oracle+assessor setup.
-**Protocol stub false positive [V]:** FIXED session 196. Protocol ... methods now is_stub=0.
+**agent_tools call pattern trap [V]:** Tools take (assessor, args_dict).
+  Entry point: determined/ask.py ask(db_path, question).
+**Protocol stub false positive [V]:** FIXED session 196.
 **readiness_check name collision [V]:** FIXED session 196. ORDER BY is_stub DESC.
+**DB schema trap [V]:** graph_edges: caller/callee not callee_fqdn; no callee_file for JS.
+  knowledge_artifacts uses 'kind'. files uses 'file_path'.
+**dj2 ignore dirs trap [V]:** .determinedignore covers all exclusions.
+**RM62 callee writeback trap [V]:** callee is qualified FQDN post-resolution.
+**function_reference residual noise [V]:** ~10 false edges depth-1 local vars.
+**EP inferred count floor [V]:** 331 dj2 / 126 Determined -- dynamic dispatch, not bugs.
+**resolved col != unknown callee [V]:** graph_edges.resolved=0 means not annotation-resolved,
+  NOT unknown callee. Use LEFT JOIN functions ON name to find truly unknown callees.
+**probe_pass2.py duplicate rows [V]:** unknown callee ratio query has LEFT JOIN artifact
+  producing duplicate file entries. Fix before next calibration pass.
 
 LLM server: llama-server.exe at C:\Users\bartl\models\llama-server\llama-server.exe,
-  model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081, --ctx-size 32768.
+  model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081.
   Started manually for CLI use; UI starts it on-demand.
