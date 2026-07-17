@@ -14,6 +14,93 @@ know where things stand.
 
 ---
 
+## RM69 — Judgment layer: classify_stub + corpus-level projections (DESIGN)
+
+### Problem
+
+The tool currently answers "is this a stub?" (binary fact).
+What is needed: "what kind of stub is this, why, and how does it relate to
+the stubs around it?" -- a graded judgment with evidence, ranking, and
+corpus-level shape.
+
+Single-function judgment is only the first projection. Functions sit in a
+sparse array across a file, subsystem, and corpus. The pattern of where
+signals appear and cluster is itself information: a cluster of blocked stubs
+in one subsystem says "this subsystem is a design skeleton" -- something
+invisible from any individual function.
+
+### Function-level judgment (first projection)
+
+Input: stub function + docstring + inline comments + caller count +
+callee presence + concept presence across repo + sibling stub count in class/file.
+
+Output: ranked competing hypotheses with evidence. Four classifications:
+  - concept-not-applicable  (concept absent in data layer; OG system dropped it)
+  - blocked-on-prerequisite (will be implemented when X is built; X not yet built)
+  - design-intent-stated    (comment describes behavior; prereqs exist; not done)
+  - genuinely-unknown       (pass/trivial return, no signal, no callers)
+
+Each hypothesis scored 0.0-1.0. Show all above threshold (~0.35) with evidence.
+When top score < 0.4: return UNCERTAIN with raw signals + what would resolve it.
+
+Signal weights (priority order):
+  1. Comment/docstring intent language -- strongest
+  2. Concept presence across repo (zero = concept-not-applicable signal)
+  3. Caller graph (zero callers + no siblings = dead; callers in core = alive)
+  4. Sibling stub pattern (class/file stub density)
+  5. Body shape -- weakest alone, strongest in combination
+
+LLM escalation: only when deterministic signals produce low confidence.
+LLM is tie-breaker, not primary analyzer.
+
+### Corpus-level projections (second projection)
+
+Function judgments aggregate into higher-level shapes:
+
+  File shape: stub density + dominant classification.
+  Subsystem shape: clustered blocked stubs = design skeleton waiting on prerequisite.
+    Clustered concept-not-applicable = dead concept remnant, not a gap.
+  Prerequisite map: N stubs blocked on same X → X is a build priority.
+  Concept ghost map: concepts in stubs absent from live codebase = removal candidates.
+
+### Ranking and presentation (three modes)
+
+  Question-driven: "what should I work on next in X?"
+    → filter + rank by (callers waiting) * (hypothesis confidence)
+  Observation-driven (perusal): browsing a file/subsystem
+    → surface top 2-3 interesting judgment clusters unprompted
+  Gap survey: "show me what's incomplete"
+    → ranked list grouped by classification + subsystem with aggregate summary
+
+### Open design questions
+
+- [ ] Hypothesis count cap (3? all above threshold?)
+- [ ] Threshold calibration against known cases (dj2 stubs are the test set)
+- [ ] Concept presence: grep-based or embedding-based? (grep first)
+- [ ] Prerequisite map: match named concepts across blocked-on comments
+- [ ] UI/flow: how corpus-level projections surface -- NOT DESIGNED (separate item)
+- [ ] Ranking formula calibration needs real cases
+
+### Dependencies / not yet started
+
+- UI/flow/usability redesign for judgment surfaces: not designed
+- Gap analysis not complete across all corpora (RM67 probe loop underway)
+- Validation set: dj2 stubs are first known-answer test cases
+- Signal weight calibration needs real cases
+
+### Implementation order (when ready)
+
+1. Signal extractor pass (deterministic): body shape, comment patterns,
+   caller count, concept presence grep, sibling density
+2. Hypothesis scorer: weight signals → scores per classification
+3. classify_stub tool: function-level judgment output
+4. Validate against dj2 known-answer stubs
+5. Corpus aggregation: file shape, subsystem shape, prerequisite map
+6. Ranking integration into explore_stub, feature_shape, etc.
+7. UI/presentation layer -- after UI redesign
+
+---
+
 ## RM68 — Remove subrace concept from dj2 (DEFERRED)
 
 **Context:** The OG system rewrite replaced the original D&D data model with a more
