@@ -4335,7 +4335,7 @@ def readiness_check(assessor: "Assessor", args: dict) -> str:
     # ── Tier 1: symbol exists and is incomplete ───────────────────────
     fn_row = conn.execute(
         "SELECT name, file_path, line_number, is_stub, param_types_json, return_type "
-        "FROM functions WHERE name = ? LIMIT 1",
+        "FROM functions WHERE name = ? ORDER BY is_stub DESC LIMIT 1",
         (symbol,),
     ).fetchone()
     if not fn_row:

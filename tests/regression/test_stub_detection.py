@@ -5,7 +5,7 @@
 # and "STUB:" docstring prefix.
 
 import ast
-from determined.ingestion.parse_ast import _is_stub, _extract_functions
+from determined.ingestion.parse_ast import _is_stub, _extract_functions, _is_protocol_class
 
 
 def _parse_fn(src: str):
@@ -108,3 +108,59 @@ def test_docstring_stub_case_insensitive_yes():
     fns = _extract_functions(ast.parse(src))
     assert fns, "no functions extracted"
     assert fns[0].is_stub
+
+
+# --- Protocol method suppression (new) ---
+
+def test_protocol_method_ellipsis_not_stub():
+    src = (
+        "from typing import Protocol\n"
+        "class MyProto(Protocol):\n"
+        "    def resolve(self, symbol: str) -> str:\n"
+        "        ...\n"
+    )
+    fns = _extract_functions(ast.parse(src))
+    assert fns, "no functions extracted"
+    fn = next(f for f in fns if f.name == "resolve")
+    assert not fn.is_stub, "Protocol method should not be flagged as stub"
+
+
+def test_protocol_method_pass_not_stub():
+    src = (
+        "from typing import Protocol\n"
+        "class MyProto(Protocol):\n"
+        "    def do_thing(self) -> None:\n"
+        "        pass\n"
+    )
+    fns = _extract_functions(ast.parse(src))
+    fn = next(f for f in fns if f.name == "do_thing")
+    assert not fn.is_stub
+
+
+def test_non_protocol_class_ellipsis_is_stub():
+    src = (
+        "class Plain:\n"
+        "    def resolve(self) -> str:\n"
+        "        ...\n"
+    )
+    fns = _extract_functions(ast.parse(src))
+    fn = next(f for f in fns if f.name == "resolve")
+    assert fn.is_stub, "Non-Protocol ... body should still be a stub"
+
+
+def test_is_protocol_class_detects_protocol_base():
+    src = (
+        "from typing import Protocol\n"
+        "class MyProto(Protocol):\n"
+        "    pass\n"
+    )
+    tree = ast.parse(src)
+    cls = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))
+    assert _is_protocol_class(cls)
+
+
+def test_is_protocol_class_false_for_plain():
+    src = "class Plain:\n    pass\n"
+    tree = ast.parse(src)
+    cls = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))
+    assert not _is_protocol_class(cls)

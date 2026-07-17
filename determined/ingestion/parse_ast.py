@@ -113,9 +113,11 @@ def _is_trivial_return(node: ast.Return) -> bool:
     return False
 
 
-def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef, in_protocol: bool = False) -> bool:
     """True if the function body contains only stub-like statements.
-    Abstract method declarations are never stubs -- they are interface definitions."""
+    Abstract method declarations and Protocol method definitions are never stubs."""
+    if in_protocol:
+        return False
     for dec in node.decorator_list:
         dec_str = getattr(dec, "id", "") or getattr(dec, "attr", "")
         if dec_str == "abstractmethod":
@@ -144,17 +146,25 @@ def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return True
 
 
+def _is_protocol_class(class_node: ast.ClassDef) -> bool:
+    for base in class_node.bases:
+        name = getattr(base, "id", None) or getattr(base, "attr", None)
+        if name == "Protocol":
+            return True
+    return False
+
+
 def _iter_top_level_functions(tree: ast.AST):
-    """Yield FunctionDef/AsyncFunctionDef at module or class scope only.
+    """Yield (FunctionDef, in_protocol) at module or class scope only.
     Skips functions nested inside other functions (inner classes, closures).
     """
-    def _visit(stmts):
+    def _visit(stmts, in_protocol=False):
         for node in stmts:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                yield node
+                yield node, in_protocol
                 # do NOT recurse into function bodies — skip nested defs
             elif isinstance(node, ast.ClassDef):
-                yield from _visit(node.body)
+                yield from _visit(node.body, in_protocol=_is_protocol_class(node))
 
     yield from _visit(ast.iter_child_nodes(tree))
 
@@ -238,7 +248,7 @@ def _collect_comments(source: str) -> dict:
 def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> List[FunctionRepresentation]:
     results: List[FunctionRepresentation]= []
 
-    for node in _iter_top_level_functions(tree):
+    for node, in_protocol in _iter_top_level_functions(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             args = [
                 arg.arg
@@ -299,7 +309,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     param_types=param_types,
                     return_type=ast.unparse(node.returns) if getattr(node, "returns", None) else None,
                     docstring=docstring,
-                    is_stub=_is_stub(node) or stub_by_doc,
+                    is_stub=_is_stub(node, in_protocol) or stub_by_doc,
                     decorators=decorators,
                     inline_notes=inline_notes,
                     http_route=http_route,
