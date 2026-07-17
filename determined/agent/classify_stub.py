@@ -45,6 +45,159 @@ if TYPE_CHECKING:
 from determined.agent.stub_classifier import has_intent as _has_intent
 from determined.agent.stub_classifier import has_removal as _has_removal
 
+# ---------------------------------------------------------------------------
+# Lifecycle method detection (language-specific)
+# ---------------------------------------------------------------------------
+
+# Python dunder methods that appear in every class and cannot be classified
+# by name alone — need class context.
+_PYTHON_MAGIC_METHODS = frozenset({
+    "__init__", "__new__", "__del__",
+    "__str__", "__repr__", "__bytes__", "__format__",
+    "__len__", "__length_hint__", "__bool__",
+    "__call__", "__hash__", "__eq__", "__ne__",
+    "__lt__", "__le__", "__gt__", "__ge__",
+    "__getitem__", "__setitem__", "__delitem__", "__contains__",
+    "__iter__", "__next__", "__reversed__",
+    "__enter__", "__exit__",
+    "__get__", "__set__", "__delete__",
+    "__getattr__", "__setattr__", "__delattr__",
+    "__add__", "__sub__", "__mul__", "__truediv__",
+    "__radd__", "__rsub__", "__rmul__",
+    "__iadd__", "__isub__", "__imul__",
+    "__neg__", "__pos__", "__abs__",
+    "__int__", "__float__", "__index__",
+    "__await__", "__aiter__", "__anext__",
+    "__aenter__", "__aexit__",
+})
+
+# Base class names that indicate interface/contract role (not implementation gaps)
+_ABC_BASES = frozenset({"Protocol", "ABC", "ABCMeta"})
+
+# self.attr = assignment pattern (Python __init__ body check)
+_SELF_ASSIGN_RE = re.compile(r'\bself\.\w+\s*=')
+
+
+def _is_lifecycle_method(name: str, file_path: str | None) -> bool:
+    """
+    True if name is a constructor/lifecycle method that appears in every class
+    and cannot be classified by bare name alone.
+
+    Python: dunder methods (__init__, __str__, etc.)
+    JS/TS:  constructor
+    Other languages: False (no equivalent naming convention to detect statically)
+    """
+    ext = (file_path or "").rsplit(".", 1)[-1].lower()
+    if ext == "py":
+        return name in _PYTHON_MAGIC_METHODS
+    if ext in ("js", "ts", "jsx", "tsx"):
+        return name == "constructor"
+    # Default: treat Python-style dunders as lifecycle even without file context
+    return name.startswith("__") and name.endswith("__") and len(name) > 4
+
+
+def _check_init_self_assigns(file_path: str, line_number: int | None) -> bool:
+    """
+    Return True if the __init__ body at line_number assigns at least one
+    self.attr = value.  Returns True (unknown/assumed assigned) on any error.
+    Only meaningful for Python __init__.
+    """
+    if not line_number:
+        return True
+    try:
+        with open(file_path, encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        start = line_number  # 1-based; this is the def line
+        if start < 1 or start > len(lines):
+            return True
+        def_indent = len(lines[start - 1]) - len(lines[start - 1].lstrip())
+        for line in lines[start:start + 40]:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            indent = len(line) - len(line.lstrip())
+            if indent <= def_indent and not stripped.startswith('#'):
+                break
+            if _SELF_ASSIGN_RE.search(line):
+                return True
+        return False
+    except OSError:
+        return True
+
+
+def _extract_class_context(
+    conn,
+    name: str,
+    file_path: str | None,
+    class_name: str | None = None,
+    line_number: int | None = None,
+) -> dict:
+    """
+    Extract class-level signals for a lifecycle method.
+    Language-agnostic: reads from the classes table schema only.
+
+    Returns dict with:
+        is_protocol_or_abc    : bool — class inherits from Protocol/ABC (contract role)
+        class_docstring       : str | None — class-level docstring
+        class_sibling_stubs   : int — other stubs in the same file
+        instance_vars_assigned: bool — __init__ assigns self.x (Python only)
+    """
+    import json as _json
+
+    result = {
+        "is_protocol_or_abc": False,
+        "class_docstring": None,
+        "class_sibling_stubs": 0,
+        "instance_vars_assigned": True,  # assume true unless we can verify
+    }
+
+    if not file_path:
+        return result
+
+    # Find the class row — prefer explicit class_name, fall back to first in file
+    if class_name:
+        cls_row = conn.execute(
+            "SELECT name, base_classes_json, docstring FROM classes "
+            "WHERE file_path = ? AND name LIKE ?",
+            (file_path, f"%{class_name}%"),
+        ).fetchone()
+    else:
+        cls_row = conn.execute(
+            "SELECT name, base_classes_json, docstring FROM classes "
+            "WHERE file_path = ?",
+            (file_path,),
+        ).fetchone()
+
+    if cls_row:
+        _, bases_json, cls_doc = cls_row
+        result["class_docstring"] = (cls_doc or "").strip() or None
+
+        try:
+            bases = _json.loads(bases_json or "[]")
+            if isinstance(bases, list):
+                result["is_protocol_or_abc"] = any(
+                    any(abc in b for abc in _ABC_BASES)
+                    for b in bases
+                )
+        except (ValueError, TypeError):
+            pass
+
+    # Sibling stubs: other stubs in the same file (file = proxy for class scope)
+    result["class_sibling_stubs"] = conn.execute(
+        "SELECT COUNT(*) FROM functions "
+        "WHERE file_path = ? AND is_stub = 1 AND name != ?",
+        (file_path, name),
+    ).fetchone()[0]
+
+    # instance_vars_assigned: Python __init__ specific
+    if name == "__init__" and file_path and file_path.endswith(".py"):
+        result["instance_vars_assigned"] = _check_init_self_assigns(
+            file_path, line_number
+        )
+
+    return result
+
+
 # Body shapes: ordered from most- to least-specific
 _BODY_TRIVIAL_RETURN_RE = re.compile(
     r'^\s*return\s+(None|\[\]|\{\}|""|\'\'|0|False|True)\s*$', re.MULTILINE
@@ -64,21 +217,41 @@ _MULTI_CLASS_MIN = 2   # >= N classes in file → multi_concept
 # Signal extraction
 # ---------------------------------------------------------------------------
 
-def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
+def extract_signals(
+    oracle: "DBOracle",
+    fqdn: str,
+    class_name: str | None = None,
+    file_path_hint: str | None = None,
+) -> dict:
     """
     Gather all observable signals about a stub from the DB and source text.
     Returns a dict with keys documented inline.  No LLM.  No side effects.
+
+    class_name and file_path_hint disambiguate lifecycle methods (__init__ etc.)
+    that appear under multiple classes.  When file_path_hint is provided the
+    query uses it to select the correct row; class_name is forwarded to
+    _extract_class_context for Protocol/ABC detection.
     """
     import json as _json
 
     conn = oracle.conn
 
     # ── 1. Fetch stub row ────────────────────────────────────────────────
-    row = conn.execute(
-        "SELECT name, file_path, line_number, docstring, param_types_json, "
-        "return_type, is_stub FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1",
-        (fqdn,)
-    ).fetchone()
+    # Use file_path_hint to disambiguate lifecycle methods (e.g. __init__
+    # under multiple classes).  Without it, LIMIT 1 picks an arbitrary row.
+    if file_path_hint:
+        row = conn.execute(
+            "SELECT name, file_path, line_number, docstring, param_types_json, "
+            "return_type, is_stub FROM functions "
+            "WHERE name = ? AND file_path = ? AND is_stub = 1 LIMIT 1",
+            (fqdn, file_path_hint)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT name, file_path, line_number, docstring, param_types_json, "
+            "return_type, is_stub FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1",
+            (fqdn,)
+        ).fetchone()
 
     if not row:
         return {"error": f"stub '{fqdn}' not found"}
@@ -156,6 +329,22 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
     else:
         docstring_quality = "placeholder"
 
+    # ── 9. Lifecycle method / class context ──────────────────────────────
+    is_lifecycle = _is_lifecycle_method(name, file_path)
+    class_ctx: dict = {}
+    if is_lifecycle:
+        class_ctx = _extract_class_context(
+            conn, name, file_path,
+            class_name=class_name,
+            line_number=line_number,
+        )
+        # Merge class docstring into intent text when stub has none
+        if not intent_text and class_ctx.get("class_docstring"):
+            all_text = class_ctx["class_docstring"]
+            has_intent = _has_intent(all_text)
+            has_removal = _has_removal(all_text)
+            intent_text = all_text
+
     return {
         "name":               name,
         "file_path":          file_path,
@@ -174,6 +363,12 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
         "file_character":     file_character,
         "docstring_quality":  docstring_quality,
         "return_type":        return_type,
+        # Lifecycle / class context (populated only when is_lifecycle=True)
+        "is_lifecycle":             is_lifecycle,
+        "is_protocol_or_abc":       class_ctx.get("is_protocol_or_abc", False),
+        "class_docstring":          class_ctx.get("class_docstring"),
+        "class_sibling_stubs":      class_ctx.get("class_sibling_stubs", 0),
+        "instance_vars_assigned":   class_ctx.get("instance_vars_assigned", True),
     }
 
 
@@ -309,6 +504,10 @@ def score_hypotheses(signals: dict) -> list[dict]:
     sib_removal_trend = signals.get("sibling_removal_trend", 0.0)
     file_char        = signals.get("file_character", "unknown")
     doc_quality      = signals.get("docstring_quality", "none")
+    is_lifecycle     = signals.get("is_lifecycle", False)
+    is_protocol_abc  = signals.get("is_protocol_or_abc", False)
+    class_siblings   = signals.get("class_sibling_stubs", 0)
+    vars_assigned    = signals.get("instance_vars_assigned", True)
 
     # ── Signal: removal/obsolescence language ────────────────────────────
     # Strongest positive signal for concept-not-applicable.  Takes priority
@@ -431,6 +630,34 @@ def score_hypotheses(signals: dict) -> list[dict]:
         scores["genuinely-unknown"] += 0.3
         evidence["genuinely-unknown"].append("no docstring — no stated intent")
 
+    # ── Signal: lifecycle method / class context ─────────────────────────
+    # Only scored when extract_signals detected a lifecycle method (is_lifecycle=True).
+    # Protocol/ABC membership is the strongest possible signal: these methods are
+    # interface contracts, not implementation gaps.
+    if is_lifecycle:
+        if is_protocol_abc:
+            # Protocol/ABC methods are contract declarations.
+            # Push design-intent-stated strongly; genuinely-unknown to near zero.
+            scores["design-intent-stated"] += 1.5
+            scores["genuinely-unknown"] = max(0.0, scores["genuinely-unknown"] - 0.5)
+            evidence["design-intent-stated"].append(
+                "class inherits from Protocol/ABC — method is an interface contract"
+            )
+        elif not vars_assigned:
+            # __init__ assigns no self.x = attributes: class body is unimplemented.
+            scores["blocked-on-prerequisite"] += 0.6
+            scores["genuinely-unknown"] += 0.2
+            evidence["blocked-on-prerequisite"].append(
+                "__init__ assigns no instance vars — class body not yet implemented"
+            )
+        # Use class sibling stubs as a stronger design-skeleton signal when
+        # file-level siblings were sparse (lifecycle methods share a class).
+        if class_siblings >= 3 and not is_protocol_abc:
+            scores["blocked-on-prerequisite"] += 0.4
+            evidence["blocked-on-prerequisite"].append(
+                f"{class_siblings} sibling stub(s) in same file — design skeleton (class level)"
+            )
+
     # ── Normalise and rank ───────────────────────────────────────────────
     results = []
     for cls, raw in scores.items():
@@ -468,8 +695,10 @@ def classify_stub(assessor: "Assessor", args: dict) -> str:
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
+    class_name  = args.get("class_name", "").strip() or None
+    file_path   = args.get("file_path", "").strip() or None
 
-    signals = extract_signals(oracle, symbol)
+    signals = extract_signals(oracle, symbol, class_name=class_name, file_path_hint=file_path)
     if "error" in signals:
         return f"classify_stub: {signals['error']}"
 
@@ -478,14 +707,23 @@ def classify_stub(assessor: "Assessor", args: dict) -> str:
     # ── Format output ────────────────────────────────────────────────────
     fp_short = (signals.get("file_path") or "").replace("\\", "/").split("/")[-1]
     line = signals.get("line_number") or "?"
+    lifecycle_tag = " [lifecycle]" if signals.get("is_lifecycle") else ""
+    proto_tag = " [Protocol/ABC]" if signals.get("is_protocol_or_abc") else ""
     out = [
-        f"classify_stub: {symbol}  ({fp_short}:{line})",
+        f"classify_stub: {symbol}{lifecycle_tag}{proto_tag}  ({fp_short}:{line})",
         f"file character: {signals['file_character']} | "
         f"body: {signals['body_shape']} | "
         f"callers: {signals['caller_count']} | "
         f"siblings: {signals['sibling_stub_count']}",
         "",
     ]
+    if signals.get("is_protocol_or_abc"):
+        out.append(
+            "NOTE: class inherits from Protocol/ABC — this method is likely an "
+            "interface contract, not an implementation gap. Verify before treating "
+            "as a real stub."
+        )
+        out.append("")
 
     if not hypotheses:
         out.append("UNCERTAIN — no signal above threshold.")

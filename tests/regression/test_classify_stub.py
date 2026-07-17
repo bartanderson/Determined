@@ -34,7 +34,10 @@ def _make_db(stubs=None, non_stubs=None, classes=None):
         )
     """)
     conn.execute("""
-        CREATE TABLE classes (name TEXT, file_path TEXT)
+        CREATE TABLE classes (
+            name TEXT, file_path TEXT,
+            base_classes_json TEXT, docstring TEXT, methods_json TEXT
+        )
     """)
     conn.execute("""
         CREATE TABLE graph_edges (
@@ -65,8 +68,10 @@ def _make_db(stubs=None, non_stubs=None, classes=None):
 
     for c in (classes or []):
         conn.execute(
-            "INSERT INTO classes VALUES (?,?)",
-            (c.get("name"), c.get("file_path", "world/test.py"))
+            "INSERT INTO classes VALUES (?,?,?,?,?)",
+            (c.get("name"), c.get("file_path", "world/test.py"),
+             json.dumps(c.get("base_classes", [])),
+             c.get("docstring"), json.dumps(c.get("methods", [])))
         )
 
     conn.commit()
@@ -362,3 +367,204 @@ def test_classify_stub_uncertain_when_no_signals():
     result = classify_stub(_FakeAssessor(conn), {"symbol": "empty_stub"})
     # May be UNCERTAIN or genuinely-unknown — either is correct
     assert "genuinely-unknown" in result or "UNCERTAIN" in result
+
+
+# ---------------------------------------------------------------------------
+# Magic method / lifecycle handling
+# ---------------------------------------------------------------------------
+
+def test_is_lifecycle_python_dunder():
+    from determined.agent.classify_stub import _is_lifecycle_method
+    assert _is_lifecycle_method("__init__", "world/foo.py") is True
+    assert _is_lifecycle_method("__str__", "world/foo.py") is True
+    assert _is_lifecycle_method("process", "world/foo.py") is False
+
+
+def test_is_lifecycle_js_constructor():
+    from determined.agent.classify_stub import _is_lifecycle_method
+    assert _is_lifecycle_method("constructor", "src/Foo.ts") is True
+    assert _is_lifecycle_method("constructor", "src/Foo.js") is True
+    assert _is_lifecycle_method("__init__", "src/Foo.js") is False
+
+
+def test_is_lifecycle_other_language():
+    from determined.agent.classify_stub import _is_lifecycle_method
+    # Go / Rust: no lifecycle convention detectable by name alone
+    assert _is_lifecycle_method("new", "src/foo.go") is False
+    assert _is_lifecycle_method("new", "src/foo.rs") is False
+
+
+def test_extract_signals_lifecycle_flag():
+    """__init__ stub is flagged as a lifecycle method."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/ai.py"}],
+        classes=[{"name": "AIDungeonMaster", "file_path": "world/ai.py"}],
+    )
+    sig = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/ai.py")
+    assert sig.get("is_lifecycle") is True
+
+
+def test_extract_signals_protocol_abc_detected():
+    """__init__ on a Protocol class sets is_protocol_or_abc=True."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/iface.py"}],
+        classes=[{
+            "name": "IActionHandler",
+            "file_path": "world/iface.py",
+            "base_classes": ["Protocol"],
+        }],
+    )
+    sig = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/iface.py")
+    assert sig.get("is_protocol_or_abc") is True
+
+
+def test_extract_signals_abc_base_detected():
+    """ABC base class also sets is_protocol_or_abc=True."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/base.py"}],
+        classes=[{
+            "name": "BaseHandler",
+            "file_path": "world/base.py",
+            "base_classes": ["ABC"],
+        }],
+    )
+    sig = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/base.py")
+    assert sig.get("is_protocol_or_abc") is True
+
+
+def test_extract_signals_normal_class_not_protocol():
+    """Regular class does not set is_protocol_or_abc."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/normal.py"}],
+        classes=[{
+            "name": "NormalClass",
+            "file_path": "world/normal.py",
+            "base_classes": [],
+        }],
+    )
+    sig = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/normal.py")
+    assert sig.get("is_protocol_or_abc") is False
+
+
+def test_extract_signals_class_docstring_used_as_intent():
+    """When stub has no docstring, class docstring provides intent signal."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/dm.py", "docstring": None}],
+        classes=[{
+            "name": "AIDungeonMaster",
+            "file_path": "world/dm.py",
+            "base_classes": [],
+            "docstring": "Would orchestrate narrative generation when LLM layer is wired.",
+        }],
+    )
+    sig = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/dm.py")
+    assert sig.get("class_docstring") is not None
+    # Intent should be picked up from class docstring
+    assert sig.get("has_intent") is True
+
+
+def test_extract_signals_class_sibling_stubs_counted():
+    """class_sibling_stubs counts other stubs in the same file."""
+    conn = _make_db(
+        stubs=[
+            {"name": "__init__", "file_path": "world/ai.py"},
+            {"name": "generate",  "file_path": "world/ai.py"},
+            {"name": "narrate",   "file_path": "world/ai.py"},
+        ],
+        classes=[{"name": "AIDungeonMaster", "file_path": "world/ai.py"}],
+    )
+    sig = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/ai.py")
+    assert sig.get("class_sibling_stubs") == 2
+
+
+def test_extract_signals_file_path_hint_disambiguates():
+    """file_path_hint selects the correct __init__ when two exist in different files."""
+    conn = _make_db(
+        stubs=[
+            {"name": "__init__", "file_path": "world/a.py", "docstring": "Intent A"},
+            {"name": "__init__", "file_path": "world/b.py", "docstring": "Intent B"},
+        ],
+    )
+    sig_a = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/a.py")
+    sig_b = extract_signals(_FakeOracle(conn), "__init__", file_path_hint="world/b.py")
+    assert sig_a["file_path"] == "world/a.py"
+    assert sig_b["file_path"] == "world/b.py"
+
+
+def test_classify_stub_protocol_note_in_output():
+    """classify_stub output notes Protocol/ABC membership prominently."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/iface.py"}],
+        classes=[{
+            "name": "IActionHandler",
+            "file_path": "world/iface.py",
+            "base_classes": ["Protocol"],
+        }],
+    )
+    result = classify_stub(
+        _FakeAssessor(conn),
+        {"symbol": "__init__", "file_path": "world/iface.py"},
+    )
+    assert "Protocol" in result or "ABC" in result
+    assert "[lifecycle]" in result
+
+
+def test_classify_stub_lifecycle_tag_in_output():
+    """classify_stub header shows [lifecycle] for dunder methods."""
+    conn = _make_db(
+        stubs=[{"name": "__init__", "file_path": "world/ai.py"}],
+        classes=[{"name": "AIDungeonMaster", "file_path": "world/ai.py"}],
+    )
+    result = classify_stub(
+        _FakeAssessor(conn),
+        {"symbol": "__init__", "file_path": "world/ai.py"},
+    )
+    assert "[lifecycle]" in result
+
+
+def test_score_hypotheses_protocol_favors_design_intent():
+    """Protocol/ABC signal pushes design-intent-stated above genuinely-unknown."""
+    signals = {
+        "body_shape": "empty_pass",
+        "has_intent": False,
+        "has_removal": False,
+        "intent_text": "",
+        "caller_count": 0,
+        "callee_count": 0,
+        "concept_presence": {},
+        "sibling_stub_count": 0,
+        "sibling_removal_trend": 0.0,
+        "file_character": "single_class",
+        "docstring_quality": "none",
+        "is_lifecycle": True,
+        "is_protocol_or_abc": True,
+        "class_sibling_stubs": 0,
+        "instance_vars_assigned": True,
+    }
+    hyps = score_hypotheses(signals)
+    top = hyps[0] if hyps else {}
+    assert top.get("classification") == "design-intent-stated"
+
+
+def test_score_hypotheses_no_instance_vars_signals_blocked():
+    """__init__ that assigns no self.x pushes blocked-on-prerequisite."""
+    signals = {
+        "body_shape": "empty_pass",
+        "has_intent": False,
+        "has_removal": False,
+        "intent_text": "",
+        "caller_count": 1,
+        "callee_count": 0,
+        "concept_presence": {},
+        "sibling_stub_count": 0,
+        "sibling_removal_trend": 0.0,
+        "file_character": "single_class",
+        "docstring_quality": "none",
+        "is_lifecycle": True,
+        "is_protocol_or_abc": False,
+        "class_sibling_stubs": 0,
+        "instance_vars_assigned": False,
+    }
+    hyps = score_hypotheses(signals)
+    labels = [h["classification"] for h in hyps]
+    assert "blocked-on-prerequisite" in labels

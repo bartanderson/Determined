@@ -23,18 +23,20 @@ Must ship before Phase 2 corpus sweep or magic method stubs will be misclassifie
 etc. by (class_name, file_path) rather than bare name, then use class context as
 the primary signal. Five distinct cases (from HISTORY.md 2026-07-17, TRACKER.md RM69):
 
-- [ ] **Empty body, no docstring, no siblings** — UNCERTAIN, no signal. Correct
-      behavior already observed on Determined's two `__init__` stubs. Needs formal path.
-- [ ] **Protocol/ABC membership** — `__init__` on a Protocol or ABC is a contract
-      declaration, not a stub. Must not classify as genuinely-unknown.
-- [ ] **Class docstring states intent** — class-level docstring counts as intent
-      signal for all magic methods on that class.
-- [ ] **Sibling stub density** — if 3+ methods on the class are stubs, `__init__`
-      is part of a design skeleton, not an isolated gap.
-- [ ] **Instance vars not set** — `__init__` that doesn't assign any `self.x`
-      is a signal that the class body is not yet implemented.
-- [ ] Regression tests covering each of the five cases
-- [ ] No `__init__` collision: lookup by (class_name, file_path), not LIMIT 1 on name
+- [x] **Empty body, no docstring, no siblings** — UNCERTAIN, no signal. Formal
+      path exists: is_lifecycle=True but no class context signals → falls through
+      to existing genuinely-unknown scoring. (2026-07-17)
+- [x] **Protocol/ABC membership** — `__init__` on a Protocol or ABC is flagged
+      via `_extract_class_context` reading `base_classes_json`; `score_hypotheses`
+      pushes design-intent-stated +1.5 and notes it in output. (2026-07-17)
+- [x] **Class docstring states intent** — when stub has no docstring, class-level
+      docstring is merged into `intent_text` and scored normally. (2026-07-17)
+- [x] **Sibling stub density** — `class_sibling_stubs` (file-level proxy) adds
+      blocked-on-prerequisite signal when ≥3 siblings present. (2026-07-17)
+- [x] **Instance vars not set** — `_check_init_self_assigns` scans `__init__` body;
+      no `self.x =` found → blocked-on-prerequisite +0.6. (2026-07-17)
+- [x] Regression tests: 15 new tests, all pass (41 total in test_classify_stub.py)
+- [x] No `__init__` collision: `file_path_hint` arg uses `WHERE name=? AND file_path=?`
 
 ### 1b. Corpus-level projections (Phase 2)
 
