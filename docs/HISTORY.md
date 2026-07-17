@@ -8,6 +8,28 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-17: No corpus-specific terms in pattern lists (_INTENT_PATTERNS, _REMOVAL_PATTERNS).
+Both lists in classify_stub.py carry an explicit rule: patterns must be generic
+structural/semantic language any author would use. Corpus-specific terms (class names,
+system names, domain nouns) overfit to one codebase and produce misleading signals on
+others. Caught when "OG System" was found in _REMOVAL_PATTERNS -- removed, replaced with
+generic r'\bno \w+ in\b'. The rule is the fix, not just removing the one instance.
+
+2026-07-17: Sibling trend algebra must use the same text extraction as the main stub.
+classify_stub sibling_removal_trend originally checked only the DB docstring column,
+while the main stub used all_text (docstring + inline comments via _extract_body).
+Inconsistent inputs produced wrong trend values. Fix: call _extract_body() per sibling.
+Expense does not determine correctness when the operation is cheap (local file read, 40-line cap).
+
+2026-07-17: classify_stub signal calibration -- fix radiative problems, not symptoms.
+Two misclassifications (RM68 stubs scoring blocked-on-prerequisite instead of
+concept-not-applicable) were instantiations of two structural gaps:
+(A) No deliberate-absence signal -- _REMOVAL_RE now detects "doesn't have", "for
+    compatibility", "return empty", etc. and fires strongly on concept-not-applicable.
+(B) Sibling cluster signal was context-free (count-only). Now composition-aware:
+    if sibling_removal_trend >= 0.5, cluster scores concept-not-applicable scaled
+    by trend strength; otherwise scores blocked-on-prerequisite as before.
+
 2026-07-17: Tool findings vs. steerer knowledge -- hard discipline established.
 classify_stub and all RM69 judgment output must be the tool's own conclusions
 from graph signals only. Prior manual code archaeology (e.g. knowing dj2's

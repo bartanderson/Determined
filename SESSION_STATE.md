@@ -1,60 +1,72 @@
-Written at commit: c1a0497
+Written at commit: d77de53
 
-# SESSION STATE - session 199
+# SESSION STATE - session 200
 _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 199, 2026-07-17)
+## What happened this session (session 200, 2026-07-17)
 
-**RM67 probe pass complete [V]** (ae92ab6)
-  All three open questions deferred to RM69 (tool should answer them itself).
-  TRACKER language scope + convergence status updated.
+**classify_stub validated against dj2 AI-layer stubs [V]**
+  Five stubs run: process_consequences, _register_world_tools, _get_encounter_context,
+  _get_combat_context, on_arc_completed. All correctly classified design-intent-stated.
+  Tool derived classifications from signals only -- no steerer knowledge injected.
 
-**Key discipline established [V]**
-  Tool findings = what tool derives from graph + corpus only.
-  My knowledge = used to steer, never injected as tool output.
-  "Don't spoil the tool's enjoyment of season 2 episode 3."
+**classify_stub validated against dj2 RM68 stubs [V]**
+  Five stubs run: subraces, get_subraces_for_race, get_race_for_subrace,
+  semantic_match_subrace, semantic_match_fighting_style (world/dnd_data.py).
+  Expected: concept-not-applicable. Initial result: blocked-on-prerequisite (four stubs),
+  genuinely-unknown (one). Two radiative problems identified and fixed.
 
-**RM69 Phase 1 shipped [V]** (c1a0497)
-  determined/agent/classify_stub.py:
-    extract_signals(oracle, fqdn) -> dict  -- pure DB + source read, no LLM
-      signals: body_shape, has_intent, intent_text, caller_count,
-               callee_count, concept_presence, sibling_stub_count,
-               sibling_stubs, file_character, docstring_quality
-    score_hypotheses(signals) -> list[dict]  -- weighted evidence scoring
-      four hypotheses: concept-not-applicable, blocked-on-prerequisite,
-                       design-intent-stated, genuinely-unknown
-    classify_stub(assessor, args) -- tool entry point, wired into TOOLS + registry
-  27 regression tests. 1095 pass, 1 skipped.
+**Two radiative problems fixed in classify_stub (d77de53) [V]**
 
-  Key scoring decision: absent concepts + callers → blocked-on-prerequisite
-  (not concept-not-applicable). Callers mean something is waiting. See HISTORY.md.
+  Problem A -- No deliberate-absence signal:
+    Added _REMOVAL_RE pattern list. Detects "doesn't have", "for compatibility",
+    "return empty", "no X in", etc. Fires has_removal=True -> concept-not-applicable +1.5.
+    Suppresses intent signal when both fire (removal is more specific).
+
+  Problem B -- Sibling cluster signal was context-free (count-only):
+    Dense cluster was always scoring blocked-on-prerequisite regardless of sibling content.
+    Fix: sibling_removal_trend now computed from full all_text per sibling (docstring +
+    inline comments via _extract_body) -- same extraction as the main stub.
+    In score_hypotheses: if trend >= 0.5, cluster scores concept-not-applicable scaled
+    by trend (0.5 + trend*0.8); otherwise scores blocked-on-prerequisite as before.
+
+  Additional: removed corpus-specific r'\bOG [Ss]ystem\b' from _REMOVAL_PATTERNS.
+    Both pattern lists now carry explicit rule: no corpus-specific terms ever.
+    Added generic r'\bno \w+ in\b' to replace it correctly.
+
+**Post-fix results [V]**
+  subraces, get_subraces_for_race, get_race_for_subrace: [0.83] concept-not-applicable
+  semantic_match_subrace: [0.40] concept-not-applicable (cluster signal only, no own docstring)
+  semantic_match_fighting_style: [0.47] concept-not-applicable
+  AI-layer stubs: unchanged, all design-intent-stated at same scores as before.
+
+**27 classify_stub tests pass [V]. Full suite 1095 passed, 1 skipped [V].**
+
+**Key discipline reinforced this session [V]**
+  - Calling low-confidence output "appropriate uncertainty" when the known answer is
+    wrong is the same discipline violation in the other direction. Don't rationalize.
+  - Expense does not determine correctness when the operation is cheap.
+  - Fix radiative problems (missing signal type, decontextualized scoring), not symptoms.
+  - No corpus-specific terms in tool pattern lists -- ever.
 
 ## NEXT SESSION -- start here
 
-**Run classify_stub against dj2 AI-layer stubs [V-next]**
-  Do NOT seed it with what we know. Read the tool's output cold.
-  Five stubs to run:
-    process_consequences      (world/ai_dungeon_master.py)
-    _register_world_tools     (world/ai_integration.py)
-    _get_encounter_context    (world/context_builder.py)
-    _get_combat_context       (world/context_builder.py)
-    on_arc_completed          (world/narrative_engine.py)
-  Then evaluate: does the tool's classification match reality?
-  Where it misses, that's signal weight calibration work.
+**RM69 Phase 2: corpus-level projections [V-next]**
+  Single-stub judgment is now validated. Next: aggregate judgments into higher shapes.
+  Per TRACKER.md RM69 design:
+    - File shape: stub density + dominant classification per file
+    - Subsystem shape: clustered blocked stubs = design skeleton; clustered
+      concept-not-applicable = dead concept remnant
+    - Prerequisite map: N stubs blocked on same X -> X is a build priority
+    - Concept ghost map: concepts in stubs absent from live codebase = removal candidates
+  Run against dj2 first. Does file shape for dnd_data.py show dead-concept dominant?
+  Does file shape for context_builder.py show design-intent/blocked cluster?
 
-**Also run against dj2 RM68 stubs (concept-not-applicable expected):**
-    subraces, get_subraces_for_race, get_race_for_subrace,
-    semantic_match_subrace, semantic_match_fighting_style  (world/dnd_data.py)
-
-**After validation:**
-  If signal weights need calibration, adjust score_hypotheses() weights.
-  If body_shape extraction is missing inline comments correctly, check
-  _extract_body() indent logic against real dj2 files.
-  Then consider corpus-level projections (RM69 Phase 2: file shape,
-  subsystem shape, prerequisite map) -- but only after single-stub
-  judgment is validated.
+**Before Phase 2: consider running classify_stub on Determined's own stubs [V-next]**
+  3 real Determined stubs: suggest_tags (Determined + Commonplace), 2 empty __init__.
+  Validates tool against a third corpus before building corpus-level aggregation.
 
 ## Corpus status [V]
 
@@ -81,7 +93,12 @@ _Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for
 **probe_pass2.py duplicate rows [?]:** unknown callee ratio query has LEFT JOIN artifact
   producing duplicate file entries. Fix before next calibration pass.
 **classify_stub body_shape [?]:** _extract_body() reads source by line_number + indent.
-  Not yet validated against real dj2 files -- inline comment extraction may need tuning.
+  Not yet validated against all dj2 files -- inline comment extraction may need tuning.
+**classify_stub lookup is bare name [V]:** functions table has no fqdn column.
+  extract_signals takes bare function name, not dotted path. Name collisions across
+  files are possible -- not yet handled.
+**Corpus DB location trap [V]:** DBs live in C:\Users\bartl\dev\Determined\*.db,
+  NOT in C:\Users\bartl\dev\*.db.
 
 LLM server: llama-server.exe at C:\Users\bartl\models\llama-server\llama-server.exe,
   model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081.
