@@ -864,6 +864,22 @@ def _fn_ref_name(node) -> str | None:
     return None
 
 
+def _attr_root_id(node) -> str | None:
+    """Walk an Attribute chain to its root Name; return the id or None."""
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def _attr_depth(node) -> int:
+    """Count the number of dots in an Attribute chain (1 = 'a.b')."""
+    depth = 0
+    while isinstance(node, ast.Attribute):
+        depth += 1
+        node = node.value
+    return depth
+
+
 def _extract_function_references(tree: ast.AST) -> list[SymbolReference]:
     """
     Detect function references passed as values (not call targets):
@@ -897,26 +913,43 @@ def _extract_function_references(tree: ast.AST) -> list[SymbolReference]:
                 ))
 
         def visit_Dict(self, node):
-            # Only dotted refs (ast.Attribute) to avoid false positives from
-            # plain variable values like {'mode': some_string_var}.
+            # Only single-depth dotted refs (module.fn) to target import-style
+            # function references like {'key': builtins.price_lt}.
+            # Depth > 1 (self.x.y, obj.attr.method) = data access, not fn ref.
+            # Root == 'self'/'cls' = instance attribute, not fn ref.
+            _INSTANCE_ROOTS = frozenset({"self", "cls"})
             for val in node.values:
-                if isinstance(val, ast.Attribute):
-                    self._emit(val, getattr(val, "lineno", 0))
+                if isinstance(val, ast.Attribute) and _attr_depth(val) == 1:
+                    root = _attr_root_id(val)
+                    if root and root not in _INSTANCE_ROOTS:
+                        self._emit(val, getattr(val, "lineno", 0))
             self.generic_visit(node)
 
         def visit_Call(self, node):
             fn = node.func
             fn_attr = getattr(fn, "attr", None) or getattr(fn, "id", None)
+            _INSTANCE_ROOTS = frozenset({"self", "cls"})
+
+            def _is_fn_ref(n) -> bool:
+                if isinstance(n, ast.Name):
+                    return True
+                if isinstance(n, ast.Attribute):
+                    # Allow module.fn (depth 1); reject deep chains and self.*
+                    return (
+                        _attr_depth(n) == 1
+                        and _attr_root_id(n) not in _INSTANCE_ROOTS
+                    )
+                return False
 
             # Pattern 2: register_action('name', some_fn) — 2-arg register call
             if fn_attr in _REGISTER_ATTRS and len(node.args) == 2:
                 arg = node.args[1]
-                if isinstance(arg, (ast.Name, ast.Attribute)):
+                if _is_fn_ref(arg):
                     self._emit(arg, node.lineno)
 
             # Pattern 3: Thread(target=fn), sorted(key=fn), etc.
             for kw in node.keywords:
-                if kw.arg in _CALLBACK_KWARGS and isinstance(kw.value, (ast.Name, ast.Attribute)):
+                if kw.arg in _CALLBACK_KWARGS and _is_fn_ref(kw.value):
                     self._emit(kw.value, node.lineno)
 
             self.generic_visit(node)

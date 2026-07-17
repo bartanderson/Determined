@@ -44,6 +44,33 @@ def test_dict_bare_name_not_emitted():
     assert not edges
 
 
+def test_dict_self_attribute_not_emitted():
+    # self.* in dict values are instance attribute reads, not function references
+    src = """
+class Foo:
+    def setup(self):
+        opts = {'default': self.DEFAULT_OPTIONS, 'color': self.COLORS}
+"""
+    assert not _refs(src)
+
+
+def test_dict_deep_chain_not_emitted():
+    # Deep chains like self.phase.value are data accesses, not fn refs
+    src = "d = {'x': self.current_phase.value, 'y': obj.attr.method}"
+    assert not _refs(src)
+
+
+def test_callback_kwarg_deep_chain_not_emitted():
+    # event.data.target_id as callback value is a data read, not a fn ref
+    src = "foo(callback=event.data.target_id)"
+    assert not _refs(src)
+
+
+def test_callback_kwarg_self_not_emitted():
+    src = "foo(target=self.handler)"
+    assert not _refs(src)
+
+
 def test_dict_string_value_not_emitted():
     src = "d = {'key': 'some_string'}"
     assert not _refs(src)
