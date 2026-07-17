@@ -8,6 +8,44 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-17: Python __init__ stubs need class context, not just method signals.
+__init__ is not classifiable by name alone -- every class has one, and whether it is
+a stub depends on the enclosing class. Five cases need distinct handling:
+  (1) Empty body, no docstring, no declared instance vars -- not a stub, trivial initializer.
+  (2) super().__init__() only -- not a stub, delegation.
+  (3) In Protocol / ABC -- not a stub, interface contract.
+  (4) Class where all/most sibling methods are stubs -- stub, part of design skeleton.
+  (5) Has docstring describing future initialization -- stub, design intent stated.
+Lookup for __init__ (and all Python magic methods __str__ __repr__ __len__ etc.) must
+use (class_name, file_path) as the identifier, not bare name. The name-collision
+problem is especially acute for magic methods: 56 __init__ rows in Determined corpus,
+LIMIT 1 reliably picks the wrong one.
+
+2026-07-17: Query must encode the constraint, not check after.
+WHERE name=? LIMIT 1, then checking is_stub in Python = asking "find me any function
+named X, then tell me if it's a stub." The check after doesn't fix the wrong row chosen
+by LIMIT 1. Correct query: WHERE name=? AND is_stub=1. General rule: the SQL filter is
+the claim; Python-side checks are for logic after the right row is confirmed, not for
+picking the right row.
+
+2026-07-17: Regex is the wrong tool for semantic meaning in natural language text.
+Pattern lists (_INTENT_PATTERNS, _REMOVAL_PATTERNS) tried to detect "intent" and
+"removal" in docstrings via keyword matching. Every novel phrasing needed a new pattern;
+broad terms (\bhandle\b, \bprocess\b) produced false positives everywhere.
+Replaced with: (a) SetFit-trained 3-class classifier (stub_classifier.py) as the primary
+signal -- 135 labeled examples across 20+ domains, 96.3% eval accuracy, deterministic,
+no API calls; (b) sentence-level embedding similarity + modal-verb check as fallback when
+the model file is absent.
+Rule: regex for SYNTAX (raise NotImplementedError, return [], pass). Classifier/embeddings
+for MEANING (what does this text intend to say?). No exceptions.
+
+2026-07-17: Embedding dilution -- embed per sentence, not full docstring.
+Full-text embedding of a multi-sentence docstring averages topic content and intent signal,
+pulling both toward the domain centroid. "Ask LLM to suggest tags. STUB: returns [] until
+endpoint is wired." scored 0.32 full-text vs 0.37 per-sentence. More critically, some
+domain content is so specific it scores near zero against any generic prototype regardless
+of threshold. Per-sentence matching exposes the intent clause directly. Split on [.\n].
+
 2026-07-17: No corpus-specific terms in pattern lists (_INTENT_PATTERNS, _REMOVAL_PATTERNS).
 Both lists in classify_stub.py carry an explicit rule: patterns must be generic
 structural/semantic language any author would use. Corpus-specific terms (class names,

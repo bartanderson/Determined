@@ -74,6 +74,11 @@ Function judgments aggregate into higher-level shapes:
 
 ### Open design questions
 
+- [ ] Python magic method handling: __init__, __str__, __repr__, __len__ etc. appear
+      in every class and can't be classified by name alone. classify_stub must look up
+      these by (class_name, file_path) and use class context as the primary signal:
+      sibling stub density, class docstring, Protocol/ABC membership, declared instance
+      vars not set. Five distinct cases -- see HISTORY.md 2026-07-17 entry.
 - [ ] Hypothesis count cap (3? all above threshold?)
 - [ ] Threshold calibration against known cases (dj2 stubs are the test set)
 - [ ] Concept presence: grep-based or embedding-based? (grep first)
