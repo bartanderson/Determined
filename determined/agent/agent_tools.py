@@ -8317,6 +8317,17 @@ TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
 from determined.agent.classify_stub import classify_stub  # noqa: E402
 TOOLS["classify_stub"] = (classify_stub, "assessor")
 
+from determined.agent.corpus_projections import (  # noqa: E402
+    stub_file_shape,
+    stub_subsystem_shape,
+    stub_prerequisite_map,
+    stub_concept_ghost_map,
+)
+TOOLS["stub_file_shape"]        = (stub_file_shape,        "assessor")
+TOOLS["stub_subsystem_shape"]   = (stub_subsystem_shape,   "assessor")
+TOOLS["stub_prerequisite_map"]  = (stub_prerequisite_map,  "assessor")
+TOOLS["stub_concept_ghost_map"] = (stub_concept_ghost_map, "assessor")
+
 
 # ------------------------------------------------------------------
 # RM64: verify_implementation -- close-the-loop check after re-ingest

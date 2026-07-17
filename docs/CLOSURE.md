@@ -44,38 +44,38 @@ Each projection is a new aggregation layer above single-stub judgment. All four
 must be implemented and validated before this phase is done.
 
 **File shape**
-- [ ] Stub density per file (stub count / total function count)
-- [ ] Dominant classification per file (which class wins across all stubs in file)
-- [ ] Output: ranked file list, density score, dominant label, sample evidence
+- [x] Stub density per file (stub count / total function count) (2026-07-17)
+- [x] Dominant classification per file (which class wins across all stubs in file) (2026-07-17)
+- [x] Output: ranked file list, density score, dominant label, sample evidence (2026-07-17)
 - [ ] Pass criterion: dnd_data.py shows dead-concept dominant; context_builder.py
       shows design-intent/blocked dominant
 
 **Subsystem shape**
-- [ ] Cluster stubs by directory/subsystem
-- [ ] Clustered blocked-on-prerequisite = design skeleton signal
-- [ ] Clustered concept-not-applicable = dead concept remnant signal
+- [x] Cluster stubs by directory/subsystem (2026-07-17)
+- [x] Clustered blocked-on-prerequisite = design skeleton signal (2026-07-17)
+- [x] Clustered concept-not-applicable = dead concept remnant signal (2026-07-17)
 - [ ] Pass criterion: dj2 world/ surfaces as design skeleton (5 AI-layer stubs)
       and dnd_data.py subsystem surfaces as dead concept remnant (5 subrace stubs)
 
 **Prerequisite map**
-- [ ] Extract named prerequisite from blocked-on comments ("until X is built",
-      "when X exists", "blocked on X")
-- [ ] Group stubs by shared named prerequisite
-- [ ] N stubs sharing prerequisite X → X is a build priority, ranked by N
+- [x] Extract named prerequisite from blocked-on comments ("until X is built",
+      "when X exists", "blocked on X") (2026-07-17)
+- [x] Group stubs by shared named prerequisite (2026-07-17)
+- [x] N stubs sharing prerequisite X → X is a build priority, ranked by N (2026-07-17)
 - [ ] Pass criterion: dj2 AI-layer stubs surface a common prerequisite (AIDungeonMaster /
       AdjudicationEngine / ActionQueue) with count
 
 **Concept ghost map**
-- [ ] Concepts named in stubs but absent from live codebase symbols
-- [ ] Cross-reference with find_concept_ghosts (already built, RM66)
-- [ ] Output: concept name, stub count referencing it, verdict (ghost / partial / live)
+- [x] Concepts named in stubs but absent from live codebase symbols (2026-07-17)
+- [x] Cross-reference with find_concept_ghosts (already built, RM66) (2026-07-17)
+- [x] Output: concept name, stub count referencing it, verdict (ghost / partial / live) (2026-07-17)
 - [ ] Pass criterion: CombatFSM surfaces as a ghost (named in contract, no symbol exists)
 
 ### 1c. Integration
 
-- [ ] Projections accessible as agent tools (wire into tool_registry, TOOLS)
-- [ ] Regression tests for each projection shape (in-memory DB, known stub sets)
-- [ ] Full test suite passes (currently 1095 pass, 1 skip — must not regress)
+- [x] Projections accessible as agent tools (wire into tool_registry, TOOLS) (2026-07-17)
+- [x] Regression tests for each projection shape (in-memory DB, known stub sets) — 35 tests (2026-07-17)
+- [ ] Full test suite passes (currently 1143 pass, 1 skip — must not regress)
 
 ### Emerging items — Phase 1
 

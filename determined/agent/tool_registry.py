@@ -919,6 +919,51 @@ REGISTRY: dict[str, dict] = {
         "category": "planning",
     },
 
+    # ── RM69: CORPUS-LEVEL PROJECTIONS ───────────────────────────────
+    "stub_file_shape": {
+        "purpose": "Corpus-level projection: stub density and dominant classification per file. Shows which files are most stub-heavy and what kind of gap they represent (design-skeleton / dead-concept / unknown-gaps / mixed).",
+        "args": {
+            "scope": "(optional) directory prefix to restrict, e.g. 'world/' or 'determined/agent'",
+        },
+        "output": "ranked file list with stub density %, dominant classification, and breakdown by hypothesis",
+        "feeds": ["stub_subsystem_shape", "classify_stub", "feature_work_plan"],
+        "use_when": "After a stub sweep to see which files are most stub-dense and what pattern dominates. Good entry point before the subsystem view.",
+        "category": "planning",
+    },
+
+    "stub_subsystem_shape": {
+        "purpose": "Corpus-level projection: stubs clustered by directory/subsystem. Classifies each subsystem as a design-skeleton (stubs are waiting on dependencies), dead-concept remnant, or mixed.",
+        "args": {
+            "scope": "(optional) directory prefix to restrict",
+        },
+        "output": "subsystems ranked by stub count with verdict (design-skeleton / dead-concept / mixed) and classification breakdown",
+        "feeds": ["stub_file_shape", "stub_prerequisite_map", "feature_work_plan"],
+        "use_when": "After stub_file_shape when you want the directory-level picture: which subsystems are design skeletons vs dead-concept remnants.",
+        "category": "planning",
+    },
+
+    "stub_prerequisite_map": {
+        "purpose": "Corpus-level projection: groups stubs by shared named prerequisite extracted from docstrings (e.g. 'blocked on X', 'until X is built'). N stubs blocked on X => X is a build priority, ranked HIGH/MED/LOW.",
+        "args": {
+            "scope": "(optional) directory prefix to restrict",
+        },
+        "output": "prerequisites ranked by blocked stub count with priority label (HIGH/MED/LOW) and list of blocked stubs per prerequisite",
+        "feeds": ["stub_subsystem_shape", "feature_work_plan"],
+        "use_when": "When you need a build-order recommendation: which thing must be built first to unblock the most stubs.",
+        "category": "planning",
+    },
+
+    "stub_concept_ghost_map": {
+        "purpose": "Corpus-level projection: concepts named in stub docstrings cross-referenced against live corpus symbols. Ghost = named but not implemented anywhere; partial = functions exist but no class; live = class exists. Ghosts surface prerequisites that must be built before stubs can be filled.",
+        "args": {
+            "scope": "(optional) directory prefix to restrict stub search",
+        },
+        "output": "concept list sorted ghosts-first with verdict (GHOST/PARTIAL/live) and stub reference count",
+        "feeds": ["stub_prerequisite_map", "find_concept_ghosts", "feature_work_plan"],
+        "use_when": "After classify_stub surfaces blocked-on-prerequisite stubs -- run to identify which prerequisites are entirely missing from the codebase (ghost concepts).",
+        "category": "planning",
+    },
+
     # ── RM63: FEATURE WORK PLAN ───────────────────────────────────────
     "feature_work_plan": {
         "purpose": "Produce a handoff-ready, ordered work plan for a feature directory: finds all stubs and missing callees, groups them into axes (by destination directory of unresolved callees), ranks axes by EP-weighted impact, sorts functions within each axis by topo order, and emits a grounded completion contract for each. Uncertain contracts are flagged [infer: ...]. Output is ready to paste into a large LLM prompt for the narrow implementation step.",

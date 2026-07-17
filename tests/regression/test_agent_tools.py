@@ -564,8 +564,12 @@ def test_dispatch_all_tools_registered():
         "find_missing_bridges",
         # RM66: concept ghost detection
         "find_concept_ghosts",
-        # RM69: judgment layer
+        # RM69: judgment layer + corpus projections
         "classify_stub",
+        "stub_file_shape",
+        "stub_subsystem_shape",
+        "stub_prerequisite_map",
+        "stub_concept_ghost_map",
     }
 
     assert set(TOOLS.keys()) == expected
