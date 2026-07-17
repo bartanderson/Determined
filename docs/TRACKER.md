@@ -1811,7 +1811,7 @@ RM36. **[DONE 2026-07-10] Orient/overview questions produce `<file.py>` placehol
 
 ---
 
-RM28. **[STAGES 1-4 DONE 2026-07-10] Training mode: adaptive guided exploration**
+RM28. **[DONE 2026-07-10] Training mode: adaptive guided exploration**
    Replaces the three-mode UX concept (Tour/Discovery/Workbench) with a lighter,
    more elegant design that emerged from a full design discussion session 130.
 
