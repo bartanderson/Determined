@@ -42,6 +42,9 @@ if TYPE_CHECKING:
 
 # Intent language: phrases that signal the author described the behaviour
 # but left implementation for later.  Language-agnostic.
+# RULE: all patterns must be generic structural/semantic language any author
+# would use.  Never add corpus-specific terms (class names, system names,
+# domain nouns) — they overfit to one codebase and mislead on others.
 _INTENT_PATTERNS = [
     r'\bwould\b', r'\bwill\b', r'\bshould\b', r'\bintended to\b',
     r'\bis meant to\b', r'\bneeds to\b', r'\bwhen .+ is built\b',
@@ -50,6 +53,24 @@ _INTENT_PATTERNS = [
     r'\bimplemented when\b', r'\bto be implemented\b',
 ]
 _INTENT_RE = re.compile('|'.join(_INTENT_PATTERNS), re.IGNORECASE)
+
+# Removal/obsolescence language: author explicitly states the concept doesn't
+# belong, was removed, or is a compatibility placeholder.
+# RULE: all patterns must be generic structural/semantic language any author
+# would use.  Never add corpus-specific terms (class names, system names,
+# domain nouns) — they overfit to one codebase and mislead on others.
+_REMOVAL_PATTERNS = [
+    r"\bdoesn'?t have\b", r'\bnot (have|applicable|used|supported|needed)\b',
+    r'\bno longer\b', r'\bremoved\b', r'\bobsolete\b', r'\bdeprecated\b',
+    r'\bnot in\b', r'\bnot part of\b', r'\bdropped\b',
+    r'\bfor compatibility\b', r'\bcompat(ibility)? (stub|shim|placeholder)\b',
+    r'\breturn empty\b', r'\balways empty\b', r'\bnever used\b',
+    r'\bnot implement', r'\bdoes not exist\b',
+    r'\bno \w+ in\b',   # "No X in [system/context]" — author stating concept absence
+    # All patterns above must be corpus-agnostic structural/semantic language.
+    # Never add project-specific terms (class names, system names, domain nouns).
+]
+_REMOVAL_RE = re.compile('|'.join(_REMOVAL_PATTERNS), re.IGNORECASE)
 
 # Body shapes: ordered from most- to least-specific
 _BODY_TRIVIAL_RETURN_RE = re.compile(
@@ -97,9 +118,10 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
     # ── 2. Body shape ────────────────────────────────────────────────────
     body_shape, inline_comments = _extract_body(file_path, line_number)
 
-    # ── 3. Intent language ───────────────────────────────────────────────
+    # ── 3. Intent / removal language ────────────────────────────────────
     all_text = " ".join(filter(None, [docstring, inline_comments]))
     has_intent = bool(_INTENT_RE.search(all_text))
+    has_removal = bool(_REMOVAL_RE.search(all_text))
     intent_text = all_text.strip() or None
 
     # ── 4. Caller / callee counts ────────────────────────────────────────
@@ -131,13 +153,26 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
         concept_presence[concept] = count
 
     # ── 6. Sibling stubs in same file ────────────────────────────────────
-    sibling_stubs = [
-        r[0] for r in conn.execute(
-            "SELECT name FROM functions WHERE file_path = ? AND is_stub = 1 AND name != ?",
-            (file_path, name)
-        ).fetchall()
-    ]
+    sibling_rows = conn.execute(
+        "SELECT name, docstring, line_number FROM functions "
+        "WHERE file_path = ? AND is_stub = 1 AND name != ?",
+        (file_path, name)
+    ).fetchall()
+    sibling_stubs = [r[0] for r in sibling_rows]
     sibling_stub_count = len(sibling_stubs)
+    # Trend: fraction of siblings with removal language in their full text
+    # (docstring + inline comments).  Uses the same text extraction as the
+    # main stub so the algebra is consistent across the cluster.
+    if sibling_stub_count > 0:
+        removal_count = 0
+        for sib_name, sib_doc, sib_line in sibling_rows:
+            _, sib_inline = _extract_body(file_path, sib_line)
+            sib_text = " ".join(filter(None, [sib_doc, sib_inline]))
+            if sib_text and _REMOVAL_RE.search(sib_text):
+                removal_count += 1
+        sibling_removal_trend = removal_count / sibling_stub_count
+    else:
+        sibling_removal_trend = 0.0
 
     # ── 7. File character ────────────────────────────────────────────────
     file_character = _classify_file_character(conn, file_path)
@@ -158,12 +193,14 @@ def extract_signals(oracle: "DBOracle", fqdn: str) -> dict:
         "body_shape":         body_shape,
         "inline_comments":    inline_comments or None,
         "has_intent":         has_intent,
+        "has_removal":        has_removal,
         "intent_text":        intent_text,
         "caller_count":       caller_count,
         "callee_count":       callee_count,
         "concept_presence":   concept_presence,
-        "sibling_stub_count": sibling_stub_count,
-        "sibling_stubs":      sibling_stubs,
+        "sibling_stub_count":    sibling_stub_count,
+        "sibling_stubs":         sibling_stubs,
+        "sibling_removal_trend": sibling_removal_trend,
         "file_character":     file_character,
         "docstring_quality":  docstring_quality,
         "return_type":        return_type,
@@ -291,19 +328,30 @@ def score_hypotheses(signals: dict) -> list[dict]:
     }
     evidence: dict[str, list[str]] = {k: [] for k in scores}
 
-    body        = signals.get("body_shape", "unknown")
-    has_intent  = signals.get("has_intent", False)
-    intent_text = signals.get("intent_text") or ""
-    caller_count = signals.get("caller_count", 0)
-    callee_count = signals.get("callee_count", 0)
-    concepts    = signals.get("concept_presence", {})
-    sibling_count = signals.get("sibling_stub_count", 0)
-    file_char   = signals.get("file_character", "unknown")
-    doc_quality = signals.get("docstring_quality", "none")
+    body             = signals.get("body_shape", "unknown")
+    has_intent       = signals.get("has_intent", False)
+    has_removal      = signals.get("has_removal", False)
+    intent_text      = signals.get("intent_text") or ""
+    caller_count     = signals.get("caller_count", 0)
+    callee_count     = signals.get("callee_count", 0)
+    concepts         = signals.get("concept_presence", {})
+    sibling_count    = signals.get("sibling_stub_count", 0)
+    sib_removal_trend = signals.get("sibling_removal_trend", 0.0)
+    file_char        = signals.get("file_character", "unknown")
+    doc_quality      = signals.get("docstring_quality", "none")
+
+    # ── Signal: removal/obsolescence language ────────────────────────────
+    # Strongest positive signal for concept-not-applicable.  Takes priority
+    # over intent language if both fire (author who says "doesn't have X" wins).
+    if has_removal:
+        scores["concept-not-applicable"] += 1.5
+        snippet = intent_text[:80].replace("\n", " ") if intent_text else ""
+        evidence["concept-not-applicable"].append(f"removal language found: \"{snippet}\"")
 
     # ── Signal: intent language in comments/docstring ────────────────────
     # Strongest positive signal for design-intent-stated.
-    if has_intent:
+    # Suppressed when removal language also fires — removal is more specific.
+    if has_intent and not has_removal:
         scores["design-intent-stated"] += 1.2
         snippet = intent_text[:80].replace("\n", " ") if intent_text else ""
         evidence["design-intent-stated"].append(f"intent language found: \"{snippet}\"")
@@ -366,14 +414,25 @@ def score_hypotheses(signals: dict) -> list[dict]:
         scores["design-intent-stated"] += 0.5
         evidence["design-intent-stated"].append("body raises NotImplementedError (explicit intent marker)")
 
-    # ── Signal: sibling stub density ────────────────────────────────────
+    # ── Signal: sibling stub density (composition-aware) ─────────────────
+    # A cluster of stubs is either a design skeleton (blocked-on-prerequisite)
+    # or a dead-concept cluster (concept-not-applicable).  sibling_removal_trend
+    # is the fraction of siblings whose docstrings contain removal language.
     if sibling_count >= 3:
-        # Dense stub cluster: design skeleton pattern
-        scores["blocked-on-prerequisite"] += 0.4
-        scores["design-intent-stated"] += 0.2
-        evidence["blocked-on-prerequisite"].append(
-            f"{sibling_count} sibling stubs in same file — design skeleton pattern"
-        )
+        if sib_removal_trend >= 0.5:
+            # Majority of siblings also carry removal language → dead-concept cluster.
+            # Scale weight by trend strength: 50% trend = +0.9, 100% trend = +1.3.
+            scores["concept-not-applicable"] += 0.5 + (sib_removal_trend * 0.8)
+            evidence["concept-not-applicable"].append(
+                f"{sibling_count} sibling stubs, {int(sib_removal_trend*100)}% with removal language — dead-concept cluster"
+            )
+        else:
+            # Siblings trend forward-intent → design skeleton waiting on prerequisite
+            scores["blocked-on-prerequisite"] += 0.4
+            scores["design-intent-stated"] += 0.2
+            evidence["blocked-on-prerequisite"].append(
+                f"{sibling_count} sibling stubs in same file — design skeleton pattern"
+            )
     elif sibling_count >= 1:
         scores["design-intent-stated"] += 0.1
         evidence["design-intent-stated"].append(
