@@ -99,7 +99,7 @@ pattern (assessor + args_dict) now charted. Chart aggressively after any re-deri
 | dnd-dungeon-gen (JS) | 291 | 1,384 | 6 | re-ingested session 195 |
 | dungeoncrawler (TS) | 78 | 192 | 0 | complete |
 | rotjs (TS) | 626 | 2,239 | 6 | lib/src warning in list_features |
-| Commonplace (Python) | 31 | 168 | 0 | needs re-ingest for is_tool/function_reference |
+| Commonplace (Python) | 61 | 292 | 1 | re-ingested session 196; 1 stub: suggest_tags (tagger.py) |
 
 ## Known issues (carried forward)
 
