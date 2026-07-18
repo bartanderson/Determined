@@ -174,16 +174,28 @@ Probe: done (2026-07-17). 1 stub: suggest_tags (design-intent-stated, as expecte
 
 ### rotjs (TS library)
 
-Known issue: lib/ (compiled output) vs src/ (TS source) dual-representation.
-lib/ gets all EP; src/ has architecture. Scope to src/ for probe.
+Probe: done (2026-07-18). 6 stubs: 3 src/ + 3 lib/ mirror. All computeFontSize (UNCERTAIN).
 
-- [ ] Q1 Entry points (scope=src/)
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (6 known stubs: 3 in lib/, 1 in src/)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains
+- [x] Q1 Entry points (scope=src/) - 156 inferred EPs (library, no HTTP routes). Public API
+      methods correctly identified via feature_path=src. PASS.
+- [x] Q2 Blast radius - RNG.getUniform HOT: 92 direct callers, 50 extended impact.
+      Core RNG is the hot symbol for a roguelike lib. PASS.
+- [x] Q3 Feature shape - list_features auto-detects lib/ vs src/ dual representation and
+      flags it with a note suggesting src/ scope. feature_shape src/: 107 syms, 0 stubs
+      shown (same BFS limitation as dj2), 83% completeness. PASS.
+- [x] Q4 Stubs - 6 stubs found (3 src/, 3 lib/ mirror). All are computeFontSize variants
+      with no docstring and 0 callers. classify_stub (no file_path): UNCERTAIN [0.35]
+      correct — no intent stated. file_path_hint matching fails (finding #1). PASS.
+- [x] Q5 Design drift - "No layer rules defined" (clean, no confabulation). PASS.
+- [x] Q6 Call chains - graph_path: color.randomize->RNG.getNormal (1-hop) correct. PASS
+      with finding: walk_call_chain returns length 0 for TS corpora — graph_edges stores
+      callers as FQNs (Cellular.randomize) but tool queries bare names (finding #2).
 - Findings:
+  1. classify_stub file_path_hint fails for TS corpora — path matching issue; workaround:
+     omit file_path and rely on name-only lookup (finds lib/ version, result still valid).
+  2. walk_call_chain broken for TS corpora: graph_edges FQN callers (Class.method) not
+     matched by bare-name WHERE clause. Use graph_path for TS chain queries instead.
+  3. list_features correctly auto-detects lib/ vs src/ dual representation (positive finding).
 
 ### dungeoncrawler (TS)
 
