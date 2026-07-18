@@ -1,119 +1,93 @@
-# SESSION STATE — session 207
-Written at commit: 1c7fdf5
+# SESSION STATE — session 208
+Written at commit: 6688a84
 
 ## Active branch: main [V]
 
 ## What happened this session (2026-07-18)
 
-### 1. dj2 surface investigation completed [V]
+### 1. Discovered all 4 UX gaps already fixed [V]
 
-Read world_controller.py, character_builder.py, dm_chat_handler.py, engine/phases.py, world/fsm/.
+Session started with intent to fix 4 UX gaps from session 207. Git log
+confirmed they were committed in ab082a3 last session:
+1. Frontier auto-load on corpus_ready — fgLoad_() call in corpus_ready handler
+2. Frontier ABC mode "No frontier edges" — @abstractmethod decorator check
+3. Corpus map "0 files" bug — dupes query isolated (dj2 lacks class_name column)
+4. development_priorities via Ask bar — heuristic + _PATTERNS + bypass added
 
-**Town wandering state answer:**
-- No formal FSM state exists for "in town." Implicit: current_location = tavern, dungeon_mode = False.
-- campaign_state.game_started never set to True anywhere in visible flow.
-- complete_tavern_intro() exists but nothing calls it in normal path.
-- exit_dungeon() does NOT restore current_location or clear dungeon_mode — return to town is broken.
+All 4 were done. Tests confirmed: 1144 pass, 1 skip [V].
 
-**engine/phases.py [V]:** 8 pure-ABC classes (InputPhase, InterpretationPhase, AuthorityPhase,
-StateMutationPhase, ConsequencePhase, PersistencePhase, ViewProjectionPhase, PhaseSystemFactory).
-591 lines, ZERO concrete implementations anywhere in corpus. Biggest architecture void in dj2.
+### 2. Full regression suite retired [V]
 
-**world/fsm/ [V]:** schemas/fsm_schema.json is only a validation schema. __pycache__ has
-encounter_machine.cpython-311.pyc and trade_machine.cpython-311.pyc but NO source .py files.
-Source was deleted or never committed.
+User: 6-minute full suite is too expensive per change.
+Decision: match-first rule — run only the test file(s) from TEST_MAP.md for
+the changed module. Full suite only if something looks broken.
 
-**narrative_framework [V]:** Loaded in world_controller.__init__ from player_narrative_data
-(phases: origin, formative_wound, recent_history). DMChatHandler._build_game_context() does NOT
-include it — DM knows classes/races but not the player's backstory arc. This is the disconnect
-between "inquisition" character creation and "conversation" creation.
+- Created docs/TEST_MAP.md — source module → test file mapping for all 70+ test files
+- Updated CLAUDE.md standing rule: no full suite after edits, ever
+- Committed: 9e9b1f2
 
-**Character creation dialog direction (Bart, not for implementation yet):**
-Conversation not inquisition. DM elicits backstory through leading questions, interprets what
-player says, redirects into viable concepts, raises class/race constraints without discouraging.
-There is always something in what they say that can become an interesting character direction.
+### 3. Work focus clarified [V]
 
-### 2. Determined ABC gap detection fixed [V]
+Determined, not dj2. Saved to memory (feedback_work_focus.md). Do not suggest
+dj2 work as next step unless Bart explicitly asks.
 
-**Bug:** find_abc_gaps returned "All ABC stub methods have at least one override" when an ABC
-had NO concrete subclasses — a false positive hiding entire unbuilt subsystems.
+### 4. Shape tab shipped [V]
 
-**Fix (agent_tools.py):**
-- find_abc_gaps: reports UNIMPLEMENTED INTERFACES section for ABCs with zero subclasses
-- _get_abc_gap_set: includes abstract methods from zero-subclass ABCs in gap set
-- development_priorities: detects ARCH-VOID features, floor score (1-completeness)*5,
-  ARCH-VOID flag — surfaces even when ep=0
-- Test updated to expect arch void output instead of false positive
+All CLOSURE.md phases complete — gate open. Surfaced RM69 corpus projections
+in the UI as a new "Shape" tab in the More dropdown.
 
-**Verified [V]:** 1144 pass, 1 skip. Workbench Frontier:ABC on dj2 corpus now shows
-8 phases.py ABC classes with all 43 unimplemented methods.
+**What it does:**
+- Auto-runs all 4 corpus-shape tools on first click
+- Scope input (e.g. "world/") to restrict to a subsystem
+- 2x2 grid: File shape, Subsystem shape, Prerequisite map, Concept ghost map
+- Verdict keywords color-coded: design-skeleton (blue), dead-concept (orange),
+  GHOST (red), live (green)
 
-### 3. UI redesign shipped [V]
+**Backend:** shape_run socket event in ui_server.py dispatches all 4 tools in
+one thread, returns structured result.
 
-- Frontier is landing tab (was Chat)
-- 6 primary tabs: Frontier, Call tree, Graph, Editor, Knowledge, Chat
-- More ▾ dropdown holds remaining 10
-- Ask/query bar collapsed by default; shown on Chat tab click, hidden on other tabs
-- _askPinned: 💬 rail opens ask bar and keeps it across tab switches
-- Trail bar visible by default
+**Verified live [V]:** dj2 corpus — CombatFSM [GHOST], world/ dead-concept
+dominant, encounter prereq — all correct. 46 tests pass (test_corpus_projections
++ test_ui_surfaces).
 
-**Verified [V]:** Zero JS errors. All behaviors confirmed via browser automation.
-
-### 4. UX gaps found navigating dj2 corpus live [V]
-
-- **Frontier doesn't auto-load on corpus_ready** — blank panel, must click Load ↵. Bad first impression.
-- **ABC filter in Frontier UI: "No frontier edges"** — UI ABC mode uses graph edges; arch-void methods
-  have no edges. find_abc_gaps fix helped text tools but not Frontier tab visualization.
-- **Corpus map shows "0 files · 0 hot · 0 stubs"** for dj2 — map render bug.
-- **development_priorities via Ask bar: "No active work items"** — tool arg dispatch may not
-  pass scope correctly from NL query.
-- **Chat results invisible from other tabs** — query sent from Workbench, result in panel-chat
-  with no indication anything happened.
-
-### 5. What Determined surfaces for dj2 now [V]
-
-Direct frontier top stubs:
-  1. guide_backstory_creation (48 callers) — character creation/narrative gap — RIGHT
-  2. generate_rivers (29) — world gen
-  3. _update_character_from_ai (26) — AI character update — RIGHT
-  4. generate_heightmap (26)
-  5. place_locations (22)
-  6. roll_dice (21)
-  7. process_player_action (20) — game loop — RIGHT
-  8. from_game_context (19) — context building — RIGHT
-
-ABC voids: 8 interfaces, 43 unimplemented methods, all in engine/phases.py.
+Committed: 6688a84
 
 ## NEXT SESSION — start here
 
-**Priority 1: dj2 character creation / DM dialog**
-- guide_backstory_creation is stub #1 (48 callers) — start there
-- Wire narrative_framework into DMChatHandler._build_game_context()
-- _update_character_from_ai is stub #3
-- Read dm_chat_handler.py fully before writing anything
+**CLOSURE.md gate is open. UI redesign is the active arc.**
 
-**Priority 2: dj2 encounter / world state**
-- Town wandering needs formal state
-- complete_tavern_intro → game_started pipeline
-- _get_encounter_context should hook into world/fsm/ backbone
-- FSM source files missing — assess whether to recreate or redesign
+Shape tab is the first new projection surface. What's still open:
 
-**Priority 3: Determined UX fixes (found this session)**
-- Auto-load Frontier on corpus_ready
-- Frontier ABC mode: render UNIMPLEMENTED INTERFACES (separate from edge-based)
-- Corpus map "0 files" bug for dj2
-- development_priorities arg passing from Ask bar
+### Priority 1: Context modes (UI_VISION.md item #7)
+Design/Trace/Review mode buttons exist (banner, tab highlight) but are partial.
+Full intent: each mode presents a curated set of surfaces, suppresses noise,
+guides the user toward the right tools for that context. Read UI_VISION.md
+item #7 before designing anything.
 
-## Known issues
+### Priority 2: Frontier ABC mode render (arch-void)
+The ABC filter in Frontier shows the graph visualization. Arch-void ABCs
+(0 subclasses, engine/phases.py 8 interfaces) have no graph edges so the
+graph is empty. Need a separate render path: when mode=abc, show the
+UNIMPLEMENTED INTERFACES text output instead of (or alongside) the graph.
+The backend find_abc_gaps tool already returns the right data.
 
-**arg name asymmetry [V]:** blast_radius=target; graph_path=src/dst; classify_stub=symbol.
-**Suite: 1144 pass, 1 skip [V]:** confirmed this session.
-**Commonplace DB path [V]:** real DB = C_Users_bartl_dev_Determined_examples_commonplace.db.
-**narrative_engine latent bug [?]:** on_arc_completed references self.active_quests but it's
-  commented out in __init__ — AttributeError at runtime if arc completes.
-**engine/phases.py ABC void [V]:** 8 interfaces, 0 implementations — now surfaced correctly.
-**FSM source deleted [V]:** encounter_machine.py / trade_machine.py gone; only .pyc remain.
-**game_started never set [V]:** campaign_state.game_started stays False; game can't formally start.
-**Frontier ABC UI mode [V]:** shows "No frontier edges" for arch-void — needs separate render path.
-**Corpus map 0 files bug [?]:** dj2 corpus map shows "0 files · 0 hot · 0 stubs" after load.
-**development_priorities via Ask bar [?]:** scope arg not passing from NL query.
+### Priority 3: Burnishing
+Small improvements that surface naturally during use. See TRACKER.md
+Deferred/Burnishing section. Log, don't fix mid-arc.
+
+## Known issues [V = verified, ? = recalled]
+
+**TEST_MAP.md [V]:** source -> test mapping built; CLAUDE.md updated.
+**Shape tab [V]:** live, committed, 46 tests pass.
+**CLOSURE.md gate [V]:** all 3 phases checked off.
+**walk_call_chain TS/JS FQN [V]:** graph_edges stores FQN callers; tool
+  queries bare names -> chain length 0/1. Workaround: use graph_path.
+**classify_stub file_path_hint TS [V]:** path matching fails; omit file_path.
+**graph_path FQN JS [V]:** some module.method pairs return no path despite edge.
+**Frontier ABC UI [V]:** shows "No frontier edges" for arch-void — needs
+  separate render path for zero-subclass ABCs.
+**narrative_engine latent bug [?]:** on_arc_completed references self.active_quests
+  but commented out — AttributeError at runtime if arc completes. (dj2, not Determined)
+**engine/phases.py ABC void [V]:** 8 interfaces, 0 implementations (dj2).
+**Corpus map dupes query [V]:** isolated from files/hot/stubs to handle DBs
+  without class_name column (dj2 style).
