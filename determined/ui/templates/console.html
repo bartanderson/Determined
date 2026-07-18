@@ -136,10 +136,9 @@ body.mode-review .mode-banner-label{color:var(--green)}
 
 /* ── tab highlights per mode ── */
 /* tabs lit up for Design mode */
+body.mode-design .tab[data-tab="shape"],
 body.mode-design .tab[data-tab="knowledge"],
-body.mode-design .tab[data-tab="editor"],
-body.mode-design .tab[data-tab="dochealth"],
-body.mode-design .tab[data-tab="build_queue"] { border-bottom:2px solid var(--blue); }
+body.mode-design .tab[data-tab="editor"] { border-bottom:2px solid var(--blue); }
 
 /* tabs lit up for Trace mode */
 body.mode-trace .tab[data-tab="call_tree"],
@@ -1099,20 +1098,20 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
 const _MODES = {
   design: {
     icon: "📐", label: "Module design",
-    hint: "Exploring design intent, violations, knowledge artifacts",
-    primary: "knowledge",
+    hint: "Corpus shape — stub density, subsystem verdicts, prerequisites",
+    primary: "shape",
     color: "blue"
   },
   trace: {
     icon: "🔗", label: "Call trace",
-    hint: "Following call chains — use call tree, graph, frontier",
-    primary: "call_tree",
+    hint: "Frontier stubs — direct caller→stub edges, judgment visible on click",
+    primary: "frontier",
     color: "orange"
   },
   review: {
     icon: "✅", label: "Gap review",
-    hint: "Reviewing what's missing — proposals, docstrings, workflow queue",
-    primary: "dochealth",
+    hint: "Stub chains ranked by depth — most uncertain and connected stubs first",
+    primary: "frontier",
     color: "green"
   }
 };
@@ -1141,6 +1140,19 @@ function setMode(name) {
 
   // switch to primary tab
   activateTab(cfg.primary);
+
+  // mode-specific entry point actions
+  if (name === "design") {
+    if (!_shapeLoaded) shapeRun();
+  } else if (name === "trace") {
+    fgMode.value = "direct";
+    fgUpdateHint();
+    fgLoad_();
+  } else if (name === "review") {
+    fgMode.value = "chain";
+    fgUpdateHint();
+    fgLoad_();
+  }
 }
 
 function clearMode() {
