@@ -12,46 +12,151 @@ know where things stand.
 
 ---
 
-## FUTURE — Language support additions
+## DESIGN PRINCIPLES
 
-- **C / C++** — core targets; Zig interops with both, so these come first
-- **clx** (https://github.com/samyeyo/clx) — Lua-based language; evaluate for corpus ingestion support; treat as single-language corpus, C++ compilation is incidental
-- **Zig** — systems language with C/C++ interop; ingestion + stub detection for Zig files
+These are standing architectural commitments, not tasks. They should be applied
+when making implementation decisions, not scheduled as work items.
 
-### Multi-language emission + cross-language corpus chain (idea, 2026-07-18)
+**UI-CLI parity (aspirational 100%):**
+Every capability that produces a result a human would act on must be reachable
+from the UI — not just the common-path workflows. The UI is the canonical map of
+what the tool can do. Exceptions are internal plumbing only (schema helpers, debug
+internals, emit machinery) — not "too advanced" judgments about user need.
+The Workbench tab is the natural home for full tool coverage; it should be a
+complete tool picker, not a demo surface.
+Corollary: if I'm about to write a new socket handler, there should be a UI
+affordance for it before the session ends. Capability without UI access is
+a half-shipped feature.
 
-**Core idea:** Determined already classifies stubs by design intent and understands call chains.
-`project_stub` could emit implementations in the right language for the job — not always Python.
-`target_lang` becomes a first-class parameter to `stub_projector.project_stub()`.
+**GOT model (navigation-first):**
+The editor is the navigation hub. Every surface connects back to it.
+Search is secondary to browsing. Panels expose what the corpus knows,
+not what we decided to show. See docs/UI_VISION.md for full statement.
 
-Language routing heuristic (rough):
-- Pure computation, no I/O, hot path → **Zig**
-- Game logic, scriptable, LuaJIT host → **Lua**
-- Interop with existing C libs → **C**
-- Object-heavy systems, existing C++ codebase → **C++**
-- Default / glue / analysis → **Python**
+**Design oracle posture:**
+Proposals are evidence of goals, not specs. Extract intent before building.
+Apply pressure before improving. Disagree when warranted. Code follows
+understanding, not the other way around.
 
-**Verify loop shim** (Windows-friendly, no moonstone needed):
+---
+
+## FUTURE — Cross-language understanding (2026-07-18)
+
+### The unified idea
+
+Three things that appeared as separate proposals are actually one:
+
+> **Determined should understand code shape across language boundaries** —
+> ingesting corpora in any language, classifying and projecting stubs into
+> the right target language for the job, and demonstrating the tool's own
+> power by running it across a chain of real projects in the language family.
+
+The three sub-ideas and how they fit:
+
+**1. Cross-language ingestion** — Determined reads corpora in Python, Lua, Zig, C, C++.
+Each language adds a parser/stub-detector; the rest of the pipeline (graph, judgment,
+projection) is already language-agnostic. Languages to add, in priority order:
+- C / C++ — core targets; Zig interops with both, Zig first
+- Zig — systems language, clean syntax, strong stub detection story
+- Lua / clx (https://github.com/samyeyo/clx) — scriptable, LuaJIT host, game-adjacent
+
+**2. Multi-language emission** — `project_stub` emits in the right language for the job,
+not always Python. `target_lang` becomes a first-class param. Classification drives routing:
+
+| Stub role | Target |
+|---|---|
+| Pure computation, no I/O, hot path | Zig |
+| Game logic, scriptable, LuaJIT host | Lua |
+| Interop with existing C libs | C |
+| Object-heavy, existing C++ codebase | C++ |
+| Glue, analysis, default | Python |
+
+Design pressure to apply before building: the classification hypothesis drives routing,
+but routing should be a policy the user can override — don't hardcode the table above
+into the prompt path. `target_lang` as an explicit param is the right level of control.
+
+**3. Cross-language corpus chain** — run Determined against a curated chain of projects
+in the language family and let the tool demonstrate its own invariants across them.
+The chain shows where design patterns are universal vs. language-shaped.
+Candidate chain: dj2 (Python) → clx (Lua) → [small Zig project] → [small C project].
+This is also the strongest possible demo: same tool, same pipeline, different languages.
+
+**Verify loop shim** (prerequisite for emission, Windows-native):
 `determined/agent/runtime_locator.py` — `locate(lang)` finds or fetches a pinned binary
 into `%LOCALAPPDATA%\determined\runtimes\<lang>\<version>\`; `verify_snippet(lang, code)`
-compiles/runs and returns stdout+errors. ~200 lines, no symlinks, no POSIX assumptions.
-(moonstone is interesting but POSIX-only and overkill for snippet verification.)
+compiles/runs, returns stdout+errors. ~200 lines, no symlinks, no POSIX assumptions.
+Moonstone (https://github.com/moonstone-sh/moonstone) is the closest prior art but
+POSIX-only and over-engineered for snippet verification — build the shim instead.
 
-**Cross-language corpus chain idea:**
-Run Determined against corpora written in each language — Python, Lua, Zig, C, C++ — and
-let the tool itself demonstrate the family relationship. Each corpus shows a different
-shape; the chain shows how the same design patterns appear (or don't) across languages.
-Candidate starting chain: dj2 (Python) → clx (Lua) → [small Zig project] → [small C project].
+**Second-order effects worth tracking:**
+- Once emission is multi-language, the UI needs a language selector or auto-routing display
+- The corpus chain creates a natural test bed: same stub patterns should classify identically
+  regardless of source language — a good regression harness for the judgment layer
+- Cross-language graph edges (Python calling C via ctypes, Lua calling C via FFI) are
+  not currently modeled; worth noting as a future graph layer, not blocking anything now
 
-**Implementation note:** finish RM-UI-2 with Python output first. Design `project_stub` so
-`target_lang` is a first-class parameter from day one — then multi-language is extension, not rework.
+**Implementation sequencing:**
+1. Ingestion parsers per language (prerequisite for everything)
+2. `target_lang` param in `project_stub` (low-cost, do it now — RM-UI-2 is already done)
+3. `runtime_locator.py` shim (enables verify loop for non-Python output)
+4. Corpus chain: acquire projects, ingest, surface shape comparison in UI
 
 ### Corpora to acquire
 
-D&D theme is well covered (dj2, Commonplace). Branch out:
-- C/C++ open-source projects (candidates: small game engines, embedded systems, CLI tools)
-- Zig projects once language support lands
-- clx projects if ingestion proves viable
+- **Optimized matmul (C)** — houslast3/85.30-GFLOPS-Single-Core-FP32-Matrix-Multiplication-on-AMD-Zen-3
+  Hand-optimized SIMD/AVX matmul kernel. Tiny call graph, no stubs, all structure is performance
+  structure (loop tiling, register blocking). Maximally different shape from dj2 — good stress test
+  for corpus shape tools on non-behavioral, non-Python code. Verify repo exists and has clean C
+  source before ingesting. (Source URL was a Google Translate mirror — check original.)
+- **ML trainer codebase (C/Python)** — a minimal LLM training loop that uses a kernel like the
+  above. First corpus where design intent is mathematical, not behavioral. Good cross-language
+  boundary test (Python training loop → C kernel via ctypes/cffi). Corpus candidate TBD.
+- C/C++: small game engines, embedded systems tools, CLI utilities
+- Zig: projects once ingestion lands
+- Lua/clx: projects if ingestion proves viable
+- Cross-language pair: one project with a Python/C boundary (ctypes or cffi) to test
+  cross-language edge modeling
+
+---
+
+## FUTURE — Design Oracle (2026-07-18)
+
+A tool that reads across the already-ingested corpus and surfaces three signals at the
+right moment — not a new data pipeline, a new query over what's already there.
+
+**The problem it solves:** dj2's design docs, stubs, backlog items, and "I want to"
+statements are all ingested and connected. But nothing joins them into actionable advice
+about *what to work on next and why*. The pressure sits there disconnected from the
+development moment where it would be useful.
+
+**The three signals:**
+
+- **CRITICAL** — "X is blocking Q, R, S, T downstream. It overrides everything else."
+  Driven by: stub classified as blocked-on-prerequisite + high downstream dependency count.
+
+- **OPPORTUNITY** — "While you're already in this area, Y is adjacent, cheap, and unblocks Z.
+  Want to take it?" Triggered by: current working context + graph adjacency + readiness.
+
+- **FOREWARNING** — "You'll need W before you can do V. V is coming up. Here's what W requires."
+  Forward-looking, derived from the dependency chain ahead of current work.
+
+**What it composes (all already exist):**
+- `knowledge_artifacts` — design doc intent, "I want to" statements
+- `workflow_items` (kind=backlog) — catalogued backlog from ingestion
+- `classify_stub` — stub readiness and blockage reason
+- graph edges — adjacency, what's cheap to reach from current context
+- `_get_design_frame` — sots tenet alignment for the current area
+
+**The join that's missing:** current working context → relevant intent → blockage state →
+adjacency. That's the query. Output is ranked, scoped to current session context, at most
+one CRITICAL + two OPPORTUNITYs + one FOREWARNING.
+
+**When it runs:** Session start (broad read) and on-demand ("what should I work on next?").
+Not automatic mid-session — that's noise. The valve opens when asked.
+
+**Sensing model:** Claude holds the structural view and tracks gaps. Bart provides friction
+from real use and occasional mock probes to test capability. Gaps surface through use,
+not planning.
 
 ---
 
@@ -248,7 +353,13 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-16, session 196):** Determined corpus re-ingested (functions: 1904->2160, edges: 16588->18693). Fixed 2 stub detection bugs: (1) Protocol method ... bodies were false-positive stubs -- _is_protocol_class() + in_protocol param added to _is_stub; (2) readiness_check ORDER BY is_stub DESC to prefer stub rows on name collision. 5 new tests, 1063 total pass. resolve/suggest_tags now correctly detected; structural_score is confirmed dead code (no callers).
+**Last session (2026-07-18, session 210):** RM-UI-2, 3, 4 done. Full UI redesign arc complete (RM-UI-1 through 4).
+RM-UI-2 (3f48c23): project_stub() takes classification kwarg; 4 prompt framings per hypothesis; handle_project_stub passes it through from socket data. Frontend was already correct.
+RM-UI-3 (c6f76c2): Shape tab file paths clickable (blue, open editor); symbol names clickable (orange, open spotlight). Server emits navigation index (short_path→full_path, symbol list) alongside text. Delegated click on #shape-grid handles both.
+RM-UI-4 (16698d3): Design mode → Shape tab + auto-runs shapeRun(). Trace mode → Frontier tab, filter=direct. Review mode → Frontier tab, filter=chain. Mode hints updated to describe actual surfaces.
+Also this session: DESIGN PRINCIPLES section added to TRACKER (UI-CLI parity, GOT model, design oracle posture). FUTURE sections expanded: Design Oracle, cross-language understanding rewritten as unified abstraction, matmul+ML trainer corpus candidates added. Memory system improved: design partnership, Bart sensing role, memory worthiness test, UI server ops reference. 11 tests pass (ui_surfaces). Full suite not run (no engine changes).
+
+**Previous session (2026-07-16, session 196):** Determined corpus re-ingested (functions: 1904->2160, edges: 16588->18693). Fixed 2 stub detection bugs: (1) Protocol method ... bodies were false-positive stubs -- _is_protocol_class() + in_protocol param added to _is_stub; (2) readiness_check ORDER BY is_stub DESC to prefer stub rows on name collision. 5 new tests, 1063 total pass. resolve/suggest_tags now correctly detected; structural_score is confirmed dead code (no callers).
 
 **Previous (2026-07-16, session 195):** RM65 + RM66 done. is_tool column added to functions table (parse_ast.py detects @tool() at ingest; agent_tools._ep_tier now reads column, not decorators_json string). _extract_function_references(): 3 patterns (dict Attribute values, 2-arg register calls, callback kwargs); depth==1 + no-self/cls guard limits false positives. 140 function_reference edges on dj2. builtins.py: 17/18 fns now have callers (was 0). Inferred EPs world/: 185->170. 20 new tests. 1063 pass.
 
@@ -454,26 +565,29 @@ enabled once the judgment arrives.
 - `determined/ui/templates/console.html`: SP_SECTIONS, openSpotlight,
   symbol_quick_result handler, classify_stub_spotlight_result handler
 
-### RM-UI-2: Propose → fulfill loop [TODO]
+### RM-UI-2: Propose → fulfill loop [DONE 2026-07-18]
 
-When "propose (design)" is clicked:
-- `project_stub` emits with `{ symbol, classification: top_hypothesis }`
-- Backend passes classification context to stub_projector (informs LLM
-  framing: design-intent stubs get "complete the stated intent" prompt;
-  blocked-on-prereq stubs get "sketch the interface for X" prompt)
-- Result renders in spotlight source panel with file open in editor
+`project_stub()` now accepts `classification` kwarg. Four prompt framings:
+design-intent-stated / blocked-on-prerequisite / concept-not-applicable / genuinely-unknown.
+`handle_project_stub` pulls classification from socket data and passes through.
+Frontend was already correct (dataset.classification set by classify handler).
+Commit: 3f48c23
 
-### RM-UI-3: Shape tab → editor navigation [TODO]
+### RM-UI-3: Shape tab → editor navigation [DONE 2026-07-18]
 
-Clicking a file row in Shape tab results opens it in the editor.
-Clicking a symbol in Shape results opens its spotlight (with judgment
-already loaded since Shape ran classify_stub to build the projection).
+File paths in Shape tab render as blue clickable spans (open editor).
+Symbol names render as orange clickable spans (open spotlight).
+Server emits `index: {files, symbols}` alongside text on shape_result.
+Delegated click on #shape-grid — no re-binding on re-run.
+Commit: c6f76c2
 
-### RM-UI-4: Mode = curated entry point [TODO]
+### RM-UI-4: Mode = curated entry point [DONE 2026-07-18]
 
-- Design mode: auto-runs Shape tab on activate
-- Trace mode: auto-loads Frontier stubs with judgment visible
-- Review mode: runs stub sweep ranked by uncertainty (most uncertain first)
+Design mode → Shape tab, auto-runs shapeRun() if not loaded.
+Trace mode → Frontier tab, filter=direct (caller→stub), triggers fgLoad_().
+Review mode → Frontier tab, filter=chain (stub chains), triggers fgLoad_().
+Mode hints updated. CSS tab highlights updated for Design (shape/knowledge/editor).
+Commit: 16698d3
 
 ---
 
