@@ -351,9 +351,47 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 
 ---
 
+## Work queue — post-walkthrough (session 212, priority order)
+
+Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off in order
+— big gains first, polish last.
+
+1. **[ ] Test stubs filter** — shape output and stub list include test files (test_encounter_fsm.py,
+   test_economy.py). Filter files matching test/ path prefix in list_stubs and stub projections.
+   ~30 min. Immediate signal quality gain across all corpora.
+
+2. **[ ] TS call tree FQN fix** — walk_call_chain returns "(no callees)" for all TS/JS symbols.
+   graph_edges stores callers as FQNs (Class.method); tool queries bare names. Fix: when bare-name
+   lookup returns nothing, retry with FQN patterns. Affects rotjs, dungeoncrawler, dnd-dungeon-gen.
+
+3. **[ ] RM68 — Remove subrace dead code from dj2** (already filed below, promoting to queue).
+   world/ subsystem verdict is "dead-concept" because 5 subrace stubs dominate. Remove them
+   and the real AI-layer signal (blocked-on-prerequisite) becomes the verdict. Game work guided
+   by Determined — use blast_radius to confirm scope, then remove.
+
+4. **[ ] classify_stub file_path_hint TS fix** — path matching fails silently for TS corpora.
+   Workaround: omit file_path. Fix the matching so file_path_hint works for TS too.
+
+5. **[ ] Ask routing baseline** — "what should I work on next?" routes to prioritize_work which
+   needs workflow items. When no items exist, fall back to shape/stub data already in DB.
+   Entry point for Design Oracle idea — start with routing, not the full oracle.
+
+6. **[ ] Design Oracle** — full CRITICAL/OPPORTUNITY/FOREWARNING query over knowledge_artifacts
+   + stubs + graph. See FUTURE section below for full design. After routing baseline proves concept.
+
+7. **[ ] Polish** — path input UX (better error when directory entered), graph_path JS FQN
+   inconsistency, threshold burnishing.
+
+Also fixed this session (session 212):
+- _IMPL_WHEN_RE: SetFit false-positive on "will be implemented when X" — classified as
+  concept-not-applicable; fixed with deterministic fast-path in has_removal/has_intent (d8e9a63)
+- _strip_fences prose preamble (4c77560, session 211)
+
+---
+
 ## Dashboard - at a glance
 
-**Last session (2026-07-18, session 211):** _strip_fences prose preamble fix (4c77560). RM67 convergence status updated to reflect all probes done. No open blocking work.
+**Last session (2026-07-18, session 212):** Live UI walkthrough (dj2 + dungeoncrawler). Fixed _IMPL_WHEN_RE SetFit false-positive. Work queue above filed from findings. Session 211: _strip_fences fix.
 
 **Previous session (2026-07-18, session 210):** RM-UI-2, 3, 4 done. Full UI redesign arc complete (RM-UI-1 through 4).
 RM-UI-2 (3f48c23): project_stub() takes classification kwarg; 4 prompt framings per hypothesis; handle_project_stub passes it through from socket data. Frontend was already correct.
