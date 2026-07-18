@@ -2515,7 +2515,28 @@ def handle_shape_run(data):
                 ("ghost_map",      "stub_concept_ghost_map"),
             ]:
                 results[key] = dispatch(tool_name, args, _oracle, _assessor)
-            socketio.emit("shape_result", {"ok": True, "results": results, "scope": scope}, to=sid)
+
+            # Build navigation index: short_path -> full_path, plus stub symbol names
+            conn = _oracle.conn
+            scope_filter = f"AND file_path LIKE '%{scope}%'" if scope else ""
+            stub_rows = conn.execute(
+                f"SELECT name, file_path FROM functions WHERE is_stub=1 {scope_filter}"
+            ).fetchall()
+            files_index = {}
+            symbols = []
+            for name, fp in stub_rows:
+                if fp:
+                    fp_norm = fp.replace("\\", "/")
+                    short = "/".join(fp_norm.split("/")[-2:])
+                    files_index[short] = fp_norm
+                symbols.append(name)
+
+            socketio.emit("shape_result", {
+                "ok": True,
+                "results": results,
+                "scope": scope,
+                "index": {"files": files_index, "symbols": symbols},
+            }, to=sid)
         except Exception as exc:
             socketio.emit("shape_result", {"error": str(exc)}, to=sid)
 

@@ -156,6 +156,13 @@ body.mode-review .tab[data-tab="frontier"] { border-bottom:2px solid var(--green
 /* trail bar glow in Trace mode */
 body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,0,.07); }
 
+/* ── shape tab navigation spans ── */
+.shape-nav-file,.shape-nav-sym{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.shape-nav-file{color:var(--accent)}
+.shape-nav-sym{color:var(--orange)}
+.shape-nav-file:hover{text-decoration:underline}
+.shape-nav-sym:hover{text-decoration:underline}
+
 /* ── shape tab (RM69) ── */
 .shape-card{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;min-height:0}
 .shape-card-hdr{font-size:.8em;font-weight:600;color:var(--text1);margin-bottom:4px;flex-shrink:0}
@@ -3712,9 +3719,11 @@ const shapeStatus  = document.getElementById("shape-status");
 const shapeScopeIn = document.getElementById("shape-scope");
 let _shapeLoaded = false;
 
+let _shapeIndex = { files: {}, symbols: [] };
+
 function _colorizeShape(text) {
-  // Wrap verdict/priority keywords in colored spans
-  return escHtml(text)
+  // Escape first, then apply keyword coloring and navigation spans
+  let html = escHtml(text)
     .replace(/\bdesign-skeleton\b/g, '<span class="sv-skeleton">design-skeleton</span>')
     .replace(/\bdead-concept\b/g,    '<span class="sv-dead">dead-concept</span>')
     .replace(/\bdesign-intent\b/g,   '<span class="sv-skeleton">design-intent</span>')
@@ -3726,6 +3735,22 @@ function _colorizeShape(text) {
     .replace(/\[HIGH\]/g,            '<span class="sv-high">[HIGH]</span>')
     .replace(/\[MED\]/g,             '<span class="sv-med">[MED]</span>')
     .replace(/\[LOW\]/g,             '<span class="sv-low">[LOW]</span>');
+
+  // Wrap known file short-paths as clickable
+  Object.keys(_shapeIndex.files).forEach(short => {
+    const esc = short.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp(esc, 'g'),
+      `<span class="shape-nav-file" data-path="${escHtml(_shapeIndex.files[short])}" title="Open in editor">${escHtml(short)}</span>`);
+  });
+
+  // Wrap known symbol names as clickable (word-boundary match)
+  _shapeIndex.symbols.forEach(sym => {
+    const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp(`\\b${esc}\\b`, 'g'),
+      `<span class="shape-nav-sym" data-sym="${escHtml(sym)}" title="Open in spotlight">${escHtml(sym)}</span>`);
+  });
+
+  return html;
 }
 
 function shapeRun() {
@@ -3745,17 +3770,12 @@ socket.on("shape_result", data => {
     Object.values(_shapePres).forEach(p => { p.textContent = ""; });
     return;
   }
-  const map = {
-    file_shape:      _shapePres.file_shape,
-    subsystem_shape: _shapePres.subsystem_shape,
-    prereq_map:      _shapePres.prereq_map,
-    ghost_map:       _shapePres.ghost_map,
-  };
+  _shapeIndex = data.index || { files: {}, symbols: [] };
   const r = data.results || {};
-  map.file_shape.innerHTML      = _colorizeShape(r.file_shape      || "no data");
-  map.subsystem_shape.innerHTML = _colorizeShape(r.subsystem_shape || "no data");
-  map.prereq_map.innerHTML      = _colorizeShape(r.prereq_map      || "no data");
-  map.ghost_map.innerHTML       = _colorizeShape(r.ghost_map       || "no data");
+  _shapePres.file_shape.innerHTML      = _colorizeShape(r.file_shape      || "no data");
+  _shapePres.subsystem_shape.innerHTML = _colorizeShape(r.subsystem_shape || "no data");
+  _shapePres.prereq_map.innerHTML      = _colorizeShape(r.prereq_map      || "no data");
+  _shapePres.ghost_map.innerHTML       = _colorizeShape(r.ghost_map       || "no data");
   const scope = data.scope ? ` (scope: ${escHtml(data.scope)})` : "";
   shapeStatus.textContent = `Loaded${scope}`;
 });
@@ -3764,6 +3784,14 @@ shapeRunBtn.addEventListener("click", shapeRun);
 shapeScopeIn.addEventListener("keydown", e => { if (e.key === "Enter") shapeRun(); });
 document.querySelectorAll(".tab[data-tab='shape']").forEach(t => {
   t.addEventListener("click", () => { if (!_shapeLoaded) shapeRun(); });
+});
+
+// Delegated click handler for shape nav spans
+document.getElementById("shape-grid").addEventListener("click", e => {
+  const fileEl = e.target.closest(".shape-nav-file");
+  if (fileEl) { edOpenFile(fileEl.dataset.path); return; }
+  const symEl = e.target.closest(".shape-nav-sym");
+  if (symEl) { openSpotlight(symEl.dataset.sym); }
 });
 
 // ── Tour panel ─────────────────────────────────────────────
