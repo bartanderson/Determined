@@ -51,10 +51,23 @@ def _make_oracle(edges, functions=None, classes=None):
                             "INSERT INTO symbol_names (canonical_id, name, name_type) VALUES (?,?,?)",
                             (tgt_id, name, ntype)
                         )
-            for name, fp in (functions or []):
-                self.conn.execute(
-                    "INSERT INTO functions VALUES (?,?,0,NULL)", (name, fp)
-                )
+            # Auto-populate functions from edge endpoints when not supplied,
+            # so shortest_path (which filters on the functions table) works in tests.
+            if functions is None:
+                seen_fns: set[str] = set()
+                for caller, callee in edges:
+                    for n in (caller, callee):
+                        bare = normalize_symbol(n)
+                        if bare not in seen_fns:
+                            seen_fns.add(bare)
+                            self.conn.execute(
+                                "INSERT INTO functions VALUES (?,?,0,NULL)", (bare, "fixture.py")
+                            )
+            else:
+                for name, fp in functions:
+                    self.conn.execute(
+                        "INSERT INTO functions VALUES (?,?,0,NULL)", (name, fp)
+                    )
             for name, fp in (classes or []):
                 self.conn.execute(
                     "INSERT INTO classes VALUES (?,?,0,NULL)", (name, fp)

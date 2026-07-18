@@ -222,6 +222,20 @@ def shortest_path(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
     if src_id == dst_id:
         return [src_id]
 
+    # Only traverse through symbols registered in the functions table.
+    # Restricting to registered functions prevents false paths through method-call
+    # noise: e.g. `results.append(dispatch(...))` is ingested as an edge
+    # append -> dispatch (receiver stripped), making unrelated .append() calls
+    # look like a path hop into dispatch.  Functions in the corpus have a real
+    # source file; stdlib/builtin method names do not.
+    corpus_names: set[str] = {
+        r[0] for r in oracle.conn.execute(
+            "SELECT DISTINCT name FROM functions WHERE name IS NOT NULL"
+        ).fetchall()
+    }
+    # Always allow the destination even if it has no outgoing edges
+    corpus_names.add(dst_id)
+
     visited: set[str] = {src_id}
     queue: deque[list[str]] = deque([[src_id]])
 
@@ -235,7 +249,7 @@ def shortest_path(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
         for (target_id,) in rows:
             if target_id == dst_id:
                 return path + [dst_id]
-            if target_id not in visited:
+            if target_id not in visited and target_id in corpus_names:
                 visited.add(target_id)
                 queue.append(path + [target_id])
 

@@ -1643,6 +1643,10 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         FROM functions f
         LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
         WHERE f.is_stub = 1
+          AND f.file_path NOT LIKE '%/test_%'
+          AND f.file_path NOT LIKE '%\\test_%'
+          AND f.file_path NOT LIKE '%/tests/%'
+          AND f.file_path NOT LIKE '%\\tests\\%'
         GROUP BY f.name, f.file_path
         ORDER BY callers DESC, f.file_path, f.name
         LIMIT ?
