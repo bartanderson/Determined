@@ -110,10 +110,11 @@ The full Commonplace application as it exists in `examples/commonplace/`. The
 user arrives here by working through the seed, making implementation decisions
 Determined surfaces along the way.
 
-The complete state has:
+The complete state has (design target -- current examples/commonplace is at partial state):
 - 8 stubs across multiple topology shapes (direct-call, chain-head, chain-tail,
-  ABC-interface, conditional)
+  ABC-interface, conditional) [current: 1 is_stub + 1 conditional; ABC/chain shapes not yet added]
 - Design tensions documented and detectable via check_design_violations
+  [requires ingest_design_docs first; examples/commonplace/docs/DESIGN.md must exist]
 - Full layering (routes / services / storage / utils) with known violations
 - All Determined frontier features exercised
 
@@ -203,7 +204,8 @@ Each step: user reads Determined output, makes a decision, writes code,
 re-ingests, reads again. The tool drives the order.
 
 **Step 1 -- Orient**
-Load seed corpus. Run corpus_status and detect_topology.
+Load seed corpus. Run knowledge_status and detect_topology.
+(corpus_status does not exist; knowledge_status is the equivalent.)
 Lesson: entry point + direct-call frontier. "Here is what exists. Here is
 where it stops."
 

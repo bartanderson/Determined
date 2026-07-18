@@ -305,21 +305,42 @@ Goal: no pattern list anywhere in the engine is doing the job that embedding
 similarity or a trained classifier should do.
 
 Directories to survey:
-- [ ] determined/agent/ — audit complete; findings:
-- [ ] determined/oracle/ — audit complete; findings:
-- [ ] determined/assessor/ — audit complete; findings:
-- [ ] determined/ingestion/ — audit complete; findings:
-- [ ] Fix any instances found (file here when done):
+- [x] determined/agent/ — 4 regex instances. None replacing semantic layer. (2026-07-18)
+      _MODAL_RE: model-unavailable fallback, not on primary path.
+      _EXPLICIT_ABSENCE_RE: deterministic fast-path, already reviewed/justified.
+      _COMPARATIVE_RE: structural question-form detection, not semantic meaning.
+      pattern_executor.py: intentional UX fast-path before LLM oracle. Synonym lists
+      acceptable — shortcut layer, not semantic router.
+- [x] determined/oracle/ — no regex. Clean. (2026-07-18)
+- [x] determined/assessor/ — no regex. Clean. (2026-07-18)
+- [x] determined/ingestion/ — structural/syntactic only: markdown parsing, code API
+      pattern matching (Flask, socket.io, HTMX, fetch, XHR). No semantic-meaning regex. (2026-07-18)
+- [x] Fix any instances found — none found beyond session 201 fix. No action needed.
 
 ### Commonplace guided journey — current?
 
 Commonplace is the on-ramp for new developers. It must reflect current tool
 capabilities or new users will hit dead ends on the first session.
 
-- [ ] Read docs/COMMONPLACE_VISION.md — still accurate?
-- [ ] Walk the journey with current tool — does each step work?
-- [ ] Update any stale steps to match current tool output format
-- [ ] Confirm suggest_tags stub is classified correctly end-to-end in the journey
+- [x] Read docs/COMMONPLACE_VISION.md — still accurate? (2026-07-18)
+      Findings: corpus_status (Step 1) doesn't exist -- replaced with knowledge_status.
+      "8 stubs" for Phase 2 complete is aspirational; current corpus has 1 is_stub + 1
+      conditional (validate_entry). ABC/chain topology shapes not yet added to examples/commonplace.
+      ingest_design_docs must run before check_design_violations (Step 4) is useful.
+      All other journey tool names (detect_topology, frontier_priority, symbol_context,
+      score_stub, check_design_violations, reason_about, find_abc_gaps, find_conditional_stubs)
+      confirmed present in agent_tools.py.
+- [x] Walk the journey with current tool — does each step work? (2026-07-18)
+      Steps 1-6 validated against live Commonplace corpus DB. detect_topology, frontier_priority,
+      symbol_context, score_stub, find_conditional_stubs all return useful output.
+      find_abc_gaps: clean (no ABC gaps currently). suggest_tags correctly classified direct-call stub.
+- [x] Update any stale steps to match current tool output format (2026-07-18)
+      COMMONPLACE_VISION.md: corpus_status -> knowledge_status in Step 1.
+      Added note on "8 stubs" aspiration vs current state.
+      Added ingest_design_docs requirement for Step 4.
+- [x] Confirm suggest_tags stub is classified correctly end-to-end in the journey (2026-07-18)
+      is_stub=1, direct-call shape, 3 callers, score=3. Correctly surfaces via all paths:
+      detect_topology, frontier_priority, symbol_context, score_stub, list_stubs.
 
 ### Emerging items — Phase 3
 
