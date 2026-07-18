@@ -128,11 +128,12 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
 - Run `git add` and `git commit` for completed work. Do NOT push -- Bart pushes.
 - Before any multi-step sequence, state in one short line what is about to happen
   so Bart can abort. Skip this only for single-step actions.
-- Run regression tests before committing: `pytest tests/regression/`
+- **After a change**: run only the matching test file(s) from `docs/TEST_MAP.md`.
+  Never run the full suite — it takes 6 minutes and regressions are caught when they matter.
 - Run a single test file: `.venv\Scripts\pytest tests/regression/test_foo.py`
 - Run a single test: `.venv\Scripts\pytest tests/regression/test_foo.py::test_bar`
-- Skip slow (LLM/embedding) tests: `.venv\Scripts\pytest tests/regression/ -m "not slow"`
-- All 298+ tests must pass. A commit that breaks tests is not done.
+- Look up related tests: `docs/TEST_MAP.md` — source module → test file mapping.
+- Matching tests must pass before commit. Full suite only if something looks broken.
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
   in full with current status and next steps. This is mandatory. Follow the
   SESSION END PROTOCOL below.
