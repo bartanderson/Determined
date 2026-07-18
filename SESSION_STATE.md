@@ -1,93 +1,99 @@
-# SESSION STATE — session 208
-Written at commit: 6688a84
+Written at commit: 3936d0c
+
+# SESSION STATE — session 209
+Written at commit: 3936d0c
 
 ## Active branch: main [V]
 
 ## What happened this session (2026-07-18)
 
-### 1. Discovered all 4 UX gaps already fixed [V]
+### 1. Design review — context modes [V]
 
-Session started with intent to fix 4 UX gaps from session 207. Git log
-confirmed they were committed in ab082a3 last session:
-1. Frontier auto-load on corpus_ready — fgLoad_() call in corpus_ready handler
-2. Frontier ABC mode "No frontier edges" — @abstractmethod decorator check
-3. Corpus map "0 files" bug — dupes query isolated (dj2 lacks class_name column)
-4. development_priorities via Ask bar — heuristic + _PATTERNS + bypass added
+Read UI_VISION.md, sots.md, and current console.html implementation.
+Found: Design/Trace/Review mode buttons exist and are wired (setMode, banner,
+tab highlights) but are COSMETIC ONLY — no surface suppression, no auto-load,
+no curated experience. Just decoration.
 
-All 4 were done. Tests confirmed: 1144 pass, 1 skip [V].
+Agreed: start with stub classification in spotlight as foundation for the
+full redesign arc. Modes will become meaningful entry points once the surfaces
+they curate are actually live.
 
-### 2. Full regression suite retired [V]
+### 2. RM-UI-1: Stub classification in spotlight [V — committed 3936d0c]
 
-User: 6-minute full suite is too expensive per change.
-Decision: match-first rule — run only the test file(s) from TEST_MAP.md for
-the changed module. Full suite only if something looks broken.
-
-- Created docs/TEST_MAP.md — source module → test file mapping for all 70+ test files
-- Updated CLAUDE.md standing rule: no full suite after edits, ever
-- Committed: 9e9b1f2
-
-### 3. Work focus clarified [V]
-
-Determined, not dj2. Saved to memory (feedback_work_focus.md). Do not suggest
-dj2 work as next step unless Bart explicitly asks.
-
-### 4. Shape tab shipped [V]
-
-All CLOSURE.md phases complete — gate open. Surfaced RM69 corpus projections
-in the UI as a new "Shape" tab in the More dropdown.
+Full detail in TRACKER.md RM-UI-1. Summary:
 
 **What it does:**
-- Auto-runs all 4 corpus-shape tools on first click
-- Scope input (e.g. "world/") to restrict to a subsystem
-- 2x2 grid: File shape, Subsystem shape, Prerequisite map, Concept ghost map
-- Verdict keywords color-coded: design-skeleton (blue), dead-concept (orange),
-  GHOST (red), live (green)
+Opening any stub in the spotlight panel auto-runs classify_stub and renders
+a "Stub Judgment" section with colored hypothesis chips, confidence %, and
+evidence sentences. A "propose (classification)" button appears once judgment
+arrives.
 
-**Backend:** shape_run socket event in ui_server.py dispatches all 4 tools in
-one thread, returns structured result.
+**Backend — ui_server.py:**
+- New socket event: classify_stub_spotlight
+- Handler calls extract_signals(oracle, symbol) + score_hypotheses(signals)
+  directly (not text formatter) — returns structured JSON
+- Emits classify_stub_spotlight_result:
+  { symbol, top_hypothesis, top_score, uncertain, hypotheses[], signals{} }
 
-**Verified live [V]:** dj2 corpus — CombatFSM [GHOST], world/ dead-concept
-dominant, encounter prereq — all correct. 46 tests pass (test_corpus_projections
-+ test_ui_surfaces).
+**Frontend — console.html:**
+- SP_SECTIONS: added judgment (order 2, stubOnly: true) — hidden by default
+- openSpotlight: builds judgment placeholder as display:none
+- symbol_quick_result: when is_stub=true for current spotlight symbol —
+  reveals judgment section, appends "propose impl" button (disabled),
+  emits classify_stub_spotlight
+- classify_stub_spotlight_result handler: renders signal summary + colored
+  hypothesis chips (green=design-intent, orange=blocked, blue=concept-not-applicable,
+  grey=unknown), enables propose button labeled "propose (design)" etc.
+- stub_projection handler updated to find sp-propose-btn not old sp-fill-stub-btn
 
-Committed: 6688a84
+**Verified live [V]:** process_consequences in dj2: design-intent-stated
+(40%, green) + genuinely-unknown (20%, grey), evidence from docstring,
+propose button enabled labeled "propose (design)".
+
+**Tests [V]:** 52 pass (test_classify_stub + test_ui_surfaces)
 
 ## NEXT SESSION — start here
 
-**CLOSURE.md gate is open. UI redesign is the active arc.**
+**UI redesign arc is active. TRACKER.md RM-UI-1 through RM-UI-4 is the roadmap.**
 
-Shape tab is the first new projection surface. What's still open:
+### RM-UI-2: Propose -> fulfill loop (do this first)
 
-### Priority 1: Context modes (UI_VISION.md item #7)
-Design/Trace/Review mode buttons exist (banner, tab highlight) but are partial.
-Full intent: each mode presents a curated set of surfaces, suppresses noise,
-guides the user toward the right tools for that context. Read UI_VISION.md
-item #7 before designing anything.
+When "propose (classification)" is clicked:
+1. project_stub fires with { symbol, classification: top_hypothesis }
+2. handle_project_stub in ui_server.py line ~919 currently ignores classification
+   — needs to pass it through to stub_projector.project_stub()
+3. stub_projector.py project_stub() function needs to accept classification arg
+   and frame the LLM prompt accordingly:
+   - design-intent-stated: "complete the stated intent: <intent_text>"
+   - blocked-on-prerequisite: "sketch the interface for <blocking concept>"
+   - concept-not-applicable: note concept is absent, propose removal/stub note
+   - genuinely-unknown: open-ended sketch from caller/callee context
+4. Result renders in spotlight source panel, file opens in editor to stub line
+   (stub_projection socket handler in console.html already does this)
 
-### Priority 2: Frontier ABC mode render (arch-void)
-The ABC filter in Frontier shows the graph visualization. Arch-void ABCs
-(0 subclasses, engine/phases.py 8 interfaces) have no graph edges so the
-graph is empty. Need a separate render path: when mode=abc, show the
-UNIMPLEMENTED INTERFACES text output instead of (or alongside) the graph.
-The backend find_abc_gaps tool already returns the right data.
+**Where to look:**
+- determined/ui/ui_server.py ~919: handle_project_stub (add classification pass-through)
+- determined/agent/stub_projector.py: project_stub() function
+- determined/ui/templates/console.html: stub_projection handler (already correct)
 
-### Priority 3: Burnishing
-Small improvements that surface naturally during use. See TRACKER.md
-Deferred/Burnishing section. Log, don't fix mid-arc.
+### RM-UI-3: Shape tab -> editor navigation [after RM-UI-2]
+
+Clicking a file row in Shape tab results opens it in the editor.
+Clicking a symbol in Shape results opens its spotlight.
+
+### RM-UI-4: Mode = curated entry point [after RM-UI-3]
+
+- Design mode: auto-runs Shape tab on activate
+- Trace mode: auto-loads Frontier stubs with judgment visible
+- Review mode: stub sweep ranked by uncertainty (most uncertain first)
 
 ## Known issues [V = verified, ? = recalled]
 
-**TEST_MAP.md [V]:** source -> test mapping built; CLAUDE.md updated.
-**Shape tab [V]:** live, committed, 46 tests pass.
-**CLOSURE.md gate [V]:** all 3 phases checked off.
+**RM-UI-1 propose button [V]:** button sends classification in emit but
+  handle_project_stub ignores it. Fix is RM-UI-2.
 **walk_call_chain TS/JS FQN [V]:** graph_edges stores FQN callers; tool
   queries bare names -> chain length 0/1. Workaround: use graph_path.
 **classify_stub file_path_hint TS [V]:** path matching fails; omit file_path.
 **graph_path FQN JS [V]:** some module.method pairs return no path despite edge.
-**Frontier ABC UI [V]:** shows "No frontier edges" for arch-void — needs
-  separate render path for zero-subclass ABCs.
-**narrative_engine latent bug [?]:** on_arc_completed references self.active_quests
-  but commented out — AttributeError at runtime if arc completes. (dj2, not Determined)
-**engine/phases.py ABC void [V]:** 8 interfaces, 0 implementations (dj2).
-**Corpus map dupes query [V]:** isolated from files/hot/stubs to handle DBs
-  without class_name column (dj2 style).
+**Frontier ABC UI [V]:** empty graph for arch-void ABCs. Deferred behind RM-UI arc.
+**list_stubs [?]:** test fixtures appear as stubs (test/ files not filtered).
