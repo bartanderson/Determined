@@ -84,7 +84,7 @@ def _get_contracts(conn: sqlite3.Connection, function_names: list[str]) -> list[
 
 
 def _strip_fences(text: str) -> str:
-    """Remove markdown code fences (``` ... ```) wrapping LLM output."""
+    """Remove markdown code fences and any prose preamble before the code body."""
     if not text:
         return text
     lines = text.strip().splitlines()
@@ -94,6 +94,12 @@ def _strip_fences(text: str) -> str:
     # Drop trailing fence line
     if lines and lines[-1].strip() == "```":
         lines = lines[:-1]
+    # Drop any prose preamble: skip lines until the first indented line
+    # (function bodies always start with indentation)
+    for i, line in enumerate(lines):
+        if line and line[0] in (" ", "\t"):
+            lines = lines[i:]
+            break
     return "\n".join(lines).strip()
 
 
