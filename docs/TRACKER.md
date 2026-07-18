@@ -18,6 +18,34 @@ know where things stand.
 - **clx** (https://github.com/samyeyo/clx) — Lua-based language; evaluate for corpus ingestion support; treat as single-language corpus, C++ compilation is incidental
 - **Zig** — systems language with C/C++ interop; ingestion + stub detection for Zig files
 
+### Multi-language emission + cross-language corpus chain (idea, 2026-07-18)
+
+**Core idea:** Determined already classifies stubs by design intent and understands call chains.
+`project_stub` could emit implementations in the right language for the job — not always Python.
+`target_lang` becomes a first-class parameter to `stub_projector.project_stub()`.
+
+Language routing heuristic (rough):
+- Pure computation, no I/O, hot path → **Zig**
+- Game logic, scriptable, LuaJIT host → **Lua**
+- Interop with existing C libs → **C**
+- Object-heavy systems, existing C++ codebase → **C++**
+- Default / glue / analysis → **Python**
+
+**Verify loop shim** (Windows-friendly, no moonstone needed):
+`determined/agent/runtime_locator.py` — `locate(lang)` finds or fetches a pinned binary
+into `%LOCALAPPDATA%\determined\runtimes\<lang>\<version>\`; `verify_snippet(lang, code)`
+compiles/runs and returns stdout+errors. ~200 lines, no symlinks, no POSIX assumptions.
+(moonstone is interesting but POSIX-only and overkill for snippet verification.)
+
+**Cross-language corpus chain idea:**
+Run Determined against corpora written in each language — Python, Lua, Zig, C, C++ — and
+let the tool itself demonstrate the family relationship. Each corpus shows a different
+shape; the chain shows how the same design patterns appear (or don't) across languages.
+Candidate starting chain: dj2 (Python) → clx (Lua) → [small Zig project] → [small C project].
+
+**Implementation note:** finish RM-UI-2 with Python output first. Design `project_stub` so
+`target_lang` is a first-class parameter from day one — then multi-language is extension, not rework.
+
 ### Corpora to acquire
 
 D&D theme is well covered (dj2, Commonplace). Branch out:

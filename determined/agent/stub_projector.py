@@ -216,17 +216,44 @@ def gather_context(conn: sqlite3.Connection, stub_name: str) -> Optional[dict]:
 # Prompt construction
 # ------------------------------------------------------------------
 
-def _build_prompt(ctx: dict) -> str:
+_CLASSIFICATION_FRAMING = {
+    "design-intent-stated": (
+        "The stub has a documented design intent (see DOCSTRING). "
+        "Complete that stated intent exactly — do not invent new behavior."
+    ),
+    "blocked-on-prerequisite": (
+        "This stub is blocked waiting for a prerequisite concept or dependency. "
+        "Sketch a minimal interface stub: raise NotImplementedError with a clear message, "
+        "or return a typed placeholder that callers can work against."
+    ),
+    "concept-not-applicable": (
+        "The concept this stub was meant to implement does not apply here. "
+        "Return a no-op or raise NotImplementedError with a comment explaining why."
+    ),
+    "genuinely-unknown": (
+        "The purpose of this stub is unclear. "
+        "Write an open-ended sketch based solely on the caller and sibling context below."
+    ),
+}
+
+
+def _build_prompt(ctx: dict, classification: Optional[str] = None) -> str:
     stub = ctx["stub"]
     args = json.loads(stub["arguments_json"] or "[]")
     sig = f"def {stub['name']}({', '.join(args)})"
     if stub["return_type"]:
         sig += f" -> {stub['return_type']}"
 
+    framing = _CLASSIFICATION_FRAMING.get(classification or "", "")
+
     lines = [
         "You are a Python developer. Implement the following stub function.",
         "Return ONLY the function body as valid Python (no def line, no markdown).",
         "Use only what is available in the context below. Do not import new modules.",
+    ]
+    if framing:
+        lines += ["", f"CLASSIFICATION GUIDANCE: {framing}"]
+    lines += [
         "",
         f"STUB SIGNATURE: {sig}",
     ]
@@ -284,10 +311,14 @@ def _call_ollama(prompt: str) -> str:
 # Public API
 # ------------------------------------------------------------------
 
-def project_stub(db_path: str, stub_name: str, *, verbose: bool = False) -> dict:
+def project_stub(db_path: str, stub_name: str, *, classification: Optional[str] = None, verbose: bool = False) -> dict:
     """
     Return a projection dict for one stub:
       { stub_name, file_path, line_number, suggested_body, context_summary }
+
+    classification: one of design-intent-stated | blocked-on-prerequisite |
+                    concept-not-applicable | genuinely-unknown.
+                    Frames the LLM prompt accordingly.
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -300,11 +331,12 @@ def project_stub(db_path: str, stub_name: str, *, verbose: bool = False) -> dict
 
     if verbose:
         print(f"\nProjecting: {stub_name}")
+        print(f"  classification: {classification}")
         print(f"  callers: {[c['caller'] for c in ctx['callers']]}")
         print(f"  contracts: {[c['function_name'] for c in ctx['contracts']]}")
         print(f"  sibling callees: {ctx['sibling_callees']}")
 
-    prompt = _build_prompt(ctx)
+    prompt = _build_prompt(ctx, classification=classification)
     body = _call_ollama(prompt)
 
     return {

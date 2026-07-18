@@ -979,6 +979,7 @@ def handle_project_stub(data):
     or {error: str}.
     """
     symbol = (data.get("symbol") or "").strip()
+    classification = (data.get("classification") or "").strip() or None
     if not symbol or _oracle is None:
         emit("stub_projection", {"error": "no symbol or corpus not loaded"})
         return
@@ -990,7 +991,7 @@ def handle_project_stub(data):
     def _run():
         try:
             from determined.agent.stub_projector import project_stub
-            result = project_stub(_db_path, symbol)
+            result = project_stub(_db_path, symbol, classification=classification)
             socketio.emit("stub_projection", result, to=sid)
         except Exception as exc:
             socketio.emit("stub_projection", {"error": str(exc)}, to=sid)
