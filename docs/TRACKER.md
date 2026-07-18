@@ -340,24 +340,25 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 
 ### Convergence status
 
-- [ ] Determined: structural integrity DONE; probe pending
-- [ ] dj2: stub sweep DONE — 5 RM68-remove, 5 AI-layer gaps; judgment classification pending RM69
-- [ ] Commonplace: stub sweep DONE — 1 stub (suggest_tags); judgment pending RM69
-- [ ] rotjs: probe pending
-- [ ] dungeoncrawler: probe pending
-- [ ] dnd-dungeon-gen: probe pending
-- [ ] end-of-eden: probe pending
-- [ ] ruggrogue: probe pending
+- [x] Determined: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] dj2: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 5 RM68-remove stubs, 5 AI-layer gaps; judgment per RM69
+- [x] Commonplace: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 1 stub (suggest_tags), judgment per RM69
+- [x] rotjs: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] dungeoncrawler: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] dnd-dungeon-gen: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] end-of-eden: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] ruggrogue: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 
 ---
 
 ## Dashboard - at a glance
 
-**Last session (2026-07-18, session 210):** RM-UI-2, 3, 4 done. Full UI redesign arc complete (RM-UI-1 through 4).
+**Last session (2026-07-18, session 211):** _strip_fences prose preamble fix (4c77560). RM67 convergence status updated to reflect all probes done. No open blocking work.
+
+**Previous session (2026-07-18, session 210):** RM-UI-2, 3, 4 done. Full UI redesign arc complete (RM-UI-1 through 4).
 RM-UI-2 (3f48c23): project_stub() takes classification kwarg; 4 prompt framings per hypothesis; handle_project_stub passes it through from socket data. Frontend was already correct.
 RM-UI-3 (c6f76c2): Shape tab file paths clickable (blue, open editor); symbol names clickable (orange, open spotlight). Server emits navigation index (short_path→full_path, symbol list) alongside text. Delegated click on #shape-grid handles both.
 RM-UI-4 (16698d3): Design mode → Shape tab + auto-runs shapeRun(). Trace mode → Frontier tab, filter=direct. Review mode → Frontier tab, filter=chain. Mode hints updated to describe actual surfaces.
-Also this session: DESIGN PRINCIPLES section added to TRACKER (UI-CLI parity, GOT model, design oracle posture). FUTURE sections expanded: Design Oracle, cross-language understanding rewritten as unified abstraction, matmul+ML trainer corpus candidates added. Memory system improved: design partnership, Bart sensing role, memory worthiness test, UI server ops reference. 11 tests pass (ui_surfaces). Full suite not run (no engine changes).
 
 **Previous session (2026-07-16, session 196):** Determined corpus re-ingested (functions: 1904->2160, edges: 16588->18693). Fixed 2 stub detection bugs: (1) Protocol method ... bodies were false-positive stubs -- _is_protocol_class() + in_protocol param added to _is_stub; (2) readiness_check ORDER BY is_stub DESC to prefer stub rows on name collision. 5 new tests, 1063 total pass. resolve/suggest_tags now correctly detected; structural_score is confirmed dead code (no callers).
 
