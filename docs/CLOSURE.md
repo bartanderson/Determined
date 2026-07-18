@@ -298,19 +298,6 @@ Cross-corpus bugs found and fixed during probes (2026-07-18):
 
 These don't block analysis correctness but they block clean handoff to other developers.
 
-### RM68 — Remove subrace concept from dj2
-
-The tool already classified these as dead concept remnants. Do this after RM69
-Phase 2 so classify_stub can confirm the concept is fully absent post-removal.
-
-- [ ] blast_radius on subrace stubs to confirm scope (3 files expected)
-- [ ] Remove 5 stub functions from dnd_data.py
-- [ ] Remove subrace references from dnd_data.py data structures
-- [ ] Remove callers in character_generator.py
-- [ ] Remove callers in authority_system.py
-- [ ] Verify zero remaining references (`grep subrace` returns nothing in dj2/)
-- [ ] Re-ingest dj2 and confirm stubs drop from 10 to 5
-
 ### Regex-for-semantic-meaning audit
 
 One instance already fixed (stub_classifier, session 201). Survey the rest.

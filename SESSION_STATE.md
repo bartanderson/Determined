@@ -37,13 +37,9 @@ See CLOSURE.md for full per-corpus results.
 CLOSURE.md Phase 2 section: all corpora probed, all checkboxes filled.
 
 **Next: Phase 3 -- Housekeeping before UI redesign**
-  Three items in CLOSURE.md Phase 3:
-  1. RM68 -- Remove subrace concept from dj2 (blast_radius first, then remove 5 stubs)
-  2. Regex-for-semantic-meaning audit (determined/agent/, oracle/, assessor/, ingestion/)
-  3. Commonplace guided journey -- walk the journey with current tool, update stale steps
-
-  Pick up RM68 first: blast_radius on subrace stubs, then remove from dnd_data.py etc.
-  dj2 is at C:\Users\bartl\dev\dj2
+  Two items in CLOSURE.md Phase 3 (RM68 removed -- that's target code, not Determined):
+  1. Regex-for-semantic-meaning audit (determined/agent/, oracle/, assessor/, ingestion/)
+  2. Commonplace guided journey -- walk the journey with current tool, update stale steps
 
 ## Known issues (carried forward)
 
