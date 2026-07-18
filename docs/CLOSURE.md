@@ -155,15 +155,22 @@ Probe: done (2026-07-17). 10 stubs: 5 subrace dead-concept (RM68 remove), 5 AI-l
 
 ### Commonplace (Python)
 
-Stub sweep: done (1 stub: suggest_tags). Probe: pending.
+Probe: done (2026-07-17). 1 stub: suggest_tags (design-intent-stated, as expected).
 
-- [ ] Q1 Entry points
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (suggest_tags should classify as design-intent-stated)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains
-- Findings:
+- [x] Q1 Entry points - 8 HTTP routes (list_entries, get_entry, search, index, entry_detail,
+      capture_form, capture) + 16 inferred EPs. Flask structure correct. PASS.
+- [x] Q2 Blast radius - get_db HOT: 49 direct callers, 34 extended impact. PASS.
+- [x] Q3 Feature shape - list_features: services/ shows 1 stub (correct). feature_shape on
+      routes/: 7 implemented, 47% completeness (all service/storage calls are cross-feature). PASS.
+- [x] Q4 Stubs - 1 stub (suggest_tags, 3 callers). Classified design-intent-stated [0.70].
+      Intent language: "Ask LLM to suggest tags... STUB: returns empty list until LLM wired." PASS.
+- [x] Q5 Design drift - No layer rules defined; no design_notes ingested. Tool returns clean
+      "No layer rules defined" message (no confabulation). Not testable until ingest_design_docs
+      runs, but tool behavior is correct. PASS.
+- [x] Q6 Call chains - graph_path: extract->extract_metadata (1-hop),
+      find_connections->_extract_keywords (1-hop). walk_call_chain: extract chain of 5 nodes
+      (extract->extract_metadata/extract_full_content->truncate->clean). PASS.
+- Findings: none. Clean corpus, all tools behave correctly.
 
 ### rotjs (TS library)
 
