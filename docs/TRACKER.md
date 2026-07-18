@@ -356,31 +356,43 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off in order
 — big gains first, polish last.
 
-1. **[ ] Test stubs filter** — shape output and stub list include test files (test_encounter_fsm.py,
-   test_economy.py). Filter files matching test/ path prefix in list_stubs and stub projections.
-   ~30 min. Immediate signal quality gain across all corpora.
+1. **[ ] Test stubs filter in corpus_projections.py** — shape output includes test files
+   (test_encounter_fsm.py, test_economy.py) because `_fetch_stubs()` in
+   `determined/agent/corpus_projections.py:80` has no test-path filter. `list_stubs` in
+   `agent_tools.py:1646` already filters correctly — copy the same `NOT LIKE '%/test_%'`
+   conditions into `_fetch_stubs`. All four projection tools (stub_file_shape,
+   stub_subsystem_shape, stub_prerequisite_map, stub_concept_ghost_map) call `_fetch_stubs`
+   so one fix covers all. ~30 min.
 
-2. **[ ] TS call tree FQN fix** — walk_call_chain returns "(no callees)" for all TS/JS symbols.
-   graph_edges stores callers as FQNs (Class.method); tool queries bare names. Fix: when bare-name
-   lookup returns nothing, retry with FQN patterns. Affects rotjs, dungeoncrawler, dnd-dungeon-gen.
+2. **[ ] TS call tree FQN fix** — `walk_call_chain` in `agent_tools.py:521` queries
+   `WHERE name = ?` with bare name. For TS, functions are stored as FQNs (UIManager.addLogMessage)
+   not bare names — so lookup returns nothing and the tree shows "(no callees)".
+   Fix: when bare-name row is None, retry with `WHERE name LIKE '%.?'` (FQN suffix match).
+   Confirmed broken: addLogMessage (dungeoncrawler, HOT 8 callers) shows empty tree.
+   Workaround: use the Graph tab. Affects rotjs, dungeoncrawler, dnd-dungeon-gen.
 
-3. **[ ] RM68 — Remove subrace dead code from dj2** (already filed below, promoting to queue).
+3. **[ ] RM68 — Remove subrace dead code from dj2** (full design in RM68 section below).
    world/ subsystem verdict is "dead-concept" because 5 subrace stubs dominate. Remove them
-   and the real AI-layer signal (blocked-on-prerequisite) becomes the verdict. Game work guided
-   by Determined — use blast_radius to confirm scope, then remove.
+   and the real AI-layer signal surfaces. Game work guided by Determined: run
+   blast_radius on each subrace stub to confirm low impact, then remove from
+   world/dnd_data.py (5 stubs), world/character_generator.py, world/authority_system.py.
 
-4. **[ ] classify_stub file_path_hint TS fix** — path matching fails silently for TS corpora.
-   Workaround: omit file_path. Fix the matching so file_path_hint works for TS too.
+4. **[ ] classify_stub file_path_hint TS fix** — `agent_tools.py:4817` uses
+   `WHERE name = ? AND file_path = ?` with exact match. TS file paths may have separator
+   or case mismatch vs what the caller passes. Fix: normalize both sides (replace \\ with /,
+   lower) before compare, or use `LIKE` with normalized suffix. Workaround: omit file_path arg.
 
-5. **[ ] Ask routing baseline** — "what should I work on next?" routes to prioritize_work which
-   needs workflow items. When no items exist, fall back to shape/stub data already in DB.
-   Entry point for Design Oracle idea — start with routing, not the full oracle.
+5. **[ ] Ask routing baseline** — "what should I work on next?" hits `prioritize_work` which
+   needs workflow items; returns "No active work items" when none exist. Fix: detect the empty
+   case and fall back to querying stub shape data (stub_file_shape, stub_subsystem_shape) to
+   synthesize an answer. Entry point for the Design Oracle concept.
 
 6. **[ ] Design Oracle** — full CRITICAL/OPPORTUNITY/FOREWARNING query over knowledge_artifacts
-   + stubs + graph. See FUTURE section below for full design. After routing baseline proves concept.
+   + stubs + graph. See FUTURE — Design Oracle section below for full design.
+   Do after #5 proves the routing concept.
 
-7. **[ ] Polish** — path input UX (better error when directory entered), graph_path JS FQN
-   inconsistency, threshold burnishing.
+7. **[ ] Polish** — path input UX (show "enter a .db path" hint when directory entered),
+   graph_path JS FQN inconsistency (some JS module.method pairs fail), threshold burnishing.
 
 Also fixed this session (session 212):
 - _IMPL_WHEN_RE: SetFit false-positive on "will be implemented when X" — classified as
