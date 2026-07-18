@@ -338,7 +338,11 @@ def collect_symbol_context(conn: sqlite3.Connection, symbol: str) -> str:
     if param_row and param_row[0]:
         try:
             params = _json.loads(param_row[0])
-            param_names = [k for k in params if k not in ("self", "cls")]
+            param_names = [
+                (k.get("name", str(k)) if isinstance(k, dict) else k)
+                for k in params
+                if (k.get("name") if isinstance(k, dict) else k) not in ("self", "cls")
+            ]
         except Exception:
             pass
 

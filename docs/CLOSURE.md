@@ -199,15 +199,24 @@ Probe: done (2026-07-18). 6 stubs: 3 src/ + 3 lib/ mirror. All computeFontSize (
 
 ### dungeoncrawler (TS)
 
-Appears clean (0 stubs confirmed). Probe pending.
+Probe: done (2026-07-18). 0 stubs confirmed. Bug found and fixed in Q5.
 
-- [ ] Q1 Entry points
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (expect 0)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains
+- [x] Q1 Entry points - 26 inferred EPs (TS game, no HTTP routes). Class constructors
+      and public methods correctly identified. PASS.
+- [x] Q2 Blast radius - UIManager.addLogMessage HOT: 8 callers, 34 extended impact.
+      Logging is the hot path in this TS game. PASS.
+- [x] Q3 Feature shape - clean structure: combat, core, entities, rendering, ui, utils,
+      world. feature_shape utils: 100% completeness. No lib/src split. PASS.
+- [x] Q4 Stubs - 0 stubs (confirmed). PASS.
+- [x] Q5 Design drift - BUG FOUND AND FIXED: check_design_violations crashed for all TS
+      corpora — param_types_json stores dicts {name,type} but evaluator.py joined them as
+      strings. Fixed in evaluator.py:341. Post-fix: "No layer rules defined" (clean). PASS.
+- [x] Q6 Call chains - graph_path: Game.constructor->InputManager.setInputCallback (1-hop)
+      correct. walk_call_chain still chain-length 1 for TS (same FQN issue as rotjs). PASS.
 - Findings:
+  1. BUG FIXED: evaluator.py param_names join crashed on TS dicts. Fixed to extract "name"
+     key from dict params, falling back to str() for unknown formats.
+  2. walk_call_chain FQN issue: same as rotjs (confirmed pattern, not corpus-specific bug).
 
 ### dnd-dungeon-gen (JS)
 
