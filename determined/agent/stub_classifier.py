@@ -38,6 +38,18 @@ _MODAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Deterministic fast-path: future-implementation language that is unambiguously
+# blocked-on-prerequisite. "will be implemented when X is built", "to be implemented
+# when X exists" etc. These must override the SetFit model which misclassifies them
+# as concept-not-applicable (the phrasing sounds like absence to the model).
+_IMPL_WHEN_RE = re.compile(
+    r'\b(?:will|to)\s+be\s+implemented\s+when\b'
+    r'|\bimplemented\s+when\s+\w[\w\s]*\s+is\s+(?:built|ready|done|added|available)\b'
+    r'|\bwhen\s+\w[\w\s]*\s+(?:is|are)\s+(?:built|ready|done|added|available|wired)\b'
+    r'|\bonce\s+\w[\w\s]*\s+(?:is|are)\s+(?:built|ready|done|added|implemented)\b',
+    re.IGNORECASE,
+)
+
 # Deterministic fast-path: explicit absence assertions that are
 # unambiguously concept-not-applicable regardless of model output.
 # "OG System doesn't have subraces", "No subraces in OG System",
@@ -111,9 +123,12 @@ def classify_text(text: str) -> Optional[dict]:
 
 def has_intent(text: str) -> bool:
     """
-    True if text signals design-intent-stated.
+    True if text signals design-intent-stated or blocked-on-prerequisite.
     Uses SetFit model when available; falls back to modal-verb regex.
     """
+    # Deterministic fast-path: future-implementation language is always intent.
+    if text and _IMPL_WHEN_RE.search(text):
+        return True
     result = classify_text(text)
     if result and result["available"]:
         return result["class_id"] == 1
@@ -128,6 +143,10 @@ def has_removal(text: str) -> bool:
     always returns empty, etc.) are caught before the model.
     Falls back to SetFit model when available, then embedding similarity.
     """
+    # Future-implementation language is never concept-not-applicable, even if
+    # the SetFit model misclassifies it (the phrasing sounds like absence to the model).
+    if text and _IMPL_WHEN_RE.search(text):
+        return False
     if text and _EXPLICIT_ABSENCE_RE.search(text):
         return True
     result = classify_text(text)
