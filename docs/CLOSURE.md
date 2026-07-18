@@ -220,47 +220,77 @@ Probe: done (2026-07-18). 0 stubs confirmed. Bug found and fixed in Q5.
 
 ### dnd-dungeon-gen (JS)
 
-Known issue: JS callee resolution gap fixed (RM62, 2026-07-15) but corpus not
-re-ingested since fix. Re-ingest first, then probe.
+Probe: done (2026-07-18). Re-ingest not needed — callee names already qualified in DB.
+1 real stub (tools.toss). 5 test stubs correctly filtered.
 
-- [ ] Re-ingest dnd-dungeon-gen to pick up qualified callee names (RM62 fix)
-- [ ] Q1 Entry points (were 0 before RM62 fix)
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (6 known stubs)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains
+- [x] Re-ingest dnd-dungeon-gen - NOT NEEDED. Callees already qualified (module.fn format).
+      Verified 47 inferred EPs — was 0 before RM62; now correct. RM62 fix already applied.
+- [x] Q1 Entry points - 47 inferred EPs. JS module structure correct
+      (app.js, controller, dungeon, ui, utility, etc.). PASS.
+- [x] Q2 Blast radius - tools.toss HOT: 96 direct callers, 56 extended impact.
+      Error-throwing utility is the hot path. PASS.
+- [x] Q3 Feature shape - list_features: clean directory structure, 6 total stubs
+      (5 test, 1 real). Counts correct. PASS.
+- [x] Q4 Stubs - 1 real stub shown (tools.toss, 83 callers). 5 test stubs correctly
+      filtered (test/ subdirectories). PASS.
+- [x] Q5 Design drift - "No layer rules defined" (clean, evaluator.py dict-params fix
+      already applied). PASS.
+- [x] Q6 Call chains - graph_path controller.dungeonGenerator->generate.generateDungeon:
+      PASS. Some FQN pairs fail (app.logError->xhr.request: no path despite direct edge) —
+      BFS FQN resolution inconsistent for JS module.method format.
 - Findings:
+  1. graph_path FQN resolution inconsistent for JS module.method names — some pairs trace
+     correctly, others don't. Use blast_radius or list_entry_points for JS corpus queries.
 
 ### end-of-eden (Go)
 
 Phase 1 evaluation done (2026-07-15): system (270EP) and game (200EP) correctly
 most-connected. 0 stubs confirmed. Full probe pending.
 
-- [ ] Q1 Entry points (system + game as dominant, already validated partially)
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (expect 0)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains
-- Findings:
+- [x] Q1 Entry points - 393 inferred EPs. system (270EP) and game (200EP) dominant
+      as previously validated. Go corpus, no HTTP routes. PASS.
+- [x] Q2 Blast radius - audio.Play HOT: 485 direct callers, 277 extended impact.
+      Audio is the hot path across the entire game. PASS.
+- [x] Q3 Feature shape - list_features: system (270EP, 86 syms), game (200EP, 177 syms),
+      ui (22EP, 138 syms). feature_shape system: 50 syms, 96% completeness. PASS.
+- [x] Q4 Stubs - 0 stubs (confirmed). PASS.
+- [x] Q5 Design drift - "No layer rules defined" (clean). PASS.
+- [x] Q6 Call chains - graph_path main.main->settings.SetSettings: "main -> SetSettings"
+      (1-hop, FQN resolved). PASS.
+- Findings: none. Clean Go corpus, all tools correct.
 
 ### ruggrogue (Rust)
 
-Phase 1 evaluation done (2026-07-15): file-level grouping correct, 0 stubs.
-Has 20-chapter architecture guide — ground truth for Q3 and Q6.
+Probe: done (2026-07-18). 0 stubs. Arch guide validation: file-level structure matches.
 
-- [ ] Q1 Entry points
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape (validate against architecture guide chapters)
-- [ ] Q4 Stubs (expect 0)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains (validate at least one chain against architecture guide)
+- [x] Q1 Entry points - 246 inferred EPs. Rust lib + modes structure (lib/ input/FOV/path,
+      src/ map/player/modes/etc.). PASS.
+- [x] Q2 Blast radius - Rect::new HOT: 195 direct callers, 270 extended impact.
+      Core geometry constructor is the hot symbol. PASS.
+- [x] Q3 Feature shape - list_features: map.rs (36EP), experience.rs (28EP), item.rs (17EP),
+      lib/ (12EP), modes/ (97 syms). File-level structure consistent with 20-chapter arch guide
+      (roguelike components: map, experience, items, player, spawn, modes). PASS.
+- [x] Q4 Stubs - 0 stubs (confirmed). PASS.
+- [x] Q5 Design drift - "No layer rules defined" (clean). PASS.
+- [x] Q6 Call chains - graph_path FieldOfView::new->BitGrid::new: path found (1-hop).
+      Note: Rust :: names resolve to bare "new" in display — ambiguous but path correct. PASS.
 - Findings:
+  1. Rust ::new display: all Class::new methods resolve to bare "new" — path display is
+     ambiguous when many ::new methods exist. Correctness unaffected; display issue only.
 
 ### Emerging items — Phase 2
 
-_(Add new discoveries here as they surface during probe runs)_
+Cross-corpus bugs found and fixed during probes (2026-07-18):
+- **evaluator.py param_names** (Bug E): TS param_types_json stores dicts {name,type};
+  evaluator.py joined them as strings → crash in check_design_violations for TS corpora.
+  Fixed: extract "name" key from dict params. Affects: dungeoncrawler, rotjs.
+- **walk_call_chain TS/JS FQN mismatch** (known pattern): graph_edges stores callers as
+  FQNs (Class.method) for TS/JS corpora; tool queries bare names → chain length 0/1.
+  Workaround: use graph_path instead. Not fixed (separate RM item).
+- **classify_stub file_path_hint** (rotjs): path matching fails when file_path given.
+  Workaround: omit file_path, rely on name-only lookup. Not fixed.
+- **graph_path FQN inconsistency** (dnd-dungeon-gen): some JS module.method pairs find
+  path, others return "no path" despite direct edge. Not fixed.
 
 ---
 
