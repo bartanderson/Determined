@@ -131,15 +131,27 @@ Structural integrity: done (2026-07-16). Probe: done (2026-07-17).
 
 ### dj2 (Python+JS)
 
-Stub sweep: done. 5 RM68-remove, 5 AI-layer gaps. Judgment: pending RM69 Phase 2.
+Probe: done (2026-07-17). 10 stubs: 5 subrace dead-concept (RM68 remove), 5 AI-layer design gaps.
 
-- [ ] Q1 Entry points (331 inferred EP ceiling accepted as dynamic-dispatch floor)
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (10 known real stubs, correct classification is the pass criterion)
-- [ ] Q5 Design drift
-- [ ] Q6 Call chains
+- [x] Q1 Entry points - 93 HTTP routes across dungeon_app.py, world_app.py, routes/api.py.
+      Flask app structure correctly identified. PASS.
+- [x] Q2 Blast radius - `main` HOT: 140 direct callers, 681 extended impact. PASS.
+      Note: blast_radius arg is `target` not `symbol`.
+- [x] Q3 Feature shape - list_features: world/ shows 564 syms, 10 stubs (correct).
+      feature_shape BFS on world/: 43 reachable syms, 39% completeness, 0 stubs shown.
+      BFS-only stub count: stubs not reachable from external EPs show as 0 (by-design
+      limitation; use list_stubs for authoritative stub count). PASS with note.
+- [x] Q4 Stubs - 10 stubs found, 0 false positives. Test fixture check_parley correctly
+      excluded by test_ prefix filter. 5 subrace + 5 AI-layer as expected. PASS.
+- [x] Q5 Design drift - ai_command: 5 hits from requirements doc (scores 0.37-0.46).
+      Surfaces real design context. Requires `symbol` arg. PASS.
+- [x] Q6 Call chains - graph_path: main->interactive_mode (1-hop), main->print_result (2-hop)
+      both correct. walk_call_chain from __init__: 48-node chain. PASS.
+      Note: graph_path uses `src`/`dst` args not `start`/`end`.
 - Findings:
+  1. feature_shape stub count understates when stubs have only internal callers (BFS
+     traversal from external EPs doesn't reach them). Authoritative stub count: list_stubs.
+  2. blast_radius arg = `target`; graph_path args = `src`/`dst` (not symmetric with other tools).
 
 ### Commonplace (Python)
 
