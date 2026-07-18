@@ -899,6 +899,61 @@ def handle_symbol_analysis(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("classify_stub_spotlight")
+def handle_classify_stub_spotlight(data):
+    """
+    Structured classify_stub for the spotlight panel.
+    Returns JSON (not text) so the frontend can render colored hypothesis chips.
+
+    Emits classify_stub_spotlight_result:
+      { symbol, top_hypothesis, top_score, uncertain: bool,
+        hypotheses: [{classification, score, evidence}],
+        signals: {caller_count, sibling_stub_count, body_shape,
+                  file_character, is_protocol_or_abc, is_lifecycle},
+        file_path, line_number }
+    or { symbol, error: str }
+    """
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol or _oracle is None:
+        emit("classify_stub_spotlight_result", {"symbol": symbol, "error": "no symbol or corpus not loaded"})
+        return
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.classify_stub import extract_signals, score_hypotheses
+            signals = extract_signals(_oracle, symbol)
+            if "error" in signals:
+                socketio.emit("classify_stub_spotlight_result",
+                              {"symbol": symbol, "error": signals["error"]}, to=sid)
+                return
+            hypotheses = score_hypotheses(signals)
+            top = hypotheses[0] if hypotheses else None
+            socketio.emit("classify_stub_spotlight_result", {
+                "symbol":        symbol,
+                "top_hypothesis": top["classification"] if top else None,
+                "top_score":     top["score"] if top else 0.0,
+                "uncertain":     (not top) or top["score"] < 0.4,
+                "hypotheses":    hypotheses,
+                "signals": {
+                    "caller_count":       signals.get("caller_count", 0),
+                    "sibling_stub_count": signals.get("sibling_stub_count", 0),
+                    "body_shape":         signals.get("body_shape", "unknown"),
+                    "file_character":     signals.get("file_character", "unknown"),
+                    "is_protocol_or_abc": bool(signals.get("is_protocol_or_abc")),
+                    "is_lifecycle":       bool(signals.get("is_lifecycle")),
+                    "intent_text":        (signals.get("intent_text") or "")[:200],
+                },
+                "file_path":   signals.get("file_path", ""),
+                "line_number": signals.get("line_number"),
+            }, to=sid)
+        except Exception as exc:
+            socketio.emit("classify_stub_spotlight_result",
+                          {"symbol": symbol, "error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @socketio.on("store_finding_inline")
 def handle_store_finding_inline(data):
     """Store a single finding (from an inline ⚑ chip) without going through chat."""

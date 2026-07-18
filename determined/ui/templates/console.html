@@ -1926,20 +1926,26 @@ socket.on("symbol_quick_result", data => {
       });
     }
   }
-  // Fill stub button: inject into spotlight actions when this symbol is a stub
-  if (!data.error && data.is_stub && data.symbol === _currentSpotlight
-      && !document.getElementById("sp-fill-stub-btn")) {
-    const btn = document.createElement("button");
-    btn.id = "sp-fill-stub-btn";
-    btn.className = "sp-action";
-    btn.style.background = "var(--surface2)";
-    btn.textContent = "fill stub";
-    btn.addEventListener("click", () => {
-      btn.disabled = true;
-      btn.textContent = "projecting…";
-      socket.emit("project_stub", { symbol: _currentSpotlight });
-    });
-    spActions.appendChild(btn);
+  // Stub detected: show judgment section and fire classify_stub_spotlight
+  if (!data.error && data.is_stub && data.symbol === _currentSpotlight) {
+    const judgeEl = document.getElementById("sp-sec-judgment");
+    if (judgeEl) judgeEl.style.display = "";
+    if (!document.getElementById("sp-propose-btn")) {
+      const btn = document.createElement("button");
+      btn.id = "sp-propose-btn";
+      btn.className = "sp-action";
+      btn.textContent = "propose impl";
+      btn.disabled = true;  // enabled once classify result arrives
+      btn.title = "Generate implementation sketch informed by stub judgment";
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        btn.textContent = "projecting…";
+        const ctx = btn.dataset.classification || "";
+        socket.emit("project_stub", { symbol: _currentSpotlight, classification: ctx });
+      });
+      spActions.appendChild(btn);
+    }
+    socket.emit("classify_stub_spotlight", { symbol: data.symbol });
   }
   // Tooltip: only show when this result matches the currently-hovered symbol and no popover open
   if (data.error || _pendingSym !== data.symbol || _popoverSym) return;
@@ -1987,11 +1993,12 @@ let _currentSpotlight = null;
 const SP_SECTIONS = {
   risk:       { label: "Risk Profile",  order: 0 },
   intent:     { label: "Intent",        order: 1 },
-  role:       { label: "Role",          order: 2 },
-  violations: { label: "Violations",    order: 3 },
-  callers:    { label: "Callers",       order: 4 },
-  callees:    { label: "Calls",         order: 5 },
-  findings:   { label: "Findings",      order: 6 },
+  judgment:   { label: "Stub Judgment", order: 2, stubOnly: true },
+  role:       { label: "Role",          order: 3 },
+  violations: { label: "Violations",    order: 4 },
+  callers:    { label: "Callers",       order: 5 },
+  callees:    { label: "Calls",         order: 6 },
+  findings:   { label: "Findings",      order: 7 },
   // data_flow and pattern are on-demand — injected dynamically
 };
 
@@ -2012,11 +2019,12 @@ function openSpotlight(sym) {
   spActions.innerHTML = "";
   spBody.innerHTML = "";
 
-  // placeholder sections while loading
+  // placeholder sections while loading (stubOnly sections hidden until stub confirmed)
   Object.entries(SP_SECTIONS).sort((a,b) => a[1].order - b[1].order).forEach(([key, meta]) => {
     const sec = document.createElement("div");
     sec.className = "sp-section";
     sec.id = `sp-sec-${key}`;
+    if (meta.stubOnly) sec.style.display = "none";
     sec.innerHTML = `<div class="sp-section-label">${meta.label}</div>
                      <div class="sp-section-content sp-loading" id="sp-content-${key}">loading…</div>`;
     spBody.appendChild(sec);
@@ -2358,9 +2366,75 @@ socket.on("spotlight_error", data => {
   spBody.innerHTML = `<div class="sp-section"><div class="sp-section-content" style="color:var(--red)">${escHtml(data.message)}</div></div>`;
 });
 
+// ── Stub judgment result ─────────────────────────────────────
+const _HYPOTHESIS_COLORS = {
+  "design-intent-stated":    { bg: "rgba(80,160,80,.18)",  border: "var(--green)",  label: "design intent stated" },
+  "blocked-on-prerequisite": { bg: "rgba(200,140,40,.18)", border: "var(--orange)", label: "blocked on prerequisite" },
+  "concept-not-applicable":  { bg: "rgba(100,140,255,.18)",border: "var(--blue)",   label: "concept not applicable" },
+  "genuinely-unknown":       { bg: "rgba(130,130,130,.18)",border: "var(--text3)",  label: "genuinely unknown" },
+};
+
+socket.on("classify_stub_spotlight_result", data => {
+  if (data.symbol !== _currentSpotlight) return;
+  const sec = document.getElementById("sp-sec-judgment");
+  const content = document.getElementById("sp-content-judgment");
+  if (!sec || !content) return;
+  sec.style.display = "";
+  content.classList.remove("sp-loading");
+
+  if (data.error) {
+    content.textContent = data.error;
+    return;
+  }
+
+  const s = data.signals || {};
+  const sigLine = [
+    `body: ${s.body_shape || "?"}`,
+    `callers: ${s.caller_count ?? "?"}`,
+    `siblings: ${s.sibling_stub_count ?? "?"}`,
+    s.is_protocol_or_abc ? "Protocol/ABC" : null,
+    s.is_lifecycle ? "lifecycle" : null,
+  ].filter(Boolean).join("  ·  ");
+
+  let html = `<div style="font-size:.75em;color:var(--text3);margin-bottom:6px">${escHtml(sigLine)}</div>`;
+
+  if (!data.hypotheses || !data.hypotheses.length) {
+    html += `<div style="color:var(--text2)">UNCERTAIN — no signal above threshold</div>`;
+  } else {
+    data.hypotheses.forEach((h, i) => {
+      const c = _HYPOTHESIS_COLORS[h.classification] || { bg: "rgba(128,128,128,.1)", border: "var(--border)", label: h.classification };
+      const pct = Math.round(h.score * 100);
+      const topStyle = i === 0 ? "font-weight:600;" : "opacity:.75;";
+      html += `<div style="margin-bottom:5px;padding:5px 8px;border-radius:5px;border-left:3px solid ${c.border};background:${c.bg};${topStyle}">`;
+      html += `<span style="font-size:.8em">${escHtml(c.label)}</span>`;
+      html += `<span style="float:right;font-size:.75em;color:var(--text3)">${pct}%</span>`;
+      if (h.evidence && h.evidence.length) {
+        html += `<div style="margin-top:3px;font-size:.73em;color:var(--text2)">`;
+        h.evidence.slice(0, 2).forEach(ev => { html += `<div>· ${escHtml(ev)}</div>`; });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+    if (data.uncertain) {
+      html += `<div style="font-size:.73em;color:var(--text3);margin-top:4px">Low confidence — add docstring or callers to resolve</div>`;
+    }
+  }
+
+  content.innerHTML = html;
+
+  // Enable propose button and annotate it with the top classification
+  const proposeBtn = document.getElementById("sp-propose-btn");
+  if (proposeBtn) {
+    proposeBtn.disabled = false;
+    proposeBtn.dataset.classification = data.top_hypothesis || "";
+    const lbl = data.top_hypothesis ? `propose (${(data.top_hypothesis || "").split("-")[0]})` : "propose impl";
+    proposeBtn.textContent = lbl;
+  }
+});
+
 socket.on("stub_projection", data => {
-  const btn = document.getElementById("sp-fill-stub-btn");
-  if (btn) { btn.disabled = false; btn.textContent = "fill stub"; }
+  const btn = document.getElementById("sp-propose-btn");
+  if (btn) { btn.disabled = false; btn.textContent = btn.dataset.classification ? `propose (${btn.dataset.classification.split("-")[0]})` : "propose impl"; }
   if (data.error) return;
   if (data.file_path) {
     _edPendingLine = data.line_number || null;

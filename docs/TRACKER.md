@@ -12,6 +12,19 @@ know where things stand.
 
 ---
 
+## FUTURE — Language support additions
+
+- **C / C++** — core targets; Zig interops with both, so these come first
+- **clx** (https://github.com/samyeyo/clx) — Lua-based language; evaluate for corpus ingestion support; treat as single-language corpus, C++ compilation is incidental
+- **Zig** — systems language with C/C++ interop; ingestion + stub detection for Zig files
+
+### Corpora to acquire
+
+D&D theme is well covered (dj2, Commonplace). Branch out:
+- C/C++ open-source projects (candidates: small game engines, embedded systems, CLI tools)
+- Zig projects once language support lands
+- clx projects if ingestion proves viable
+
 ---
 
 ## RM69 — Judgment layer: classify_stub + corpus-level projections (DESIGN)
@@ -167,6 +180,11 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
 
 HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
+
+### Future additions
+
+- **Zig** — language target; supports C and C++ interop; ast-grep has Zig support built in. Add when a suitable Zig corpus is available. Same LanguageWalker extension pattern as Go/Rust.
+- **bethechatbot.com** — future corpus or reference addition. Review site for what specifically to pull in.
 
 ### Per-session probe loop (deterministic, no LLM)
 
@@ -345,6 +363,91 @@ from raw (XIV: one source of truth), goal_intake step 1 uses _search_symbols_raw
 Item 19: check_design_violations tool - semantic cosine-search against design_notes, constraint
 language filter, wired into risk_profile, pure analysis only (SOTS XI). Self-audit ran against
 Determined's own corpus (168 design_notes, 5 WARM symbols) - produced real findings, validated.
+
+---
+
+## UI Redesign Arc — running detail (session 209+)
+
+Design north star: the UI proves the tool works. Every surface connects to
+every other. Stubs, projections, judgment, proposals, and the editor are a
+navigable pipeline — not isolated tabs you query separately.
+
+### RM-UI-1: Stub classification in spotlight [DONE 2026-07-18]
+
+**What it does:**
+When any stub is opened in the spotlight panel, the backend runs
+`classify_stub` and returns structured JSON. The spotlight renders a
+"Stub Judgment" section with colored hypothesis chips, confidence %,
+and evidence sentences. A "propose (classification)" button appears,
+enabled once the judgment arrives.
+
+**How it works — backend:**
+- New socket event `classify_stub_spotlight` in `ui_server.py`
+- Handler calls `extract_signals(oracle, symbol)` + `score_hypotheses(signals)`
+  directly (not the text formatter) to get structured data
+- Emits `classify_stub_spotlight_result` with:
+  `{ symbol, top_hypothesis, top_score, uncertain, hypotheses, signals, file_path, line_number }`
+- `hypotheses` is a list of `{ classification, score, evidence[] }`
+- `signals` carries: caller_count, sibling_stub_count, body_shape,
+  file_character, is_protocol_or_abc, is_lifecycle, intent_text
+
+**How it works — frontend (console.html):**
+- `SP_SECTIONS` gains a `judgment` entry (order 2, `stubOnly: true`)
+  — hidden by default, only shown when `is_stub` confirmed
+- `openSpotlight()` builds the judgment placeholder as `display:none`
+- When `symbol_quick_result` fires with `is_stub: true` for the
+  current spotlight symbol:
+  - The judgment section is revealed (`display: ""`)
+  - A "propose impl" button is appended to spotlight actions (disabled)
+  - `classify_stub_spotlight` is emitted to the backend
+- When `classify_stub_spotlight_result` arrives:
+  - Signal summary line (body shape, caller count, sibling count, tags)
+  - Each hypothesis renders as a colored chip with left border:
+    - design-intent-stated → green
+    - blocked-on-prerequisite → orange
+    - concept-not-applicable → blue
+    - genuinely-unknown → grey
+  - Top hypothesis is bold; others are dimmed (opacity .75)
+  - Confidence % shown top-right of each chip
+  - Up to 2 evidence bullets per hypothesis
+  - Low-confidence footer if `uncertain: true`
+  - "propose impl" button enabled, relabeled "propose (design)" etc.
+    using the first word of the top hypothesis classification
+  - `dataset.classification` set on the button for downstream use
+
+**Verified live (2026-07-18):**
+- `process_consequences` in dj2: shows "design intent stated" (40%,
+  green) + "genuinely unknown" (20%, grey). Evidence: docstring
+  intent language. Propose button enabled labeled "propose (design)".
+- 52 tests pass (test_classify_stub + test_ui_surfaces)
+
+**Files changed:**
+- `determined/ui/ui_server.py`: added `classify_stub_spotlight` handler
+- `determined/ui/templates/console.html`: SP_SECTIONS, openSpotlight,
+  symbol_quick_result handler, classify_stub_spotlight_result handler
+
+### RM-UI-2: Propose → fulfill loop [TODO]
+
+When "propose (design)" is clicked:
+- `project_stub` emits with `{ symbol, classification: top_hypothesis }`
+- Backend passes classification context to stub_projector (informs LLM
+  framing: design-intent stubs get "complete the stated intent" prompt;
+  blocked-on-prereq stubs get "sketch the interface for X" prompt)
+- Result renders in spotlight source panel with file open in editor
+
+### RM-UI-3: Shape tab → editor navigation [TODO]
+
+Clicking a file row in Shape tab results opens it in the editor.
+Clicking a symbol in Shape results opens its spotlight (with judgment
+already loaded since Shape ran classify_stub to build the projection).
+
+### RM-UI-4: Mode = curated entry point [TODO]
+
+- Design mode: auto-runs Shape tab on activate
+- Trace mode: auto-loads Frontier stubs with judgment visible
+- Review mode: runs stub sweep ranked by uncertainty (most uncertain first)
+
+---
 
 **Before that (2026-06-28, session 30):** Mentor arc complete. Items 23/24/25 closed.
 Item 23 rebuilt on embeddings (all-MiniLM-L6-v2, docstring-enriched queries, threshold 0.32).
