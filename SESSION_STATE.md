@@ -1,65 +1,119 @@
-Written at commit: 1272a7c
-
-# SESSION STATE — session 206
-_Overwrite completely each session. Not authoritative — see docs/TRACKER.md and docs/CLOSURE.md for truth._
+# SESSION STATE — session 207
+Written at commit: 1c7fdf5
 
 ## Active branch: main [V]
 
 ## What happened this session (2026-07-18)
 
-**Phase 3: ALL housekeeping items complete [V]**
+### 1. dj2 surface investigation completed [V]
 
-### Item 1: Regex-for-semantic-meaning audit [V]
-  Audited determined/agent/, oracle/, assessor/, ingestion/.
-  Findings: no regex substituting for semantic layer on primary path.
-  _MODAL_RE and _EXPLICIT_ABSENCE_RE in stub_classifier.py are justified (model-unavailable fallback
-  and deterministic fast-path respectively). _COMPARATIVE_RE in local_agent.py is structural
-  question-form detection, not semantic meaning. pattern_executor.py NL routing is intentional fast-path.
-  CLOSURE.md updated and committed (commit c7b20fa).
+Read world_controller.py, character_builder.py, dm_chat_handler.py, engine/phases.py, world/fsm/.
 
-### Item 2: Commonplace guided journey review [V]
-  DB used: C_Users_bartl_dev_Determined_examples_commonplace.db (61 functions, 1 stub).
-  (C_Users_bartl_dev_corpora_Commonplace.db and C_Users_bartl_dev_Commonplace.db are both empty shells.)
+**Town wandering state answer:**
+- No formal FSM state exists for "in town." Implicit: current_location = tavern, dungeon_mode = False.
+- campaign_state.game_started never set to True anywhere in visible flow.
+- complete_tavern_intro() exists but nothing calls it in normal path.
+- exit_dungeon() does NOT restore current_location or clear dungeon_mode — return to town is broken.
 
-  Findings:
-  - corpus_status: DOES NOT EXIST in agent_tools.py. knowledge_status is the correct substitute.
-    Fixed in COMMONPLACE_VISION.md Step 1. [V]
-  - All other journey tool names confirmed present in agent_tools.py [V]:
-    detect_topology (line 1928), frontier_priority (line 2129), symbol_context (line 4022),
-    score_stub (line 6071), check_design_violations (line 892), reason_about (line 6150),
-    find_abc_gaps (registry), find_conditional_stubs (line 2443).
-  - "8 stubs" for Phase 2 complete is aspirational -- current examples/commonplace has 1 is_stub
-    (suggest_tags) + 1 conditional (validate_entry). ABC/chain topology shapes not yet added. [V]
-  - ingest_design_docs must run before check_design_violations (Step 4) is useful.
-    0 design notes in current DB. Added note to COMMONPLACE_VISION.md. [V]
-  - suggest_tags correctly classified across all tool paths: is_stub=1, direct-call,
-    3 callers, score=3. [V]
+**engine/phases.py [V]:** 8 pure-ABC classes (InputPhase, InterpretationPhase, AuthorityPhase,
+StateMutationPhase, ConsequencePhase, PersistencePhase, ViewProjectionPhase, PhaseSystemFactory).
+591 lines, ZERO concrete implementations anywhere in corpus. Biggest architecture void in dj2.
 
-  COMMONPLACE_VISION.md updated (Step 1 tool name, Phase 2 state note, ingest prereq).
-  CLOSURE.md Phase 3 item 2 fully checked. Committed (1272a7c).
+**world/fsm/ [V]:** schemas/fsm_schema.json is only a validation schema. __pycache__ has
+encounter_machine.cpython-311.pyc and trade_machine.cpython-311.pyc but NO source .py files.
+Source was deleted or never committed.
 
-## NEXT SESSION -- start here
+**narrative_framework [V]:** Loaded in world_controller.__init__ from player_narrative_data
+(phases: origin, formative_wound, recent_history). DMChatHandler._build_game_context() does NOT
+include it — DM knows classes/races but not the player's backstory arc. This is the disconnect
+between "inquisition" character creation and "conversation" creation.
 
-**CLOSURE.md Phase 3 is fully complete [V]**
-All items checked. The UI redesign gate is open per CLOSURE.md.
+**Character creation dialog direction (Bart, not for implementation yet):**
+Conversation not inquisition. DM elicits backstory through leading questions, interprets what
+player says, redirects into viable concepts, raises class/race constraints without discouraging.
+There is always something in what they say that can become an interesting character direction.
 
-**Next: UI redesign**
-  See docs/UI_VISION.md for the GOT navigation model.
-  See memory project_ui_vision.md for the design intent.
-  See memory project_ui_redesign_intent.md and project_ui_redesign_notes.md for constraints.
+### 2. Determined ABC gap detection fixed [V]
 
-  Before writing any code, read docs/sots.md and docs/UI_VISION.md.
-  CLOSURE.md should have a new Phase (Phase 4 or equivalent) for UI redesign work.
-  Create that before starting implementation.
+**Bug:** find_abc_gaps returned "All ABC stub methods have at least one override" when an ABC
+had NO concrete subclasses — a false positive hiding entire unbuilt subsystems.
 
-## Known issues (carried forward from prior sessions)
+**Fix (agent_tools.py):**
+- find_abc_gaps: reports UNIMPLEMENTED INTERFACES section for ABCs with zero subclasses
+- _get_abc_gap_set: includes abstract methods from zero-subclass ABCs in gap set
+- development_priorities: detects ARCH-VOID features, floor score (1-completeness)*5,
+  ARCH-VOID flag — surfaces even when ep=0
+- Test updated to expect arch void output instead of false positive
 
-**arg name asymmetry [V]:** blast_radius=`target`; graph_path=`src`/`dst`; classify_stub=`symbol`.
-**classify_stub file_path_hint [V]:** fails for TS; workaround: omit file_path.
-**walk_call_chain TS/JS [V]:** chain length 0/1 due to FQN callers; use graph_path.
-**graph_path JS FQN [V]:** inconsistent for JS module.method; some pairs fail.
-**Dead graph edges Determined DB [V]:** query_router / query_session ghost edges.
-**SetFit model [V]:** C:\Users\bartl\models\setfit\stub_classifier\. Inference only.
-**Suite: 1144 pass, 1 skip [V]:** confirmed post evaluator.py Bug E fix (session 205).
-**Commonplace corpus DB path [V]:** real DB = C_Users_bartl_dev_Determined_examples_commonplace.db.
-  Other Commonplace DB files are empty shells.
+**Verified [V]:** 1144 pass, 1 skip. Workbench Frontier:ABC on dj2 corpus now shows
+8 phases.py ABC classes with all 43 unimplemented methods.
+
+### 3. UI redesign shipped [V]
+
+- Frontier is landing tab (was Chat)
+- 6 primary tabs: Frontier, Call tree, Graph, Editor, Knowledge, Chat
+- More ▾ dropdown holds remaining 10
+- Ask/query bar collapsed by default; shown on Chat tab click, hidden on other tabs
+- _askPinned: 💬 rail opens ask bar and keeps it across tab switches
+- Trail bar visible by default
+
+**Verified [V]:** Zero JS errors. All behaviors confirmed via browser automation.
+
+### 4. UX gaps found navigating dj2 corpus live [V]
+
+- **Frontier doesn't auto-load on corpus_ready** — blank panel, must click Load ↵. Bad first impression.
+- **ABC filter in Frontier UI: "No frontier edges"** — UI ABC mode uses graph edges; arch-void methods
+  have no edges. find_abc_gaps fix helped text tools but not Frontier tab visualization.
+- **Corpus map shows "0 files · 0 hot · 0 stubs"** for dj2 — map render bug.
+- **development_priorities via Ask bar: "No active work items"** — tool arg dispatch may not
+  pass scope correctly from NL query.
+- **Chat results invisible from other tabs** — query sent from Workbench, result in panel-chat
+  with no indication anything happened.
+
+### 5. What Determined surfaces for dj2 now [V]
+
+Direct frontier top stubs:
+  1. guide_backstory_creation (48 callers) — character creation/narrative gap — RIGHT
+  2. generate_rivers (29) — world gen
+  3. _update_character_from_ai (26) — AI character update — RIGHT
+  4. generate_heightmap (26)
+  5. place_locations (22)
+  6. roll_dice (21)
+  7. process_player_action (20) — game loop — RIGHT
+  8. from_game_context (19) — context building — RIGHT
+
+ABC voids: 8 interfaces, 43 unimplemented methods, all in engine/phases.py.
+
+## NEXT SESSION — start here
+
+**Priority 1: dj2 character creation / DM dialog**
+- guide_backstory_creation is stub #1 (48 callers) — start there
+- Wire narrative_framework into DMChatHandler._build_game_context()
+- _update_character_from_ai is stub #3
+- Read dm_chat_handler.py fully before writing anything
+
+**Priority 2: dj2 encounter / world state**
+- Town wandering needs formal state
+- complete_tavern_intro → game_started pipeline
+- _get_encounter_context should hook into world/fsm/ backbone
+- FSM source files missing — assess whether to recreate or redesign
+
+**Priority 3: Determined UX fixes (found this session)**
+- Auto-load Frontier on corpus_ready
+- Frontier ABC mode: render UNIMPLEMENTED INTERFACES (separate from edge-based)
+- Corpus map "0 files" bug for dj2
+- development_priorities arg passing from Ask bar
+
+## Known issues
+
+**arg name asymmetry [V]:** blast_radius=target; graph_path=src/dst; classify_stub=symbol.
+**Suite: 1144 pass, 1 skip [V]:** confirmed this session.
+**Commonplace DB path [V]:** real DB = C_Users_bartl_dev_Determined_examples_commonplace.db.
+**narrative_engine latent bug [?]:** on_arc_completed references self.active_quests but it's
+  commented out in __init__ — AttributeError at runtime if arc completes.
+**engine/phases.py ABC void [V]:** 8 interfaces, 0 implementations — now surfaced correctly.
+**FSM source deleted [V]:** encounter_machine.py / trade_machine.py gone; only .pyc remain.
+**game_started never set [V]:** campaign_state.game_started stays False; game can't formally start.
+**Frontier ABC UI mode [V]:** shows "No frontier edges" for arch-void — needs separate render path.
+**Corpus map 0 files bug [?]:** dj2 corpus map shows "0 files · 0 hot · 0 stubs" after load.
+**development_priorities via Ask bar [?]:** scope arg not passing from NL query.
