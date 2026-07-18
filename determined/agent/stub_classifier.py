@@ -38,6 +38,27 @@ _MODAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Deterministic fast-path: explicit absence assertions that are
+# unambiguously concept-not-applicable regardless of model output.
+# "OG System doesn't have subraces", "No subraces in OG System",
+# "not supported in this version" etc.
+_EXPLICIT_ABSENCE_RE = re.compile(
+    r"(?:"
+    r"doesn['’]t\s+(?:have|support|exist|include|implement)"
+    r"|don['’]t\s+(?:have|support|use|exist|apply)"
+    r"|does\s+not\s+(?:have|support|exist|apply|belong)"
+    r"|do\s+not\s+(?:have|support|exist|apply)"
+    r"|not\s+(?:supported|applicable|part\s+of|used|present|implemented)\s+in"
+    r"|not\s+in\s+(?:this|the|our|og)\b"
+    r"|(?:no|zero)\s+\w+\s+in\s+(?:this|the|our|og)\b"
+    r"|(?:was|were|has\s+been|have\s+been)\s+(?:removed|deleted|dropped|eliminated)"
+    r"|concept\s+(?:removed|dropped|eliminated|deprecated)"
+    r"|for\s+(?:backward|back)(?:s?ward)?\s*compatibility\s+only"
+    r"|always\s+returns?\s+(?:empty|none|null|false|zero|0|an?\s+empty)"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _load() -> bool:
     """
@@ -103,8 +124,12 @@ def has_intent(text: str) -> bool:
 def has_removal(text: str) -> bool:
     """
     True if text signals concept-not-applicable.
-    Uses SetFit model when available; falls back to embedding similarity.
+    Fast-path: deterministic explicit-absence patterns (doesn't have, no X in Y,
+    always returns empty, etc.) are caught before the model.
+    Falls back to SetFit model when available, then embedding similarity.
     """
+    if text and _EXPLICIT_ABSENCE_RE.search(text):
+        return True
     result = classify_text(text)
     if result and result["available"]:
         return result["class_id"] == 2

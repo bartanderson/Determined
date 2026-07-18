@@ -329,7 +329,9 @@ def stub_concept_ghost_map(assessor: "Assessor", args: dict) -> str:
     if not stub_rows:
         return f"stub_concept_ghost_map: no stubs found{' under ' + scope if scope else ''}."
 
-    from determined.agent.agent_tools import _extract_docstring_concepts, _concept_base
+    from determined.agent.agent_tools import _extract_docstring_concepts
+
+    import re as _re
 
     class_names_lower = {
         r[0].lower()
@@ -340,6 +342,32 @@ def stub_concept_ghost_map(assessor: "Assessor", args: dict) -> str:
         for r in conn.execute("SELECT name FROM functions WHERE is_stub = 0").fetchall()
     }
 
+    def _concept_snake(concept: str) -> str:
+        """CamelCase or SuffixFSM → snake_case for fn-name matching."""
+        s = _re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', concept)
+        s = _re.sub(r'([a-z\d])([A-Z])', r'\1_\2', s)
+        return s.lower()
+
+    def _concept_matches(concept: str, class_names: set, fn_names: set) -> str:
+        """
+        Return verdict for a concept: 'live', 'partial', or 'ghost'.
+
+        Class match: the concept name (lowercased, no spaces) appears as a
+        substring of a class name, or vice-versa — using the FULL concept, not
+        the suffix-stripped base.  This avoids 'CombatFSM' → base 'Combat'
+        matching '_validate_combat'.
+
+        Function match (partial): the snake_case form of the full concept appears
+        as a substring in a function name (e.g. 'combat_fsm' in 'combat_fsm_init').
+        """
+        concept_lower = concept.lower().replace(" ", "")
+        class_hit = any(concept_lower in cn or cn in concept_lower for cn in class_names)
+        if class_hit:
+            return "live"
+        snake = _concept_snake(concept)
+        fn_hit = any(snake in fn or fn in snake for fn in fn_names if len(snake) >= 5)
+        return "partial" if fn_hit else "ghost"
+
     # concept -> {verdict, stubs_referencing}
     concept_data: dict[str, dict] = {}
 
@@ -348,16 +376,8 @@ def stub_concept_ghost_map(assessor: "Assessor", args: dict) -> str:
         label = f"{name}  ({short_fp})"
         concepts = _extract_docstring_concepts(docstring or "")
         for concept in concepts:
-            base = _concept_base(concept).lower()
             if concept not in concept_data:
-                class_hit = any(base in cn or cn in base for cn in class_names_lower)
-                fn_hit = any(base in fn or fn in base for fn in fn_names_lower)
-                if class_hit:
-                    verdict = "live"
-                elif fn_hit:
-                    verdict = "partial"
-                else:
-                    verdict = "ghost"
+                verdict = _concept_matches(concept, class_names_lower, fn_names_lower)
                 concept_data[concept] = {"verdict": verdict, "stubs": []}
             concept_data[concept]["stubs"].append(label)
 
