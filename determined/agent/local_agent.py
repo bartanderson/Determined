@@ -475,6 +475,9 @@ def _answer(
     elif needs == ["prioritize work"]:
         pw_fact = next((f["result"] for f in facts if f["tool"] == "prioritize_work"), None)
         answer = pw_fact if pw_fact else "(no work items found)"; bypass = "prioritize_work"
+    elif needs == ["development priorities"]:
+        dp_fact = next((f["result"] for f in facts if f["tool"] == "development_priorities"), None)
+        answer = dp_fact if dp_fact else "(no features found)"; bypass = "development_priorities"
     else:
         assemble_msgs = _assemble_prompt(user_input, facts_text, history, facts=facts, needs=needs)
         answer = _call_ollama(assemble_msgs, verbose=verbose, label="phase3-assemble")

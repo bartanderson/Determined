@@ -86,19 +86,25 @@ def _corpus_status() -> dict:
         files     = _oracle.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         hot       = _oracle.conn.execute("SELECT COUNT(*) FROM files WHERE is_hot=1").fetchone()[0]
         stubs     = _oracle.conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub=1").fetchone()[0]
-        dupes     = _oracle.conn.execute(
-            "SELECT COUNT(*) FROM ("
-            "  SELECT name FROM functions"
-            "  WHERE class_name IS NULL"
-            "  GROUP BY name HAVING COUNT(DISTINCT file_path) > 1"
-            ")"
-        ).fetchone()[0]
-        artifacts = 0
-        if _assessor and _assessor._knowledge_conn:
-            artifacts = _assessor._knowledge_conn.execute(
-                "SELECT COUNT(*) FROM knowledge_artifacts"
+        try:
+            dupes = _oracle.conn.execute(
+                "SELECT COUNT(*) FROM ("
+                "  SELECT name FROM functions"
+                "  WHERE class_name IS NULL"
+                "  GROUP BY name HAVING COUNT(DISTINCT file_path) > 1"
+                ")"
             ).fetchone()[0]
+        except Exception:
+            dupes = 0
         db_name = Path(_db_path).stem.replace("_", " ")
+        artifacts = 0
+        try:
+            if _assessor and _assessor._knowledge_conn:
+                artifacts = _assessor._knowledge_conn.execute(
+                    "SELECT COUNT(*) FROM knowledge_artifacts"
+                ).fetchone()[0]
+        except Exception:
+            pass
         return {"files": files, "hot": hot, "stubs": stubs, "dupes": dupes,
                 "artifacts": artifacts, "db_name": db_name}
     except Exception:
@@ -1254,9 +1260,10 @@ def handle_get_frontier_graph(data):
         return
 
     if mode == "abc":
-        # ABC mode: show abstract-interface stubs grouped by class, edges from class->method
+        # ABC mode: show abstract-interface methods with no concrete override.
+        # Uses @abstractmethod decorator check (same as find_abc_gaps) so arch-void
+        # ABCs (0 subclasses) are included — not just classes with partial overrides.
         try:
-            from determined.agent.agent_tools import find_abc_gaps as _find_abc
             import json as _json
             conn = _oracle.conn
 
@@ -1272,28 +1279,38 @@ def handle_get_frontier_graph(data):
                 return (path or "").replace("\\", "/").split("/")[-1]
 
             for cls_name, methods_json, cls_file in abc_rows:
-                methods = _json.loads(methods_json or "[]")
+                try:
+                    methods = _json.loads(methods_json or "[]")
+                except Exception:
+                    continue
                 has_gap = False
                 for method in methods:
-                    row = conn.execute(
-                        "SELECT file_path, line_number, is_stub FROM functions "
+                    # Only include @abstractmethod-decorated methods (same logic as find_abc_gaps)
+                    dec_row = conn.execute(
+                        "SELECT file_path, line_number, decorators_json FROM functions "
                         "WHERE name=? AND file_path=? LIMIT 1", (method, cls_file)
                     ).fetchone()
-                    if not row or not row[2]:
+                    if not dec_row:
                         continue
-                    # Check for non-stub override
+                    try:
+                        decs = _json.loads(dec_row[2] or "[]")
+                    except Exception:
+                        decs = []
+                    if not any("abstractmethod" in d for d in decs):
+                        continue
+                    # Check for concrete (non-stub) override anywhere else in corpus
                     override = conn.execute(
                         "SELECT COUNT(*) FROM functions WHERE name=? AND is_stub=0 AND file_path!=?",
                         (method, cls_file)
                     ).fetchone()[0]
                     if override > 0:
                         continue
-                    # Unimplemented abstract method — add stub node + edge from class
+                    # Unimplemented abstract method — add node + edge from ABC class
                     has_gap = True
                     if method not in nodes:
                         nodes[method] = {
                             "id": method, "label": method, "role": "stub",
-                            "file": _short(row[0]), "line": row[1] or 0,
+                            "file": _short(dec_row[0]), "line": dec_row[1] or 0,
                         }
                     edges.append({"source": cls_name, "target": method})
 

@@ -866,6 +866,7 @@ socket.on("corpus_ready", data => {
     _startupFiredFor = data.db_path;
     bagFetch();
     if (data.top_entry) ctTrace(data.top_entry);
+    fgLoad_();  // auto-load Frontier on corpus ready
     if (data.design_doc_hint) {
       const h = data.design_doc_hint;
       const notice = document.getElementById("design-doc-notice");

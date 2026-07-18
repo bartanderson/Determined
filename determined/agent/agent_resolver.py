@@ -203,6 +203,10 @@ _PATTERNS = [
                 r"['\"]?([^\s'\"]+)['\"]?\s*$", re.I),
      "git_log_for", "path", 1),
 
+    # "development priorities" / "feature priorities" (feature completeness tool)
+    (re.compile(r"development\s+priorit(?:y|ies)\s*$", re.I),
+     "development_priorities", None, None),
+
     # "prioritize work" / "what to work on"
     (re.compile(r"prioriti[sz]e\s+work\s*$", re.I),
      "prioritize_work", None, None),
@@ -796,6 +800,17 @@ _HEURISTICS: list[tuple] = [
     ),
 
     # --- Workflow heuristics ---
+
+    # "show development priorities" / "feature priorities" / "implementation priorities"
+    # Routes to the feature-completeness tool, not the workflow-items tool.
+    (
+        re.compile(
+            r"(?:show\s+(?:me\s+)?)?(?:development|feature|implementation)\s+priorit(?:y|ies)"
+            r"|development_priorities",
+            re.I,
+        ),
+        lambda m: ["development priorities"],
+    ),
 
     # "what's next" / "what should I work on" / "what are my priorities" / "dev plan"
     # "what's next on the backlog" / "what is the top priority" / "what should I do next"

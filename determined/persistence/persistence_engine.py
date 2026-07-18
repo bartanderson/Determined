@@ -31,6 +31,8 @@ def _migrate(connection):
         cursor.execute("ALTER TABLE functions ADD COLUMN http_route TEXT")
     if "is_tool" not in fn_existing:
         cursor.execute("ALTER TABLE functions ADD COLUMN is_tool INTEGER DEFAULT 0")
+    if "class_name" not in fn_existing:
+        cursor.execute("ALTER TABLE functions ADD COLUMN class_name TEXT")
     f_existing = {row[1] for row in cursor.execute("PRAGMA table_info(files)").fetchall()}
     if "ingested_at" not in f_existing:
         cursor.execute("ALTER TABLE files ADD COLUMN ingested_at TEXT")
