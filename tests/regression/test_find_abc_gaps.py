@@ -95,13 +95,15 @@ def test_all_subclasses_covered_returns_no_gaps():
     assert "All ABC stub methods" in result
 
 
-def test_no_subclasses_returns_no_gaps():
-    """ABC with no subclasses in corpus has nothing to report."""
+def test_no_subclasses_returns_arch_void():
+    """ABC with no subclasses is reported as an unimplemented interface (arch void)."""
     conn = _make_db()
     _add_abc_base(conn, "iface.py", "IFoo", ["do_thing"])
     oracle = _FakeOracle(conn)
     result = find_abc_gaps(oracle, {})
-    assert "All ABC stub methods" in result
+    assert "UNIMPLEMENTED INTERFACES" in result
+    assert "IFoo" in result
+    assert "do_thing" in result
 
 
 def test_non_abstract_method_on_abc_not_reported():

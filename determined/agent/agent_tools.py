@@ -1774,17 +1774,52 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
             if missing:
                 concrete_gaps.append((sub_name, abc_name, missing))
 
-    if not concrete_gaps:
+    # Find ABCs with NO concrete subclasses at all — unimplemented interfaces (highest severity)
+    all_class_names = set(r[0] for r in conn.execute("SELECT name FROM classes").fetchall())
+    subclass_names: dict[str, set] = {abc: set() for abc in abc_method_map}
+    for sub_name, bases_json, sub_file in all_classes:
+        try:
+            bases = _json.loads(bases_json or "[]")
+        except Exception:
+            bases = []
+        for abc_name in abc_method_map:
+            if abc_name in bases:
+                subclass_names[abc_name].add(sub_name)
+
+    unimplemented_interfaces = {
+        abc: methods for abc, methods in abc_method_map.items()
+        if not subclass_names.get(abc)
+    }
+
+    lines = []
+    if unimplemented_interfaces:
+        lines.append(
+            f"UNIMPLEMENTED INTERFACES — {len(unimplemented_interfaces)} ABC class(es) with NO concrete subclass anywhere:"
+        )
+        lines.append("  (These are architecture voids: the interface exists but nothing implements it.)")
+        lines.append("")
+        for abc_name in sorted(unimplemented_interfaces):
+            # Find file
+            row = conn.execute(
+                "SELECT file_path FROM classes WHERE name = ? LIMIT 1", (abc_name,)
+            ).fetchone()
+            fp = (row[0] or "").replace("\\", "/").split("/")[-1] if row else "?"
+            methods = sorted(unimplemented_interfaces[abc_name])
+            lines.append(f"  {abc_name}  ({fp})")
+            for m in methods:
+                lines.append(f"    {m}  [no implementation exists]")
+        lines.append("")
+
+    if not concrete_gaps and not unimplemented_interfaces:
         return "All ABC stub methods have at least one non-stub override in the corpus."
 
-    lines = [
-        f"ABC interface gaps ({len(concrete_gaps)} concrete subclass(es) with missing overrides):",
-        "",
-    ]
-    for sub_name, abc_name, missing in sorted(concrete_gaps):
-        lines.append(f"  {sub_name}  (inherits {abc_name})")
-        for m in missing:
-            lines.append(f"    {m}  [not overridden]")
+    if concrete_gaps:
+        lines.append(f"Concrete subclasses with missing overrides ({len(concrete_gaps)}):")
+        lines.append("")
+        for sub_name, abc_name, missing in sorted(concrete_gaps):
+            lines.append(f"  {sub_name}  (inherits {abc_name})")
+            for m in missing:
+                lines.append(f"    {m}  [not overridden]")
     return "\n".join(lines)
 
 
@@ -1861,6 +1896,7 @@ def _get_abc_gap_set(conn) -> set:
     # Find concrete subclasses and check per-subclass for missing overrides
     gaps: set[str] = set()
     all_classes = conn.execute("SELECT name, base_classes_json, methods_json, file_path FROM classes").fetchall()
+    subclass_found: set[str] = set()  # ABC names that have at least one concrete subclass
     for sub_name, bases_json, sub_methods_json, sub_file in all_classes:
         try:
             bases = _json.loads(bases_json or "[]")
@@ -1870,9 +1906,14 @@ def _get_abc_gap_set(conn) -> set:
         for abc_name, abstract_methods in abc_method_map.items():
             if abc_name not in bases:
                 continue
+            subclass_found.add(abc_name)
             for method in abstract_methods:
                 if method not in sub_methods:
                     gaps.add(method)
+    # ABCs with NO concrete subclasses at all — every abstract method is an arch void
+    for abc_name, abstract_methods in abc_method_map.items():
+        if abc_name not in subclass_found:
+            gaps.update(abstract_methods)
     return gaps
 
 
@@ -6877,6 +6918,35 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     except Exception:
         pass  # knowledge_artifacts may not exist in test DBs
 
+    # --- 6b. Architecture voids: ABC classes with no concrete subclasses per feature ---
+    import json as _json_dp
+    arch_void_feats: set[str] = set()
+    try:
+        abc_classes_dp = conn.execute(
+            "SELECT name, methods_json, file_path FROM classes "
+            "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+        ).fetchall()
+        all_classes_dp = conn.execute(
+            "SELECT name, base_classes_json FROM classes"
+        ).fetchall()
+        all_bases_flat: set[str] = set()
+        for _, bases_json in all_classes_dp:
+            try:
+                all_bases_flat.update(_json_dp.loads(bases_json or "[]"))
+            except Exception:
+                pass
+        for abc_name, methods_json, fp in abc_classes_dp:
+            if abc_name not in all_bases_flat:
+                # This ABC has no subclasses — architecture void
+                key = dir_key(_fp_norm(fp.replace("\\", "/")))
+                if scope and not key.startswith(scope):
+                    continue
+                if exclude_tests and _is_test_feature(key):
+                    continue
+                arch_void_feats.add(key)
+    except Exception:
+        pass
+
     # --- 7. Rank features ---
     records = []
     for feat in all_features:
@@ -6886,7 +6956,9 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
         total = impl + stub + missing
         completeness = impl / total if total > 0 else 1.0
         ep = feat_ep_callers[feat]
-        priority = (1.0 - completeness) * ep
+        is_arch_void = feat in arch_void_feats
+        # Arch voids get a floor score — they're unbuilt subsystems, not just incomplete ones
+        priority = (1.0 - completeness) * ep if not is_arch_void else max((1.0 - completeness) * ep, (1.0 - completeness) * 5)
         records.append({
             "feat": feat,
             "impl": impl,
@@ -6898,10 +6970,11 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
             "is_blocker": feat_is_blocker[feat],
             "has_docs": feat in design_feats,
             "blocking_stub": feat_blocking_stub.get(feat, "-"),
+            "is_arch_void": is_arch_void,
         })
 
     # Sort: cross-feature blockers first at same priority, then by priority desc, completeness asc
-    records.sort(key=lambda r: (-r["priority"], -r["is_blocker"], r["completeness"]))
+    records.sort(key=lambda r: (-r["priority"], -r["is_blocker"], -r["is_arch_void"], r["completeness"]))
 
     # Only features with stubs or missing nodes are worth surfacing in priority list
     actionable = [r for r in records if r["stub"] > 0 or r["missing"] > 0]
@@ -6920,6 +6993,8 @@ def development_priorities(oracle: "DBOracle", args: dict) -> str:
     lines.append("-" * len(hdr))
     for r in top:
         flags = []
+        if r.get("is_arch_void"):
+            flags.append("ARCH-VOID")
         if r["is_blocker"]:
             flags.append("BLOCKER")
         if not r["has_docs"]:
