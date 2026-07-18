@@ -155,6 +155,22 @@ body.mode-review .tab[data-tab="frontier"] { border-bottom:2px solid var(--green
 
 /* trail bar glow in Trace mode */
 body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,0,.07); }
+
+/* ── shape tab (RM69) ── */
+.shape-card{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;min-height:0}
+.shape-card-hdr{font-size:.8em;font-weight:600;color:var(--text1);margin-bottom:4px;flex-shrink:0}
+.shape-hint{font-weight:400;color:var(--text3);margin-left:5px}
+.shape-pre{font-size:.77em;line-height:1.6;white-space:pre-wrap;margin:0;color:var(--text2);overflow-y:auto;max-height:340px;flex:1}
+/* verdict colorization */
+.sv-skeleton{color:#4a9eff}
+.sv-dead{color:var(--orange)}
+.sv-ghost{color:#e05050}
+.sv-partial{color:var(--orange)}
+.sv-live{color:var(--green)}
+.sv-mixed{color:var(--text3)}
+.sv-high{color:#e05050;font-weight:600}
+.sv-med{color:var(--orange)}
+.sv-low{color:var(--text3)}
 </style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
@@ -358,6 +374,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
           <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
           <button class="tab tab-nodot" data-tab="topology">Topology</button>
+          <button class="tab tab-nodot" data-tab="shape" title="Corpus shape — RM69 judgment projections: file density, subsystem verdicts, prerequisite map, concept ghosts">Shape</button>
           <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
           <button class="tab tab-nodot" data-tab="workbench" title="Run any Discovery tool ad hoc; results stored as artifacts">Workbench</button>
           <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus">Discovery</button>
@@ -574,6 +591,36 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
         </div>
         <pre id="topo-content" style="font-size:.82em;line-height:1.7;white-space:pre-wrap;margin:0"></pre>
         <div id="topo-empty" style="color:var(--text3);padding:1rem;display:none">No corpus loaded.</div>
+      </div>
+
+      <!-- ── shape tab (RM69 corpus projections) ── -->
+      <div class="tab-panel" id="panel-shape" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
+          <strong style="font-size:.95em">Corpus Shape</strong>
+          <span style="font-size:.8em;color:var(--text3)">judgment-layer projections — file density, subsystem verdicts, prerequisites, concept ghosts</span>
+          <input id="shape-scope" class="path-input" placeholder="scope (e.g. world/)" style="width:140px;font-size:.82em;flex-shrink:0">
+          <button id="shape-run-btn" class="send-btn" style="padding:3px 10px;font-size:.82em">Run ↵</button>
+          <span id="shape-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
+          <span id="shape-status" style="font-size:.78em;color:var(--text3);margin-left:auto"></span>
+        </div>
+        <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="shape-card" id="shape-file">
+            <div class="shape-card-hdr">File shape <span class="shape-hint">stub density per file</span></div>
+            <pre class="shape-pre" id="shape-file-pre">—</pre>
+          </div>
+          <div class="shape-card" id="shape-subsystem">
+            <div class="shape-card-hdr">Subsystem shape <span class="shape-hint">directory-level verdicts</span></div>
+            <pre class="shape-pre" id="shape-subsystem-pre">—</pre>
+          </div>
+          <div class="shape-card" id="shape-prereq">
+            <div class="shape-card-hdr">Prerequisite map <span class="shape-hint">what blocks the most stubs</span></div>
+            <pre class="shape-pre" id="shape-prereq-pre">—</pre>
+          </div>
+          <div class="shape-card" id="shape-ghost">
+            <div class="shape-card-hdr">Concept ghost map <span class="shape-hint">concepts referenced but absent</span></div>
+            <pre class="shape-pre" id="shape-ghost-pre">—</pre>
+          </div>
+        </div>
       </div>
 
       <!-- ── tour tab ── -->
@@ -3576,6 +3623,73 @@ socket.on("topology_result", data => {
 document.getElementById("topo-refresh").addEventListener("click", topoLoad);
 document.querySelectorAll(".tab[data-tab='topology']").forEach(t => {
   t.addEventListener("click", topoLoad);
+});
+
+// ── Shape panel (RM69 corpus projections) ──────────────────
+const _shapePres = {
+  file_shape:      document.getElementById("shape-file-pre"),
+  subsystem_shape: document.getElementById("shape-subsystem-pre"),
+  prereq_map:      document.getElementById("shape-prereq-pre"),
+  ghost_map:       document.getElementById("shape-ghost-pre"),
+};
+const shapeRunBtn  = document.getElementById("shape-run-btn");
+const shapeRunning = document.getElementById("shape-running");
+const shapeStatus  = document.getElementById("shape-status");
+const shapeScopeIn = document.getElementById("shape-scope");
+let _shapeLoaded = false;
+
+function _colorizeShape(text) {
+  // Wrap verdict/priority keywords in colored spans
+  return escHtml(text)
+    .replace(/\bdesign-skeleton\b/g, '<span class="sv-skeleton">design-skeleton</span>')
+    .replace(/\bdead-concept\b/g,    '<span class="sv-dead">dead-concept</span>')
+    .replace(/\bdesign-intent\b/g,   '<span class="sv-skeleton">design-intent</span>')
+    .replace(/\bmixed-skeleton-and-dead-concept\b/g, '<span class="sv-mixed">mixed-skeleton-and-dead-concept</span>')
+    .replace(/\bmixed\b/g,           '<span class="sv-mixed">mixed</span>')
+    .replace(/\[GHOST\]/g,           '<span class="sv-ghost">[GHOST]</span>')
+    .replace(/\[PARTIAL\]/g,         '<span class="sv-partial">[PARTIAL]</span>')
+    .replace(/\[live\]/g,            '<span class="sv-live">[live]</span>')
+    .replace(/\[HIGH\]/g,            '<span class="sv-high">[HIGH]</span>')
+    .replace(/\[MED\]/g,             '<span class="sv-med">[MED]</span>')
+    .replace(/\[LOW\]/g,             '<span class="sv-low">[LOW]</span>');
+}
+
+function shapeRun() {
+  shapeRunning.style.display = "";
+  shapeRunBtn.disabled = true;
+  shapeStatus.textContent = "";
+  Object.values(_shapePres).forEach(p => { p.textContent = "Running…"; });
+  socket.emit("shape_run", { scope: shapeScopeIn.value.trim() });
+}
+
+socket.on("shape_result", data => {
+  shapeRunning.style.display = "none";
+  shapeRunBtn.disabled = false;
+  _shapeLoaded = true;
+  if (data.error) {
+    shapeStatus.textContent = data.error;
+    Object.values(_shapePres).forEach(p => { p.textContent = ""; });
+    return;
+  }
+  const map = {
+    file_shape:      _shapePres.file_shape,
+    subsystem_shape: _shapePres.subsystem_shape,
+    prereq_map:      _shapePres.prereq_map,
+    ghost_map:       _shapePres.ghost_map,
+  };
+  const r = data.results || {};
+  map.file_shape.innerHTML      = _colorizeShape(r.file_shape      || "no data");
+  map.subsystem_shape.innerHTML = _colorizeShape(r.subsystem_shape || "no data");
+  map.prereq_map.innerHTML      = _colorizeShape(r.prereq_map      || "no data");
+  map.ghost_map.innerHTML       = _colorizeShape(r.ghost_map       || "no data");
+  const scope = data.scope ? ` (scope: ${escHtml(data.scope)})` : "";
+  shapeStatus.textContent = `Loaded${scope}`;
+});
+
+shapeRunBtn.addEventListener("click", shapeRun);
+shapeScopeIn.addEventListener("keydown", e => { if (e.key === "Enter") shapeRun(); });
+document.querySelectorAll(".tab[data-tab='shape']").forEach(t => {
+  t.addEventListener("click", () => { if (!_shapeLoaded) shapeRun(); });
 });
 
 // ── Tour panel ─────────────────────────────────────────────

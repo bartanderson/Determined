@@ -2436,6 +2436,36 @@ def handle_workbench_run_tool(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+# ── Corpus shape (RM69 projections) ──────────────────────────────────────────
+
+@socketio.on("shape_run")
+def handle_shape_run(data):
+    """Run all 4 corpus-shape projections and emit shape_result."""
+    if _oracle is None:
+        emit("shape_result", {"error": "No corpus loaded."})
+        return
+    scope = (data or {}).get("scope", "").strip()
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import dispatch
+            args = {"scope": scope} if scope else {}
+            results = {}
+            for key, tool_name in [
+                ("file_shape",     "stub_file_shape"),
+                ("subsystem_shape","stub_subsystem_shape"),
+                ("prereq_map",     "stub_prerequisite_map"),
+                ("ghost_map",      "stub_concept_ghost_map"),
+            ]:
+                results[key] = dispatch(tool_name, args, _oracle, _assessor)
+            socketio.emit("shape_result", {"ok": True, "results": results, "scope": scope}, to=sid)
+        except Exception as exc:
+            socketio.emit("shape_result", {"error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── Discovery mode ────────────────────────────────────────────────────────────
 
 _DISCOVERY_STEPS = [
