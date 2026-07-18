@@ -104,20 +104,30 @@ confabulation or misrouting? Until these pass, the UI may look broken on real qu
 
 ### Determined (Python)
 
-Structural integrity: done (2026-07-16). Probe: pending.
+Structural integrity: done (2026-07-16). Probe: done (2026-07-17).
 
-Known issue to verify: Q5 confabulation. In session 140 the model invented a
-query_router/query_session pipeline that doesn't exist. Fix A (2026-07-15) added
-symbol-existence checks to verify_claim. Must confirm Q5 no longer confabulates
-against the current Determined corpus before calling this probe passed.
-
-- [ ] Q1 Entry points
-- [ ] Q2 Blast radius
-- [ ] Q3 Feature shape
-- [ ] Q4 Stubs (3 real stubs known: 2x __init__, 1x suggest_tags)
-- [ ] Q5 Design drift — also verify no confabulation of non-existent symbols (Fix A check)
-- [ ] Q6 Call chains
-- Findings:
+- [x] Q1 Entry points — 160 EPs, top is list_entry_points (49 fan-out). Dominated
+      by internal utilities, consistent with known EP ceiling. PASS.
+- [x] Q2 Blast radius — dispatch correctly HOT: 124 callers, 1069 extended impact. PASS.
+- [x] Q3 Feature shape — list_features works. determined/agent: 39% completeness,
+      350 local-missing (cross-module calls; expected for multi-module system). PASS.
+- [x] Q4 Stubs — 3 real stubs found; 9 test fixtures also surfaced (FALSE POSITIVES).
+      Real: suggest_tags [design-intent-stated 0.70 ✓], __init__ x2 [UNCERTAIN, no signal ✓].
+      Note: __init__ #2 is in determined/contracts/, not determined/assessor/ as SESSION_STATE said.
+      classify_stub file_path must match full absolute DB path (relative paths miss silently).
+      Bug filed: list_stubs should filter test/ files or tag them [TEST].
+- [x] Q5 Design drift — not fully testable without ingested layer rules / design notes.
+      Confabulation check: search_symbols("query_router") → nothing. BUT graph has dead
+      edges run_query → determined.assessor.query_router.route_query (module deleted,
+      edges remain). Fix A prevents confabulation; dead edges are a graph quality issue.
+- [x] Q6 Call chains — main→run_question: correct (via cmd_ask). dispatch→classify_stub:
+      no path (expected). ask→dispatch path traverses .append() list method as a hop —
+      false path through collection method calls.
+- Findings (bugs to fix):
+  1. list_stubs: test fixtures show as stubs — filter files matching tests/ or tag [TEST]
+  2. classify_stub docs: file_path must be full absolute path matching DB; relative fails silently
+  3. graph_path: method calls on collections (.append, .get etc.) used as path hops → false paths
+  4. Dead graph edges: run_query → query_router / query_session modules (deleted); ghost callee noise
 
 ### dj2 (Python+JS)
 
