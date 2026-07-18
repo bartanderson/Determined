@@ -49,6 +49,18 @@
 .sp-propose-box textarea{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text1);font-family:var(--font-mono);font-size:.8em;padding:6px;resize:vertical;min-height:60px}
 .sp-propose-box .sp-propose-actions{display:flex;gap:6px}
 
+/* ── More ▾ overflow dropdown ── */
+.more-wrap{position:relative;display:inline-flex}
+.more-dropdown{display:none;position:absolute;top:100%;left:0;z-index:200;
+  background:var(--bg2);border:1px solid var(--border2);border-radius:5px;
+  box-shadow:0 4px 14px rgba(0,0,0,.22);padding:4px 0;min-width:140px;flex-direction:column}
+.more-dropdown.open{display:flex}
+.more-dropdown .tab{border-radius:0;border-bottom:none;padding:6px 14px;text-align:left;
+  width:100%;white-space:nowrap;font-size:.8em}
+.more-dropdown .tab:hover{background:var(--bg3)}
+.more-dropdown .tab.active{background:var(--surface2);color:var(--text1)}
+#more-btn.has-active{color:var(--blue);font-weight:600}
+
 /* ── training mode toggle ── */
 #guide-toggle-wrap{display:flex;align-items:center;gap:4px;margin-right:8px}
 #guide-toggle-btn{font-size:.73em;padding:3px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
@@ -294,7 +306,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
   <div class="main" id="main-panel">
 
     <!-- breadcrumb trail -->
-    <div class="trail-bar" id="trail-bar" style="display:none">
+    <div class="trail-bar" id="trail-bar">
       <span class="trail-label">Trail:</span>
       <div class="trail-chips" id="trail-chips"></div>
       <button class="trail-export" id="trail-export" title="Export trail as session summary">Export</button>
@@ -329,27 +341,34 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
 
     <!-- tab bar -->
     <div class="tab-bar" id="tab-bar">
-      <button class="tab active" data-tab="chat">Chat</button>
-      <button class="tab tab-nodot" data-tab="call_tree">Call tree</button>
-      <button class="tab tab-nodot" data-tab="graph">Graph</button>
-      <button class="tab tab-nodot" data-tab="imports">Imports</button>
-      <button class="tab tab-nodot" data-tab="frontier">Frontier</button>
-      <button class="tab tab-nodot" data-tab="bag">Bag</button>
-      <button class="tab tab-nodot" data-tab="editor">Editor</button>
-      <button class="tab tab-nodot" data-tab="dochealth">Doc health</button>
-      <button class="tab tab-nodot" data-tab="knowledge">Knowledge</button>
-      <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
-      <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
-      <button class="tab tab-nodot" data-tab="topology">Topology</button>
-      <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
-      <button class="tab tab-nodot" data-tab="workbench" title="Run any Discovery tool ad hoc; results stored as artifacts">Workbench</button>
-      <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus — runs all analysis steps and narrates findings">Discovery</button>
-      <button class="tab tab-nodot" data-tab="logs" title="Live server log — see what's running">Logs</button>
+      <!-- Primary 6 — always visible -->
+      <button class="tab tab-nodot tab-primary active" data-tab="frontier">Frontier</button>
+      <button class="tab tab-nodot tab-primary" data-tab="call_tree">Call tree</button>
+      <button class="tab tab-nodot tab-primary" data-tab="graph">Graph</button>
+      <button class="tab tab-nodot tab-primary" data-tab="editor">Editor</button>
+      <button class="tab tab-nodot tab-primary" data-tab="knowledge">Knowledge</button>
+      <button class="tab tab-nodot tab-primary" data-tab="chat">Chat</button>
+      <!-- More ▾ overflow -->
+      <div class="more-wrap" id="more-wrap">
+        <button class="tab tab-nodot" id="more-btn" title="More tabs">More ▾</button>
+        <div class="more-dropdown" id="more-dropdown">
+          <button class="tab tab-nodot" data-tab="imports">Imports</button>
+          <button class="tab tab-nodot" data-tab="bag">Bag</button>
+          <button class="tab tab-nodot" data-tab="dochealth">Doc health</button>
+          <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
+          <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
+          <button class="tab tab-nodot" data-tab="topology">Topology</button>
+          <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
+          <button class="tab tab-nodot" data-tab="workbench" title="Run any Discovery tool ad hoc; results stored as artifacts">Workbench</button>
+          <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus">Discovery</button>
+          <button class="tab tab-nodot" data-tab="logs" title="Live server log">Logs</button>
+        </div>
+      </div>
     </div>
 
     <!-- tab panels -->
     <div class="tab-content">
-      <div class="tab-panel active" id="panel-chat">
+      <div class="tab-panel" id="panel-chat">
         <div id="results" class="results-area"></div>
       </div>
       <div class="tab-panel" id="panel-call_tree">
@@ -389,7 +408,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       </div>
 
       <!-- ── frontier graph tab ── -->
-      <div class="tab-panel" id="panel-frontier" style="flex-direction:column;min-height:0">
+      <div class="tab-panel active" id="panel-frontier" style="flex-direction:column;min-height:0">
         <div class="graph-toolbar" style="flex-shrink:0;gap:.4rem">
           <span style="color:var(--text2);font-size:.85em">Frontier</span>
           <select id="fg-mode" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:.82em">
@@ -741,8 +760,11 @@ function showQueryBar() {
 }
 function hideQueryBar() {
   queryBar.style.display = "none";
+  _askPinned = false;
   document.getElementById("ask-rail-icon").classList.remove("active");
 }
+// _askPinned is declared near activateTab; hoisted here for showQueryBar/hideQueryBar use
+var _askPinned = false;
 
 function tpQuery(q) {
   showQueryBar();
@@ -1088,7 +1110,39 @@ function activateTab(name) {
   });
   const cyEl = document.getElementById("gx-cy");
   if (cyEl) cyEl.style.display = name === "graph" ? "" : "none";
+
+  // Show query bar when Chat tab is activated; hide it when switching away
+  // (unless the user explicitly toggled it open via 💬 — tracked by _askPinned)
+  if (name === "chat") {
+    showQueryBar();
+  } else if (!_askPinned) {
+    hideQueryBar();
+  }
+
+  // Mark More button if active tab is in the overflow set
+  const moreBtn = document.getElementById("more-btn");
+  const moreDropdown = document.getElementById("more-dropdown");
+  if (moreBtn) {
+    const inMore = !!moreDropdown.querySelector(`.tab[data-tab="${name}"]`);
+    moreBtn.classList.toggle("has-active", inMore);
+    moreBtn.textContent = inMore
+      ? moreDropdown.querySelector(`.tab[data-tab="${name}"]`).textContent + " ▾"
+      : "More ▾";
+  }
+
   guideUpdateCard();
+}
+
+// More dropdown toggle
+const moreBtn      = document.getElementById("more-btn");
+const moreDropdown = document.getElementById("more-dropdown");
+if (moreBtn) {
+  moreBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    moreDropdown.classList.toggle("open");
+  });
+  document.addEventListener("click", () => moreDropdown.classList.remove("open"));
+  moreDropdown.addEventListener("click", e => e.stopPropagation());
 }
 
 let _gxLoaded = false;
@@ -3150,7 +3204,12 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
     const section = btn.dataset.section;
     if (section === "ask") {
       const visible = queryBar.style.display !== "none";
-      visible ? hideQueryBar() : showQueryBar();
+      if (visible) {
+        hideQueryBar();
+      } else {
+        _askPinned = true;
+        showQueryBar();
+      }
       return;
     }
     if (section === _railSection && _panelOpen) {
