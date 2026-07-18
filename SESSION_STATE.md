@@ -1,55 +1,56 @@
-Written at commit: 61fb27b
+Written at commit: 6380448
 
-# SESSION STATE — session 204
+# SESSION STATE — session 205
 _Overwrite completely each session. Not authoritative — see docs/TRACKER.md and docs/CLOSURE.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (2026-07-17)
+## What happened this session (2026-07-18)
 
-**Phase 2: Commonplace convergence probe -- complete [V]**
-All 6 canonical questions answered against C_Users_bartl_dev_Determined_examples_commonplace.db.
+**Phase 2: ALL corpora convergence probes -- complete [V]**
+All 8 corpora probed. All 6 canonical questions answered for each.
+See CLOSURE.md for full per-corpus results.
 
-- Q1 PASS: 8 HTTP routes + 16 inferred EPs. Flask structure correct. [V]
-- Q2 PASS: get_db HOT (49 direct callers, 34 extended impact). [V]
-- Q3 PASS: list_features: services/ shows 1 stub. feature_shape routes/: 7 syms, 47% completeness. [V]
-- Q4 PASS: suggest_tags classified design-intent-stated [0.70]. Pass criterion met. [V]
-- Q5 PASS: "No layer rules defined" -- correct clean behavior, no confabulation.
-      No design_notes in DB; tool works, needs ingest_design_docs to activate fully. [V]
-- Q6 PASS: extract->extract_metadata (1-hop), walk_call_chain 5-node chain. [V]
-No findings. Clean corpus.
+**Corpora probed this session [V]:**
+  rotjs -- Q1-Q5 PASS, Q6 graph_path PASS / walk_call_chain FAIL (TS FQN).
+  dungeoncrawler -- Q1-Q4 PASS, Q5 BUG FOUND/FIXED, Q6 PASS.
+  dnd-dungeon-gen -- Q1-Q6 PASS (re-ingest not needed, RM62 fix already applied).
+  end-of-eden -- Q1-Q6 PASS. Clean Go corpus.
+  ruggrogue -- Q1-Q6 PASS. 0 stubs.
 
-**Phase 2: dj2 probe -- complete (prior session) [V]**
-See CLOSURE.md for full results. All 6 PASS.
+**Bug found and fixed: evaluator.py param_names (Bug E) [V]**
+  TS ingestion stores param_types_json as [{name,type}] dicts.
+  evaluator.py:341 joined them as strings -> TypeError crash in check_design_violations.
+  Fixed: extract "name" key from dict params.
+  1144 pass, 1 skip (confirmed post-fix). [V]
+
+**Known patterns (not fixed) [V]:**
+  walk_call_chain broken for TS/JS FQN callers -- returns chain len 0 or 1.
+    Use graph_path instead for TS/JS chain queries.
+  classify_stub file_path_hint fails for TS corpora -- omit file_path, name-only works.
+  graph_path FQN inconsistency for JS module.method -- some pairs find path, others don't.
+  Rust ::new display: all constructors resolve to "new" -- ambiguous display, not a bug.
 
 ## NEXT SESSION -- start here
 
-**Phase 2: rotjs convergence probe [next]**
-  DB: C_Users_bartl_dev_corpora_rotjs.db (770KB)
-  Scope to src/ (lib/ is compiled output, inflates EPs).
-  Known state: CLOSURE.md says "6 known stubs: 3 in lib/, 1 in src/"
-    -> scope list_stubs to src/ or be aware lib/ stubs will appear.
-  6 canonical questions.
+**Phase 2 is fully complete [V]**
+CLOSURE.md Phase 2 section: all corpora probed, all checkboxes filled.
 
-**After rotjs: remaining Phase 2 corpora**
-  dungeoncrawler -> dnd-dungeon-gen (re-ingest first) -> end-of-eden -> ruggrogue
+**Next: Phase 3 -- Housekeeping before UI redesign**
+  Three items in CLOSURE.md Phase 3:
+  1. RM68 -- Remove subrace concept from dj2 (blast_radius first, then remove 5 stubs)
+  2. Regex-for-semantic-meaning audit (determined/agent/, oracle/, assessor/, ingestion/)
+  3. Commonplace guided journey -- walk the journey with current tool, update stale steps
 
-## Arg name reference (confirmed) [V]
-  blast_radius: `target`
-  graph_path: `src`, `dst`
-  check_design_violations: `symbol`
-  classify_stub: `symbol`, optional `file_path`, `class_name`
-  list_entry_points: `feature_path`, `tier`, `top_n`
-  feature_shape: `feature_path`, `prefix`
-  list_stubs: `limit`
+  Pick up RM68 first: blast_radius on subrace stubs, then remove from dnd_data.py etc.
+  dj2 is at C:\Users\bartl\dev\dj2
 
 ## Known issues (carried forward)
 
-**feature_shape stub count [V]:** BFS may miss stubs with only internal callers.
-  Authoritative count: list_stubs.
-**Commonplace DB [V]:** C_Users_bartl_dev_Commonplace.db is 0 bytes (stale).
-  Use C_Users_bartl_dev_Determined_examples_commonplace.db (237KB).
-**Dead graph edges in Determined DB [V]:** query_router / query_session ghost edges.
-**classify_stub file_path trap [V]:** Must pass FULL ABSOLUTE PATH as stored in DB.
+**arg name asymmetry [V]:** blast_radius=`target`; graph_path=`src`/`dst`; classify_stub=`symbol`.
+**classify_stub file_path_hint [V]:** fails for TS; workaround: omit file_path.
+**walk_call_chain TS/JS [V]:** chain length 0/1 due to FQN callers; use graph_path.
+**graph_path JS FQN [V]:** inconsistent for JS module.method; some pairs fail.
+**Dead graph edges Determined DB [V]:** query_router / query_session ghost edges.
 **SetFit model [V]:** C:\Users\bartl\models\setfit\stub_classifier\. Inference only.
-**Suite: 1144 pass, 1 skip [?]:** Not re-run this session (no code changes).
+**Suite: 1144 pass, 1 skip [V]:** confirmed post evaluator.py fix.
