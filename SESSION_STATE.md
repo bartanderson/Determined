@@ -1,116 +1,102 @@
-Written at commit: 028aebe
+Written at commit: c05dcfb
 
-# SESSION STATE - session 201
-_Overwrite completely each session. Not authoritative -- see docs/TRACKER.md for truth._
+# SESSION STATE — session 202
+_Overwrite completely each session. Not authoritative — see docs/TRACKER.md and docs/CLOSURE.md for truth._
 
 ## Active branch: main [V]
 
-## What happened this session (session 201, 2026-07-17)
+## What happened this session (2026-07-17)
 
-**Validated classify_stub against Determined's own stubs [V]**
-  3 real stubs: 2x __init__ (pattern_executor.py, contract_drift_classifier.py),
-  1x suggest_tags (examples/commonplace/services/tagger.py).
-  Initial result: all three errored with "not a stub" or "symbol not found."
+**Phase 1 of CLOSURE.md: complete [V]**
+All corpus-level projection tools built, tested, wired, and validated against dj2.
 
-**Two bugs found and fixed [V]**
+**Phase 1a — Magic method handling [V] (continued from session 201)**
+  classify_stub gains _is_lifecycle_method, _extract_class_context, file_path_hint.
+  41 tests in test_classify_stub.py, all pass.
 
-  Bug A -- Query asked the wrong question:
-    WHERE name=? LIMIT 1 picks any function, then checks is_stub in Python.
-    Fix: WHERE name=? AND is_stub=1. The filter is the claim; post-hoc check
-    can't fix the wrong row. Error message updated: "stub 'X' not found" not
-    "X is not a stub" (they mean different things).
+**Phase 1b/1c — corpus_projections.py [V]**
+  Four new agent tools: stub_file_shape, stub_subsystem_shape,
+  stub_prerequisite_map, stub_concept_ghost_map.
+  Wired into TOOLS dict and tool_registry.py.
+  35 new regression tests in test_corpus_projections.py.
 
-  Bug B -- Regex for semantic meaning:
-    _INTENT_PATTERNS and _REMOVAL_PATTERNS were brittle keyword lists.
-    "STUB: returns empty list until LLM endpoint is wired" scored has_intent=False
-    because the phrasing matched no pattern. Root cause: regex is the wrong tool
-    for semantic meaning in natural language.
+**dj2 validation found two bugs, fixed same session [V]**
 
-**Replacement: SetFit-trained classifier [V]**
-  determined/agent/stub_classifier.py wraps a 3-class SetFit model:
-    0=genuinely-unknown  1=design-intent-stated  2=concept-not-applicable
-  Training set: 135 labeled examples (45/class) spanning 20+ software domains
-  (web, fintech, healthcare, crypto, telecom, insurance, legal, edtech,
-  supply chain, CRM, ERP, GIS, media, social, real estate, robotics, AR/VR,
-  government). 96.3% eval accuracy.
-  Model saved: C:\Users\bartl\models\setfit\stub_classifier\
-  Training env: C:\Users\bartl\dev\setfitmodel\ (separate venv, setfit 1.1.3 +
-  transformers 4.x -- incompatible with main venv's transformers 5.x).
-  Inference: sentence_transformers + sklearn only (no setfit in main venv).
-  Fallback: hybrid embedding + modal-verb regex when model dir absent.
+  Bug A — ghost map matching too loose:
+    CombatFSM -> base "Combat" -> substring-matched "_validate_combat" -> PARTIAL.
+    Fix: match full concept name in snake_case ("combatfsm") not stripped base.
+    CombatFSM now correctly GHOST; EncounterFSM correctly live.
 
-**Intermediate step: sentence-level embedding + modal verb hybrid [V]**
-  Per the SATD literature: two types of intent signal need two tools.
-  Type 1 (semantic incompleteness): embedding similarity per sentence, threshold 0.35.
-  Type 2 (grammatical mood): \b(would|should|could|meant to|intended to)\b regex.
-  This is the current fallback in stub_classifier._fallback_has_intent().
+  Bug B — SetFit missed explicit-absence phrasing:
+    "OG System doesn't have subraces" -> has_removal=False -> wrong hypothesis.
+    Fix: _EXPLICIT_ABSENCE_RE fast-path in stub_classifier.py before SetFit.
+    dnd_data.py stubs now all concept-not-applicable (dead-concept dominant). [V]
 
-**Post-fix results on Determined stubs [V]**
-  suggest_tags: [0.70] design-intent-stated (correct)
-  __init__ x2: UNCERTAIN, no signal (correct -- empty bodies, no docstring)
-  Note: __init__ collision still picks pattern_executor.py for both -- LIMIT 1
-  among stub rows. Class-context handling is a separate open design item (TRACKER.md).
+**dj2 validation findings (accurate, not bugs) [V]**
+  world/ subsystem shows dead-concept (not design-skeleton) because 5 subrace
+  stubs outnumber 5 AI-layer stubs. Will flip to design-skeleton after RM68.
+  Prerequisite map: AI-layer stubs have bare docstrings, no "blocked on X" language.
+  Tool correct; corpus content did not match the expected pass criterion.
 
-**27 classify_stub tests pass [V]. Full suite 1095 passed, 1 skipped [V].**
+**Phase 2: Determined convergence probe [V]**
+  Q1 PASS: 160 EPs (internal utilities dominate, expected).
+  Q2 PASS: dispatch HOT — 124 callers, 1069 extended impact.
+  Q3 PASS: list_features works; 39% completeness in agent/ (cross-module missing expected).
+  Q4 BUG FOUND AND FIXED: 9/12 stubs were test fixtures. Real stubs: 3.
+  Q5 NOT TESTABLE: no layer rules / design notes ingested. Dead edges to
+    query_router found in graph; module deleted but edges remain.
+  Q6 BUG FOUND AND FIXED: graph_path traversed .append() list method as path hop.
+    ask->dispatch path was entirely false. No real path exists (parallel entry points).
 
-**Future task spawned [V]**
-  "Audit codebase for regex-used-for-semantic-meaning" -- chip visible in UI.
-  Survey determined/agent/, determined/oracle/, determined/assessor/,
-  determined/ingestion/ for pattern lists detecting meaning in natural language.
+**Two Phase 2 bugs fixed [V]**
 
-## NEXT SESSION -- start here
+  Bug C — list_stubs showed test fixtures:
+    Added AND file_path NOT LIKE '%/tests/%' to SQL. Output: 12->3 stubs.
 
-**RM69 Phase 2: corpus-level projections [V-next]**
-  Single-stub judgment is validated across three corpora (dj2 AI-layer, dj2 RM68,
-  Determined). Next: aggregate judgments into higher shapes.
-  Per TRACKER.md RM69 design:
-    - File shape: stub density + dominant classification per file
-    - Subsystem shape: clustered blocked = design skeleton; clustered
-      concept-not-applicable = dead concept remnant
-    - Prerequisite map: N stubs blocked on same X -> X is build priority
-    - Concept ghost map: concepts in stubs absent from live codebase = removal candidates
-  Run against dj2 first. Does file shape for dnd_data.py show dead-concept dominant?
-  Does file shape for context_builder.py show design-intent/blocked cluster?
+  Bug D — shortest_path false hops through method calls:
+    results.append(dispatch(...)) ingested as append->dispatch (receiver stripped).
+    Fix: BFS only visits nodes in functions table. Method names excluded.
+    test_graph_utils fixture updated to auto-populate functions from edges.
 
-**Python magic method handling -- open design item [V-next]**
-  __init__ (and __str__, __repr__, __len__ etc.) can't be classified by bare name.
-  Needs (class_name, file_path) lookup + class context signals.
-  Five cases documented in HISTORY.md 2026-07-17 and TRACKER.md RM69 open questions.
-  Implement before running Phase 2 corpus sweep so magic method stubs are handled.
+**Suite: 1144 pass, 1 skip [V] (last confirmed run: commit c05dcfb)**
 
-## Corpus status [V]
+## NEXT SESSION — start here
 
-| Corpus | Syms | Edges | Stubs | Notes |
-|--------|------|-------|-------|-------|
-| Determined (Python) | 2,159 | 18,693 | 3 real | 2 __init__ (collision), 1 suggest_tags |
-| dj2 (Python+JS) | ~1,400 | 10,071 | 10 real | 5 RM68-remove, 5 AI-layer gaps |
-| Commonplace (Python) | 61 | 292 | 1 | suggest_tags |
+**Phase 2: dj2 convergence probe [next]**
+  Run all 6 canonical questions against C_Users_bartl_dev_dj2.db.
+  Known state: 10 stubs (5 subrace dead-concept, 5 AI-layer design-intent/unknown).
+  Use probe_determined2.py as template — adapt args for dj2.
+  Watch for: JS callee resolution gaps (RM62 fix); dj2 ignore dirs in .determinedignore.
+
+**After dj2: remaining Phase 2 corpora**
+  Commonplace -> rotjs -> dungeoncrawler -> dnd-dungeon-gen -> end-of-eden -> ruggrogue
+
+**classify_stub file_path trap [V]**
+  Must pass FULL ABSOLUTE PATH as stored in DB (e.g. C:/Users/bartl/dev/dj2/world/...).
+  Relative paths silently fail — query returns nothing, error is "stub not found".
+  Determined __init__ #2 is in determined/contracts/ not determined/assessor/ (old
+  SESSION_STATE was wrong).
+
+**Dead graph edges in Determined DB [V]**
+  run_query -> determined.assessor.query_router.route_query exists as a graph edge
+  but query_router module is deleted. Same for query_session. Ingestion artifact
+  from deleted code. Will surface as noise in Q5/Q6 probes.
 
 ## Known issues (carried forward)
 
-**agent_tools call pattern trap [V]:** Tools take (assessor, args_dict).
-  Entry point: determined/ask.py ask(db_path, question).
-**DB schema trap [V]:** graph_edges: caller/callee not callee_fqdn; no callee_file for JS.
-  knowledge_artifacts uses 'kind'. files uses 'file_path'.
-**dj2 ignore dirs trap [V]:** .determinedignore covers all exclusions.
-**RM62 callee writeback trap [V]:** callee is qualified FQDN post-resolution.
+**agent_tools call pattern [V]:** Tools take (assessor, args_dict).
+  Entry: determined/ask.py ask(db_path, question).
+**DB schema [V]:** graph_edges: caller/callee not callee_fqdn; files uses file_path.
+**dj2 ignore dirs [V]:** .determinedignore covers all exclusions.
 **function_reference residual noise [V]:** ~10 false edges depth-1 local vars.
-**EP inferred count floor [V]:** 331 dj2 / 126 Determined -- dynamic dispatch, not bugs.
-**resolved col != unknown callee [V]:** graph_edges.resolved=0 means not annotation-resolved,
-  NOT unknown callee. Use LEFT JOIN functions ON name to find truly unknown callees.
-**probe_pass2.py duplicate rows [?]:** unknown callee ratio query has LEFT JOIN artifact.
+**EP inferred count floor [V]:** 331 dj2 / 160 Determined — dynamic dispatch not bugs.
+**resolved col != unknown callee [V]:** resolved=0 means not annotation-resolved, not unknown.
+**probe_pass2.py duplicate rows [?]:** LEFT JOIN artifact; unverified this session.
 **classify_stub body_shape [?]:** _extract_body() not validated against all dj2 files.
-**classify_stub __init__ collision [V]:** LIMIT 1 among stub rows still picks first match.
-  Fix: (class_name, file_path) lookup + class context signals. See TRACKER.md.
-**SetFit smoke test edge cases [V]:** Two borderline cases:
-  "STUB: returns empty list until..." -> concept-not-applicable (returns-empty pulls it).
-  "Biometric verification is handled by..." -> design-intent-stated (no explicit absence signal).
-  Fallback handles these correctly via embedding similarity.
-**Corpus DB location trap [V]:** DBs live in C:\Users\bartl\dev\Determined\*.db,
-  NOT in C:\Users\bartl\dev\*.db.
-
-LLM server: llama-server.exe at C:\Users\bartl\models\llama-server\llama-server.exe,
-  model: C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf, port 8081.
-  Started manually for CLI use; UI starts it on-demand.
-SetFit model: C:\Users\bartl\models\setfit\stub_classifier\ (sentence_transformers + sklearn).
-  Training env: C:\Users\bartl\dev\setfitmodel\.venv (setfit 1.1.3, transformers 4.x).
+**Corpus DB location [V]:** DBs in C:\Users\bartl\dev\Determined\*.db.
+**SetFit model [V]:** C:\Users\bartl\models\setfit\stub_classifier\. Inference only.
+**graph_path method call hops [V]:** FIXED — BFS now restricted to functions table.
+  Consequence: ask->dispatch has no path (correct — parallel entry points).
+**list_stubs test fixtures [V]:** FIXED — test/ files excluded from SQL query.
+**Q5 not testable without design docs [V]:** check_design_violations needs layer rules;
+  evaluate_claim needs design notes. Ingest docs first before running Q5.
