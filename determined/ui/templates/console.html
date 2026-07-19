@@ -112,43 +112,11 @@
 .gc-body{color:var(--text2)}
 .gc-notice{color:var(--text3);font-style:italic;margin-top:3px;font-size:.95em}
 
-/* ── context mode buttons ── */
-.mode-btns{display:flex;gap:4px;align-items:center;margin-right:10px}
-.mode-btn{font-size:.73em;padding:3px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s,border-color .12s}
-.mode-btn:hover{background:var(--bg3);color:var(--text1)}
-.mode-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-
-/* ── mode banner ── */
-.mode-banner{display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:.78em;color:var(--text2)}
-.mode-banner-icon{font-size:1em}
-.mode-banner-label{font-weight:600}
-body.mode-design .mode-banner-label{color:var(--blue)}
-body.mode-trace  .mode-banner-label{color:var(--orange)}
-body.mode-review .mode-banner-label{color:var(--green)}
-.mode-banner-hint{color:var(--text3);flex:1}
-.mode-banner-clear{background:none;border:none;color:var(--text3);cursor:pointer;font-size:.9em;padding:0 2px;line-height:1}
-.mode-banner-clear:hover{color:var(--text1)}
-
-/* ── tab highlights per mode ── */
-/* tabs lit up for Design mode */
-body.mode-design .tab[data-tab="shape"],
-body.mode-design .tab[data-tab="knowledge"],
-body.mode-design .tab[data-tab="editor"] { border-bottom:2px solid var(--blue); }
-
-/* tabs lit up for Trace mode */
-body.mode-trace .tab[data-tab="call_tree"],
-body.mode-trace .tab[data-tab="graph"],
-body.mode-trace .tab[data-tab="frontier"],
-body.mode-trace .tab[data-tab="bag"] { border-bottom:2px solid var(--orange); }
-
-/* tabs lit up for Review mode */
-body.mode-review .tab[data-tab="dochealth"],
-body.mode-review .tab[data-tab="build_queue"],
-body.mode-review .tab[data-tab="knowledge"],
-body.mode-review .tab[data-tab="frontier"] { border-bottom:2px solid var(--green); }
-
-/* trail bar glow in Trace mode */
-body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,0,.07); }
+/* ── lens / view selector bars (Phase B consolidation) ── */
+.lens-sel-bar{display:flex;gap:4px;padding:4px 8px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0}
+.lens-sel-btn{font-size:.78em;padding:2px 9px;background:none;border:1px solid var(--border2);border-radius:10px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .1s,color .1s}
+.lens-sel-btn:hover{background:var(--bg3);color:var(--text1)}
+.lens-sel-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 
 /* ── shape tab navigation spans ── */
 .shape-nav-file,.shape-nav-sym{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
@@ -191,11 +159,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <div id="guide-toggle-wrap">
       <button id="guide-toggle-btn" title="Toggle training mode — color indicators + guide card">☀ Guide</button>
       <button id="guide-dismiss-btn" title="Dismiss guide permanently">✕</button>
-    </div>
-    <div class="mode-btns" id="mode-btns">
-      <button class="mode-btn" data-mode="design" title="Module design — explore design notes, violations, knowledge artifacts">📐 Design</button>
-      <button class="mode-btn" data-mode="trace"  title="Call trace — follow call chains, graph, frontier stubs">🔗 Trace</button>
-      <button class="mode-btn" data-mode="review" title="Gap review — docstring health, proposals, workflow queue">✅ Review</button>
     </div>
     <span id="llm-status-wrap" style="display:flex;align-items:center;gap:5px">
       <span id="llm-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0" title="LLM status"></span>
@@ -358,14 +321,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <button id="send-btn" class="send-btn">Ask ↵</button>
     </div>
 
-    <!-- mode banner -->
-    <div class="mode-banner" id="mode-banner" style="display:none">
-      <span class="mode-banner-icon" id="mode-banner-icon"></span>
-      <span class="mode-banner-label" id="mode-banner-label"></span>
-      <span class="mode-banner-hint" id="mode-banner-hint"></span>
-      <button class="mode-banner-clear" id="mode-banner-clear" title="Clear mode">✕</button>
-    </div>
-
     <!-- guide card -->
     <div id="guide-card">
       <div class="gc-phase-row" id="gc-phase-row" style="display:none">
@@ -380,25 +335,18 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
 
     <!-- tab bar -->
     <div class="tab-bar" id="tab-bar">
-      <!-- Primary 6 — always visible -->
-      <button class="tab tab-nodot tab-primary active" data-tab="shape" title="Corpus shape — judgment projections: what the system is becoming, what's blocked, what's dead">Shape</button>
+      <button class="tab tab-nodot tab-primary active" data-tab="shape" title="Corpus shape — judgment projections">Shape</button>
       <button class="tab tab-nodot tab-primary" data-tab="frontier">Frontier<span id="frontier-tab-badge" style="display:none;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--bg3);border:1px solid var(--border2);font-size:.78em;color:var(--orange)"></span></button>
+      <button class="tab tab-nodot tab-primary" data-tab="map" title="Call graph, import graph, topology">Map</button>
       <button class="tab tab-nodot tab-primary" data-tab="call_tree">Call tree</button>
-      <button class="tab tab-nodot tab-primary" data-tab="graph">Graph</button>
       <button class="tab tab-nodot tab-primary" data-tab="editor">Editor</button>
       <button class="tab tab-nodot tab-primary" data-tab="knowledge">Knowledge</button>
-      <button class="tab tab-nodot tab-primary" data-tab="chat">Chat</button>
       <button class="tab tab-nodot tab-primary" data-tab="workbench" title="Run any tool ad hoc with full parameter forms">Workbench</button>
-      <!-- More ▾ overflow -->
-      <div class="more-wrap" id="more-wrap">
-        <button class="tab tab-nodot" id="more-btn" title="More tabs">More ▾</button>
-        <div class="more-dropdown" id="more-dropdown">
-          <button class="tab tab-nodot" data-tab="imports">Imports</button>
-          <button class="tab tab-nodot" data-tab="bag">Bag</button>
-          <button class="tab tab-nodot" data-tab="dochealth">Doc health</button>
-          <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
-          <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
-          <button class="tab tab-nodot" data-tab="topology">Topology</button>
+      <button class="tab tab-nodot tab-primary" data-tab="chat" title="Ask">⌕</button>
+      <!-- ⚙ utility menu -->
+      <div class="more-wrap" id="util-wrap">
+        <button class="tab tab-nodot" id="util-btn" title="Utilities">⚙</button>
+        <div class="more-dropdown" id="util-dropdown">
           <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
           <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus">Discovery</button>
           <button class="tab tab-nodot" data-tab="logs" title="Live server log">Logs</button>
@@ -421,80 +369,129 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
         </div>
         <div class="results-area tab-results" id="tab-call_tree" style="font-family:monospace;font-size:.85em"></div>
       </div>
-      <div class="tab-panel" id="panel-graph">
-        <div class="graph-toolbar">
-          <input id="gx-input" class="path-input" placeholder="Symbol" style="flex:1">
-          <button class="send-btn" id="gx-go">Map ↵</button>
-          <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
-            hops <select id="gx-hops" style="background:var(--surface2);color:var(--text1);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
-              <option value="1">1</option>
-              <option value="2" selected>2</option>
-              <option value="3">3</option>
-            </select>
-          </label>
+      <!-- ── map tab (graph / imports / topology) ── -->
+      <div class="tab-panel" id="panel-map" style="flex-direction:column;min-height:0">
+        <div class="lens-sel-bar">
+          <button class="lens-sel-btn active" data-mv="graph">Graph</button>
+          <button class="lens-sel-btn" data-mv="imports">Imports</button>
+          <button class="lens-sel-btn" data-mv="topology">Topology</button>
         </div>
-        <div class="graph-toolbar" style="border-top:1px solid var(--border);padding-top:3px;gap:.4rem">
-          <span style="font-size:.78em;color:var(--text3);flex-shrink:0">path</span>
-          <input id="gx-src" class="path-input" placeholder="from symbol" style="flex:1;font-size:.82em">
-          <span style="color:var(--text3);font-size:.85em">→</span>
-          <input id="gx-dst" class="path-input" placeholder="to symbol" style="flex:1;font-size:.82em">
-          <button class="send-btn" id="gx-path-go" style="font-size:.82em;padding:3px 8px">Find ↵</button>
-        </div>
-        <div id="gx-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
-        <div id="gx-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
-      </div>
-
-      <!-- ── imports graph tab ── -->
-      <div class="tab-panel" id="panel-imports" style="flex-direction:column;min-height:0">
-        <div class="graph-toolbar" style="flex-shrink:0">
-          <span style="color:var(--text2);font-size:.85em">Project-internal import graph</span>
-          <button class="send-btn" id="ig-load" style="margin-left:auto">Load ↵</button>
-        </div>
-        <div id="ig-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
-        <div id="ig-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
-      </div>
-
-      <!-- ── frontier graph tab ── -->
-      <div class="tab-panel" id="panel-frontier" style="flex-direction:column;min-height:0">
-        <div class="graph-toolbar" style="flex-shrink:0;gap:.4rem">
-          <span style="color:var(--text2);font-size:.85em">Frontier</span>
-          <select id="fg-mode" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:.82em">
-            <option value="direct">Direct (caller→stub)</option>
-            <option value="chain">Chain (stub→stub)</option>
-            <option value="all">All</option>
-            <option value="abc">ABC (interface gaps)</option>
-            <option value="orphan">Orphan (disconnected)</option>
-          </select>
-          <button class="send-btn" id="fg-load">Load ↵</button>
-          <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
-          <button class="send-btn" id="fg-reason" style="background:var(--bg3);display:none" title="AI architectural reasoning for selected stub (uses 8B model, ~60s)">Reason ↵</button>
-          <button class="send-btn" id="fg-to-queue" style="background:var(--bg3);margin-left:auto" title="Add all stubs to build queue ranked by caller count">→ Queue</button>
-        </div>
-        <div id="fg-mode-hint" style="padding:.15rem .6rem .1rem;font-size:.75em;color:var(--text3);flex-shrink:0;font-style:italic"></div>
-        <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
-        <div id="fg-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
-        <!-- reasoning progress log — collapsible -->
-        <div id="fg-progress-bar" style="display:none;flex-shrink:0;border-top:1px solid var(--border);background:var(--bg3)">
-          <div style="display:flex;align-items:center;gap:.5rem;padding:.25rem .5rem;cursor:pointer;user-select:none" id="fg-progress-toggle">
-            <span style="font-size:.75em;color:var(--text3)">▶ Reasoning log</span>
-            <span id="fg-progress-spinner" style="font-size:.75em;color:var(--accent)">●</span>
+        <div id="map-view-graph" style="display:flex;flex-direction:column;flex:1;min-height:0">
+          <div class="graph-toolbar">
+            <input id="gx-input" class="path-input" placeholder="Symbol" style="flex:1">
+            <button class="send-btn" id="gx-go">Map ↵</button>
+            <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
+              hops <select id="gx-hops" style="background:var(--surface2);color:var(--text1);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
           </div>
-          <div id="fg-progress-log" style="display:none;max-height:140px;overflow-y:auto;padding:.25rem .6rem .4rem;font-family:var(--font-mono);font-size:.74em;color:var(--text2);white-space:pre-wrap"></div>
+          <div class="graph-toolbar" style="border-top:1px solid var(--border);padding-top:3px;gap:.4rem">
+            <span style="font-size:.78em;color:var(--text3);flex-shrink:0">path</span>
+            <input id="gx-src" class="path-input" placeholder="from symbol" style="flex:1;font-size:.82em">
+            <span style="color:var(--text3);font-size:.85em">→</span>
+            <input id="gx-dst" class="path-input" placeholder="to symbol" style="flex:1;font-size:.82em">
+            <button class="send-btn" id="gx-path-go" style="font-size:.82em;padding:3px 8px">Find ↵</button>
+          </div>
+          <div id="gx-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
+          <div id="gx-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
         </div>
-        <div id="fg-projection" style="display:none;flex-shrink:0;max-height:220px;overflow-y:auto;border-top:1px solid var(--border);padding:.5rem;font-family:var(--font-mono);font-size:.78em;background:var(--bg3);white-space:pre-wrap"></div>
+        <div id="map-view-imports" style="display:none;flex-direction:column;flex:1;min-height:0">
+          <div class="graph-toolbar" style="flex-shrink:0">
+            <span style="color:var(--text2);font-size:.85em">Project-internal import graph</span>
+            <button class="send-btn" id="ig-load" style="margin-left:auto">Load ↵</button>
+          </div>
+          <div id="ig-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
+          <div id="ig-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
+        </div>
+        <div id="map-view-topology" style="display:none;flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
+            <strong style="font-size:.95em">Corpus Topology</strong>
+            <span style="font-size:.8em;color:var(--text3)" title="Classifies which implementation shapes are incomplete (direct stubs, chains, orphans, ABC gaps) and shows how much of the call graph has been explored">incompleteness shapes — stubs, orphans, ABC gaps — and exploration depth</span>
+            <button id="topo-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+            <span id="topo-status" style="font-size:.78em;color:var(--text3)"></span>
+          </div>
+          <pre id="topo-content" style="font-size:.82em;line-height:1.7;white-space:pre-wrap;margin:0"></pre>
+          <div id="topo-empty" style="color:var(--text3);padding:1rem;display:none">No corpus loaded.</div>
+        </div>
       </div>
 
-      <!-- ── bag tab ── -->
-      <div class="tab-panel" id="panel-bag" style="flex-direction:column;min-height:0">
-        <div class="graph-toolbar" style="flex-shrink:0;gap:.5rem">
-          <select id="bag-select" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:.85em">
-            <option value="system">system</option>
-          </select>
-          <button class="send-btn" id="bag-refresh">Refresh</button>
-          <button class="send-btn" style="background:var(--bg3)" id="bag-clear-btn">Clear</button>
-          <span id="bag-status-label" style="margin-left:.5rem;font-size:.82em;color:var(--text3)"></span>
+      <!-- ── frontier tab (stubs / build queue) ── -->
+      <div class="tab-panel" id="panel-frontier" style="flex-direction:column;min-height:0">
+        <div class="lens-sel-bar">
+          <button class="lens-sel-btn active" data-fl="stubs">Stubs</button>
+          <button class="lens-sel-btn" data-fl="queue">Build queue</button>
         </div>
-        <div class="results-area tab-results" id="tab-bag" style="flex:1;overflow-y:auto;padding:.5rem"></div>
+        <div id="fl-stubs" style="display:flex;flex-direction:column;flex:1;min-height:0">
+          <div class="graph-toolbar" style="flex-shrink:0;gap:.4rem">
+            <span style="color:var(--text2);font-size:.85em">Frontier</span>
+            <select id="fg-mode" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:.82em">
+              <option value="direct">Direct (caller→stub)</option>
+              <option value="chain">Chain (stub→stub)</option>
+              <option value="all">All</option>
+              <option value="abc">ABC (interface gaps)</option>
+              <option value="orphan">Orphan (disconnected)</option>
+            </select>
+            <button class="send-btn" id="fg-load">Load ↵</button>
+            <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
+            <button class="send-btn" id="fg-reason" style="background:var(--bg3);display:none" title="AI architectural reasoning for selected stub (uses 8B model, ~60s)">Reason ↵</button>
+            <button class="send-btn" id="fg-to-queue" style="background:var(--bg3);margin-left:auto" title="Add all stubs to build queue ranked by caller count">→ Queue</button>
+          </div>
+          <div id="fg-mode-hint" style="padding:.15rem .6rem .1rem;font-size:.75em;color:var(--text3);flex-shrink:0;font-style:italic"></div>
+          <div id="fg-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
+          <div id="fg-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
+          <div id="fg-progress-bar" style="display:none;flex-shrink:0;border-top:1px solid var(--border);background:var(--bg3)">
+            <div style="display:flex;align-items:center;gap:.5rem;padding:.25rem .5rem;cursor:pointer;user-select:none" id="fg-progress-toggle">
+              <span style="font-size:.75em;color:var(--text3)">▶ Reasoning log</span>
+              <span id="fg-progress-spinner" style="font-size:.75em;color:var(--accent)">●</span>
+            </div>
+            <div id="fg-progress-log" style="display:none;max-height:140px;overflow-y:auto;padding:.25rem .6rem .4rem;font-family:var(--font-mono);font-size:.74em;color:var(--text2);white-space:pre-wrap"></div>
+          </div>
+          <div id="fg-projection" style="display:none;flex-shrink:0;max-height:220px;overflow-y:auto;border-top:1px solid var(--border);padding:.5rem;font-family:var(--font-mono);font-size:.78em;background:var(--bg3);white-space:pre-wrap"></div>
+        </div>
+        <div id="fl-queue" style="display:none;flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
+            <strong style="font-size:.95em">Build queue</strong>
+            <span style="font-size:.8em;color:var(--text3)">next_up workflow items ranked by caller count</span>
+            <button id="bq-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+            <span id="bq-status" style="font-size:.78em;color:var(--text3)"></span>
+          </div>
+          <table id="bq-table" style="width:100%;border-collapse:collapse;font-size:.82em">
+            <thead>
+              <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em">
+                <th style="padding:4px 8px">#</th>
+                <th style="padding:4px 8px">Subject</th>
+                <th style="padding:4px 8px">Notes</th>
+                <th style="padding:4px 8px">Status</th>
+                <th style="padding:4px 8px"></th>
+              </tr>
+            </thead>
+            <tbody id="bq-body"></tbody>
+          </table>
+          <div id="bq-empty" style="color:var(--text3);padding:1rem;display:none">No items in build queue. Use Stubs → Queue button to populate from stubs.</div>
+          <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;flex-shrink:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <strong style="font-size:.9em">Artifacts</strong>
+              <span style="font-size:.78em;color:var(--text3)">named tool outputs with staleness tracking</span>
+              <button id="ar-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+              <span id="ar-status" style="font-size:.78em;color:var(--text3)"></span>
+            </div>
+            <table id="ar-table" style="width:100%;border-collapse:collapse;font-size:.82em">
+              <thead>
+                <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em">
+                  <th style="padding:4px 8px">Name</th>
+                  <th style="padding:4px 8px">Tool</th>
+                  <th style="padding:4px 8px">Status</th>
+                  <th style="padding:4px 8px">Created</th>
+                </tr>
+              </thead>
+              <tbody id="ar-body"></tbody>
+            </table>
+            <div id="ar-empty" style="color:var(--text3);padding:.8rem;font-size:.82em;display:none">No artifacts yet. Tool runs will appear here.</div>
+          </div>
+        </div>
       </div>
 
       <!-- ── editor tab ── -->
@@ -540,87 +537,55 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
 
       </div>
 
-      <!-- ── knowledge tab ── -->
-      <div class="tab-panel" id="panel-knowledge" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
-          <button class="kn-filter active" data-kind="all" id="kf-all">all</button>
-          <button class="kn-filter" data-kind="design_note" id="kf-design">design notes</button>
-          <button class="kn-filter" data-kind="sots" id="kf-sots">SOTS tenets</button>
-          <button class="kn-filter" data-kind="known_issue" id="kf-issue">known issues</button>
-          <button class="kn-filter" data-kind="query_finding" id="kf-finding">findings</button>
-          <button class="send-btn" id="kn-refresh" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
-          <span id="kn-status" style="font-size:.78em;color:var(--text2)"></span>
+      <!-- ── knowledge tab (artifacts / pins / bag / doc health) ── -->
+      <div class="tab-panel" id="panel-knowledge" style="flex-direction:column;min-height:0">
+        <div class="lens-sel-bar">
+          <button class="lens-sel-btn active" data-kl="artifacts">Artifacts</button>
+          <button class="lens-sel-btn" data-kl="pins">Pins</button>
+          <button class="lens-sel-btn" data-kl="bag">Bag</button>
+          <button class="lens-sel-btn" data-kl="dochealth">Doc health</button>
         </div>
-        <div id="kn-list" style="display:flex;flex-direction:column;gap:8px"></div>
-      </div>
-
-      <!-- ── build queue tab ── -->
-      <div class="tab-panel" id="panel-build_queue" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
-          <strong style="font-size:.95em">Build queue</strong>
-          <span style="font-size:.8em;color:var(--text3)">next_up workflow items ranked by caller count</span>
-          <button id="bq-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
-          <span id="bq-status" style="font-size:.78em;color:var(--text3)"></span>
-        </div>
-        <table id="bq-table" style="width:100%;border-collapse:collapse;font-size:.82em">
-          <thead>
-            <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em">
-              <th style="padding:4px 8px">#</th>
-              <th style="padding:4px 8px">Subject</th>
-              <th style="padding:4px 8px">Notes</th>
-              <th style="padding:4px 8px">Status</th>
-              <th style="padding:4px 8px"></th>
-            </tr>
-          </thead>
-          <tbody id="bq-body"></tbody>
-        </table>
-        <div id="bq-empty" style="color:var(--text3);padding:1rem;display:none">No items in build queue. Use the Frontier tab → Queue button to populate from stubs.</div>
-
-        <!-- ── artifacts sub-panel ── -->
-        <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;flex-shrink:0">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <strong style="font-size:.9em">Artifacts</strong>
-            <span style="font-size:.78em;color:var(--text3)">named tool outputs with staleness tracking</span>
-            <button id="ar-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
-            <span id="ar-status" style="font-size:.78em;color:var(--text3)"></span>
+        <div id="kn-view-artifacts" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;padding:10px 14px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
+            <button class="kn-filter active" data-kind="all" id="kf-all">all</button>
+            <button class="kn-filter" data-kind="design_note" id="kf-design">design notes</button>
+            <button class="kn-filter" data-kind="sots" id="kf-sots">SOTS tenets</button>
+            <button class="kn-filter" data-kind="known_issue" id="kf-issue">known issues</button>
+            <button class="kn-filter" data-kind="query_finding" id="kf-finding">findings</button>
+            <button class="send-btn" id="kn-refresh" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+            <span id="kn-status" style="font-size:.78em;color:var(--text2)"></span>
           </div>
-          <table id="ar-table" style="width:100%;border-collapse:collapse;font-size:.82em">
-            <thead>
-              <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em">
-                <th style="padding:4px 8px">Name</th>
-                <th style="padding:4px 8px">Tool</th>
-                <th style="padding:4px 8px">Status</th>
-                <th style="padding:4px 8px">Created</th>
-              </tr>
-            </thead>
-            <tbody id="ar-body"></tbody>
-          </table>
-          <div id="ar-empty" style="color:var(--text3);padding:.8rem;font-size:.82em;display:none">No artifacts yet. Tool runs will appear here.</div>
+          <div id="kn-list" style="display:flex;flex-direction:column;gap:8px"></div>
         </div>
-      </div>
-
-      <!-- ── waypoints (pins) tab ── -->
-      <div class="tab-panel" id="panel-waypoints" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
-          <strong style="font-size:.95em">Pins</strong>
-          <span style="font-size:.8em;color:var(--text3)">knowledge_artifacts kind=waypoint</span>
-          <button id="wp-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
-          <span id="wp-status" style="font-size:.78em;color:var(--text3)"></span>
+        <div id="kn-view-pins" style="display:none;flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
+            <strong style="font-size:.95em">Pins</strong>
+            <span style="font-size:.8em;color:var(--text3)">knowledge_artifacts kind=waypoint</span>
+            <button id="wp-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
+            <span id="wp-status" style="font-size:.78em;color:var(--text3)"></span>
+          </div>
+          <div id="wp-list" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div id="wp-empty" style="color:var(--text3);padding:1rem;display:none">No pins yet. Use store_finding(kind='waypoint') or evaluate_claim to auto-create waypoints.</div>
         </div>
-        <div id="wp-list" style="display:flex;flex-direction:column;gap:8px"></div>
-        <div id="wp-empty" style="color:var(--text3);padding:1rem;display:none">No pins yet. Use store_finding(kind='waypoint') or evaluate_claim to auto-create waypoints.</div>
-      </div>
-
-      <!-- ── topology tab ── -->
-      <div class="tab-panel" id="panel-topology" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
-          <strong style="font-size:.95em">Corpus Topology</strong>
-          <span style="font-size:.8em;color:var(--text3)" title="Classifies which implementation shapes are incomplete (direct stubs, chains, orphans, ABC gaps) and shows how much of the call graph has been explored">incompleteness shapes — stubs, orphans, ABC gaps — and exploration depth</span>
-          <button id="topo-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
-          <span id="topo-status" style="font-size:.78em;color:var(--text3)"></span>
+        <div id="kn-view-bag" style="display:none;flex-direction:column;min-height:0">
+          <div class="graph-toolbar" style="flex-shrink:0;gap:.5rem">
+            <select id="bag-select" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:.85em">
+              <option value="system">system</option>
+            </select>
+            <button class="send-btn" id="bag-refresh">Refresh</button>
+            <button class="send-btn" style="background:var(--bg3)" id="bag-clear-btn">Clear</button>
+            <span id="bag-status-label" style="margin-left:.5rem;font-size:.82em;color:var(--text3)"></span>
+          </div>
+          <div class="results-area tab-results" id="tab-bag" style="flex:1;overflow-y:auto;padding:.5rem"></div>
         </div>
-        <pre id="topo-content" style="font-size:.82em;line-height:1.7;white-space:pre-wrap;margin:0"></pre>
-        <div id="topo-empty" style="color:var(--text3);padding:1rem;display:none">No corpus loaded.</div>
+        <div id="kn-view-dochealth" style="display:none;flex-direction:column;min-height:0;overflow-y:auto;padding:12px 16px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-shrink:0">
+            <strong style="font-size:.95em">Docstring proposals</strong>
+            <button id="dh-refresh-btn" class="send-btn" style="font-size:.78em;padding:3px 10px">Refresh</button>
+            <span id="dh-status" style="font-size:.78em;color:var(--text3)"></span>
+          </div>
+          <div id="dh-list" style="display:flex;flex-direction:column;gap:10px"></div>
+        </div>
       </div>
 
       <!-- ── shape tab (RM69 corpus projections) ── -->
@@ -704,16 +669,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
             <button id="tour-next-btn" class="send-btn" style="font-size:.82em;padding:4px 12px;margin-left:auto" onclick="tourNext()" disabled>Next →</button>
           </div>
         </div>
-      </div>
-
-      <!-- ── doc health tab ── -->
-      <div class="tab-panel" id="panel-dochealth" style="flex-direction:column;min-height:0;overflow-y:auto;padding:12px 16px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-shrink:0">
-          <strong style="font-size:.95em">Docstring proposals</strong>
-          <button id="dh-refresh-btn" class="send-btn" style="font-size:.78em;padding:3px 10px">Refresh</button>
-          <span id="dh-status" style="font-size:.78em;color:var(--text3)"></span>
-        </div>
-        <div id="dh-list" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
       <!-- ── discovery tab ── -->
@@ -1254,7 +1209,7 @@ function clearMode() {
 
 document.querySelectorAll(".mode-btn").forEach(b =>
   b.addEventListener("click", () => { setMode(b.dataset.mode); updateNavModeActions(b.dataset.mode); }));
-document.getElementById("mode-banner-clear").addEventListener("click", () => { clearMode(); updateNavModeActions(null); });
+document.getElementById("mode-banner-clear")?.addEventListener("click", () => { clearMode(); updateNavModeActions(null); });
 
 // ── Design Oracle sidebar panel ───────────────────────────
 const _MODE_NAV = {
@@ -1271,7 +1226,7 @@ const _MODE_NAV = {
     items: [
       { icon: "↙", label: "blast radius",  form: { placeholder: "symbol_name", direct: v => socket.emit("blast_radius", {target: v}) } },
       { icon: "⛓", label: "call tree",     action: () => activateTab("call_tree") },
-      { icon: "🕸", label: "graph",         action: () => activateTab("graph") },
+      { icon: "🕸", label: "graph",         action: () => activateTab("map") },
     ],
   },
   review: {
@@ -1373,7 +1328,7 @@ function activateTab(name) {
     p.style.display = isActive ? "" : "none";  // inline beats any library-set inline styles
   });
   const cyEl = document.getElementById("gx-cy");
-  if (cyEl) cyEl.style.display = name === "graph" ? "" : "none";
+  if (cyEl) cyEl.style.display = (name === "map" && _mapView === "graph") ? "" : "none";
 
   // Show query bar when Chat tab is activated; hide it when switching away
   // (unless the user explicitly toggled it open via 💬 — tracked by _askPinned)
@@ -1383,37 +1338,71 @@ function activateTab(name) {
     hideQueryBar();
   }
 
-  // Mark More button if active tab is in the overflow set
-  const moreBtn = document.getElementById("more-btn");
-  const moreDropdown = document.getElementById("more-dropdown");
-  if (moreBtn) {
-    const inMore = !!moreDropdown.querySelector(`.tab[data-tab="${name}"]`);
-    moreBtn.classList.toggle("has-active", inMore);
-    moreBtn.textContent = inMore
-      ? moreDropdown.querySelector(`.tab[data-tab="${name}"]`).textContent + " ▾"
-      : "More ▾";
-  }
-
   guideUpdateCard();
 }
 
-// More dropdown toggle
-const moreBtn      = document.getElementById("more-btn");
-const moreDropdown = document.getElementById("more-dropdown");
-if (moreBtn) {
-  moreBtn.addEventListener("click", e => {
+// ⚙ utility dropdown toggle
+const utilBtn      = document.getElementById("util-btn");
+const utilDropdown = document.getElementById("util-dropdown");
+if (utilBtn) {
+  utilBtn.addEventListener("click", e => {
     e.stopPropagation();
-    moreDropdown.classList.toggle("open");
+    utilDropdown.classList.toggle("open");
   });
-  document.addEventListener("click", () => moreDropdown.classList.remove("open"));
-  moreDropdown.addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => utilDropdown.classList.remove("open"));
+  utilDropdown.addEventListener("click", e => e.stopPropagation());
 }
+
+// ── map view selector ──────────────────────────────────────
+let _mapView = "graph";
+document.querySelectorAll(".lens-sel-btn[data-mv]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    _mapView = btn.dataset.mv;
+    document.querySelectorAll(".lens-sel-btn[data-mv]").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("map-view-graph").style.display    = _mapView === "graph"    ? "flex" : "none";
+    document.getElementById("map-view-imports").style.display  = _mapView === "imports"  ? "flex" : "none";
+    document.getElementById("map-view-topology").style.display = _mapView === "topology" ? "flex" : "none";
+    const cyEl = document.getElementById("gx-cy");
+    if (cyEl) cyEl.style.display = _mapView === "graph" ? "" : "none";
+    if (_mapView === "imports" && !_igCy) igLoad_();
+    if (_mapView === "topology") topoLoad();
+  });
+});
+
+// ── frontier lens selector ─────────────────────────────────
+let _flLens = "stubs";
+document.querySelectorAll(".lens-sel-btn[data-fl]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    _flLens = btn.dataset.fl;
+    document.querySelectorAll(".lens-sel-btn[data-fl]").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("fl-stubs").style.display = _flLens === "stubs" ? "flex" : "none";
+    document.getElementById("fl-queue").style.display = _flLens === "queue" ? "flex" : "none";
+    if (_flLens === "queue") { bqLoad(); arLoad(); }
+  });
+});
+
+// ── knowledge lens selector ────────────────────────────────
+let _knLens = "artifacts";
+document.querySelectorAll(".lens-sel-btn[data-kl]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    _knLens = btn.dataset.kl;
+    document.querySelectorAll(".lens-sel-btn[data-kl]").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("kn-view-artifacts").style.display  = _knLens === "artifacts"  ? "flex" : "none";
+    document.getElementById("kn-view-pins").style.display       = _knLens === "pins"       ? "flex" : "none";
+    document.getElementById("kn-view-bag").style.display        = _knLens === "bag"        ? "flex" : "none";
+    document.getElementById("kn-view-dochealth").style.display  = _knLens === "dochealth"  ? "flex" : "none";
+    if (_knLens === "artifacts") knLoad("all");
+    if (_knLens === "pins")      wpLoad();
+    if (_knLens === "bag")       bagFetch();
+    if (_knLens === "dochealth") dhLoad();
+  });
+});
 
 let _gxLoaded = false;
 document.querySelectorAll(".tab").forEach(t => {
   t.addEventListener("click", () => {
     activateTab(t.dataset.tab);
-    if (t.dataset.tab === "graph" && !_gxLoaded && _topEntry) {
+    if (t.dataset.tab === "map" && !_gxLoaded && _topEntry) {
       _gxLoaded = true;
       gxMap(_topEntry);
     }
@@ -2490,7 +2479,7 @@ function _renderPopover(data) {
   const btns = [
     { label: "↙ callers",  fn: () => { ctUp.checked = true;  ctTrace(data.symbol); activateTab("call_tree"); closePopover(); } },
     { label: "↗ callees",  fn: () => { ctUp.checked = false; ctTrace(data.symbol); activateTab("call_tree"); closePopover(); } },
-    { label: "graph",      fn: () => { gxMap(data.symbol); activateTab("graph"); closePopover(); } },
+    { label: "graph",      fn: () => { gxMap(data.symbol); activateTab("map"); closePopover(); } },
     { label: "spotlight",  fn: () => { closePopover(); openSpotlight(data.symbol); } },
   ];
   btns.forEach(b => {
@@ -3665,7 +3654,7 @@ socket.on("intent_result", data => {
   results.appendChild(block);
   results.scrollTop = results.scrollHeight;
   // switch to bag tab so user sees what was collected
-  if (!data.error) { activateTab("bag"); bagFetch(); }
+  if (!data.error) { activateTab("knowledge"); _knLens = "bag"; document.querySelectorAll(".lens-sel-btn[data-kl]").forEach(b => b.classList.toggle("active", b.dataset.kl === "bag")); document.getElementById("kn-view-artifacts").style.display="none"; document.getElementById("kn-view-pins").style.display="none"; document.getElementById("kn-view-bag").style.display="flex"; document.getElementById("kn-view-dochealth").style.display="none"; bagFetch(); }
 });
 
 // pop-out / restore
