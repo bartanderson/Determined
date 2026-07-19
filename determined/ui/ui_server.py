@@ -662,8 +662,14 @@ def handle_scan(data):
         emit("scan_result", {"error": "No path provided."})
         return
     target = Path(path).resolve()
+    if target.suffix.lower() == ".db" and target.is_file():
+        # User entered a .db path directly — load it as a corpus
+        init(str(target))
+        _emit_corpus_ready(switched=True)
+        return
     if not target.is_dir():
-        emit("scan_result", {"error": f"Not a directory: {path}"})
+        hint = " (to load an existing corpus, enter a .db file path)" if not path.endswith(".db") else ""
+        emit("scan_result", {"error": f"Not a directory: {path}{hint}"})
         return
     try:
         from determined.ingestion.scan_project_files import load_ignore_list, should_ignore_path

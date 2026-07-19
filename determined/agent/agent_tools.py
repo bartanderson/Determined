@@ -1534,8 +1534,10 @@ def graph_path(oracle: "DBOracle", args: dict) -> str:
     dst = args.get("dst", "").strip()
     if not src or not dst:
         return "ERROR: src and dst arguments required"
-    from determined.agent.graph_utils import shortest_path
+    from determined.agent.graph_utils import shortest_path, _shortest_path_by_name
     path = shortest_path(oracle, src, dst)
+    if path is None:
+        path = _shortest_path_by_name(oracle, src, dst)
     if path is None:
         return f"No call path found from '{src}' to '{dst}'"
     return f"Call path from '{src}' to '{dst}':\n  " + " -> ".join(path)

@@ -256,6 +256,48 @@ def shortest_path(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
     return None
 
 
+def _shortest_path_by_name(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
+    """
+    Fallback BFS over graph_edges.caller/callee columns (not source_id/target_id).
+    Used when source_id-based shortest_path fails, e.g. for JS/TS FQN pairs where
+    source_id is not populated or uses a different normalization.
+    Returns [src, ..., dst] as stored names, or None.
+    """
+    from collections import deque as _deque
+
+    def _bare(name: str) -> str:
+        return name.rsplit(".", 1)[-1] if "." in name else name
+
+    src_bare = _bare(src)
+    dst_bare = _bare(dst)
+
+    # Build candidate src callers: any caller whose bare name matches src
+    src_candidates = set()
+    for (c,) in oracle.conn.execute(
+        "SELECT DISTINCT caller FROM graph_edges WHERE caller = ? OR caller LIKE '%.' || ?",
+        (src, src_bare),
+    ).fetchall():
+        src_candidates.add(c)
+    if not src_candidates:
+        return None
+
+    visited: set[str] = set(src_candidates)
+    queue: _deque[list[str]] = _deque([[c] for c in src_candidates])
+
+    while queue:
+        path = queue.popleft()
+        node = path[-1]
+        for (callee,) in oracle.conn.execute(
+            "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?", (node,)
+        ).fetchall():
+            if _bare(callee) == dst_bare or callee == dst:
+                return path + [callee]
+            if callee not in visited:
+                visited.add(callee)
+                queue.append(path + [callee])
+    return None
+
+
 # ------------------------------------------------------------------
 # Most connected symbols (by call degree)
 # ------------------------------------------------------------------

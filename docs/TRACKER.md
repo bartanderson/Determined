@@ -391,7 +391,7 @@ Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off 
    + stubs + graph. See FUTURE — Design Oracle section below for full design.
    Do after #5 proves the routing concept.
 
-7. **[ ] Polish** — path input UX (show "enter a .db path" hint when directory entered),
+7. **[x] Polish** — path input UX (show "enter a .db path" hint when directory entered),
    graph_path JS FQN inconsistency (some JS module.method pairs fail), threshold burnishing.
 
 Also fixed this session (session 212):
