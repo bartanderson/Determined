@@ -2518,12 +2518,13 @@ def handle_oracle_run(data):
     sid = request.sid
 
     def _run():
-        try:
-            from determined.agent.agent_tools import dispatch
-            result = dispatch("design_oracle", {"context": context}, _oracle, _assessor)
-            socketio.emit("oracle_result", {"text": result, "context": context}, to=sid)
-        except Exception as exc:
-            socketio.emit("oracle_result", {"error": str(exc)}, to=sid)
+        with app.app_context():
+            try:
+                from determined.agent.agent_tools import dispatch
+                result = dispatch("design_oracle", {"context": context}, _oracle, _assessor)
+                socketio.emit("oracle_result", {"text": result, "context": context}, to=sid)
+            except Exception as exc:
+                socketio.emit("oracle_result", {"error": str(exc)}, to=sid)
 
     threading.Thread(target=_run, daemon=True).start()
 
