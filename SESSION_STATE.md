@@ -1,67 +1,65 @@
-Written at commit: 6217782
+Written at commit: 072c7e3
 
-# SESSION STATE — session 213
-Written at commit: 6217782 (2026-07-18)
+# SESSION STATE — session 214
+Written at commit: 072c7e3 (2026-07-18)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Work queue items 1, 2, 4, 5, 6, 7 — all done [V]**
-Item 3 (RM68 dj2 subrace removal) skipped per memory: never suggest dj2 work.
+**UI redesign arc — initial pass [V — 072c7e3]**
 
----
+CLOSURE.md was fully complete (all 3 phases) when session 213 wrapped.
+This session started the UI redesign arc per docs/UI_VISION.md.
 
-**Item 1 — Test stubs filter in _fetch_stubs() [V — 401e43f]**
-- `determined/agent/corpus_projections.py:85`
-- Added four NOT LIKE conditions (Unix + Windows, /test_% + /tests/) matching agent_tools.py:list_stubs.
-- All four projection tools now exclude test-file stubs.
-- Regression test: `test_file_shape_excludes_test_files` in test_corpus_projections.py. 36 pass [V].
+### Changes: `determined/ui/templates/console.html` + `determined/ui/ui_server.py`
 
-**Item 2 — TS call tree FQN fix [V — d83fbd0]**
-- `determined/agent/agent_tools.py` in `walk_call_chain`
-- When bare-name lookup returns None, retries with `WHERE name LIKE '%.' || ?` suffix.
-- Passes `row[0]` (stored FQN) to `_list_callees_raw` for correct callee lookup.
-- Regression test: `test_walk_chain_ts_fqn_fallback`. 15 pass [V].
+**Navigate section — complete overhaul [V]**
+- `#nav-corpus-stats`: compact stats line (files · hot · stubs) populated from corpus_ready data
+- `#nav-oracle-section`: Design Oracle panel — context input, Run button, colorized result div
+- `#nav-mode-actions`: mode-specific quick actions (hidden until mode active)
+- `#nav-generic-actions`: work queue / dead code / docstrings / todos shortcuts
+- corpus_ready handler auto-switches rail to Navigate on first corpus load (GOT model)
 
-**Item 4 — classify_stub file_path_hint TS fix [V — 68349a8]**
-- `determined/agent/classify_stub.py:242` + agent_tools.py:annotate_function
-- `LOWER(REPLACE(...)) LIKE '%' || ?` suffix match replaces exact `file_path = ?`.
-- Falls back to name-only if normalized hint misses. 42 tests pass [V].
+**Design Oracle socket wiring [V]**
+- `oracle_run` event (server): runs design_oracle tool in background thread, emits `oracle_result`
+- `oracle_result` listener (client): colorizes CRITICAL (red), OPPORTUNITY (blue), FOREWARNING (orange), Tip (muted italic)
+- Oracle result div is `display:none` when empty — correct for zero-stub corpora
 
-**Item 5 — Ask routing fallback [V — ab7bafa]**
-- `_prioritize_from_stub_shape()` added before `prioritize_work` in agent_tools.py.
-- Calls stub_file_shape + stub_subsystem_shape when no workflow items or known issues exist.
+**Mode-aware quick actions [V]**
+- `_MODE_NAV` object maps Design/Trace/Review modes to section-specific shortcuts
+- `updateNavModeActions(mode)` swaps visible items; called on mode button click and mode clear
+- design_oracle added to `_WORKBENCH_TOOLS` registry
 
-**Item 6 — Design Oracle [V — 471ee71]**
-- New `design_oracle` tool: CRITICAL / OPPORTUNITY / FOREWARNING, deterministic, no LLM.
-- CRITICAL: highest-fanout stub with prereq-language docstring.
-- OPPORTUNITY: unblocked stubs in same dir/file as `context` symbol.
-- FOREWARNING: prereq stubs on callee chain ahead of `context`.
-- Registered in TOOLS + tool_registry.py. 5 regression tests in test_design_oracle.py [V].
+**Verified in browser [V]**
+- dungeoncrawler corpus loaded: Navigate auto-activated, "15 files · 4 hot" stats visible
+- Design Oracle panel renders with CRITICAL · OPPORTUNITY · FOREWARNING label
+- oracle result hidden (correct — 0 stubs in dungeoncrawler)
+- No console errors
 
-**Item 7 — Polish [V — 6217782]**
-- graph_path FQN fallback: `_shortest_path_by_name()` in graph_utils.py, BFS over caller/callee when source_id BFS fails.
-- .db path auto-load: handle_scan in ui_server.py detects .db file, calls init() directly.
-- Non-db non-directory paths show hint: "to load an existing corpus, enter a .db file path".
+## Tests [V = verified this session, ? = recalled]
 
-## Tests [V]
-- test_corpus_projections.py: 36 pass
-- test_technique3.py: 15 pass
-- test_classify_stub.py: 42 pass
-- test_agent_tools.py: 57 pass
-- test_design_oracle.py: 5 pass (new)
-Full suite not re-run this session (+15 new tests added).
+No new regression tests added this session (UI changes only, no Python logic changed).
+All previously passing tests still expected to pass [?] — no Python files modified.
 
 ## Known issues [V = verified, ? = recalled]
 
 **RM68 subrace dead code [?]:** still pending; dj2 game work, deferred by policy.
-**world/ verdict misleading [?]:** dead-concept dominant due to 5 subrace stubs; clears after RM68.
+**design_oracle on live dj2 corpus [?]:** not tested yet — dungeoncrawler has 0 stubs;
+  load dj2 DB to exercise CRITICAL/OPPORTUNITY/FOREWARNING signals.
+**design_oracle FOREWARNING depth [?]:** BFS over callee chain may miss stubs if graph
+  stores FQNs but chain uses bare names. Not tested against live corpus.
 **Shape index symbols [?]:** only stub names in index; prereq map concept names may not be clickable.
-**design_oracle FOREWARNING depth [?]:** BFS over callee chain may miss stubs if graph stores FQNs but chain uses bare names. Not tested against live corpus.
 
 ## NEXT SESSION — start here
 
-All 7 work queue items done. Check `docs/CLOSURE.md` for next unchecked Phase 2/3 item.
-If CLOSURE.md is complete, next goal is UI redesign arc (docs/UI_VISION.md).
-Consider: run `design_oracle` against dj2 corpus live to exercise the new tool.
+1. Load dj2 corpus in the UI and run Design Oracle — first live exercise of the tool.
+   Path: `C:\Users\bartl\dev\dj2` or the .db file directly.
+   Expect: CRITICAL (highest-fanout blocked stub), OPPORTUNITY (unblocked stubs), FOREWARNING.
+
+2. Continue UI redesign arc per docs/UI_VISION.md — remaining items:
+   - Ask bar demotion: hide or deprioritize the ask bar as primary interface
+   - GOT model completeness: do other surfaces self-present correctly on corpus load?
+   - Any broken interactions surfaced by real use
+
+3. Check TRACKER.md for any RM59 or other open items that need attention.
