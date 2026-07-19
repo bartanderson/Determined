@@ -405,6 +405,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       <button class="tab tab-nodot tab-primary" data-tab="editor">Editor</button>
       <button class="tab tab-nodot tab-primary" data-tab="knowledge">Knowledge</button>
       <button class="tab tab-nodot tab-primary" data-tab="chat">Chat</button>
+      <button class="tab tab-nodot tab-primary" data-tab="workbench" title="Run any tool ad hoc with full parameter forms">Workbench</button>
       <!-- More ▾ overflow -->
       <div class="more-wrap" id="more-wrap">
         <button class="tab tab-nodot" id="more-btn" title="More tabs">More ▾</button>
@@ -417,7 +418,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <button class="tab tab-nodot" data-tab="topology">Topology</button>
           <button class="tab tab-nodot" data-tab="shape" title="Corpus shape — RM69 judgment projections: file density, subsystem verdicts, prerequisite map, concept ghosts">Shape</button>
           <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
-          <button class="tab tab-nodot" data-tab="workbench" title="Run any Discovery tool ad hoc; results stored as artifacts">Workbench</button>
           <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus">Discovery</button>
           <button class="tab tab-nodot" data-tab="logs" title="Live server log">Logs</button>
         </div>
@@ -4329,32 +4329,54 @@ function wbRender() {
   const palette = document.getElementById("wb-palette");
   if (!palette) return;
   palette.innerHTML = "";
+
+  // group by category
+  const groups = {};
   _wbTools.forEach(tool => {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg1)";
-    const hasParam = !!tool.param;
-    row.innerHTML = `
-      <div style="flex:1;min-width:0">
-        <div style="font-size:.85em;font-weight:600;color:var(--text1)">${escHtml(tool.label)}</div>
-        <div style="font-size:.75em;color:var(--text3);margin-top:1px">${escHtml(tool.description)}</div>
-      </div>
-      ${hasParam ? `<input id="wb-param-${escAttr(tool.id)}" class="path-input" placeholder="${escAttr(tool.param.placeholder)}" style="width:180px;font-size:.8em;padding:3px 7px">` : ""}
-      <button class="send-btn wb-run-btn" data-id="${escAttr(tool.id)}" style="padding:4px 12px;font-size:.8em;white-space:nowrap">Run</button>`;
-    palette.appendChild(row);
+    const cat = tool.category || "Other";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(tool);
   });
 
-  palette.querySelectorAll(".wb-run-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (_wbRunning) return;
-      const id = btn.dataset.id;
-      const tool = _wbTools.find(t => t.id === id);
-      if (!tool) return;
-      const args = {};
-      if (tool.param) {
-        const inp = document.getElementById(`wb-param-${id}`);
-        if (inp && inp.value.trim()) args[tool.param.name] = inp.value.trim();
+  Object.entries(groups).forEach(([cat, tools]) => {
+    const catHdr = document.createElement("div");
+    catHdr.style.cssText = "font-size:.68em;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);padding:8px 0 3px";
+    catHdr.textContent = cat;
+    palette.appendChild(catHdr);
+
+    tools.forEach(tool => {
+      const hasParam = !!tool.param;
+      const row = document.createElement("div");
+      row.style.cssText = "padding:6px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg1);margin-bottom:4px";
+      row.innerHTML = `
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+          <div style="min-width:0">
+            <span style="font-size:.83em;font-weight:600;color:var(--text1)">${escHtml(tool.label)}</span>
+            <span style="font-size:.73em;color:var(--text3);margin-left:6px;line-height:1.35">${escHtml(tool.description)}</span>
+          </div>
+          ${!hasParam ? `<button class="send-btn wb-run-btn" data-id="${escAttr(tool.id)}" style="padding:2px 10px;font-size:.78em;white-space:nowrap;flex-shrink:0">Run</button>` : ""}
+        </div>
+        ${hasParam ? `<div style="display:flex;gap:6px;margin-top:5px">
+          <input id="wb-param-${escAttr(tool.id)}" class="path-input" placeholder="${escAttr(tool.param.placeholder)}" style="flex:1;font-size:.78em;padding:2px 6px">
+          <button class="send-btn wb-run-btn" data-id="${escAttr(tool.id)}" style="padding:2px 10px;font-size:.78em;white-space:nowrap;flex-shrink:0">Run</button>
+        </div>` : ""}`;
+      palette.appendChild(row);
+
+      const btn = row.querySelector(".wb-run-btn");
+      const run = () => {
+        if (_wbRunning) return;
+        const args = {};
+        if (tool.param) {
+          const inp = document.getElementById(`wb-param-${tool.id}`);
+          if (inp && inp.value.trim()) args[tool.param.name] = inp.value.trim();
+        }
+        wbRunTool(tool.id, tool.label, args);
+      };
+      btn.addEventListener("click", run);
+      if (hasParam) {
+        document.getElementById(`wb-param-${tool.id}`)
+          ?.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
       }
-      wbRunTool(id, tool.label, args);
     });
   });
 }
