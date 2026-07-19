@@ -99,8 +99,8 @@ code landed but are unverified by live testing — session 47 will validate._
 The chat input is always visible and the sidebar shortcuts are just
 canned chat queries. The system knows its own surfaces; it should
 present them without waiting to be asked.
-_Status: OPEN. Ask bar still always visible. Tool access panel reduces
-reliance on it but the bar itself isn't hidden._
+_Status: DONE. query-bar starts display:none; shown only when Chat tab is
+active, 💬 pin toggle clicked, or a quick-action fires a query._
 
 **2. No direct entry to most tools. DONE (session 45)**
 `goal_intake`, `concept_search`, `gap_analysis`, `ingest_design_docs`,
@@ -146,13 +146,15 @@ gap proposals — has no UI. Items accumulate invisibly.
 _Fixed: Queue badge in topbar shows next_up count. Gap summary block
 in sidebar. Doc Health tab shows proposals with accept/dismiss._
 
-**7. Context switches are not intuitive.**
+**7. Context switches are not intuitive. DONE**
 The trail breadcrumb helps (symbol -> symbol -> symbol) but it's one-
 dimensional. There's no way to switch between "I'm in the context of
 module X's design" and "I'm tracing a specific call chain" and "I'm
 reviewing gap proposals" as distinct modes that each present the right
 surfaces.
-_Status: OPEN. No work done on this yet._
+_Status: DONE. Three mode buttons in topbar (Design/Trace/Review): set
+body class, show banner, switch to primary tab, load mode-specific data,
+update sidebar nav actions. Toggle off by clicking active mode._
 
 **8. No transparency in the query pipeline. DONE (session 45)**
 When you ask a question via chat, you don't see: which pattern matched,
