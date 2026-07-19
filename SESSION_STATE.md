@@ -64,11 +64,26 @@ convergence probes have NOT been re-run against dj2. Any tool querying
 Run the convergence probe against freshly re-ingested dj2 to confirm no tools
 broke from the caller FQN change:
 ```
-.venv\Scripts\python.exe scratchpad/probe_dj2.py
+.venv\Scripts\python.exe "C:\Users\bartl\AppData\Local\Temp\claude\C--Users-bartl-dev-Determined\bc35bcad-9ee9-4977-83ab-40abbca24226\scratchpad\probe_dj2.py"
 ```
-Script is at the scratchpad path above. Compare results to CLOSURE.md Phase 2 dj2 section.
-Flag any regression — especially blast_radius, walk_call_chain, graph_path which all
-query graph_edges by caller name.
+Compare results to CLOSURE.md Phase 2 dj2 section (lines 133-154).
+
+**If a probe fails — triage guide:**
+The caller FQN change means graph_edges now stores `ClassName.method` as caller.
+Any tool that queries `WHERE caller = bare_name` will now miss class method edges.
+
+- `blast_radius` failure: check how it queries graph_edges — if it uses bare symbol
+  name as caller, it needs the same FQN resolution added to FOREWARNING in agent_tools.py
+- `walk_call_chain` failure: known TS/JS FQN issue (pre-existing, not from this change).
+  For Python: same caller FQN resolution needed.
+- `graph_path` failure: check src/dst resolution — may need FQN lookup before BFS.
+- Entry point counts changed: expected. EPs are inferred, not from graph_edges caller.
+  A count shift is informational, not a regression.
+- Stub counts unchanged: functions table unaffected, stubs should be identical.
+
+Pattern to fix any tool: look up symbol in `functions` table, build
+`ClassName.method` if `class_name` is set, use that as the query key.
+Same pattern as the FOREWARNING fix in agent_tools.py:7672-7684.
 
 **Step 2:** UI redesign arc per `docs/UI_VISION.md`
 - Ask bar demotion
