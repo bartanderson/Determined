@@ -1206,6 +1206,66 @@ def handle_graph_subgraph(data):
         emit("graph_result", {"error": str(exc)})
 
 
+@socketio.on("graph_path")
+def handle_graph_path(data):
+    """
+    BFS shortest path from src to dst through graph_edges.
+    Returns {path: [sym, …]} or {error: reason}.
+    """
+    src = (data.get("src") or "").strip()
+    dst = (data.get("dst") or "").strip()
+    if not src or not dst or _oracle is None:
+        emit("graph_path_result", {"error": "no corpus or missing src/dst"}); return
+    try:
+        conn = _oracle.conn
+        # resolve bare name → best match in functions table
+        def resolve(name):
+            row = conn.execute(
+                "SELECT name FROM functions WHERE name = ? OR name LIKE ? LIMIT 1",
+                (name, f"%.{name}")
+            ).fetchone()
+            return row[0] if row else name
+
+        src_r, dst_r = resolve(src), resolve(dst)
+        bare_dst = dst_r.rsplit(".", 1)[-1]
+
+        # BFS over graph_edges callees
+        from collections import deque
+        queue = deque([[src_r]])
+        visited = {src_r}
+        limit = 500  # nodes visited before giving up
+        found = None
+        while queue and len(visited) < limit:
+            path = queue.popleft()
+            cur = path[-1]
+            bare_cur = cur.rsplit(".", 1)[-1]
+            rows = conn.execute(
+                "SELECT DISTINCT callee FROM graph_edges WHERE caller = ? OR caller LIKE ?",
+                (cur, f"%.{bare_cur}")
+            ).fetchall()
+            for (callee,) in rows:
+                # resolve callee to a known function name
+                resolved = resolve(callee)
+                bare_r = resolved.rsplit(".", 1)[-1]
+                if resolved in visited:
+                    continue
+                new_path = path + [resolved]
+                if resolved == dst_r or bare_r == bare_dst:
+                    found = new_path
+                    break
+                visited.add(resolved)
+                queue.append(new_path)
+            if found:
+                break
+
+        if found:
+            emit("graph_path_result", {"path": found})
+        else:
+            emit("graph_path_result", {"error": f"no path found from '{src}' to '{dst}' within {limit} nodes"})
+    except Exception as exc:
+        emit("graph_path_result", {"error": str(exc)})
+
+
 def _frontier_rows(conn, mode: str):
     """
     Core frontier query parameterized by mode:

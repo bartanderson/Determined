@@ -305,9 +305,19 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           </div>
           <div class="tp-group-label" style="margin-top:6px">Query</div>
           <div class="tp-row">
-            <span class="tp-name" title="List every function that calls this one — blast radius before you change it">Callers of</span>
+            <span class="tp-name" title="Blast radius — every function that calls this one. Change it and these all potentially break.">Blast radius of</span>
             <input class="tp-input" id="tp-callers" placeholder="function_name" autocomplete="off">
             <button class="tp-btn" id="tp-callers-btn">Run</button>
+          </div>
+          <div class="tp-row">
+            <span class="tp-name" title="Feature shape — completeness % of a directory feature area (BFS from external entry points)">Feature shape</span>
+            <input class="tp-input" id="tp-feature-shape" placeholder="world/" autocomplete="off">
+            <button class="tp-btn" id="tp-feature-shape-btn">Run</button>
+          </div>
+          <div class="tp-row">
+            <span class="tp-name" title="Design violations — check a symbol against ingested design rules and SOTS tenets">Violations for</span>
+            <input class="tp-input" id="tp-violations" placeholder="SymbolName" autocomplete="off">
+            <button class="tp-btn" id="tp-violations-btn">Run</button>
           </div>
           <div class="tp-row">
             <span class="tp-name" title="Plain-language summary of what a function does and why it exists">Explain</span>
@@ -437,6 +447,13 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
               <option value="3">3</option>
             </select>
           </label>
+        </div>
+        <div class="graph-toolbar" style="border-top:1px solid var(--border);padding-top:3px;gap:.4rem">
+          <span style="font-size:.78em;color:var(--text3);flex-shrink:0">path</span>
+          <input id="gx-src" class="path-input" placeholder="from symbol" style="flex:1;font-size:.82em">
+          <span style="color:var(--text3);font-size:.85em">→</span>
+          <input id="gx-dst" class="path-input" placeholder="to symbol" style="flex:1;font-size:.82em">
+          <button class="send-btn" id="gx-path-go" style="font-size:.82em;padding:3px 8px">Find ↵</button>
         </div>
         <div id="gx-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
         <div id="gx-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
@@ -856,10 +873,12 @@ function tpBind(inputId, btnId, fn) {
 
 tpBind("tp-open-file",    "tp-open-file-btn",   v => { edOpenFile(v); activateTab("editor"); });
 tpBind("tp-inspect-sym",  "tp-inspect-sym-btn",  v => openSpotlight(v));
-tpBind("tp-callers",      "tp-callers-btn",      v => tpQuery(`who calls ${v}`));
-tpBind("tp-explain",      "tp-explain-btn",      v => tpQuery(`explain ${v}`));
-tpBind("tp-findings",     "tp-findings-btn",     v => tpQuery(`findings for ${v}`));
-tpBind("tp-files",        "tp-files-btn",        v => tpQuery(`files matching ${v}`));
+tpBind("tp-callers",       "tp-callers-btn",       v => tpQuery(`blast radius of ${v}`));
+tpBind("tp-feature-shape", "tp-feature-shape-btn", v => tpQuery(`feature shape ${v}`));
+tpBind("tp-violations",    "tp-violations-btn",    v => tpQuery(`check design violations for ${v}`));
+tpBind("tp-explain",       "tp-explain-btn",       v => tpQuery(`explain ${v}`));
+tpBind("tp-findings",      "tp-findings-btn",      v => tpQuery(`findings for ${v}`));
+tpBind("tp-files",         "tp-files-btn",         v => tpQuery(`files matching ${v}`));
 const connDot   = document.getElementById("conn-dot");
 const connLbl   = document.getElementById("conn-label");
 const elapsed   = document.getElementById("elapsed");
@@ -1092,6 +1111,15 @@ function renderCorpusMap(data) {
   const stubsLink = document.getElementById("map-stubs-link");
   if (stubsLink) stubsLink.addEventListener("click", () => activateTab("frontier"));
 
+  // A1: "show all →" entry-point link below the roots/core section
+  if (eps.length) {
+    const allLink = document.createElement("div");
+    allLink.style.cssText = "font-size:.72em;color:var(--blue);cursor:pointer;padding:2px 2px 0;text-align:right";
+    allLink.textContent = "show all entry points →";
+    allLink.addEventListener("click", () => tpQuery("list all entry points"));
+    corpusMapInner.appendChild(allLink);
+  }
+
   attachSymbolHandlers(corpusMapInner);
 }
 
@@ -1211,25 +1239,25 @@ const _MODE_NAV = {
   design: {
     label: "📐 Design actions",
     items: [
-      { icon: "⬡", label: "corpus shape",    submit: "show corpus shape" },
-      { icon: "📖", label: "knowledge",       action: () => activateTab("knowledge") },
-      { icon: "⚖",  label: "violations",     submit: "check design violations" },
+      { icon: "⬡", label: "corpus shape",  submit: "show corpus shape" },
+      { icon: "📖", label: "knowledge",     action: () => activateTab("knowledge") },
+      { icon: "⚖",  label: "violations",   form: { placeholder: "SymbolName", query: v => `check design violations for ${v}` } },
     ],
   },
   trace: {
     label: "🔗 Trace actions",
     items: [
-      { icon: "↙", label: "blast radius",     submit: "who are the hottest symbols" },
-      { icon: "⛓", label: "call tree",        action: () => activateTab("call_tree") },
-      { icon: "🕸", label: "graph",            action: () => activateTab("graph") },
+      { icon: "↙", label: "blast radius",  form: { placeholder: "symbol_name", query: v => `blast radius of ${v}` } },
+      { icon: "⛓", label: "call tree",     action: () => activateTab("call_tree") },
+      { icon: "🕸", label: "graph",         action: () => activateTab("graph") },
     ],
   },
   review: {
     label: "✅ Review actions",
     items: [
-      { icon: "⚠", label: "doc health",       action: () => activateTab("dochealth") },
-      { icon: "☑", label: "build queue",      action: () => activateTab("build_queue") },
-      { icon: "∅", label: "orphaned impls",   submit: "find orphaned implementations" },
+      { icon: "⚠", label: "doc health",    action: () => activateTab("dochealth") },
+      { icon: "☑", label: "build queue",   action: () => activateTab("build_queue") },
+      { icon: "⬡", label: "feature shape", form: { placeholder: "world/", query: v => `feature shape ${v}` } },
     ],
   },
 };
@@ -1243,19 +1271,34 @@ function updateNavModeActions(mode) {
   label.textContent = cfg.label;
   items.innerHTML = "";
   cfg.items.forEach(it => {
-    const d = document.createElement("div");
-    d.className = "sidebar-item";
-    d.innerHTML = `<span class="icon">${it.icon}</span>${it.label}`;
-    if (it.action) d.addEventListener("click", it.action);
-    else if (it.submit) d.dataset.submit = it.submit;
-    items.appendChild(d);
-  });
-  // re-wire data-submit items inside nav-mode-items
-  items.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
-    el.addEventListener("click", () => {
-      const q = el.dataset.submit;
-      if (q) { showQueryBar(); input.value = q; sendBtn.click(); }
-    });
+    if (it.form) {
+      // inline form: icon + label + input + run button
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:3px;padding:2px 0";
+      const lbl = document.createElement("span");
+      lbl.style.cssText = "font-size:.75em;color:var(--text2);flex-shrink:0;min-width:60px";
+      lbl.innerHTML = `<span style="margin-right:3px">${it.icon}</span>${it.label}`;
+      const inp = document.createElement("input");
+      inp.className = "tp-input";
+      inp.placeholder = it.form.placeholder;
+      inp.style.cssText = "flex:1;min-width:0;font-size:.75em;padding:2px 4px";
+      const btn = document.createElement("button");
+      btn.className = "tp-btn";
+      btn.textContent = "▶";
+      btn.style.cssText = "padding:2px 5px;font-size:.72em;flex-shrink:0";
+      const run = () => { const v = inp.value.trim(); if (v) { tpQuery(it.form.query(v)); inp.value = ""; } };
+      btn.addEventListener("click", run);
+      inp.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+      row.appendChild(lbl); row.appendChild(inp); row.appendChild(btn);
+      items.appendChild(row);
+    } else {
+      const d = document.createElement("div");
+      d.className = "sidebar-item";
+      d.innerHTML = `<span class="icon">${it.icon}</span>${it.label}`;
+      if (it.action) d.addEventListener("click", it.action);
+      else if (it.submit) d.addEventListener("click", () => { showQueryBar(); input.value = it.submit; sendBtn.click(); });
+      items.appendChild(d);
+    }
   });
   section.style.display = "";
 }
@@ -1552,6 +1595,44 @@ socket.on("graph_result", data => {
 
 gxGo.addEventListener("click", () => gxMap(gxInput.value.trim()));
 gxInput.addEventListener("keydown", e => { if (e.key === "Enter") gxMap(gxInput.value.trim()); });
+
+// ── graph path: from → to ─────────────────────────────────
+const gxSrc    = document.getElementById("gx-src");
+const gxDst    = document.getElementById("gx-dst");
+const gxPathGo = document.getElementById("gx-path-go");
+
+function gxFindPath() {
+  const src = gxSrc.value.trim(), dst = gxDst.value.trim();
+  if (!src || !dst) return;
+  gxStatus.textContent = `Finding path ${src} → ${dst}…`;
+  socket.emit("graph_path", { src, dst });
+}
+gxPathGo.addEventListener("click", gxFindPath);
+gxDst.addEventListener("keydown", e => { if (e.key === "Enter") gxFindPath(); });
+
+socket.on("graph_path_result", data => {
+  if (data.error) { gxStatus.textContent = `No path: ${data.error}`; return; }
+  const path = data.path || [];
+  if (!path.length) { gxStatus.textContent = "No path found between those symbols."; return; }
+  gxStatus.textContent = `Path (${path.length} hops): ${path.join(" → ")}`;
+  // render the path as a linear graph
+  if (_cy) { _cy.destroy(); _cy = null; }
+  const cyEl = document.getElementById("gx-cy");
+  cyEl.innerHTML = "";
+  const nodes = path.map(s => ({ data: { id: s, label: s.split(".").pop() }, classes: s === path[0] ? "gx-root" : "" }));
+  const edges = path.slice(1).map((s, i) => ({ data: { id: `e${i}`, source: path[i], target: s } }));
+  _cy = cytoscape({
+    container: cyEl,
+    elements: [...nodes, ...edges],
+    style: GX_STYLE,
+    layout: { name: "breadthfirst", directed: true, padding: 20 },
+  });
+  _cy.on("tap", "node", evt => {
+    const sym = evt.target.data("id");
+    gxInput.value = sym;
+    openPopover(sym, evt.originalEvent || { clientX: _mouseX, clientY: _mouseY });
+  });
+});
 
 // when a symbol is clicked anywhere, also seed the graph input
 document.addEventListener("click", e => {
