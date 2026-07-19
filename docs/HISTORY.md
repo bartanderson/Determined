@@ -8,6 +8,18 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-19: parse_ast caller FQN was always bare -- graph_edges stored __init__ not WorldAI.__init__.
+visit_FunctionDef set current_function = node.name, dropping class context. Fixed to
+ClassName.method when inside a class. Both Visitor and _Visitor needed the fix. Re-ingest
+required after this change for edges to reflect the correction. param_type_map still keyed
+by bare name (FunctionRepresentation has no class_name), so lookups use bare fallback.
+
+2026-07-19: FOREWARNING BFS requires qualified context to find edges.
+Context passed as bare __init__ matched many functions; LIMIT 10 cut off before reaching
+WorldAI.__init__ edge. Fix: resolve context to ClassName.method via functions table before
+BFS. User should pass WorldAI.__init__ not __init__ for unambiguous resolution. Also: stub
+match query needed OR name = bare so bare function names match partially-qualified callees.
+
 2026-07-17: Python __init__ stubs need class context, not just method signals.
 __init__ is not classifiable by name alone -- every class has one, and whether it is
 a stub depends on the enclosing class. Five cases need distinct handling:

@@ -1,47 +1,78 @@
-Written at commit: 28571da
+Written at commit: 0c7855a
 
-# SESSION STATE — session 215
-Written at commit: 28571da (2026-07-19)
+# SESSION STATE — session 216
+Written at commit: 0c7855a (2026-07-19)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Design Oracle socket fix [V — 28571da]**
-- `oracle_run` background thread now wrapped in `app.app_context()`
-- Without it, `socketio.emit(..., to=sid)` silently dropped from background threads
-- Fix: `with app.app_context():` around the try/except in `handle_oracle_run`
-- Root cause of prior session's debugging spiral — noted in memory as verification stopping rule
+**RM59 confirmed done [V]** — SESSION_STATE said "check RM59", TRACKER shows DONE 2026-07-15. No action.
 
-**Design Oracle verified live against dj2 [V]**
-- Loaded dj2 corpus (158 files · 55 hot · 13 stubs) via DB picker
-- Clicked Run in Navigate sidebar — oracle_result arrived immediately
-- CRITICAL: `_register_world_tools` [ai_integration.py, 1 caller] — real signal, highest-fanout blocked stub
-- OPPORTUNITY: `_get_combat_context`, `_get_encounter_context` [context_builder.py]
-- Panel colorization confirmed working in browser
+**FOREWARNING BFS investigation [V]**
+Root cause was two separate bugs discovered in sequence:
 
-**Memory saved [V]**
-- `feedback_verification_stopping_rule.md` — 2 failed checks = name blocker and ask, never escalate; session 214 cautionary example
+1. **parse_ast.py caller FQN was always bare [V — 0c7855a]**
+   - `visit_FunctionDef` set `current_function = node.name`, dropping class context
+   - `WorldAI.__init__` stored as `__init__` in graph_edges caller column
+   - Fix: `current_function = f"{class_name}.{name}" if class_name else name`
+   - Both `Visitor` (call edges) and `_Visitor` (function-reference edges) fixed
+   - `param_type_map` keyed by bare name (FunctionRepresentation has no class_name);
+     lookups now fall back to bare name with `.rsplit(".", 1)[-1]`
+   - 91 parse_ast regression tests pass [V]
+   - dj2 re-ingested via `socket.emit("ingest", {path: "C:\\Users\\bartl\\dev\\dj2"})` [V]
+   - Edge confirmed: `WorldAI.__init__ -> WorldAI._register_world_tools` [V]
+
+2. **FOREWARNING BFS context not resolved to FQN [V — 0c7855a]**
+   - BFS queried `WHERE caller = '__init__'` — ambiguous, LIMIT 10 cut off before the right edge
+   - Fix: resolve context via `functions` table to `ClassName.method` before BFS
+   - Also added `OR name = bare` to stub match query (bare names in functions table
+     didn't match partially-qualified callees like `WorldAI._register_world_tools`)
+   - FOREWARNING fires: `context=WorldAI.__init__` → FOREWARNING: `_register_world_tools` [V]
+
+**Lessons [V]**
+- Caller FQN stripping was a design flaw in parse_ast from the beginning — hidden because
+  no tool previously queried graph_edges by qualified caller name
+- Re-ingest is always required after parse_ast changes; correct method:
+  `socket.emit("ingest", {path: "C:\\Users\\bartl\\dev\\dj2"})` in browser console
+- HISTORY.md updated with both lessons [V]
+
+**FOREWARNING simplified [V]**
+- Removed `_is_blocked` filter from FOREWARNING (was too restrictive — dj2 stubs don't
+  have prereq language in docstrings). Now fires on any stub in callee chain.
+- LIMIT reverted to 10 (was temporarily raised to 50 during debugging, now correct)
 
 ## Tests [V = verified this session, ? = recalled]
 
-No Python logic changed (ui_server.py threading fix only). Prior suite results carry [?].
+- 91 parse_ast regression tests pass [V]
+- Full suite not run [?]
 
 ## Known issues [V = verified, ? = recalled]
 
+**BFS probe not yet run [V]:** After re-ingest with qualified callers, the 6 canonical
+convergence probes have NOT been re-run against dj2. Any tool querying
+`WHERE caller = bare_name` may now silently fail. Probe script ready at:
+`scratchpad/probe_dj2.py` — run this FIRST next session before anything else.
+
 **RM68 subrace dead code [?]:** dj2 game work, deferred by policy.
-**design_oracle FOREWARNING [?]:** not exercised yet — needs context= symbol to trigger.
 **Shape index symbols [?]:** stub names only; prereq map concept names may not be clickable.
-**Server start command [V]:** must use `.venv\Scripts\python.exe`, NOT system pyenv Python — wrong binary breaks all threaded socket handlers silently.
+**Server start command [V]:** must use `.venv\Scripts\python.exe`, NOT system pyenv Python.
 
 ## NEXT SESSION — start here
 
-1. Continue UI redesign arc per `docs/UI_VISION.md`:
-   - Ask bar demotion: hide or deprioritize as primary interface
-   - GOT model completeness: do other surfaces self-present on corpus load?
+**Step 1 (CRITICAL — do before any other work):**
+Run the convergence probe against freshly re-ingested dj2 to confirm no tools
+broke from the caller FQN change:
+```
+.venv\Scripts\python.exe scratchpad/probe_dj2.py
+```
+Script is at the scratchpad path above. Compare results to CLOSURE.md Phase 2 dj2 section.
+Flag any regression — especially blast_radius, walk_call_chain, graph_path which all
+query graph_edges by caller name.
 
-2. Exercise FOREWARNING signal: run oracle with `context=_register_world_tools` (or any symbol in the call chain ahead of a blocked stub) to confirm BFS works.
+**Step 2:** UI redesign arc per `docs/UI_VISION.md`
+- Ask bar demotion
+- GOT model completeness: do surfaces self-present on corpus load?
 
-3. Check `docs/TRACKER.md` for RM59 or other open items.
-
-**Server start (standing note):** always use `.venv\Scripts\python.exe -m determined.ui.ui_server` from `C:\Users\bartl\dev\Determined`. Never use pyenv/system Python.
+**Server start (standing note):** always use `.venv\Scripts\python.exe -m determined.ui.ui_server`
+from `C:\Users\bartl\dev\Determined`. Never use pyenv/system Python.
