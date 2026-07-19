@@ -7670,8 +7670,17 @@ def design_oracle(assessor: "Assessor", args: dict) -> str:
     # ── 5. FOREWARNING — prereq stubs in callee chain from context ──────────
     forewarnings = []
     if context:
+        # Resolve context to qualified name (ClassName.method) before BFS
+        _ctx_row = conn.execute(
+            "SELECT class_name, name FROM functions WHERE name = ? OR (class_name || '.' || name) = ? LIMIT 1",
+            (context, context)
+        ).fetchone()
+        if _ctx_row and _ctx_row[0]:
+            context_fqn = f"{_ctx_row[0]}.{_ctx_row[1]}"
+        else:
+            context_fqn = context
         visited: set[str] = set()
-        queue = [context]
+        queue = [context_fqn]
         while queue and len(forewarnings) < 2:
             sym = queue.pop(0)
             if sym in visited:
@@ -7684,15 +7693,16 @@ def design_oracle(assessor: "Assessor", args: dict) -> str:
                 bare = callee.rsplit(".", 1)[-1]
                 match = conn.execute(
                     "SELECT name, file_path, docstring FROM functions "
-                    "WHERE (name = ? OR name LIKE '%.' || ?) AND is_stub = 1 LIMIT 1",
-                    (callee, bare),
+                    "WHERE (name = ? OR name = ? OR name LIKE '%.' || ?) AND is_stub = 1 LIMIT 1",
+                    (callee, bare, bare),
                 ).fetchone()
                 if match:
                     fn, fp, doc = match
-                    if _is_blocked(doc) and fn not in [f[0] for f in forewarnings]:
+                    if fn not in [f[0] for f in forewarnings]:
                         forewarnings.append((fn, fp, doc))
-                elif bare not in visited:
-                    queue.append(bare)
+                else:
+                    if bare not in visited:
+                        queue.append(bare)
 
     # ── 6. Format output ────────────────────────────────────────────────────
     lines = ["=== Design Oracle ===", ""]

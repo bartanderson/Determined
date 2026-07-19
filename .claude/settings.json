@@ -36,7 +36,8 @@
       "mcp__Claude_Preview__preview_start",
       "mcp__Claude_Preview__preview_click",
       "mcp__Claude_Preview__preview_fill",
-      "mcp__Claude_Preview__preview_resize"
+      "mcp__Claude_Preview__preview_resize",
+      "mcp__Claude_Browser__javascript_tool"
     ]
   },
   "hooks": {

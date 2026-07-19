@@ -491,7 +491,9 @@ def _extract_symbol_references(
         def visit_FunctionDef(self, node):
             prev = self.current_function
             prev_bindings = self._fn_bindings
-            self.current_function = node.name
+            self.current_function = (
+                f"{self.current_class}.{node.name}" if self.current_class else node.name
+            )
             self._fn_bindings = {}
 
             self.generic_visit(node)
@@ -614,8 +616,9 @@ def _extract_symbol_references(
                         annotation_resolved = True
                     else:
                         # obj.method(): check if obj has a type annotation in
-                        # the current function's param map
-                        fn_params = _param_type_map.get(self.current_function, {})
+                        # the current function's param map (keyed by bare name)
+                        _bare_fn = self.current_function.rsplit(".", 1)[-1]
+                        fn_params = _param_type_map.get(self.current_function) or _param_type_map.get(_bare_fn, {})
                         annotated_type = fn_params.get(base.id)
                         if annotated_type:
                             raw = f"{annotated_type}.{node.func.attr}"
@@ -758,7 +761,8 @@ def _extract_symbol_references(
                             return f"{base_name}.{func_node.attr}"
                         if base.id == "self" and self.current_class:
                             return f"{self.current_class}.{func_node.attr}"
-                        fn_params = _param_type_map.get(self.current_function, {})
+                        _bare_fn2 = self.current_function.rsplit(".", 1)[-1]
+                        fn_params = _param_type_map.get(self.current_function) or _param_type_map.get(_bare_fn2, {})
                         annotated_type = fn_params.get(base.id)
                         if annotated_type:
                             return f"{annotated_type}.{func_node.attr}"
@@ -903,10 +907,19 @@ def _extract_function_references(tree: ast.AST) -> list[SymbolReference]:
     class _Visitor(ast.NodeVisitor):
         def __init__(self):
             self.current_function = "<module>"
+            self.current_class = None
+
+        def visit_ClassDef(self, node):
+            prev_class = self.current_class
+            self.current_class = node.name
+            self.generic_visit(node)
+            self.current_class = prev_class
 
         def visit_FunctionDef(self, node):
             prev = self.current_function
-            self.current_function = node.name
+            self.current_function = (
+                f"{self.current_class}.{node.name}" if self.current_class else node.name
+            )
             self.generic_visit(node)
             self.current_function = prev
 
