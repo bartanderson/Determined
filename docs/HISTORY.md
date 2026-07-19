@@ -8,6 +8,42 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-19 (s220): When removing HTML elements, grep for bare `.getElementById("id").addEventListener`
+before committing. Removed `#mode-banner-clear` HTML but not its JS listener; the null
+dereference silently stopped all script execution mid-script (function declarations survived
+via hoisting, but `let` variables declared after the crash point were never initialized).
+Symptom: `let _mapView` unreachable, lens selectors never wired, no console error (script-load
+errors are swallowed). Fix: optional chaining `?.addEventListener`. Rule: after any HTML deletion,
+grep the removed IDs in the JS block.
+
+2026-07-19 (s220): Phase B tab consolidation complete. lens-sel-bar / lens-sel-btn pattern:
+`.lens-sel-btn[data-mv]` for Map views, `[data-fl]` for Frontier, `[data-kl]` for Knowledge.
+JS state vars `_mapView`, `_flLens`, `_knLens` track active lens. `activateTab` now guards
+`gx-cy` visibility as `name === "map" && _mapView === "graph"` (was `name === "graph"`).
+
+2026-07-19 (s219): Corpus map hidden-on-load was a state-interaction bug, not a render bug.
+renderCorpusMap populated #corpus-map correctly, but corpus_ready auto-switched the
+sidebar rail to the Navigate section which didn't contain it. Two features fine alone
+(rail sections; auto-switch) combined to hide the vision's headline surface. Fix was
+deletion, not a guard: rail + section-switching state machine removed entirely
+(redesign Phase A). Lesson: when a "rendered but invisible" bug appears, look for a
+sibling state machine before adding display logic.
+
+2026-07-19 (s219): Shape auto-run on corpus_ready is safe because projections are
+deterministic. Verified corpus_projections.py has no LLM calls (DB + SetFit only);
+dj2's 10 stubs classify in ~seconds. This is the load-bearing fact of the shape-first
+redesign — if a future projection adds an LLM step, it must not run in shape_run's
+auto path.
+
+2026-07-19 (s219): Fresh ui_server start does NOT auto-restore the last corpus,
+despite UI_VISION's session-file claim. Log shows "Corpus: none" on clean start.
+Workaround: socket.emit("load_db", {path: full DB path}) after connect. Filed as a
+small fix candidate; also charted in capn.
+
+2026-07-19 (s219): Browser-pane screenshots of the dev console time out consistently
+(Cytoscape canvases suspected). Verify UI via get_page_text / read_page /
+javascript_tool DOM checks instead. Not a regression — predates Phase A changes.
+
 2026-07-19: blast_radius module filter chips need relative paths, not parts[0].
 file_path in DB is absolute (C:/Users/bartl/dev/dj2/world/foo.py). Path.parts[0]
 returns 'C:\\' not 'world'. Fix: relative_to(oracle.get_project_root().resolve()).
@@ -131,12 +167,6 @@ Same edge type in the shared graph -- tools pick it up automatically via graph_e
 THREE registration patterns to handle: (1) dict literal values, (2) register_action(name, func)
 two-arg method calls, (3) Thread/callback keyword args (target=func, key=func, callback=func).
 DO NOT detect these in the tool layer -- they belong in parse_ast.py only.
-
-2026-07-16: UI has fallen behind pipeline capability -- defer UI fixes until pipeline shape is stable.
-Current UI was built tool-by-tool and is now behind the capability curve. Decision:
-run pipelines CLI-first to find real gaps; redesign UI after pipeline surface is stable.
-The redesigned UI must expose full pipeline power to both human drill-down and AI-driven
-interface. Don't patch the current UI piecemeal.
 
 2026-07-16: Pattern detection is human-input-only; if sub-questions ever go through _answer, use structured directives not scoring.
 detect_pattern() is called in exactly one place (local_agent.py:413) on direct user input.
@@ -318,8 +348,6 @@ no socket.emit in the HTML/JS source -- not a bug in the extractor, a gap in the
 2026-07-10: RM28 Stage 2/3: GUIDE_DATA JS object in console.html and guide_commonplace.json are separate stores with identical content. JSON file is the source of truth for docs/future tooling; inline JS object is what the browser actually uses. Both must be updated together when adding new card content. No auto-sync mechanism.
 
 2026-07-10: RM28 Stage 3: phase detection uses "_seed" in DB filename to identify skeleton phase; "_phaseDbs" companion lookup strips/appends "_seed" from the path. Works for the current two-DB setup; will need revision if more phases or different naming conventions are introduced.
-
-2026-07-09: RM28 Stage 1 CSS color debugging trap: `.guide-on .rail-dot[data-state="green"]` CSS attribute-selector approach was correct in markup but `getComputedStyle` returned `rgba(0,0,0,0)` in eval even with inline `!important`. Root cause unclear (eval context oddity or override). Fix: set `dot.style.background` directly in `guideUpdateDots()` JS. Avoids the ambiguity entirely; CSS data-state attr kept for potential future use.
 
 2026-07-09: Overriding a function declaration with another function declaration in the same script causes hoisting conflict: both get hoisted, the later one replaces the earlier, and `const _orig = fn` captures the overrider not the original. Fix: add a second `addEventListener` on the rail icon buttons for the visit-tracking side effect instead of wrapping `railShowSection`.
 
