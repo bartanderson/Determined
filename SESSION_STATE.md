@@ -1,67 +1,67 @@
-Written at commit: 883dec7
+Written at commit: 6217782
 
-# SESSION STATE — session 212
-Written at commit: 883dec7 (2026-07-18)
+# SESSION STATE — session 213
+Written at commit: 6217782 (2026-07-18)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**_IMPL_WHEN_RE — SetFit false-positive fix [V — d8e9a63]**
-- `determined/agent/stub_classifier.py`
-- "will be implemented when X is built" was classified as concept-not-applicable (57%)
-  by SetFit. The scoring suppresses intent when removal fires (`if has_intent and not
-  has_removal`), so the classification compounded badly.
-- Fix: `_IMPL_WHEN_RE` fast-path added. `has_removal()` returns False early when matched;
-  `has_intent()` returns True early. Deterministic override of model.
-- Verified: `has_removal(text) = False`, `has_intent(text) = True` on the actual stub text.
-- 41 classify_stub tests pass [V].
+**Work queue items 1, 2, 4, 5, 6, 7 — all done [V]**
+Item 3 (RM68 dj2 subrace removal) skipped per memory: never suggest dj2 work.
 
-**Live UI walkthrough — dj2 + dungeoncrawler [V]**
-- Loaded dj2 corpus, exercised all three modes (Design/Trace/Review), spotlight,
-  shape tab, call tree, frontier, ask bar, topology.
-- Loaded dungeoncrawler (TS) corpus, confirmed call tree FQN bug live.
+---
 
-**Work queue filed in TRACKER.md [V — 883dec7]**
-- 7 items, priority ordered, each with file + line number.
-- See "Work queue — post-walkthrough" section at top of TRACKER.md.
+**Item 1 — Test stubs filter in _fetch_stubs() [V — 401e43f]**
+- `determined/agent/corpus_projections.py:85`
+- Added four NOT LIKE conditions (Unix + Windows, /test_% + /tests/) matching agent_tools.py:list_stubs.
+- All four projection tools now exclude test-file stubs.
+- Regression test: `test_file_shape_excludes_test_files` in test_corpus_projections.py. 36 pass [V].
+
+**Item 2 — TS call tree FQN fix [V — d83fbd0]**
+- `determined/agent/agent_tools.py` in `walk_call_chain`
+- When bare-name lookup returns None, retries with `WHERE name LIKE '%.' || ?` suffix.
+- Passes `row[0]` (stored FQN) to `_list_callees_raw` for correct callee lookup.
+- Regression test: `test_walk_chain_ts_fqn_fallback`. 15 pass [V].
+
+**Item 4 — classify_stub file_path_hint TS fix [V — 68349a8]**
+- `determined/agent/classify_stub.py:242` + agent_tools.py:annotate_function
+- `LOWER(REPLACE(...)) LIKE '%' || ?` suffix match replaces exact `file_path = ?`.
+- Falls back to name-only if normalized hint misses. 42 tests pass [V].
+
+**Item 5 — Ask routing fallback [V — ab7bafa]**
+- `_prioritize_from_stub_shape()` added before `prioritize_work` in agent_tools.py.
+- Calls stub_file_shape + stub_subsystem_shape when no workflow items or known issues exist.
+
+**Item 6 — Design Oracle [V — 471ee71]**
+- New `design_oracle` tool: CRITICAL / OPPORTUNITY / FOREWARNING, deterministic, no LLM.
+- CRITICAL: highest-fanout stub with prereq-language docstring.
+- OPPORTUNITY: unblocked stubs in same dir/file as `context` symbol.
+- FOREWARNING: prereq stubs on callee chain ahead of `context`.
+- Registered in TOOLS + tool_registry.py. 5 regression tests in test_design_oracle.py [V].
+
+**Item 7 — Polish [V — 6217782]**
+- graph_path FQN fallback: `_shortest_path_by_name()` in graph_utils.py, BFS over caller/callee when source_id BFS fails.
+- .db path auto-load: handle_scan in ui_server.py detects .db file, calls init() directly.
+- Non-db non-directory paths show hint: "to load an existing corpus, enter a .db file path".
 
 ## Tests [V]
-41 passed (test_classify_stub.py). No other engine files changed this session.
-Last known full suite: 1144 pass, 1 skip (session 209 / CLOSURE.md Phase 1c).
-
-## NEXT SESSION — start here
-
-**Pick up work queue item 1 from TRACKER.md:**
-
-Test stubs filter in `_fetch_stubs()`:
-- File: `determined/agent/corpus_projections.py:80`
-- Problem: `_fetch_stubs()` has no test-path filter; test files appear in shape output.
-- Fix: copy `NOT LIKE '%/test_%'` / `NOT LIKE '%\\test_%'` / `NOT LIKE '%/tests/%'` /
-  `NOT LIKE '%\\tests\\%'` conditions from `agent_tools.py:1646` into the WHERE clause
-  in `_fetch_stubs()`. One fix covers all four projection tools.
-- Test file: `tests/regression/test_corpus_projections.py` (check TEST_MAP.md to confirm).
-
-After that: item 2 (TS call tree FQN, `agent_tools.py:521`), then RM68.
+- test_corpus_projections.py: 36 pass
+- test_technique3.py: 15 pass
+- test_classify_stub.py: 42 pass
+- test_agent_tools.py: 57 pass
+- test_design_oracle.py: 5 pass (new)
+Full suite not re-run this session (+15 new tests added).
 
 ## Known issues [V = verified, ? = recalled]
 
-**Test stubs in shape output [V]:** `_fetch_stubs` in corpus_projections.py:80 has no
-  test-path filter. test_encounter_fsm.py shows as 33% density at top of file shape.
-  Fix described in TRACKER work queue item 1.
-**walk_call_chain TS/JS FQN [V]:** agent_tools.py:521 queries bare name; TS stores FQNs.
-  addLogMessage (dungeoncrawler, HOT) shows "(no callees)". Workaround: Graph tab.
-  Fix described in TRACKER work queue item 2.
-**classify_stub file_path_hint TS [V]:** agent_tools.py:4817 exact match fails for TS paths.
-  Workaround: omit file_path arg. Fix described in TRACKER work queue item 4.
-**Ask routing miss [V]:** "what should I work on next?" routes to prioritize_work, needs
-  workflow items. Returns "No active work items" when none exist. Fix: TRACKER item 5.
-**world/ verdict misleading [V]:** dead-concept dominant due to 5 subrace stubs (RM68).
-  Clears after RM68 removes them. TRACKER item 3.
-**_get_encounter_context misclassification [V — FIXED d8e9a63]:** was concept-not-applicable,
-  now correctly blocked-on-prerequisite via _IMPL_WHEN_RE.
-**Shape index symbols [?]:** only stub names in index; prereq map concept names may not
-  be clickable if not function names.
-**graph_path FQN inconsistency [V]:** some JS module.method pairs find path, others don't.
-  TRACKER item 7 (polish).
-**list_stubs [V]:** already filters test files correctly. The gap is corpus_projections.py only.
+**RM68 subrace dead code [?]:** still pending; dj2 game work, deferred by policy.
+**world/ verdict misleading [?]:** dead-concept dominant due to 5 subrace stubs; clears after RM68.
+**Shape index symbols [?]:** only stub names in index; prereq map concept names may not be clickable.
+**design_oracle FOREWARNING depth [?]:** BFS over callee chain may miss stubs if graph stores FQNs but chain uses bare names. Not tested against live corpus.
+
+## NEXT SESSION — start here
+
+All 7 work queue items done. Check `docs/CLOSURE.md` for next unchecked Phase 2/3 item.
+If CLOSURE.md is complete, next goal is UI redesign arc (docs/UI_VISION.md).
+Consider: run `design_oracle` against dj2 corpus live to exercise the new tool.
