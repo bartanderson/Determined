@@ -525,10 +525,19 @@ def walk_call_chain(
             """,
             (symbol,),
         ).fetchone()
+        if row is None and "." not in symbol:
+            # TS/JS stores functions as FQNs (Class.method); retry with suffix match
+            row = oracle.conn.execute(
+                """
+                SELECT name, file_path, is_stub, param_types_json, return_type, docstring
+                FROM functions WHERE name LIKE '%.' || ? LIMIT 1
+                """,
+                (symbol,),
+            ).fetchone()
         if row is None:
             continue
 
-        callee_rows = _list_callees_raw(oracle, symbol)
+        callee_rows = _list_callees_raw(oracle, row[0])
         callee_names = [r["callee"] for r in callee_rows]
 
         node = {

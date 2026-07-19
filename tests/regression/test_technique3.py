@@ -150,6 +150,38 @@ def test_walk_chain_callees_list():
     assert "B" in a_node["callees"]
 
 
+def test_walk_chain_ts_fqn_fallback():
+    """Bare name start resolves via FQN suffix when TS stores Class.method."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT, file_path TEXT, is_stub INTEGER DEFAULT 0,
+            param_types_json TEXT, return_type TEXT, docstring TEXT,
+            line_number INTEGER DEFAULT 1
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT, callee TEXT, edge_type TEXT DEFAULT 'static',
+            line_number INTEGER DEFAULT 1, resolved INTEGER DEFAULT 0
+        );
+        CREATE TABLE symbol_references (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT, caller TEXT, callee TEXT,
+            line_number INTEGER, bucket TEXT, edge_role TEXT
+        );
+    """)
+    # TS-style: stored as FQN; graph edges use FQN as caller
+    conn.execute("INSERT INTO functions VALUES ('UIManager.addLogMessage','ui.ts',0,'{}','void','',1)")
+    conn.execute("INSERT INTO functions VALUES ('Logger.write','logger.ts',1,'{}','void','',1)")
+    conn.execute("INSERT INTO graph_edges VALUES ('UIManager.addLogMessage','Logger.write','static',5,1)")
+    conn.commit()
+    oracle = _make_oracle(conn)
+    # start with bare name — should still resolve via FQN fallback
+    chain = walk_call_chain("addLogMessage", oracle)
+    names = [n["symbol"] for n in chain]
+    assert "UIManager.addLogMessage" in names
+    assert "Logger.write" in names
+
+
 # ------------------------------------------------------------------
 # detect_pattern — trace_call_chain
 # ------------------------------------------------------------------

@@ -364,7 +364,7 @@ Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off 
    stub_subsystem_shape, stub_prerequisite_map, stub_concept_ghost_map) call `_fetch_stubs`
    so one fix covers all. ~30 min.
 
-2. **[ ] TS call tree FQN fix** — `walk_call_chain` in `agent_tools.py:521` queries
+2. **[x] TS call tree FQN fix** — `walk_call_chain` in `agent_tools.py:521` queries
    `WHERE name = ?` with bare name. For TS, functions are stored as FQNs (UIManager.addLogMessage)
    not bare names — so lookup returns nothing and the tree shows "(no callees)".
    Fix: when bare-name row is None, retry with `WHERE name LIKE '%.?'` (FQN suffix match).
