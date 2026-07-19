@@ -7574,6 +7574,154 @@ def list_reconciliation_findings(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def design_oracle(assessor: "Assessor", args: dict) -> str:
+    """
+    design_oracle([context]) - surface CRITICAL / OPPORTUNITY / FOREWARNING signals.
+
+    CRITICAL   — highest-fanout blocked stub; overrides everything else.
+    OPPORTUNITY — unblocked stubs adjacent to context (cheap, unblocks something).
+    FOREWARNING — prereq stubs on the path ahead of current context.
+
+    Args:
+        context - symbol or subsystem you are currently working in (optional)
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+    context = args.get("context", "").strip()
+
+    # ── 1. Collect all stubs with caller counts ─────────────────────────────
+    stub_rows = conn.execute(
+        """
+        SELECT f.name, f.file_path, f.docstring, COUNT(ge.caller) AS caller_count
+        FROM functions f
+        LEFT JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        WHERE f.is_stub = 1
+          AND f.file_path NOT LIKE '%/test_%'
+          AND f.file_path NOT LIKE '%\\test_%'
+          AND f.file_path NOT LIKE '%/tests/%'
+          AND f.file_path NOT LIKE '%\\tests\\%'
+        GROUP BY f.name, f.file_path
+        ORDER BY caller_count DESC
+        """
+    ).fetchall()
+
+    if not stub_rows:
+        return "design_oracle: no stubs found in corpus."
+
+    # ── 2. Classify blockage (deterministic, no LLM) ────────────────────────
+    import re as _re
+    _PREREQ_WORDS = _re.compile(
+        r"\b(requires?|needs?|depends? on|blocked by|waiting for|after|once|when)\b",
+        _re.IGNORECASE,
+    )
+    _REMOVAL_WORDS = _re.compile(
+        r"\b(remove|delete|dead|deprecated|no longer|never|unused|delete this)\b",
+        _re.IGNORECASE,
+    )
+
+    def _is_blocked(docstring: str) -> bool:
+        return bool(_PREREQ_WORDS.search(docstring or ""))
+
+    def _is_unblocked(docstring: str) -> bool:
+        # Opportunity: not blocked, not marked for removal
+        return not _is_blocked(docstring) and not _REMOVAL_WORDS.search(docstring or "")
+
+    # ── 3. CRITICAL — highest-fanout blocked stub ───────────────────────────
+    critical = None
+    for name, fp, doc, count in stub_rows:
+        if _is_blocked(doc) and count > 0:
+            critical = (name, fp, doc, count)
+            break
+    # fallback: highest-fanout stub regardless
+    if critical is None:
+        critical = stub_rows[0]
+
+    # ── 4. Context-adjacent stubs for OPPORTUNITY ───────────────────────────
+    context_file = None
+    if context:
+        ctx_row = conn.execute(
+            "SELECT file_path FROM functions WHERE name = ? LIMIT 1", (context,)
+        ).fetchone()
+        if ctx_row:
+            context_file = ctx_row[0]
+
+    def _dkey(p: str) -> str:
+        parts = p.replace("\\", "/").split("/")
+        return "/".join(parts[:-1]) if len(parts) > 1 else "."
+
+    opportunities = []
+    for name, fp, doc, count in stub_rows:
+        if name == critical[0]:
+            continue
+        if not _is_unblocked(doc):
+            continue
+        if context_file and (
+            fp == context_file or
+            _dkey(fp) == _dkey(context_file)
+        ):
+            opportunities.append((name, fp, doc, count))
+        elif not context_file:
+            opportunities.append((name, fp, doc, count))
+        if len(opportunities) >= 2:
+            break
+
+    # ── 5. FOREWARNING — prereq stubs in callee chain from context ──────────
+    forewarnings = []
+    if context:
+        visited: set[str] = set()
+        queue = [context]
+        while queue and len(forewarnings) < 2:
+            sym = queue.pop(0)
+            if sym in visited:
+                continue
+            visited.add(sym)
+            callee_rows = conn.execute(
+                "SELECT callee FROM graph_edges WHERE caller = ? LIMIT 10", (sym,)
+            ).fetchall()
+            for (callee,) in callee_rows:
+                bare = callee.rsplit(".", 1)[-1]
+                match = conn.execute(
+                    "SELECT name, file_path, docstring FROM functions "
+                    "WHERE (name = ? OR name LIKE '%.' || ?) AND is_stub = 1 LIMIT 1",
+                    (callee, bare),
+                ).fetchone()
+                if match:
+                    fn, fp, doc = match
+                    if _is_blocked(doc) and fn not in [f[0] for f in forewarnings]:
+                        forewarnings.append((fn, fp, doc))
+                elif bare not in visited:
+                    queue.append(bare)
+
+    # ── 6. Format output ────────────────────────────────────────────────────
+    lines = ["=== Design Oracle ===", ""]
+
+    cn, cf, cd, cc = critical
+    cf_short = (cf or "").replace("\\", "/").split("/")[-1]
+    lines.append(f"CRITICAL — {cn}  [{cf_short}, {cc} caller(s)]")
+    lines.append(f"  {(cd or '(no docstring)').strip()[:160]}")
+    lines.append("  → Fix this before anything else downstream.")
+    lines.append("")
+
+    if opportunities:
+        lines.append(f"OPPORTUNITY ({len(opportunities)}):")
+        for on, of_, od, oc in opportunities:
+            of_short = (of_ or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"  {on}  [{of_short}] — {(od or '').strip()[:100]}")
+        lines.append("")
+
+    if forewarnings:
+        lines.append(f"FOREWARNING — prereqs on path ahead of '{context}':")
+        for fn, ff, fd in forewarnings:
+            ff_short = (ff or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"  {fn}  [{ff_short}] — {(fd or '').strip()[:100]}")
+        lines.append("")
+
+    if not context:
+        lines.append("Tip: pass context='<symbol>' to get OPPORTUNITY and FOREWARNING for your current work area.")
+
+    return "\n".join(lines)
+
+
 TOOLS = {
     "search_symbols":    (search_symbols,    "oracle"),
     "search_files":      (search_files,      "oracle"),
@@ -7680,6 +7828,8 @@ TOOLS = {
     "list_reconciliation_findings":     (list_reconciliation_findings,     "assessor"),
     "classify_duplicates":              (classify_duplicates,              "assessor"),
     "find_primitive_gaps":              (find_primitive_gaps,              "assessor"),
+    # Design Oracle
+    "design_oracle":                    (design_oracle,                    "assessor"),
 }
 
 

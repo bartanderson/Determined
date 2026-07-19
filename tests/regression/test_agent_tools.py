@@ -570,6 +570,8 @@ def test_dispatch_all_tools_registered():
         "stub_subsystem_shape",
         "stub_prerequisite_map",
         "stub_concept_ghost_map",
+        # Design Oracle
+        "design_oracle",
     }
 
     assert set(TOOLS.keys()) == expected

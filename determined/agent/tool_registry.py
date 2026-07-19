@@ -1028,6 +1028,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "When you need to know where the system receives external inputs -- what can be called from outside the corpus. Answer to 'what are the entry points of world/?'",
         "category": "exploration",
     },
+
+    # ── DESIGN ORACLE ────────────────────────────────────────────────
+    "design_oracle": {
+        "purpose": "Surface the three most actionable signals from the current corpus: CRITICAL (highest-fanout blocked stub), OPPORTUNITY (unblocked stubs adjacent to current work), FOREWARNING (prereq stubs on the path ahead). No LLM — deterministic query over stubs, graph edges, and docstring patterns.",
+        "args": {
+            "context": "(optional) symbol or subsystem you are working in — enables OPPORTUNITY and FOREWARNING signals",
+        },
+        "output": "CRITICAL stub with caller count; up to 2 OPPORTUNITYs if context provided; up to 2 FOREWARNINGs if a prereq chain exists ahead of context",
+        "feeds": ["classify_stub", "stub_file_shape", "prioritize_work"],
+        "use_when": "Session start or when asking 'what should I work on next?' — gives a ranked, evidence-backed recommendation without requiring workflow items to be populated.",
+        "category": "planning",
+    },
 }
 
 

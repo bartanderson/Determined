@@ -387,7 +387,7 @@ Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off 
    case and fall back to querying stub shape data (stub_file_shape, stub_subsystem_shape) to
    synthesize an answer. Entry point for the Design Oracle concept.
 
-6. **[ ] Design Oracle** — full CRITICAL/OPPORTUNITY/FOREWARNING query over knowledge_artifacts
+6. **[x] Design Oracle** — full CRITICAL/OPPORTUNITY/FOREWARNING query over knowledge_artifacts
    + stubs + graph. See FUTURE — Design Oracle section below for full design.
    Do after #5 proves the routing concept.
 
