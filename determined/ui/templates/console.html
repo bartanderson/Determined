@@ -363,6 +363,9 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <div class="trail-bar" id="trail-bar">
       <span class="trail-label">Trail:</span>
       <div class="trail-chips" id="trail-chips"></div>
+      <input id="sym-search" class="path-input" placeholder="⌘ symbol…" autocomplete="off"
+             style="width:140px;font-size:.78em;padding:2px 6px;margin-left:auto;flex-shrink:0"
+             title="Jump to any symbol — opens Spotlight directly">
       <button class="trail-export" id="trail-export" title="Export trail as session summary">Export</button>
       <button class="trail-clear" id="trail-clear" title="Clear trail">✕</button>
     </div>
@@ -902,9 +905,12 @@ socket.on("disconnect", () => {
 let _startupFiredFor = null;
 
 // server sends this immediately on connect if a corpus is already loaded
+let _corpusDesignNoteCount = 0;
+
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
   document.getElementById("status-db-name").textContent = data.db_name;
+  _corpusDesignNoteCount = (data.gap_summary && data.gap_summary.design_note_count) || 0;
   // Clear stale graphs — nodes belong to the old corpus and must not carry over
   if (_cy)    { _cy.destroy();    _cy    = null; }
   if (_igCy)  { _igCy.destroy(); _igCy  = null; }
@@ -1212,6 +1218,11 @@ function setMode(name) {
   // mode-specific entry point actions
   if (name === "design") {
     if (!_shapeLoaded) shapeRun();
+    // E2: warn if no design rules loaded
+    if (_corpusDesignNoteCount === 0) {
+      document.getElementById("mode-banner-hint").textContent =
+        "No design rules loaded — run ingest_design_docs first to use violations.";
+    }
   } else if (name === "trace") {
     fgMode.value = "direct";
     fgUpdateHint();
@@ -2743,6 +2754,20 @@ trailClear.addEventListener("click", () => {
   closeSpotlight();
 });
 
+// G2: global symbol search → Spotlight
+const symSearch = document.getElementById("sym-search");
+symSearch.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const v = symSearch.value.trim();
+    if (v) { openSpotlight(v); symSearch.value = ""; symSearch.blur(); }
+  }
+});
+// also open on blur if something was typed (convenience)
+symSearch.addEventListener("blur", () => {
+  const v = symSearch.value.trim();
+  if (v) { openSpotlight(v); symSearch.value = ""; }
+});
+
 trailExport.addEventListener("click", () => {
   if (!_trail.length) return;
   const lines = ["# Session Trail\n"];
@@ -3128,6 +3153,14 @@ socket.on("stub_score_result", data => {
   const riskColor = risk === "HOT" ? "#c0392b" : risk === "WARM" ? "#e67e22" : "#27ae60";
   const badge = `<span style="color:${riskColor};font-weight:bold">${risk}</span>`;
   fgStatus.innerHTML = `${data.symbol}  [stub]  ${data.file}:${data.line} &nbsp;·&nbsp; ${badge} · ${callers} callers`;
+  // D1: update node label inline with caller count so it's visible without clicking
+  if (_fgCy) {
+    const node = _fgCy.getElementById(data.symbol);
+    if (node.length) {
+      const shortName = data.symbol.split(".").pop();
+      node.data("label", `${shortName}\n(${callers} callers)`);
+    }
+  }
 });
 
 fgToQueue.addEventListener("click", () => {
