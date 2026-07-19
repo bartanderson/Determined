@@ -4,7 +4,7 @@
     {
       "name": "determined-ui",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
-      "runtimeArgs": ["determined\\agent\\local_agent.py", "C_Users_bartl_dev_dj2.db", "--ui", "--port", "5050"],
+      "runtimeArgs": ["-m", "determined.ui.ui_server"],
       "port": 5050
     }
   ]
