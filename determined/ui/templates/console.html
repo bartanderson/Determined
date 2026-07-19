@@ -876,7 +876,7 @@ function tpBind(inputId, btnId, fn) {
 
 tpBind("tp-open-file",    "tp-open-file-btn",   v => { edOpenFile(v); activateTab("editor"); });
 tpBind("tp-inspect-sym",  "tp-inspect-sym-btn",  v => openSpotlight(v));
-tpBind("tp-callers",       "tp-callers-btn",       v => tpQuery(`blast radius of ${v}`));
+tpBind("tp-callers",       "tp-callers-btn",       v => socket.emit("blast_radius", {target: v}));
 tpBind("tp-feature-shape", "tp-feature-shape-btn", v => tpQuery(`feature shape ${v}`));
 tpBind("tp-violations",    "tp-violations-btn",    v => tpQuery(`check design violations for ${v}`));
 tpBind("tp-explain",       "tp-explain-btn",       v => tpQuery(`explain ${v}`));
@@ -1305,7 +1305,7 @@ const _MODE_NAV = {
   trace: {
     label: "🔗 Trace actions",
     items: [
-      { icon: "↙", label: "blast radius",  form: { placeholder: "symbol_name", query: v => `blast radius of ${v}` } },
+      { icon: "↙", label: "blast radius",  form: { placeholder: "symbol_name", direct: v => socket.emit("blast_radius", {target: v}) } },
       { icon: "⛓", label: "call tree",     action: () => activateTab("call_tree") },
       { icon: "🕸", label: "graph",         action: () => activateTab("graph") },
     ],
@@ -1344,7 +1344,7 @@ function updateNavModeActions(mode) {
       btn.className = "tp-btn";
       btn.textContent = "▶";
       btn.style.cssText = "padding:2px 5px;font-size:.72em;flex-shrink:0";
-      const run = () => { const v = inp.value.trim(); if (v) { tpQuery(it.form.query(v)); inp.value = ""; } };
+      const run = () => { const v = inp.value.trim(); if (v) { if (it.form.direct) it.form.direct(v); else tpQuery(it.form.query(v)); inp.value = ""; } };
       btn.addEventListener("click", run);
       inp.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
       row.appendChild(lbl); row.appendChild(inp); row.appendChild(btn);
@@ -1973,6 +1973,94 @@ function addErrorBlock(msg) {
   results.scrollTop = results.scrollHeight;
 }
 
+// ── blast radius renderer (B3) ───────────────────────────────────────────────
+// Detects "Blast radius of 'X'" output and renders callers as clickable rows
+// with an expandable <details> section for extended impact.
+function tryBlastRadiusRender(text) {
+  if (!text.startsWith("Blast radius of '")) return null;
+
+  const lines = text.split("\n");
+  const header = lines[0];
+  const wrap = document.createElement("div");
+  wrap.className = "sl-wrap";
+
+  // header line
+  const hdrEl = document.createElement("div");
+  hdrEl.style.cssText = "font-size:.8em;color:var(--text2);padding:2px 0 6px;font-weight:600";
+  hdrEl.textContent = header;
+  wrap.appendChild(hdrEl);
+
+  // parse sections: "Section label:" followed by indented items
+  let mode = null;
+  const callers = [], extended = [];
+  let riskLine = "";
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^Direct callers/.test(line))          { mode = "callers"; continue; }
+    if (/^Extended impact/.test(line))         { mode = "extended"; continue; }
+    if (/^Risk factors/.test(line))            { mode = null; riskLine = line; continue; }
+    if (mode === "callers"  && line.startsWith("  ")) callers.push(line.trim());
+    if (mode === "extended" && line.startsWith("  ")) extended.push(line.trim());
+  }
+
+  // callers section
+  const realCallers = callers.filter(c => c !== "(none)");
+  const callerSec = document.createElement("div");
+  callerSec.className = "sl-section";
+  const callerHdr = document.createElement("div");
+  callerHdr.className = "sl-heading";
+  callerHdr.textContent = `Direct callers (${realCallers.length})`;
+  callerSec.appendChild(callerHdr);
+  if (!realCallers.length) {
+    const empty = document.createElement("div");
+    empty.className = "sl-empty";
+    empty.textContent = "No direct callers — safe to remove";
+    callerSec.appendChild(empty);
+  } else {
+    realCallers.forEach(name => {
+      const row = document.createElement("div");
+      row.className = "sl-row";
+      row.innerHTML = `<span class="sl-icon">↙</span><span class="sl-label">${escHtml(name)}</span>`;
+      row.addEventListener("click", () => openSpotlight(name));
+      callerSec.appendChild(row);
+    });
+  }
+  wrap.appendChild(callerSec);
+
+  // extended impact — collapsible
+  if (extended.length) {
+    const det = document.createElement("details");
+    det.style.cssText = "margin-top:6px";
+    const sum = document.createElement("summary");
+    sum.style.cssText = "font-size:.75em;color:var(--text3);cursor:pointer;user-select:none;list-style:none;padding:2px 0";
+    sum.textContent = `Extended impact (${extended.length} symbols) ▸`;
+    det.addEventListener("toggle", () => { sum.textContent = `Extended impact (${extended.length} symbols) ${det.open ? "▾" : "▸"}`; });
+    det.appendChild(sum);
+    const extBody = document.createElement("div");
+    extBody.className = "sl-section";
+    extBody.style.marginTop = "4px";
+    extended.forEach(name => {
+      const row = document.createElement("div");
+      row.className = "sl-row";
+      row.innerHTML = `<span class="sl-icon">⬡</span><span class="sl-label">${escHtml(name)}</span>`;
+      row.addEventListener("click", () => openSpotlight(name));
+      extBody.appendChild(row);
+    });
+    det.appendChild(extBody);
+    wrap.appendChild(det);
+  }
+
+  // risk factors
+  if (riskLine) {
+    const rf = document.createElement("div");
+    rf.style.cssText = "font-size:.75em;color:var(--text3);margin-top:6px";
+    rf.textContent = riskLine;
+    wrap.appendChild(rf);
+  }
+
+  return wrap;
+}
+
 // ── structured list renderer ─────────────────────────────────────────────────
 // Detects survey-style answers (Files: / Symbols: / Call relationships: /
 // Stored findings: sections) and renders them as clickable row lists.
@@ -2080,7 +2168,7 @@ function addResultBlock(question, answer, trace) {
 
   // split answer body from follow-ups (separated by blank line starting with ">")
   const parts    = splitFollowups(answer);
-  const structured = tryStructuredRender(parts.body);
+  const structured = tryBlastRadiusRender(parts.body) || tryStructuredRender(parts.body);
   const bodyText = structured ? "" : colorize(parts.body);
   const followupHtml = parts.followups.length
     ? `<div class="followups">
@@ -3997,6 +4085,15 @@ function topoLoad() {
   topoEmpty.style.display = "none";
   socket.emit("get_topology");
 }
+
+socket.on("blast_radius_result", data => {
+  activateTab("chat");
+  if (data.error) {
+    addResultBlock("blast radius", `Error: ${data.error}`, null);
+  } else {
+    addResultBlock(`blast radius of ${data.target}`, data.text, null);
+  }
+});
 
 socket.on("topology_result", data => {
   topoStatus.textContent = "";

@@ -1318,6 +1318,20 @@ def _frontier_rows(conn, mode: str):
     return _run(caller_stub=0, callee_stub=1)  # default: direct
 
 
+@socketio.on("blast_radius")
+def handle_blast_radius(data):
+    """Direct (non-LLM) blast_radius call. Emits blast_radius_result with raw tool text."""
+    target = (data.get("target") or "").strip()
+    if not target or _oracle is None:
+        emit("blast_radius_result", {"error": "no corpus or missing target"}); return
+    try:
+        from determined.agent.agent_tools import blast_radius as _blast_radius
+        text = _blast_radius(_oracle, {"target": target})
+        emit("blast_radius_result", {"target": target, "text": text})
+    except Exception as e:
+        emit("blast_radius_result", {"error": str(e)})
+
+
 @socketio.on("get_topology")
 def handle_get_topology():
     """Return detect_topology() + frontier_coverage() as combined text."""

@@ -187,21 +187,25 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
             badge = ""
 
         lines = [f"Blast radius of '{target}' {badge}:".strip()]
+
         if not callers:
-            lines.append("  No direct callers found — removing this symbol appears safe.")
+            lines.append("Direct callers:")
+            lines.append("  (none)")
         else:
-            caller_names = [c["caller"] for c in callers[:5]]
-            suffix = f" (+{len(callers)-5} more)" if len(callers) > 5 else ""
-            lines.append(f"  Direct callers ({len(callers)}): {', '.join(caller_names)}{suffix}")
+            lines.append(f"Direct callers ({len(callers)}):")
+            for c in callers:
+                lines.append(f"  {c['caller']}")
 
         # Extended impact via subgraph
         sg = _graph_subgraph_raw(oracle, target, radius=2)
         extended = sorted(set(sg.get("nodes", [])) - {target})
         if extended:
-            lines.append(f"  Extended impact ({len(extended)} symbols): {', '.join(extended[:5])}" + (f" ..." if len(extended) > 5 else ""))
+            lines.append(f"Extended impact ({len(extended)} symbols):")
+            for sym in extended:
+                lines.append(f"  {sym}")
 
         if risk.get("reasons"):
-            lines.append(f"  Risk factors: {'; '.join(risk['reasons'][:3])}")
+            lines.append(f"Risk factors: {'; '.join(risk['reasons'][:3])}")
 
         return "\n".join(lines)
 
