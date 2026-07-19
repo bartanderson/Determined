@@ -1094,10 +1094,56 @@ function renderCorpusMap(data) {
     tabBar.appendChild(coreTab);
     corpusMapInner.appendChild(tabBar);
 
-    const rootsSec = eps.length  ? _mapSection("", eps.map(e  => ({ name: e.name, count: e.out_degree,   countIcon: "↗", risk: e.risk, badge: (e.ep_type === "http" ? "🌐" : "⚙") + (e.badge ? " " + e.badge : "") }))) : null;
+    // ── A3: module filter chips ──────────────────────────────
+    const epModules = [...new Set(eps.map(e => e.module).filter(Boolean))];
+    let activeModule = null; // null = All (top 8)
+    const EP_DEFAULT_LIMIT = 8;
+
+    const toEpItems = (list) => list.map(e => ({
+      name: e.name, count: e.out_degree, countIcon: "↗", risk: e.risk,
+      badge: (e.ep_type === "http" ? "🌐" : "⚙") + (e.badge ? " " + e.badge : "")
+    }));
+
+    const chipRow = document.createElement("div");
+    chipRow.style.cssText = "display:flex;flex-wrap:wrap;gap:3px;margin-bottom:3px";
+
+    let rootsSec = eps.length ? _mapSection("", toEpItems(eps.slice(0, EP_DEFAULT_LIMIT))) : null;
+    const rootsWrap = document.createElement("div");
+    if (rootsSec) rootsWrap.appendChild(rootsSec);
+
+    if (epModules.length >= 2) {
+      const makeChip = (label, mod) => {
+        const c = document.createElement("span");
+        c.textContent = label;
+        c.dataset.mod = mod || "";
+        c.style.cssText = "font-size:.68em;padding:1px 7px;border-radius:10px;cursor:pointer;border:1px solid var(--border2);color:var(--text2);background:none;user-select:none";
+        c.addEventListener("click", () => {
+          activeModule = mod;
+          chipRow.querySelectorAll("span").forEach(x => {
+            const isActive = x.dataset.mod === (mod || "");
+            x.style.background = isActive ? "var(--blue)" : "none";
+            x.style.color = isActive ? "#fff" : "var(--text2)";
+            x.style.borderColor = isActive ? "var(--blue)" : "var(--border2)";
+          });
+          const filtered = mod ? eps.filter(e => e.module === mod) : eps.slice(0, EP_DEFAULT_LIMIT);
+          rootsWrap.innerHTML = "";
+          rootsSec = filtered.length ? _mapSection("", toEpItems(filtered)) : null;
+          if (rootsSec) { rootsWrap.appendChild(rootsSec); attachSymbolHandlers(rootsWrap); }
+        });
+        return c;
+      };
+      const allChip = makeChip("All", null);
+      allChip.style.background = "var(--blue)";
+      allChip.style.color = "#fff";
+      allChip.style.borderColor = "var(--blue)";
+      chipRow.appendChild(allChip);
+      epModules.forEach(m => chipRow.appendChild(makeChip(m + "/", m)));
+      corpusMapInner.appendChild(chipRow);
+    }
+
     const coreSec  = hots.length ? _mapSection("", hots.map(h => ({ name: h.name, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }))) : null;
 
-    if (rootsSec) corpusMapInner.appendChild(rootsSec);
+    corpusMapInner.appendChild(rootsWrap);
     if (coreSec)  { coreSec.style.display = "none"; corpusMapInner.appendChild(coreSec); }
 
     const activate = (showRoots) => {
@@ -1105,7 +1151,8 @@ function renderCorpusMap(data) {
       rootsTab.style.color      = showRoots ? "var(--text1)"    : "var(--text3)";
       coreTab.style.background  = showRoots ? ""                : "var(--surface2)";
       coreTab.style.color       = showRoots ? "var(--text3)"    : "var(--text1)";
-      if (rootsSec) rootsSec.style.display = showRoots ? "" : "none";
+      rootsWrap.style.display   = showRoots ? "" : "none";
+      chipRow.style.display     = showRoots ? "" : "none";
       if (coreSec)  coreSec.style.display  = showRoots ? "none" : "";
     };
     rootsTab.addEventListener("click", () => activate(true));

@@ -234,13 +234,21 @@ def _corpus_map_data() -> dict:
     except Exception:
         pass
 
+    project_root = Path(_oracle.get_project_root()).resolve()
     top_eps = []
-    for ep in eps[:8]:
+    for ep in eps:
         level, badge = _risk_for(ep["name"])
         ep_type = "http" if ep["name"] in _http_names else "inferred"
+        fp = ep["file_path"] or ""
+        try:
+            rel = Path(fp).resolve().relative_to(project_root)
+            module = rel.parts[0] if len(rel.parts) > 1 else ""
+        except ValueError:
+            module = ""
         top_eps.append({
             "name": ep["name"],
-            "file": Path(ep["file_path"]).name if ep["file_path"] else "",
+            "file": Path(fp).name if fp else "",
+            "module": module,
             "out_degree": ep["out_degree"],
             "risk": level,
             "badge": badge,
