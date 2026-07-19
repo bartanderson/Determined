@@ -8,6 +8,18 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-19: blast_radius module filter chips need relative paths, not parts[0].
+file_path in DB is absolute (C:/Users/bartl/dev/dj2/world/foo.py). Path.parts[0]
+returns 'C:\\' not 'world'. Fix: relative_to(oracle.get_project_root().resolve()).
+Server also must send ALL entry points (not [:8]) so chip filters have full data;
+client caps default display at 8, module-filtered view shows all.
+
+2026-07-19: Tools panel blast_radius shortcut goes through LLM which narrates result.
+tryBlastRadiusRender only works on raw tool text starting "Blast radius of '...".
+Fix: add dedicated blast_radius socket event that bypasses LLM; client handles
+blast_radius_result and calls activateTab("chat") before addResultBlock so result
+is visible (panel-chat is hidden when a tab like Graph is active).
+
 2026-07-19: parse_ast caller FQN was always bare -- graph_edges stored __init__ not WorldAI.__init__.
 visit_FunctionDef set current_function = node.name, dropping class context. Fixed to
 ClassName.method when inside a class. Both Visitor and _Visitor needed the fix. Re-ingest
