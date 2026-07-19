@@ -220,15 +220,31 @@ def _corpus_map_data() -> dict:
         return level, risk_badge(level) if level else ""
 
     eps = find_entry_points(_oracle)
+    # build a set of HTTP-registered function names from decorators
+    _http_names: set[str] = set()
+    try:
+        for (name, dec_json) in _oracle.conn.execute(
+            "SELECT name, decorators_json FROM functions WHERE decorators_json IS NOT NULL"
+        ).fetchall():
+            import json as _j
+            decs = _j.loads(dec_json or "[]")
+            if any(("route" in d or "on(" in d or "get(" in d or "post(" in d or
+                    "put(" in d or "delete(" in d or "socketio" in d) for d in decs):
+                _http_names.add(name)
+    except Exception:
+        pass
+
     top_eps = []
     for ep in eps[:8]:
         level, badge = _risk_for(ep["name"])
+        ep_type = "http" if ep["name"] in _http_names else "inferred"
         top_eps.append({
             "name": ep["name"],
             "file": Path(ep["file_path"]).name if ep["file_path"] else "",
             "out_degree": ep["out_degree"],
             "risk": level,
             "badge": badge,
+            "ep_type": ep_type,
         })
 
     # Hot symbols: use most_connected which correctly excludes builtins/externals

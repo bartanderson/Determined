@@ -1094,7 +1094,7 @@ function renderCorpusMap(data) {
     tabBar.appendChild(coreTab);
     corpusMapInner.appendChild(tabBar);
 
-    const rootsSec = eps.length  ? _mapSection("", eps.map(e  => ({ name: e.name, count: e.out_degree,   countIcon: "↗", risk: e.risk, badge: e.badge }))) : null;
+    const rootsSec = eps.length  ? _mapSection("", eps.map(e  => ({ name: e.name, count: e.out_degree,   countIcon: "↗", risk: e.risk, badge: (e.ep_type === "http" ? "🌐" : "⚙") + (e.badge ? " " + e.badge : "") }))) : null;
     const coreSec  = hots.length ? _mapSection("", hots.map(h => ({ name: h.name, count: h.caller_count, countIcon: "↙", risk: h.risk, badge: h.badge }))) : null;
 
     if (rootsSec) corpusMapInner.appendChild(rootsSec);
