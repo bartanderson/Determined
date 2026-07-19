@@ -102,6 +102,26 @@ def _dir_key(file_path: str) -> str:
     return "/".join(parts[:-1]) if len(parts) > 1 else "."
 
 
+def _project_rel_fn(oracle):
+    """
+    Return a callable that trims a directory path to project-relative form.
+    DB stores absolute paths — the A3 trap: parts[0] of an absolute path is
+    the drive, not the module. Falls back to identity when no root is known
+    (e.g. in-memory test DBs with relative paths).
+    """
+    try:
+        root = oracle.get_project_root().replace("\\", "/").rstrip("/")
+    except Exception:
+        root = ""
+
+    def rel(directory: str) -> str:
+        d = directory.replace("\\", "/")
+        if root and d.lower().startswith(root.lower()):
+            d = d[len(root):].lstrip("/")
+        return d or "."
+    return rel
+
+
 def _classify_stub_row(oracle, name: str, file_path: str) -> tuple[str, list[dict]]:
     """
     Run extract_signals + score_hypotheses for a single stub row.
@@ -113,6 +133,47 @@ def _classify_stub_row(oracle, name: str, file_path: str) -> tuple[str, list[dic
     hypotheses = score_hypotheses(signals)
     top = hypotheses[0]["classification"] if hypotheses else "genuinely-unknown"
     return top, hypotheses
+
+
+def _live_symbol_names(conn) -> tuple[set, set]:
+    """Return (class_names_lower, non_stub_fn_names_lower) for ghost matching."""
+    class_names = {
+        r[0].lower()
+        for r in conn.execute("SELECT name FROM classes").fetchall()
+    }
+    fn_names = {
+        r[0].lower()
+        for r in conn.execute("SELECT name FROM functions WHERE is_stub = 0").fetchall()
+    }
+    return class_names, fn_names
+
+
+def _concept_snake(concept: str) -> str:
+    """CamelCase or SuffixFSM → snake_case for fn-name matching."""
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', concept)
+    s = re.sub(r'([a-z\d])([A-Z])', r'\1_\2', s)
+    return s.lower()
+
+
+def _concept_matches(concept: str, class_names: set, fn_names: set) -> str:
+    """
+    Return verdict for a concept: 'live', 'partial', or 'ghost'.
+
+    Class match: the concept name (lowercased, no spaces) appears as a
+    substring of a class name, or vice-versa — using the FULL concept, not
+    the suffix-stripped base.  This avoids 'CombatFSM' → base 'Combat'
+    matching '_validate_combat'.
+
+    Function match (partial): the snake_case form of the full concept appears
+    as a substring in a function name (e.g. 'combat_fsm' in 'combat_fsm_init').
+    """
+    concept_lower = concept.lower().replace(" ", "")
+    class_hit = any(concept_lower in cn or cn in concept_lower for cn in class_names)
+    if class_hit:
+        return "live"
+    snake = _concept_snake(concept)
+    fn_hit = any(snake in fn or fn in snake for fn in fn_names if len(snake) >= 5)
+    return "partial" if fn_hit else "ghost"
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +288,10 @@ def stub_subsystem_shape(assessor: "Assessor", args: dict) -> str:
 
     results.sort(key=lambda r: r[0], reverse=True)
 
+    _rel_dir = _project_rel_fn(oracle)
     lines = [f"stub_subsystem_shape{' (scope: ' + scope + ')' if scope else ''}\n"]
     for stub_count, directory, dominant, verdict, classifications in results:
-        lines.append(f"  {directory}/  ({stub_count} stub{'s' if stub_count != 1 else ''})")
+        lines.append(f"  {_rel_dir(directory)}/  ({stub_count} stub{'s' if stub_count != 1 else ''})")
         lines.append(f"    verdict: {verdict}  dominant: {dominant}")
         cls_summary = ", ".join(f"{c}({classifications.count(c)})" for c in sorted(set(classifications)))
         lines.append(f"    breakdown: {cls_summary}")
@@ -335,42 +397,7 @@ def stub_concept_ghost_map(assessor: "Assessor", args: dict) -> str:
 
     from determined.agent.agent_tools import _extract_docstring_concepts
 
-    import re as _re
-
-    class_names_lower = {
-        r[0].lower()
-        for r in conn.execute("SELECT name FROM classes").fetchall()
-    }
-    fn_names_lower = {
-        r[0].lower()
-        for r in conn.execute("SELECT name FROM functions WHERE is_stub = 0").fetchall()
-    }
-
-    def _concept_snake(concept: str) -> str:
-        """CamelCase or SuffixFSM → snake_case for fn-name matching."""
-        s = _re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', concept)
-        s = _re.sub(r'([a-z\d])([A-Z])', r'\1_\2', s)
-        return s.lower()
-
-    def _concept_matches(concept: str, class_names: set, fn_names: set) -> str:
-        """
-        Return verdict for a concept: 'live', 'partial', or 'ghost'.
-
-        Class match: the concept name (lowercased, no spaces) appears as a
-        substring of a class name, or vice-versa — using the FULL concept, not
-        the suffix-stripped base.  This avoids 'CombatFSM' → base 'Combat'
-        matching '_validate_combat'.
-
-        Function match (partial): the snake_case form of the full concept appears
-        as a substring in a function name (e.g. 'combat_fsm' in 'combat_fsm_init').
-        """
-        concept_lower = concept.lower().replace(" ", "")
-        class_hit = any(concept_lower in cn or cn in concept_lower for cn in class_names)
-        if class_hit:
-            return "live"
-        snake = _concept_snake(concept)
-        fn_hit = any(snake in fn or fn in snake for fn in fn_names if len(snake) >= 5)
-        return "partial" if fn_hit else "ghost"
+    class_names_lower, fn_names_lower = _live_symbol_names(conn)
 
     # concept -> {verdict, stubs_referencing}
     concept_data: dict[str, dict] = {}
@@ -415,6 +442,103 @@ def stub_concept_ghost_map(assessor: "Assessor", args: dict) -> str:
         for s in stubs:
             lines.append(f"    · {s}")
         lines.append("")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool 5: stub_corpus_verdict (the Shape home verdict strip)
+# ---------------------------------------------------------------------------
+
+def stub_corpus_verdict(assessor: "Assessor", args: dict) -> str:
+    """
+    stub_corpus_verdict([scope]) — one-line-per-finding deterministic synthesis
+    across the four shape projections. The UI verdict strip renders this
+    directly; it is also callable as an agent tool.
+
+    Lines emitted (each only when the underlying fact exists):
+      · headline: stub count, subsystem count, actionable count, ghost count
+      · top subsystems by stub count with their verdict (max 2)
+      · ghost concepts (max 3), most-referenced first
+      · top build prerequisite (only if 2+ stubs share it)
+
+    Args:
+        scope: (optional) directory prefix, e.g. "world/" to restrict scope
+    """
+    oracle = assessor.oracle
+    conn = oracle.conn
+    scope = args.get("scope", "").strip().replace("\\", "/").rstrip("/")
+
+    stub_rows = _fetch_stubs(conn, scope)
+    scoped = f" (scope: {scope})" if scope else ""
+    if not stub_rows:
+        return (
+            f"corpus_verdict{scoped}\n"
+            "  · 0 stubs — no implementation frontier detected."
+        )
+
+    # Actionable stubs: distinct stub callees with at least one non-stub caller
+    # (same definition the Frontier graph uses).
+    from determined.agent.graph_utils import frontier_rows
+    stub_names = {r[0] for r in stub_rows}
+    actionable = {
+        callee for _, _, _, callee, _, _ in frontier_rows(conn, "direct")
+        if callee in stub_names
+    }
+
+    # Subsystem verdicts (same aggregation as stub_subsystem_shape)
+    by_dir: dict[str, list[tuple]] = defaultdict(list)
+    for row in stub_rows:
+        fp = (row[1] or "unknown").replace("\\", "/")
+        by_dir[_dir_key(fp)].append(row)
+
+    _rel_dir = _project_rel_fn(oracle)
+    sub_lines = []
+    for directory, stubs in sorted(by_dir.items(), key=lambda kv: len(kv[1]), reverse=True)[:2]:
+        classifications = [
+            _classify_stub_row(oracle, name, file_path or "")[0]
+            for name, file_path, _, _ in stubs
+        ]
+        dominant = _dominant(classifications)
+        verdict = _subsystem_verdict(dominant, classifications)
+        dom_count = classifications.count(dominant) if dominant != "mixed" else 0
+        detail = f" ({dom_count}/{len(stubs)} {dominant})" if dom_count else ""
+        sub_lines.append(f"  · {_rel_dir(directory)}/  {verdict}{detail}")
+
+    # Ghost concepts (same matching as stub_concept_ghost_map)
+    from determined.agent.agent_tools import _extract_docstring_concepts
+    class_names, fn_names = _live_symbol_names(conn)
+    ghost_refs: dict[str, int] = defaultdict(int)
+    for _, _, _, docstring in stub_rows:
+        for concept in _extract_docstring_concepts(docstring or ""):
+            if _concept_matches(concept, class_names, fn_names) == "ghost":
+                ghost_refs[concept] += 1
+    ghosts = sorted(ghost_refs.items(), key=lambda kv: -kv[1])[:3]
+
+    # Top shared prerequisite (same extraction as stub_prerequisite_map)
+    from determined.agent.classify_stub import _extract_body
+    prereq_counts: dict[str, int] = defaultdict(int)
+    for name, file_path, line_number, docstring in stub_rows:
+        _, inline = _extract_body(file_path, line_number)
+        text = " ".join(filter(None, [docstring, inline]))
+        for p in _extract_prerequisites(text):
+            prereq_counts[p] += 1
+    top_prereq = max(prereq_counts.items(), key=lambda kv: kv[1], default=None)
+
+    lines = [
+        f"corpus_verdict{scoped}",
+        f"  · {len(stub_rows)} stub{'s' if len(stub_rows) != 1 else ''} "
+        f"in {len(by_dir)} subsystem{'s' if len(by_dir) != 1 else ''}"
+        f" · {len(actionable)} actionable (live callers)"
+        f" · {len(ghost_refs)} ghost concept{'s' if len(ghost_refs) != 1 else ''}",
+    ]
+    lines.extend(sub_lines)
+    for concept, refs in ghosts:
+        lines.append(f"  · [GHOST] {concept} — {refs} stub reference{'s' if refs != 1 else ''}")
+    if top_prereq and top_prereq[1] >= 2:
+        pr_name, pr_count = top_prereq
+        tag = "HIGH" if pr_count >= 3 else "MED"
+        lines.append(f"  · [{tag}] {pr_name} — {pr_count} stubs blocked on it")
 
     return "\n".join(lines)
 

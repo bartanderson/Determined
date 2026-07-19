@@ -70,48 +70,15 @@ body {
 }
 
 /* ── shell ─────────────────────────────────────────────── */
+/* Two columns: fixed structure column + main stage. The icon rail and its
+   section-switching were removed in the shape-first redesign (Phase A). */
 .shell {
   display: grid;
-  grid-template-columns: 40px 210px 1fr;
+  grid-template-columns: 230px 1fr;
   grid-template-rows: 36px 1fr 36px;
   height: 100vh;
   overflow: hidden;
-  transition: grid-template-columns .18s ease;
 }
-.shell.panel-collapsed {
-  grid-template-columns: 40px 0 1fr;
-}
-
-/* ── icon rail ───────────────────────────────────────────── */
-.icon-rail {
-  grid-row: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 0;
-  background: var(--bg2);
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-}
-.rail-spacer { flex: 1; }
-.rail-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text3);
-  font-size: 16px;
-  cursor: pointer;
-  transition: background .1s, color .1s, border-color .1s;
-  flex-shrink: 0;
-}
-.rail-icon:hover { background: var(--bg3); color: var(--text2); }
-.rail-icon.active { background: var(--bg3); color: var(--text); border-color: var(--border2); }
 
 /* ── topbar ─────────────────────────────────────────────── */
 .topbar {
@@ -149,10 +116,6 @@ body {
   flex-direction: column;
   transition: width .18s ease;
   min-width: 0;
-}
-.shell.panel-collapsed .sidebar-panel {
-  overflow: hidden;
-  width: 0;
 }
 .sb-section {
   display: flex;

@@ -476,3 +476,40 @@ def subgraph_around(oracle: "DBOracle", symbol: str, radius: int = 2, resolved_o
     edges = [(r[0], r[1]) for r in edges if r[0] in visited and r[1] in visited]
 
     return {"nodes": sorted(visited), "edges": edges, "reasons": reasons}
+
+
+# ------------------------------------------------------------------
+# Implementation frontier (stubs and their callers)
+# ------------------------------------------------------------------
+
+def frontier_rows(conn, mode: str = "direct"):
+    """
+    Authoritative frontier query, shared by the UI frontier graph and the
+    corpus verdict. Moved from ui_server.py so "actionable stub" has one
+    definition.
+
+    Modes:
+      direct — functional callers of stubs  (the actionable frontier)
+      chain  — stubs that call other stubs
+      all    — both combined
+    Returns rows of (caller_name, caller_file, caller_line,
+                     callee_name, callee_file, callee_line).
+    """
+    def _run(caller_stub: int, callee_stub: int):
+        return conn.execute("""
+            SELECT DISTINCT f_caller.name, f_caller.file_path, f_caller.line_number,
+                            f_callee.name, f_callee.file_path, f_callee.line_number
+            FROM graph_edges ge
+            JOIN functions f_caller ON ge.source_id = f_caller.name
+            JOIN functions f_callee ON (
+                ge.target_id = f_callee.name
+                OR ge.target_id LIKE '%.' || f_callee.name
+            )
+            WHERE f_caller.is_stub = ? AND f_callee.is_stub = 1
+        """, (caller_stub,)).fetchall()
+
+    if mode == "chain":
+        return _run(caller_stub=1, callee_stub=1)
+    if mode == "all":
+        return _run(0, 1) + _run(1, 1)
+    return _run(caller_stub=0, callee_stub=1)  # default: direct

@@ -97,12 +97,7 @@
 .result-pin-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.85em;padding:0 3px;line-height:1;flex-shrink:0;margin-left:auto}
 .result-pin-btn:hover,.result-pin-btn.pinned{color:var(--orange)}
 /* ── rail dot progress indicators ── */
-.rail-icon{position:relative}
-.rail-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:transparent;transition:background .2s}
-.guide-on .rail-dot[data-state="unvisited"]{background:transparent}
-.guide-on .rail-dot[data-state="red"]{background:#e05050}
-.guide-on .rail-dot[data-state="amber"]{background:#c98c00}
-.guide-on .rail-dot[data-state="green"]{background:#3a9a5c}
+/* rail-dot CSS removed with the icon rail (shape-first redesign Phase A) */
 
 /* ── guide card ── */
 #guide-card{display:none;padding:7px 14px 8px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:.8em;line-height:1.5}
@@ -211,21 +206,14 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <div id="design-doc-notice" style="display:none;font-size:11px;color:var(--orange);padding:2px 8px;max-width:320px" title="Run ingest_design_docs to extract rules from these files"><span id="design-doc-notice-msg"></span> <button onclick="this.parentElement.style.display='none'" style="border:none;background:none;cursor:pointer;color:var(--text2);font-size:10px">✕</button></div>
   </div>
 
-  <!-- ── icon rail ── -->
-  <div class="icon-rail" id="icon-rail">
-    <button class="rail-icon active" data-section="corpus" title="Corpus — analyze / switch">🗄<span class="rail-dot" data-key="rail:corpus" data-state="unvisited"></span></button>
-    <button class="rail-icon" data-section="navigate" title="Navigate — start here, corpus map">🧭<span class="rail-dot" data-key="rail:navigate" data-state="unvisited"></span></button>
-    <button class="rail-icon" data-section="tools" title="Tools — query shortcuts">🔧<span class="rail-dot" data-key="rail:tools" data-state="unvisited"></span></button>
-    <button class="rail-icon" id="investigate-rail-icon" data-section="investigate" title="Investigation — pin clues, reason across findings">🔍</button>
-    <div class="rail-spacer"></div>
-    <button class="rail-icon" id="ask-rail-icon" data-section="ask" title="Ask / chat">💬<span class="rail-dot" data-key="rail:ask" data-state="unvisited"></span></button>
-  </div>
-
-  <!-- ── sidebar panel ── -->
+  <!-- ── sidebar panel (single fixed structure column — no rail, no section switching) ── -->
   <div class="sidebar-panel" id="sidebar-panel">
 
     <!-- Corpus section -->
     <div class="sb-section" id="sb-corpus">
+      <div class="sidebar-section" id="corpus-map" style="display:none">
+        <div id="corpus-map-inner"></div>
+      </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Analyze</div>
         <div class="sidebar-ingest">
@@ -235,16 +223,10 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <div id="ingest-hint" style="font-size:.73em;color:var(--text3);padding:4px 2px 0;line-height:1.5">Point at any Python project folder. Determined reads the source, builds a call graph, and stores everything in a local DB for instant querying.<br><br><strong style="color:var(--text2)">New project?</strong> Write your first <code>.py</code> file to the directory, then click Analyze to bootstrap the corpus. After that, use Re-analyze or reingest_file for incremental updates.</div>
         </div>
       </div>
-      <div class="sidebar-section" id="corpus-map" style="display:none">
-        <div id="corpus-map-inner"></div>
-      </div>
     </div>
 
     <!-- Navigate section -->
-    <div class="sb-section" id="sb-navigate" style="display:none">
-
-      <!-- Compact corpus stats (populated from corpus_ready) -->
-      <div id="nav-corpus-stats" style="display:none;font-size:.75em;color:var(--text3);padding:4px 6px 2px;border-bottom:1px solid var(--border);line-height:1.6"></div>
+    <div class="sb-section" id="sb-navigate">
 
       <!-- Design Oracle panel -->
       <div class="sidebar-section" id="nav-oracle-section">
@@ -288,7 +270,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     </div>
 
     <!-- Tools section -->
-    <div class="sb-section" id="sb-tools" style="display:none">
+    <div class="sb-section" id="sb-tools">
       <div class="sidebar-section" id="tool-picker-section">
         <div class="sidebar-label">Tools</div>
         <div id="tool-picker-body" class="sb-tools-body">
@@ -339,7 +321,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     </div>
 
     <!-- Investigation section (RM42) -->
-    <div class="sb-section" id="sb-investigate" style="display:none">
+    <div class="sb-section" id="sb-investigate">
       <div class="sidebar-section">
         <div class="sidebar-label">Investigation</div>
         <div id="clue-list"></div>
@@ -399,7 +381,8 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
     <!-- tab bar -->
     <div class="tab-bar" id="tab-bar">
       <!-- Primary 6 — always visible -->
-      <button class="tab tab-nodot tab-primary active" data-tab="frontier">Frontier</button>
+      <button class="tab tab-nodot tab-primary active" data-tab="shape" title="Corpus shape — judgment projections: what the system is becoming, what's blocked, what's dead">Shape</button>
+      <button class="tab tab-nodot tab-primary" data-tab="frontier">Frontier<span id="frontier-tab-badge" style="display:none;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--bg3);border:1px solid var(--border2);font-size:.78em;color:var(--orange)"></span></button>
       <button class="tab tab-nodot tab-primary" data-tab="call_tree">Call tree</button>
       <button class="tab tab-nodot tab-primary" data-tab="graph">Graph</button>
       <button class="tab tab-nodot tab-primary" data-tab="editor">Editor</button>
@@ -416,7 +399,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <button class="tab tab-nodot" data-tab="build_queue">Build queue</button>
           <button class="tab tab-nodot" data-tab="waypoints">Pins</button>
           <button class="tab tab-nodot" data-tab="topology">Topology</button>
-          <button class="tab tab-nodot" data-tab="shape" title="Corpus shape — RM69 judgment projections: file density, subsystem verdicts, prerequisite map, concept ghosts">Shape</button>
           <button class="tab tab-nodot" data-tab="tour" title="Guided tour of Determined using the Commonplace corpus">Tour</button>
           <button class="tab tab-nodot" data-tab="discovery" title="AI-driven sequencing over your corpus">Discovery</button>
           <button class="tab tab-nodot" data-tab="logs" title="Live server log">Logs</button>
@@ -473,7 +455,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       </div>
 
       <!-- ── frontier graph tab ── -->
-      <div class="tab-panel active" id="panel-frontier" style="flex-direction:column;min-height:0">
+      <div class="tab-panel" id="panel-frontier" style="flex-direction:column;min-height:0">
         <div class="graph-toolbar" style="flex-shrink:0;gap:.4rem">
           <span style="color:var(--text2);font-size:.85em">Frontier</span>
           <select id="fg-mode" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:.82em">
@@ -642,7 +624,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
       </div>
 
       <!-- ── shape tab (RM69 corpus projections) ── -->
-      <div class="tab-panel" id="panel-shape" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+      <div class="tab-panel active" id="panel-shape" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
           <strong style="font-size:.95em">Corpus Shape</strong>
           <span style="font-size:.8em;color:var(--text3)">judgment-layer projections — file density, subsystem verdicts, prerequisites, concept ghosts</span>
@@ -651,6 +633,7 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
           <span id="shape-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
           <span id="shape-status" style="font-size:.78em;color:var(--text3);margin-left:auto"></span>
         </div>
+        <div id="shape-verdict" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;font-family:var(--font-mono);font-size:.85em;line-height:1.7;white-space:pre-wrap"></div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="shape-card" id="shape-file">
             <div class="shape-card-hdr">File shape <span class="shape-hint">stub density per file</span></div>
@@ -851,12 +834,10 @@ const queryBar  = document.getElementById("query-bar");
 function showQueryBar() {
   queryBar.style.display = "";
   input.focus();
-  document.getElementById("ask-rail-icon").classList.add("active");
 }
 function hideQueryBar() {
   queryBar.style.display = "none";
   _askPinned = false;
-  document.getElementById("ask-rail-icon").classList.remove("active");
 }
 // _askPinned is declared near activateTab; hoisted here for showQueryBar/hideQueryBar use
 var _askPinned = false;
@@ -961,30 +942,13 @@ socket.on("corpus_ready", data => {
   // handle_connect fires corpus_ready again after reload with the new DB already active.
   if (data.switched) { window.location.reload(); return; }
 
-  // Populate Navigate section corpus stats line
-  const navStats = document.getElementById("nav-corpus-stats");
-  if (navStats) {
-    const stubTxt = data.stubs > 0 ? ` · <span style="color:var(--blue)">${data.stubs} stubs</span>` : "";
-    navStats.innerHTML = `${data.files || "?"} files · ${data.hot || 0} hot${stubTxt}`;
-    navStats.style.display = "";
-  }
-
   // Same-corpus refresh (ingest complete, corpus_status ping): do lightweight updates.
   if (_startupFiredFor !== data.db_path) {
     _startupFiredFor = data.db_path;
     bagFetch();
     if (data.top_entry) ctTrace(data.top_entry);
-    fgLoad_();  // auto-load Frontier on corpus ready
-    // Auto-switch sidebar to Navigate so the oracle panel is the first thing visible
-    if (_railSection !== "navigate") {
-      _railSection = "navigate";
-      _panelOpen   = true;
-      const shell = document.querySelector(".shell");
-      if (shell) shell.classList.remove("panel-collapsed");
-      railShowSection("navigate");
-      document.querySelectorAll(".rail-icon:not([data-section='ask'])").forEach(b =>
-        b.classList.toggle("active", b.dataset.section === "navigate"));
-    }
+    fgLoad_();      // auto-load Frontier on corpus ready
+    shapeRun();     // auto-run Shape home — the on-load headline (deterministic)
     if (data.design_doc_hint) {
       const h = data.design_doc_hint;
       const notice = document.getElementById("design-doc-notice");
@@ -1397,8 +1361,6 @@ socket.on("oracle_result", data => {
     result.style.color = "var(--text2)";
   }
   result.style.display = "";
-  // switch rail to navigate so user sees the result
-  if (_railSection !== "navigate") { _railSection = "navigate"; railShowSection("navigate"); }
 });
 
 // ── tabs ──────────────────────────────────────────────────
@@ -3141,6 +3103,15 @@ function fgLoad_() {
 }
 
 socket.on("frontier_graph_result", data => {
+  // Tab badge: actionable stub count, visible without opening the tab
+  if (data.mode === "direct") {
+    const badge = document.getElementById("frontier-tab-badge");
+    if (badge) {
+      const n = data.stub_count || 0;
+      badge.textContent = n;
+      badge.style.display = n > 0 ? "" : "none";
+    }
+  }
   if (data.error) { fgStatus.textContent = `Error: ${data.error}`; return; }
   if (!data.nodes || !data.nodes.length) {
     fgStatus.textContent = "No frontier edges found for this mode.";
@@ -3713,42 +3684,10 @@ edPopoutBtn.addEventListener("click", () => {
   }
 });
 
-// ── icon rail ─────────────────────────────────────────────
-let _railSection = "corpus";
-let _panelOpen   = true;
-
-function railShowSection(section) {
-  ["corpus","navigate","tools","investigate"].forEach(s => {
-    document.getElementById("sb-" + s).style.display = (s === section) ? "" : "none";
-  });
-}
-
-document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const section = btn.dataset.section;
-    if (section === "ask") {
-      const visible = queryBar.style.display !== "none";
-      if (visible) {
-        hideQueryBar();
-      } else {
-        _askPinned = true;
-        showQueryBar();
-      }
-      return;
-    }
-    if (section === _railSection && _panelOpen) {
-      _panelOpen = false;
-      shell.classList.add("panel-collapsed");
-    } else {
-      _railSection = section;
-      _panelOpen   = true;
-      shell.classList.remove("panel-collapsed");
-      railShowSection(section);
-    }
-    document.querySelectorAll(".rail-icon:not([data-section='ask'])").forEach(b =>
-      b.classList.toggle("active", b.dataset.section === _railSection && _panelOpen));
-  });
-});
+// ── sidebar ───────────────────────────────────────────────
+// Single fixed structure column: all sections always visible, no rail,
+// no section-switching state. (The rail's hidden-section state machine is
+// what hid the corpus map on load — Phase A of the redesign deleted it.)
 
 // wire bag file items: clicking a file path opens it in editor
 function edAttachBagFileLinks(container) {
@@ -4161,6 +4100,9 @@ function shapeRun() {
   shapeRunning.style.display = "";
   shapeRunBtn.disabled = true;
   shapeStatus.textContent = "";
+  const verdictEl = document.getElementById("shape-verdict");
+  verdictEl.style.display = "";
+  verdictEl.textContent = "Running…";
   Object.values(_shapePres).forEach(p => { p.textContent = "Running…"; });
   socket.emit("shape_run", { scope: shapeScopeIn.value.trim() });
 }
@@ -4171,11 +4113,19 @@ socket.on("shape_result", data => {
   _shapeLoaded = true;
   if (data.error) {
     shapeStatus.textContent = data.error;
+    document.getElementById("shape-verdict").style.display = "none";
     Object.values(_shapePres).forEach(p => { p.textContent = ""; });
     return;
   }
   _shapeIndex = data.index || { files: {}, symbols: [] };
   const r = data.results || {};
+  const verdictEl = document.getElementById("shape-verdict");
+  if (r.verdict) {
+    verdictEl.style.display = "";
+    verdictEl.innerHTML = _colorizeShape(r.verdict);
+  } else {
+    verdictEl.style.display = "none";
+  }
   _shapePres.file_shape.innerHTML      = _colorizeShape(r.file_shape      || "no data");
   _shapePres.subsystem_shape.innerHTML = _colorizeShape(r.subsystem_shape || "no data");
   _shapePres.prereq_map.innerHTML      = _colorizeShape(r.prereq_map      || "no data");
@@ -4187,7 +4137,9 @@ socket.on("shape_result", data => {
 shapeRunBtn.addEventListener("click", shapeRun);
 shapeScopeIn.addEventListener("keydown", e => { if (e.key === "Enter") shapeRun(); });
 document.querySelectorAll(".tab[data-tab='shape']").forEach(t => {
-  t.addEventListener("click", () => { if (!_shapeLoaded) shapeRun(); });
+  // corpus_ready auto-runs Shape; only re-run here if that never fired
+  // (shapeRunBtn is disabled while a run is in flight)
+  t.addEventListener("click", () => { if (!_shapeLoaded && !shapeRunBtn.disabled) shapeRun(); });
 });
 
 // Delegated click handler for shape nav spans
@@ -4579,7 +4531,7 @@ const gcNotice        = document.getElementById("gc-notice");
 
 let _guideOn = false;
 let _isCommonplace = false;
-let _activeTabName = "chat";
+let _activeTabName = "shape";
 let _activePhase = "skeleton";
 let _phaseDbs = {};
 
@@ -4891,7 +4843,7 @@ function guideSetOn(on) {
   _guideOn = on;
   guideToggleBtn.classList.toggle("guide-on", on);
   guideToggleBtn.textContent = on ? "☀ Guide" : "○ Guide";
-  iconRail.classList.toggle("guide-on", on);
+  if (iconRail) iconRail.classList.toggle("guide-on", on);
   guideUpdateDots();
   guideUpdateCard();
 }

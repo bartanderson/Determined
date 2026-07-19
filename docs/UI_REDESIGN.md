@@ -118,13 +118,14 @@ Every panel gets the focus/popout treatment the editor already has
 peripheral controls). The structure column is the only always-visible
 peripheral; it never switches sections.
 
-## Tab consolidation (17 → 7)
+## Tab consolidation (17 → 8)
 
 | New tab | Absorbs | Notes |
 |---|---|---|
 | **Shape** (home) | Shape + verdict strip + Design Oracle result | Auto-runs on load (deterministic). Progressive per-quadrant fill. |
 | **Frontier** | Frontier + Build queue + Doc health | All three are "work to do" lenses over the same intent. Lens selector inside the tab. |
-| **Map** | Graph + Imports + Call tree + Topology | All graph views over the same corpus; one surface, view selector, seeded by trail context. |
+| **Map** | Graph + Imports + Topology | Cytoscape views over the same corpus; one surface, view selector, seeded by trail context. |
+| **Call tree** | Call tree | Stays standalone (decision 4) — tree widget, not Cytoscape. |
 | **Editor** | Editor (+ file tree) | Opens with a file tree / recent-files list from the DB so it self-presents. Stays the symbol-level nav hub. |
 | **Knowledge** | Knowledge + Pins + Bag | Accumulated-context surfaces: artifacts, pinned clues, session bag. |
 | **Workbench** | Workbench | Parity backstop — every tool, grouped forms. Unchanged. |
@@ -170,10 +171,15 @@ applied to UI state).
 
 ## Phasing (each step shippable, XX)
 
-- **Phase A — Shape-first home + one sidebar.** Move Shape to first
-  position, auto-run on load, add verdict strip. Collapse rail sections
-  into the fixed structure column; delete the auto-switch. Kill the
+- **Phase A — Shape-first home + one sidebar. (DONE 2026-07-19)** Move Shape
+  to first position, auto-run on load, add verdict strip. Collapse rail
+  sections into the fixed structure column; delete the auto-switch. Kill the
   duplicate stats line. _This alone meets the gate criterion._
+  Shipped: `stub_corpus_verdict` tool (deterministic, registered for
+  UI-CLI parity), `frontier_rows` moved to graph_utils (one owner for
+  "actionable stub"), Frontier tab count badge, subsystem-shape paths made
+  project-relative. Verified live against dj2: cold load self-presents
+  corpus map + gaps + verdict strip + 4 quadrants + badge, zero user action.
 - **Phase B — Consolidation.** Merge Frontier/Build queue/Doc health;
   merge the four graph views into Map; fold Pins+Bag into Knowledge;
   delete modes; move Tour/Discovery/Logs behind ⚙.
@@ -185,16 +191,19 @@ Phase A is small (shell wiring, no new backend). Phase B is the bulk
 (HTML/JS moves, one new lens selector, no engine changes). Phase C touches
 one new server query (file tree) and the drill-down plumbing.
 
-## Open questions (for pressure before Phase A)
+## Decisions (2026-07-19, Bart)
 
-1. Verdict strip synthesis: deterministic template over the four projection
-   outputs, or is a one-shot LLM summary worth the latency/dependency?
-   (Sketch assumes deterministic; LLM adds a narrative layer later.)
+1. **Everything deterministic; AI on top.** The verdict strip and all shape
+   surfaces stay deterministic. An optional AI summary can sit over the top
+   of the whole home surface, adding nuance to the evident facts — it never
+   replaces or gates them. (Later layer, not Phase A.)
+4. **Call tree keeps its own tab.** Map absorbs Graph + Imports + Topology
+   only. Revisit after the redesign only if it proves to be a real issue.
+
+## Open questions (for pressure before Phase B)
+
 2. Frontier/Doc-health merge: doc proposals are accept/dismiss workflow,
    stubs are navigate-and-implement. Same tab, or does Doc health belong
    under Knowledge instead?
 3. Does the Design Oracle stay in the structure column (cached verdict +
    Run) or become a fifth card on the Shape home?
-4. Map merge: Call tree is a tree widget, not Cytoscape — merging it into
-   Map may cost more than the tab it saves. Keep as its own view or leave
-   Call tree standalone?

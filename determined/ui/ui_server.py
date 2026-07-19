@@ -1290,32 +1290,8 @@ def handle_graph_path(data):
         emit("graph_path_result", {"error": str(exc)})
 
 
-def _frontier_rows(conn, mode: str):
-    """
-    Core frontier query parameterized by mode:
-      direct — functional callers of stubs  (amber -> red)
-      chain  — stubs that call other stubs  (gray  -> red)
-      all    — both combined
-    Returns rows of (caller_name, caller_file, caller_line, callee_name, callee_file, callee_line).
-    """
-    def _run(caller_stub: int, callee_stub: int):
-        return conn.execute("""
-            SELECT DISTINCT f_caller.name, f_caller.file_path, f_caller.line_number,
-                            f_callee.name, f_callee.file_path, f_callee.line_number
-            FROM graph_edges ge
-            JOIN functions f_caller ON ge.source_id = f_caller.name
-            JOIN functions f_callee ON (
-                ge.target_id = f_callee.name
-                OR ge.target_id LIKE '%.' || f_callee.name
-            )
-            WHERE f_caller.is_stub = ? AND f_callee.is_stub = 1
-        """, (caller_stub,)).fetchall()
-
-    if mode == "chain":
-        return _run(caller_stub=1, callee_stub=1)
-    if mode == "all":
-        return _run(0, 1) + _run(1, 1)
-    return _run(caller_stub=0, callee_stub=1)  # default: direct
+# Frontier query lives in graph_utils.frontier_rows (shared with corpus verdict).
+from determined.agent.graph_utils import frontier_rows as _frontier_rows
 
 
 @socketio.on("blast_radius")
@@ -2697,6 +2673,7 @@ def handle_shape_run(data):
             args = {"scope": scope} if scope else {}
             results = {}
             for key, tool_name in [
+                ("verdict",        "stub_corpus_verdict"),
                 ("file_shape",     "stub_file_shape"),
                 ("subsystem_shape","stub_subsystem_shape"),
                 ("prereq_map",     "stub_prerequisite_map"),

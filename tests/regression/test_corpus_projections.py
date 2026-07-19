@@ -436,3 +436,87 @@ def test_concept_ghost_map_scope_filter():
     result = stub_concept_ghost_map(_FakeAssessor(conn), {"scope": "world"})
     assert "CombatFSM" in result
     assert "RunnerEngine" not in result
+
+
+# ---------------------------------------------------------------------------
+# stub_corpus_verdict
+# ---------------------------------------------------------------------------
+
+def test_corpus_verdict_no_stubs():
+    from determined.agent.corpus_projections import stub_corpus_verdict
+    conn = _make_db()
+    result = stub_corpus_verdict(_FakeAssessor(conn), {})
+    assert "0 stubs" in result
+
+
+def test_corpus_verdict_headline_counts():
+    from determined.agent.corpus_projections import stub_corpus_verdict
+    conn = _make_db(stubs=[
+        {"name": "s1", "file_path": "world/a.py"},
+        {"name": "s2", "file_path": "world/b.py"},
+        {"name": "s3", "file_path": "engine/c.py"},
+    ])
+    result = stub_corpus_verdict(_FakeAssessor(conn), {})
+    assert "3 stubs" in result
+    assert "2 subsystems" in result
+
+
+def test_corpus_verdict_actionable_count():
+    """A stub with a non-stub caller counts as actionable; one without doesn't."""
+    from determined.agent.corpus_projections import stub_corpus_verdict
+    conn = _make_db(
+        stubs=[
+            {"name": "called_stub", "file_path": "world/a.py"},
+            {"name": "orphan_stub", "file_path": "world/b.py"},
+        ],
+        non_stubs=[{"name": "live_caller", "file_path": "world/c.py"}],
+    )
+    conn.execute(
+        "INSERT INTO graph_edges (caller, callee, caller_file, source_id, target_id) "
+        "VALUES ('live_caller', 'called_stub', 'world/c.py', 'live_caller', 'called_stub')"
+    )
+    conn.commit()
+    result = stub_corpus_verdict(_FakeAssessor(conn), {})
+    assert "1 actionable" in result
+
+
+def test_corpus_verdict_ghost_line():
+    from determined.agent.corpus_projections import stub_corpus_verdict
+    conn = _make_db(stubs=[
+        {"name": "s1", "file_path": "world/a.py",
+         "docstring": "Query CombatFSM for combat state."},
+    ])
+    result = stub_corpus_verdict(_FakeAssessor(conn), {})
+    assert "[GHOST] CombatFSM" in result
+
+
+def test_corpus_verdict_prereq_line_needs_two():
+    """Prerequisite line appears only when 2+ stubs share the prerequisite."""
+    from determined.agent.corpus_projections import stub_corpus_verdict
+    one = _make_db(stubs=[
+        {"name": "s1", "file_path": "world/a.py",
+         "docstring": "blocked on ActionQueue"},
+    ])
+    result_one = stub_corpus_verdict(_FakeAssessor(one), {})
+    assert "blocked on it" not in result_one
+
+    two = _make_db(stubs=[
+        {"name": "s1", "file_path": "world/a.py",
+         "docstring": "blocked on ActionQueue"},
+        {"name": "s2", "file_path": "world/b.py",
+         "docstring": "waiting on ActionQueue"},
+    ])
+    result_two = stub_corpus_verdict(_FakeAssessor(two), {})
+    assert "ActionQueue" in result_two
+    assert "2 stubs blocked on it" in result_two
+
+
+def test_corpus_verdict_relative_dir_display():
+    """Absolute file paths under the project root display project-relative."""
+    from determined.agent.corpus_projections import stub_corpus_verdict
+    conn = _make_db(stubs=[
+        {"name": "s1", "file_path": "C:/fake/world/a.py"},
+    ])
+    result = stub_corpus_verdict(_FakeAssessor(conn), {})
+    assert "C:/fake" not in result
+    assert "world/" in result

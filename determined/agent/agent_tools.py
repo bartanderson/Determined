@@ -8624,11 +8624,13 @@ from determined.agent.corpus_projections import (  # noqa: E402
     stub_subsystem_shape,
     stub_prerequisite_map,
     stub_concept_ghost_map,
+    stub_corpus_verdict,
 )
 TOOLS["stub_file_shape"]        = (stub_file_shape,        "assessor")
 TOOLS["stub_subsystem_shape"]   = (stub_subsystem_shape,   "assessor")
 TOOLS["stub_prerequisite_map"]  = (stub_prerequisite_map,  "assessor")
 TOOLS["stub_concept_ghost_map"] = (stub_concept_ghost_map, "assessor")
+TOOLS["stub_corpus_verdict"]    = (stub_corpus_verdict,    "assessor")
 
 
 # ------------------------------------------------------------------
