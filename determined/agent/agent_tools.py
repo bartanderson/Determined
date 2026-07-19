@@ -3082,6 +3082,39 @@ def workflow_status(assessor: "Assessor", args: dict) -> str:
 _WIP_MARKERS = ("in progress", "in-progress", "wip", "underway", "started")
 
 
+def _prioritize_from_stub_shape(assessor) -> str:
+    """
+    Fallback for prioritize_work when no workflow items exist.
+    Queries stub density by file and subsystem and returns a 3-line suggestion.
+    """
+    oracle = getattr(assessor, "oracle", None)
+    if oracle is None:
+        return ""
+    try:
+        from determined.agent.corpus_projections import stub_file_shape, stub_subsystem_shape
+        file_out = stub_file_shape(assessor, {})
+        sub_out = stub_subsystem_shape(assessor, {})
+        if "no stubs" in file_out.lower() and "no stubs" in sub_out.lower():
+            return ""
+        lines = []
+        # Pull first file line (highest density)
+        for line in file_out.splitlines():
+            if line.strip() and not line.startswith("Stub") and "density" in line:
+                lines.append(f"  High-stub file: {line.strip()}")
+                break
+        # Pull first subsystem
+        for line in sub_out.splitlines():
+            if line.strip() and not line.startswith("Stub") and "/" in line:
+                lines.append(f"  High-stub subsystem: {line.strip()}")
+                break
+        if not lines:
+            return ""
+        lines.append("  Run stub_file_shape() or stub_subsystem_shape() for full breakdown.")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def prioritize_work(assessor: "Assessor", args: dict) -> str:
     """
     prioritize_work() - infer what to work on next from workflow signals.
@@ -3134,7 +3167,13 @@ def prioritize_work(assessor: "Assessor", args: dict) -> str:
                      f"(open confirmed issue, no active workflow items)")
         lines.append(f"    {issues[0]['content'][:200]}")
     else:
-        lines.append(">>> No active work items. Add next_up items or run discovery.")
+        # No workflow items and no known issues — synthesize from stub shape
+        stub_summary = _prioritize_from_stub_shape(assessor)
+        if stub_summary:
+            lines.append(">>> No active work items. Stub shape suggests:")
+            lines.append(stub_summary)
+        else:
+            lines.append(">>> No active work items. Add next_up items or run discovery.")
     lines.append("")
 
     def emit(title: str, items: list[dict]):

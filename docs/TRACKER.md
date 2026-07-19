@@ -382,7 +382,7 @@ Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off 
    or case mismatch vs what the caller passes. Fix: normalize both sides (replace \\ with /,
    lower) before compare, or use `LIKE` with normalized suffix. Workaround: omit file_path arg.
 
-5. **[ ] Ask routing baseline** — "what should I work on next?" hits `prioritize_work` which
+5. **[x] Ask routing baseline** — "what should I work on next?" hits `prioritize_work` which
    needs workflow items; returns "No active work items" when none exist. Fix: detect the empty
    case and fall back to querying stub shape data (stub_file_shape, stub_subsystem_shape) to
    synthesize an answer. Entry point for the Design Oracle concept.
