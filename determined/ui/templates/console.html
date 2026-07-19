@@ -242,8 +242,33 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
 
     <!-- Navigate section -->
     <div class="sb-section" id="sb-navigate" style="display:none">
-      <div class="sidebar-section">
-        <div class="sidebar-label">Start here</div>
+
+      <!-- Compact corpus stats (populated from corpus_ready) -->
+      <div id="nav-corpus-stats" style="display:none;font-size:.75em;color:var(--text3);padding:4px 6px 2px;border-bottom:1px solid var(--border);line-height:1.6"></div>
+
+      <!-- Design Oracle panel -->
+      <div class="sidebar-section" id="nav-oracle-section">
+        <div class="sidebar-label" style="display:flex;align-items:center;gap:5px">
+          Design Oracle
+          <span style="font-size:.7em;color:var(--text3);font-weight:400">CRITICAL · OPPORTUNITY · FOREWARNING</span>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <input id="oracle-ctx-input" class="tp-input" placeholder="context symbol (optional)" autocomplete="off" style="flex:1">
+          <button id="oracle-run-btn" class="tp-btn">Run</button>
+        </div>
+        <div id="oracle-result" style="display:none;font-size:.78em;line-height:1.55;white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:7px 9px;color:var(--text2);max-height:260px;overflow-y:auto"></div>
+        <div id="oracle-spinner" style="display:none;font-size:.75em;color:var(--accent);padding:3px 2px">Running…</div>
+      </div>
+
+      <!-- Mode-specific quick actions (swapped per active mode) -->
+      <div class="sidebar-section" id="nav-mode-actions" style="display:none">
+        <div class="sidebar-label" id="nav-mode-label"></div>
+        <div id="nav-mode-items"></div>
+      </div>
+
+      <!-- Generic quick actions -->
+      <div class="sidebar-section" id="nav-generic-actions">
+        <div class="sidebar-label">Quick actions</div>
         <div class="sidebar-item" data-submit="what should I work on">
           <span class="icon">☑</span>work queue
         </div>
@@ -252,9 +277,6 @@ body.mode-trace .trail-bar { border-color:var(--orange);background:rgba(200,100,
         </div>
         <div class="sidebar-item" data-submit="what haven't you explored">
           <span class="icon">○</span>unexplored
-        </div>
-        <div class="sidebar-item" data-submit="discover more">
-          <span class="icon">◎</span>discover
         </div>
         <div class="sidebar-item" data-submit="what functions are missing docstrings">
           <span class="icon">⚠</span>docstrings
@@ -914,12 +936,30 @@ socket.on("corpus_ready", data => {
   // handle_connect fires corpus_ready again after reload with the new DB already active.
   if (data.switched) { window.location.reload(); return; }
 
+  // Populate Navigate section corpus stats line
+  const navStats = document.getElementById("nav-corpus-stats");
+  if (navStats) {
+    const stubTxt = data.stubs > 0 ? ` · <span style="color:var(--blue)">${data.stubs} stubs</span>` : "";
+    navStats.innerHTML = `${data.files || "?"} files · ${data.hot || 0} hot${stubTxt}`;
+    navStats.style.display = "";
+  }
+
   // Same-corpus refresh (ingest complete, corpus_status ping): do lightweight updates.
   if (_startupFiredFor !== data.db_path) {
     _startupFiredFor = data.db_path;
     bagFetch();
     if (data.top_entry) ctTrace(data.top_entry);
     fgLoad_();  // auto-load Frontier on corpus ready
+    // Auto-switch sidebar to Navigate so the oracle panel is the first thing visible
+    if (_railSection !== "navigate") {
+      _railSection = "navigate";
+      _panelOpen   = true;
+      const shell = document.querySelector(".shell");
+      if (shell) shell.classList.remove("panel-collapsed");
+      railShowSection("navigate");
+      document.querySelectorAll(".rail-icon:not([data-section='ask'])").forEach(b =>
+        b.classList.toggle("active", b.dataset.section === "navigate"));
+    }
     if (data.design_doc_hint) {
       const h = data.design_doc_hint;
       const notice = document.getElementById("design-doc-notice");
@@ -1163,8 +1203,102 @@ function clearMode() {
 }
 
 document.querySelectorAll(".mode-btn").forEach(b =>
-  b.addEventListener("click", () => setMode(b.dataset.mode)));
-document.getElementById("mode-banner-clear").addEventListener("click", clearMode);
+  b.addEventListener("click", () => { setMode(b.dataset.mode); updateNavModeActions(b.dataset.mode); }));
+document.getElementById("mode-banner-clear").addEventListener("click", () => { clearMode(); updateNavModeActions(null); });
+
+// ── Design Oracle sidebar panel ───────────────────────────
+const _MODE_NAV = {
+  design: {
+    label: "📐 Design actions",
+    items: [
+      { icon: "⬡", label: "corpus shape",    submit: "show corpus shape" },
+      { icon: "📖", label: "knowledge",       action: () => activateTab("knowledge") },
+      { icon: "⚖",  label: "violations",     submit: "check design violations" },
+    ],
+  },
+  trace: {
+    label: "🔗 Trace actions",
+    items: [
+      { icon: "↙", label: "blast radius",     submit: "who are the hottest symbols" },
+      { icon: "⛓", label: "call tree",        action: () => activateTab("call_tree") },
+      { icon: "🕸", label: "graph",            action: () => activateTab("graph") },
+    ],
+  },
+  review: {
+    label: "✅ Review actions",
+    items: [
+      { icon: "⚠", label: "doc health",       action: () => activateTab("dochealth") },
+      { icon: "☑", label: "build queue",      action: () => activateTab("build_queue") },
+      { icon: "∅", label: "orphaned impls",   submit: "find orphaned implementations" },
+    ],
+  },
+};
+
+function updateNavModeActions(mode) {
+  const section  = document.getElementById("nav-mode-actions");
+  const label    = document.getElementById("nav-mode-label");
+  const items    = document.getElementById("nav-mode-items");
+  if (!mode || !_MODE_NAV[mode]) { section.style.display = "none"; return; }
+  const cfg = _MODE_NAV[mode];
+  label.textContent = cfg.label;
+  items.innerHTML = "";
+  cfg.items.forEach(it => {
+    const d = document.createElement("div");
+    d.className = "sidebar-item";
+    d.innerHTML = `<span class="icon">${it.icon}</span>${it.label}`;
+    if (it.action) d.addEventListener("click", it.action);
+    else if (it.submit) d.dataset.submit = it.submit;
+    items.appendChild(d);
+  });
+  // re-wire data-submit items inside nav-mode-items
+  items.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
+    el.addEventListener("click", () => {
+      const q = el.dataset.submit;
+      if (q) { showQueryBar(); input.value = q; sendBtn.click(); }
+    });
+  });
+  section.style.display = "";
+}
+
+(function wireOraclePanel() {
+  const runBtn  = document.getElementById("oracle-run-btn");
+  const ctxInp  = document.getElementById("oracle-ctx-input");
+  const result  = document.getElementById("oracle-result");
+  const spinner = document.getElementById("oracle-spinner");
+  if (!runBtn) return;
+
+  function runOracle() {
+    const ctx = ctxInp ? ctxInp.value.trim() : "";
+    result.style.display = "none";
+    spinner.style.display = "";
+    socket.emit("oracle_run", { context: ctx });
+  }
+
+  runBtn.addEventListener("click", runOracle);
+  if (ctxInp) ctxInp.addEventListener("keydown", e => { if (e.key === "Enter") runOracle(); });
+})();
+
+socket.on("oracle_result", data => {
+  const result  = document.getElementById("oracle-result");
+  const spinner = document.getElementById("oracle-spinner");
+  if (spinner) spinner.style.display = "none";
+  if (!result) return;
+  if (data.error) {
+    result.textContent = "Error: " + data.error;
+    result.style.color = "var(--red, #e06c75)";
+  } else {
+    // colorize signal lines
+    result.innerHTML = escHtml(data.text || "")
+      .replace(/^(CRITICAL[^\n]*)/gm, '<span style="color:#e05050;font-weight:600">$1</span>')
+      .replace(/^(OPPORTUNITY[^\n]*)/gm, '<span style="color:var(--blue)">$1</span>')
+      .replace(/^(FOREWARNING[^\n]*)/gm, '<span style="color:var(--orange)">$1</span>')
+      .replace(/^(Tip:[^\n]*)/gm, '<span style="color:var(--text3);font-style:italic">$1</span>');
+    result.style.color = "var(--text2)";
+  }
+  result.style.display = "";
+  // switch rail to navigate so user sees the result
+  if (_railSection !== "navigate") { _railSection = "navigate"; railShowSection("navigate"); }
+});
 
 // ── tabs ──────────────────────────────────────────────────
 function activateTab(name) {

@@ -2450,6 +2450,14 @@ _WORKBENCH_TOOLS = [
         "description": "Extract design facts from ingested design documents",
         "args": {},
     },
+    {
+        "id": "design_oracle",
+        "label": "Design Oracle",
+        "tool": "design_oracle",
+        "description": "CRITICAL / OPPORTUNITY / FOREWARNING — what to work on next",
+        "args": {},
+        "param": {"name": "context", "placeholder": "symbol you're working in (optional)"},
+    },
 ]
 
 
@@ -2499,6 +2507,26 @@ def handle_workbench_run_tool(data):
 
 
 # ── Corpus shape (RM69 projections) ──────────────────────────────────────────
+
+@socketio.on("oracle_run")
+def handle_oracle_run(data):
+    """Run design_oracle and emit oracle_result for the Navigate sidebar panel."""
+    if _oracle is None:
+        emit("oracle_result", {"error": "No corpus loaded."})
+        return
+    context = (data or {}).get("context", "").strip()
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import dispatch
+            result = dispatch("design_oracle", {"context": context}, _oracle, _assessor)
+            socketio.emit("oracle_result", {"text": result, "context": context}, to=sid)
+        except Exception as exc:
+            socketio.emit("oracle_result", {"error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
 
 @socketio.on("shape_run")
 def handle_shape_run(data):
