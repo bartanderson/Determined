@@ -85,6 +85,10 @@ def _fetch_stubs(conn, scope: str) -> list[tuple]:
     rows = conn.execute(
         "SELECT name, file_path, line_number, docstring "
         "FROM functions WHERE is_stub = 1"
+        "  AND file_path NOT LIKE '%/test_%'"
+        "  AND file_path NOT LIKE '%\\test_%'"
+        "  AND file_path NOT LIKE '%/tests/%'"
+        "  AND file_path NOT LIKE '%\\tests\\%'"
     ).fetchall()
     if scope:
         norm = scope.lower().replace("\\", "/").rstrip("/")

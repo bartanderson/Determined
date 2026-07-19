@@ -213,6 +213,21 @@ def test_file_shape_sorted_by_density():
     assert result.index("dense.py") < result.index("sparse.py")
 
 
+def test_file_shape_excludes_test_files():
+    """Stubs under test_ paths must not appear in shape output."""
+    conn = _make_db(stubs=[
+        {"name": "real_stub", "file_path": "world/ai.py"},
+        {"name": "test_helper", "file_path": "tests/test_encounter_fsm.py"},
+        {"name": "test_econ", "file_path": "tests/test_economy.py"},
+        {"name": "win_stub", "file_path": "tests\\test_windows.py"},
+    ])
+    result = stub_file_shape(_FakeAssessor(conn), {})
+    assert "ai.py" in result
+    assert "test_encounter_fsm" not in result
+    assert "test_economy" not in result
+    assert "test_windows" not in result
+
+
 # ---------------------------------------------------------------------------
 # stub_subsystem_shape
 # ---------------------------------------------------------------------------

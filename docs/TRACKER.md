@@ -356,7 +356,7 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off in order
 — big gains first, polish last.
 
-1. **[ ] Test stubs filter in corpus_projections.py** — shape output includes test files
+1. **[x] Test stubs filter in corpus_projections.py** — shape output includes test files
    (test_encounter_fsm.py, test_economy.py) because `_fetch_stubs()` in
    `determined/agent/corpus_projections.py:80` has no test-path filter. `list_stubs` in
    `agent_tools.py:1646` already filters correctly — copy the same `NOT LIKE '%/test_%'`
