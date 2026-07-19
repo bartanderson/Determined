@@ -491,6 +491,21 @@ def test_extract_signals_file_path_hint_disambiguates():
     assert sig_b["file_path"] == "world/b.py"
 
 
+def test_extract_signals_file_path_hint_ts_separator():
+    """file_path_hint with backslash or mixed case still matches forward-slash stored path."""
+    conn = _make_db(
+        stubs=[
+            {"name": "addLogMessage", "file_path": "src/ui/UIManager.ts"},
+        ],
+    )
+    # caller passes backslash-separated path (Windows)
+    sig = extract_signals(_FakeOracle(conn), "addLogMessage", file_path_hint="src\\ui\\UIManager.ts")
+    assert sig.get("file_path") == "src/ui/UIManager.ts"
+    # caller passes wrong case
+    sig2 = extract_signals(_FakeOracle(conn), "addLogMessage", file_path_hint="src/ui/uimanager.ts")
+    assert sig2.get("file_path") == "src/ui/UIManager.ts"
+
+
 def test_classify_stub_protocol_note_in_output():
     """classify_stub output notes Protocol/ABC membership prominently."""
     conn = _make_db(

@@ -377,7 +377,7 @@ Surfaced by live UI walkthrough of dj2 + dungeoncrawler corpora. Work these off 
    blast_radius on each subrace stub to confirm low impact, then remove from
    world/dnd_data.py (5 stubs), world/character_generator.py, world/authority_system.py.
 
-4. **[ ] classify_stub file_path_hint TS fix** — `agent_tools.py:4817` uses
+4. **[x] classify_stub file_path_hint TS fix** — `agent_tools.py:4817` uses
    `WHERE name = ? AND file_path = ?` with exact match. TS file paths may have separator
    or case mismatch vs what the caller passes. Fix: normalize both sides (replace \\ with /,
    lower) before compare, or use `LIKE` with normalized suffix. Workaround: omit file_path arg.

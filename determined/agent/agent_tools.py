@@ -4821,11 +4821,20 @@ def annotate_function(assessor: "Assessor", args: dict) -> str:
 
     # --- 1. Resolve function row ---
     if file_path_hint:
+        norm_hint = file_path_hint.replace("\\", "/").lower()
         row = conn.execute(
             "SELECT name, file_path, line_number, docstring, arguments_json, return_type, param_types_json "
-            "FROM functions WHERE name = ? AND file_path = ? LIMIT 1",
-            (symbol, file_path_hint),
+            "FROM functions WHERE name = ? "
+            "AND LOWER(REPLACE(file_path, '\\', '/')) LIKE '%' || ? LIMIT 1",
+            (symbol, norm_hint),
         ).fetchone()
+        if row is None:
+            # hint didn't match — fall back to name-only
+            row = conn.execute(
+                "SELECT name, file_path, line_number, docstring, arguments_json, return_type, param_types_json "
+                "FROM functions WHERE name = ? LIMIT 1",
+                (symbol,),
+            ).fetchone()
     else:
         row = conn.execute(
             "SELECT name, file_path, line_number, docstring, arguments_json, return_type, param_types_json "

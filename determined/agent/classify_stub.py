@@ -240,12 +240,20 @@ def extract_signals(
     # Use file_path_hint to disambiguate lifecycle methods (e.g. __init__
     # under multiple classes).  Without it, LIMIT 1 picks an arbitrary row.
     if file_path_hint:
+        norm_hint = file_path_hint.replace("\\", "/").lower()
         row = conn.execute(
             "SELECT name, file_path, line_number, docstring, param_types_json, "
             "return_type, is_stub FROM functions "
-            "WHERE name = ? AND file_path = ? AND is_stub = 1 LIMIT 1",
-            (fqdn, file_path_hint)
+            "WHERE name = ? AND LOWER(REPLACE(file_path, '\\', '/')) LIKE '%' || ? "
+            "AND is_stub = 1 LIMIT 1",
+            (fqdn, norm_hint)
         ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT name, file_path, line_number, docstring, param_types_json, "
+                "return_type, is_stub FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1",
+                (fqdn,)
+            ).fetchone()
     else:
         row = conn.execute(
             "SELECT name, file_path, line_number, docstring, param_types_json, "
