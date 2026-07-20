@@ -1,71 +1,87 @@
-Written at commit: 8ec0b8c
+Written at commit: e9fef30
 
-# SESSION STATE — session 222
-Written at commit: 8ec0b8c (2026-07-20)
+# SESSION STATE — session 223
+Written at commit: e9fef30 (2026-07-20)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Exploratory analysis session — no engine code changed [V]**
+**classify_stub calibration fix shipped [V]**
 
-Validated Phase D collapse behavior with dj2 corpus loaded [V]:
-- Corpus map: OPEN, Analyze: closed, all others closed — correct.
+Added compound signal: called + no behavioral intent (doc absent or placeholder) +
+empty body → blocked-on-prerequisite +1.0. Purely corpus-derivable. Resolves the
+two UNCERTAIN stubs from session 222:
+- `on_arc_completed`: UNCERTAIN → [0.40] blocked-on-prerequisite [V]
+- `_register_world_tools`: UNCERTAIN → [0.40] blocked-on-prerequisite [V]
+- All 42 classify_stub regression tests pass [V]
 
-Ran classify_stub probe against all dj2 stubs [V]. Key findings:
-- 5 subrace stubs → [0.97] concept-not-applicable (explicit removal language + sibling cluster). Tool working correctly.
-- 5 real-gap stubs: _get_encounter_context [0.70], process_consequences [0.40],
-  on_arc_completed UNCERTAIN, _register_world_tools UNCERTAIN, _get_combat_context UNCERTAIN.
-- 3 test stubs surfacing in list (known issue: list_stubs test-fixture filter).
+Key finding during probe: `docstring_quality` for these stubs was "placeholder"
+(one-liner label, no behavioral language), not "none". Compound condition had to
+include both "none" and "placeholder" + `not has_intent`.
 
-**Design discussion — two new TRACKER items filed:**
+**test-fixture filter already clean [V]**
 
-**RM70 — Convention detector [?]** (TRACKER updated [V])
-Bottom-up family clustering: extract naming patterns from corpus, cluster by
-structural similarity (calls, returns, body weight), find canonical shape from
-members with 3+ threshold, surface outliers by deviation. Three gates: existence
-(3+), usefulness (feature agreement), confluence (independent dimensions).
-Not a classify_stub signal — standalone tool producing family maps.
+list_stubs query against live dj2 DB returns exactly 10 real stubs — no test
+fixtures. Likely cleared by re-ingest between sessions. Non-issue.
 
-**RM71 — Structured data ingestor [V]** (TRACKER updated [V])
-"Data as code" framing: FSM configs, build DAGs, OpenAPI specs, package manifests
-all reduce to named nodes + directed edges. Normalize to existing graph schema.
-Same reasoning layer (path finding, prerequisite chains, orphan detection) applies
-without modification. Priority: FSM JSON → build files → package manifests → OpenAPI.
-Unlocks: config-layer evidence for blocked-on-prerequisite; combat gated behind
-encounter is visible in encounter.json fight→resolving_fight→start_combat transition.
+**`_get_combat_context` still UNCERTAIN [V]**
 
-**Key methodology note filed to memory and HISTORY:**
-Domain knowledge from corpus designers goes into Claude's interpretation context only —
-never into tool scoring. Tool earns conclusions from corpus signals. The flip (using
-Determined to drive fixes in dj2) happens when the tool is sharp enough.
+Scores [0.30] design-intent-stated (below threshold). Has `trivial_return` body
+(not empty_pass), so compound signal doesn't fire. This is the known hard case:
+`CombatFSM` concept is present in corpus but no behavioral language in docstring.
+Resolves when RM71 (FSM ingestor) surfaces combat gated behind encounter in config.
+
+**Sequencing decision locked [V]**
+
+Order committed to TRACKER and HISTORY:
+1. RM69 corpus aggregation (file shape, subsystem shape, prerequisite map)
+2. RM71 FSM ingestor (encounter.json first)
+3. New language parsers + corpus chain
+
+Cross-language work gated until both 1 and 2 ship.
+
+**Two FUTURE items captured in TRACKER [V]**
+- icecream debug library (`pip install icecream`) — grab when print debugging is friction
+- Domain expert adapters from corpus — long-term destination post-aggregation;
+  "mine from your own work" MoE approach; matmul C corpus is first non-behavioral target
 
 ## Known issues [V = verified, ? = recalled]
+
+**`_get_combat_context` UNCERTAIN [V]:** `trivial_return` body + CombatFSM present
+but no behavioral intent. Compound signal doesn't fire. Gate: RM71.
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as
 FQNs; tool queries bare names. Workaround: use graph_path.
 
-**list_stubs surfaces test fixtures [V]:** check_parley, get_player_by_session,
-test_encounter_parley_failure appear in dj2 stub list. Filter needed in corpus_projections.
-
-**classify_stub can't see support-structure depth [?]:** two stubs identical at call
-site but completely different backing infrastructure look the same to the scorer.
-_get_encounter_context vs _get_combat_context is the concrete example.
+**classify_stub can't see support-structure depth [?]:** _get_encounter_context vs
+_get_combat_context look identical at call site, different backing infrastructure.
+Named in HISTORY 2026-07-20 (s222).
 
 **Server start command [V]:** always `.venv\Scripts\python.exe -m determined.ui.ui_server`
 from `C:\Users\bartl\dev\Determined`.
 
 ## NEXT SESSION — start here
 
-No code changes this session. Pick up from RM69 implementation or RM70/RM71 design.
+**RM69 step 5 — corpus aggregation.** This is the next concrete work item.
 
-**Most actionable next step:** fix the test-fixture filter in corpus_projections.py
-(list_stubs excluding test paths) — small, concrete, verified gap.
+Three projections to build (all in `corpus_projections.py` or a new
+`corpus_aggregation.py`):
 
-**Then:** look at classify_stub scoring for the "has callers, no other signal" case —
-`on_arc_completed` and `_register_world_tools` both have live callers but score UNCERTAIN.
-Caller-present with no doc and empty body should lean toward blocked-on-prerequisite.
-Calibration question: what threshold nudge makes that correct without breaking other cases?
+1. **File shape** — stub density + dominant classification per file.
+   Input: run classify_stub across all stubs in a file, aggregate.
+   Output: `{file, stub_count, dominant_class, density_pct}`
 
-**Trap to watch:** domain knowledge goes into interpretation, not tool logic. Before
-adding any new classify_stub signal, ask: is this derivable from corpus alone?
+2. **Subsystem shape** — cluster files by directory; surface where blocked stubs
+   concentrate. A cluster of blocked stubs = design skeleton waiting on prerequisite.
+   Output: `{subsystem, blocked_count, not_applicable_count, dominant_pattern}`
+
+3. **Prerequisite map** — across all blocked-on-prerequisite stubs, extract the
+   named concept or dependency; group stubs by shared prerequisite.
+   Output: `{prerequisite, blocked_stubs[], caller_count_sum}` ranked by impact.
+
+Start with file shape — it's the simplest and directly exercisable on dj2.
+Check `docs/TEST_MAP.md` for where corpus_projections tests live before writing.
+
+**Quality gate before starting:** grep `corpus_projections.py` and `agent_tools.py`
+for any existing aggregation queries (PRE-CODE CHECKLIST).
