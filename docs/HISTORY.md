@@ -16,7 +16,7 @@ Derived from dj2 phases.py ABC analysis. Patterns apply to any language/corpus:
 (4) Stranded Pipeline Stage: stage with no edges to predecessor/successor in a known sequence.
 (5) Self-Identifying Orphan: class docstring claims "Phase: X" but doesn't inherit the X ABC.
 Tools shipped: find_isolated_modules (Pattern 2), find_phantom_factories (Pattern 3),
-detect_doc_drift Check 4 (Pattern 5). Pattern 1 tool (find_orphaned_interfaces) is medium effort, not yet built.
+detect_doc_drift Check 4 (Pattern 5), find_orphaned_interfaces (Pattern 1, s228). All 4 patterns covered.
 
 2026-07-20 (s227): find_isolated_modules severity tiering -- test files produce noise.
 68 isolated modules in dj2: 1 critical (phases.py), 67 moderate (mostly tests/ and scripts).
