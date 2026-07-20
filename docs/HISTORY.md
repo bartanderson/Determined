@@ -8,6 +8,22 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-20 (s224): Stale handoff lesson: when SESSION_STATE says "build X" but X already
+exists, mention it in one sentence and move on. No re-testing needed to confirm what code
+proves. Update docs to reflect reality, then proceed to the actual next item.
+
+2026-07-20 (s224): RM71 shape scanner/normalizer design: NOT per-format parsers. Format-agnostic
+multi-method induction (node_collection, reference, topology, hierarchy passes) + convergence
+gating, mirroring structure_induction.py philosophy. Scanner investigates and reports; normalizer
+writes graph edges from high-confidence hits. Scope: all non-code files — JSON, YAML, markdown,
+text, prose, comments. "It just runs and reports." Prose false positives (history.md as
+directed_graph from -> arrows) are acceptable noise; normalizer correctly skips them.
+
+2026-07-20 (s224): Prose directed_graph findings from shape_scanner correctly error in
+shape_normalizer ("could not parse") — normalizer is structured-data only. This is correct
+behavior, not a bug. Prose normalization is future work.
+
+
 2026-07-20 (s223): Cross-language corpora and new language parsers are gated behind
 RM69 corpus aggregation (step 5: file shape, subsystem shape, prerequisite map) and
 RM71 FSM ingestor. Without aggregation, new corpora produce flat stub lists with no
