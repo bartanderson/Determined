@@ -223,6 +223,25 @@ Deferred: not worth fixing now, do in next UI rework pass.
 
 ---
 
+## FUTURE — Evaluate API access vs subscription (2026-07-20)
+
+Current setup: Claude.ai subscription + Claude Code CLI. Limitation: no control over
+context compaction (harness-level, not hookable). Custom harness (snapcompact-style or
+otherwise) requires API access with per-token billing.
+
+To evaluate:
+- Pull 3 months of session patterns: how often does compaction fire mid-session?
+- Estimate token volume from those sessions against current API pricing
+- Compare to subscription cost + API overage risk
+- Note: Anthropic API supports hard spend limits — "addict bills" scenario is preventable
+- Read: https://stencil.so/blog/snapcompact for the compaction technique that prompted this
+
+Decision gate: only worth switching if compaction is a frequent bottleneck AND estimated
+API spend is competitive with subscription. No urgency — evaluate when a natural billing
+cycle break comes up.
+
+---
+
 ## FUTURE — icecream debug library (2026-07-20)
 
 `pip install icecream` — drop-in replacement for debug prints. `ic(expr)` auto-labels

@@ -9388,6 +9388,159 @@ TOOLS["find_phantom_factories"] = (find_phantom_factories, "oracle")
 
 
 # ------------------------------------------------------------------
+# find_orphaned_interfaces -- classes that implement an ABC's contract
+#                             without declaring inheritance
+# ------------------------------------------------------------------
+
+def find_orphaned_interfaces(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_orphaned_interfaces([scope], [threshold]) -- find classes whose method
+    names overlap significantly with an ABC's abstract methods but don't declare
+    inheritance from that ABC.
+
+    An orphaned interface is a class that *does* the ABC's job but is invisible
+    to the type system and any code that checks for ABC membership. The ABC
+    contract is fulfilled in practice but unenforced structurally.
+
+    Overlap tiers (measured as matched_abstract / total_abstract):
+      strong   -- >= 60%: almost certainly an unregistered implementation
+      possible -- >= threshold (default 40%): partial implementor, worth checking
+
+    Args:
+        scope:     optional file path substring to restrict candidate classes
+        threshold: minimum overlap fraction to report (default 0.40)
+    """
+    import json as _json
+
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+    try:
+        threshold = float(args.get("threshold") or 0.40)
+    except (ValueError, TypeError):
+        threshold = 0.40
+
+    # Check classes table exists
+    tbl = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='classes'"
+    ).fetchone()
+    if not tbl:
+        return "classes table not found in this corpus DB."
+
+    # --- 1. Collect all ABCs and their abstract method sets ---
+    abc_q = "SELECT name, methods_json, file_path FROM classes WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+    abc_rows = conn.execute(abc_q).fetchall()
+    if not abc_rows:
+        return "No ABC/Abstract base classes found in corpus."
+
+    # For each ABC, resolve which methods are decorated @abstractmethod
+    abc_abstract: dict[str, tuple[set, str]] = {}  # abc_name -> (abstract_method_set, file_path)
+    for abc_name, methods_json, file_path in abc_rows:
+        try:
+            methods = _json.loads(methods_json or "[]")
+        except Exception:
+            continue
+        abstract = set()
+        for m in methods:
+            row = conn.execute(
+                "SELECT decorators_json FROM functions WHERE name=? AND file_path=? LIMIT 1",
+                (m, file_path),
+            ).fetchone()
+            if row:
+                try:
+                    decs = _json.loads(row[0] or "[]")
+                except Exception:
+                    decs = []
+                if any("abstractmethod" in d for d in decs):
+                    abstract.add(m)
+        if abstract:
+            abc_abstract[abc_name] = (abstract, file_path)
+
+    if not abc_abstract:
+        return "No ABCs with @abstractmethod-decorated methods found."
+
+    # --- 2. Build declared subclass map so we can exclude already-registered classes ---
+    subclass_map: dict[str, set] = {}  # abc_name -> set of declared subclass names
+    all_classes = conn.execute("SELECT name, base_classes_json FROM classes").fetchall()
+    for cls_name, bj in all_classes:
+        try:
+            bases = _json.loads(bj or "[]")
+        except Exception:
+            bases = []
+        for base in bases:
+            subclass_map.setdefault(base, set()).add(cls_name)
+
+    # --- 3. Candidate classes: non-ABC, not already a declared subclass of this ABC ---
+    candidate_q = (
+        "SELECT name, methods_json, file_path FROM classes "
+        "WHERE (base_classes_json IS NULL OR base_classes_json NOT LIKE '%ABC%') "
+        "AND (base_classes_json IS NULL OR base_classes_json NOT LIKE '%Abstract%')"
+    )
+    cand_params: list = []
+    if scope:
+        candidate_q += " AND file_path LIKE ?"
+        cand_params.append(f"%{scope}%")
+    candidate_rows = conn.execute(candidate_q, cand_params).fetchall()
+
+    # --- 4. Score each candidate against each ABC ---
+    findings: list[tuple[float, str, str, str, set, set]] = []
+    # (overlap, abc_name, cls_name, cls_file, matched, missing)
+
+    for cls_name, methods_json, cls_file in candidate_rows:
+        try:
+            cls_methods = set(_json.loads(methods_json or "[]"))
+        except Exception:
+            continue
+        if not cls_methods:
+            continue
+
+        for abc_name, (abstract_methods, _abc_file) in abc_abstract.items():
+            # Skip if already a declared subclass
+            if cls_name in subclass_map.get(abc_name, set()):
+                continue
+
+            matched = abstract_methods & cls_methods
+            overlap = len(matched) / len(abstract_methods)
+            if overlap < threshold:
+                continue
+
+            missing = abstract_methods - matched
+            findings.append((overlap, abc_name, cls_name, cls_file or "", matched, missing))
+
+    if not findings:
+        return (
+            f"No orphaned interfaces found (threshold={threshold:.0%}). "
+            "All candidate classes either already declare inheritance or overlap below threshold."
+        )
+
+    findings.sort(key=lambda t: (-t[0], t[1], t[2]))
+
+    lines = [
+        f"Orphaned interfaces ({len(findings)} candidate(s) at threshold={threshold:.0%}):\n",
+        "Classes that implement an ABC's abstract method contract without declaring inheritance.",
+        "These satisfy the ABC's contract in practice but are invisible to isinstance() checks\n",
+        "and any code that dispatches on ABC membership.\n",
+    ]
+
+    for overlap, abc_name, cls_name, cls_file, matched, missing in findings:
+        tier = "strong" if overlap >= 0.60 else "possible"
+        short_file = "/".join(cls_file.replace("\\", "/").split("/")[-2:])
+        lines.append(f"  [{tier}]  {cls_name}  ({short_file})")
+        lines.append(f"           orphan of: {abc_name}  overlap={overlap:.0%} ({len(matched)}/{len(matched)+len(missing)})")
+        lines.append(f"           matched:  {sorted(matched)}")
+        if missing:
+            lines.append(f"           missing:  {sorted(missing)}")
+        lines.append("")
+
+    lines.append("Interpretation:")
+    lines.append("  strong   -- >= 60% overlap: likely an unregistered implementation")
+    lines.append("  possible -- >= threshold: partial implementor or coincidental naming")
+    return "\n".join(lines)
+
+
+TOOLS["find_orphaned_interfaces"] = (find_orphaned_interfaces, "oracle")
+
+
+# ------------------------------------------------------------------
 # list_entry_points -- surface architecturally significant EPs
 # ------------------------------------------------------------------
 

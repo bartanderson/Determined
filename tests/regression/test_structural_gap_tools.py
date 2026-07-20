@@ -1,9 +1,10 @@
 # tests/regression/test_structural_gap_tools.py
 #
 # Regression tests for:
-#   find_isolated_modules   -- files that define symbols but are never imported
-#   find_phantom_factories  -- ABC factory classes with no concrete subclass
-#   detect_doc_drift Check 4 -- class role-claim drift (docstring vs inheritance)
+#   find_isolated_modules      -- files that define symbols but are never imported
+#   find_phantom_factories     -- ABC factory classes with no concrete subclass
+#   find_orphaned_interfaces   -- classes that implement an ABC's contract without declaring inheritance
+#   detect_doc_drift Check 4   -- class role-claim drift (docstring vs inheritance)
 
 import json
 import sqlite3
@@ -13,6 +14,7 @@ from unittest.mock import MagicMock
 from determined.agent.agent_tools import (
     find_isolated_modules,
     find_phantom_factories,
+    find_orphaned_interfaces,
     detect_doc_drift,
 )
 
@@ -212,6 +214,118 @@ def test_no_abc_classes_returns_message():
     oracle = _oracle(conn)
     result = find_phantom_factories(oracle, {})
     assert "No ABC" in result
+
+
+# ---------------------------------------------------------------------------
+# find_orphaned_interfaces
+# ---------------------------------------------------------------------------
+
+def _add_plain_class(conn, file_path, cls_name, methods):
+    """Add a non-ABC, non-subclassing class with given methods."""
+    conn.execute(
+        "INSERT INTO classes (file_path, name, methods_json, base_classes_json) VALUES (?,?,?,?)",
+        (file_path, cls_name, json.dumps(methods), json.dumps([])),
+    )
+    for m in methods:
+        conn.execute(
+            "INSERT INTO functions (file_path, name, decorators_json) VALUES (?,?,?)",
+            (file_path, m, json.dumps([])),
+        )
+
+
+def test_orphaned_interface_possible_tier():
+    """Class with 40% method overlap is reported as possible orphan (default threshold)."""
+    conn = _make_db()
+    _add_abc(conn, "phases.py", "AuthorityPhase",
+             ["validate_action", "roll_dice", "check_permissions", "query_dungeon", "query_world"])
+    _add_plain_class(conn, "world/authority_system.py", "AuthoritySystem",
+                     ["validate_action", "roll_dice", "execute_tool", "load_rules"])
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {})
+    assert "AuthoritySystem" in result
+    assert "possible" in result
+
+
+def test_orphaned_interface_strong_tier():
+    """Class with >= 60% overlap is reported in the strong tier."""
+    conn = _make_db()
+    _add_abc(conn, "phases.py", "AuthorityPhase",
+             ["validate_action", "roll_dice", "check_permissions", "query_dungeon", "query_world"])
+    # 3/5 = 60% overlap
+    _add_plain_class(conn, "world/authority_system.py", "AuthoritySystem",
+                     ["validate_action", "roll_dice", "check_permissions", "extra_method"])
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {})
+    assert "AuthoritySystem" in result
+    assert "strong" in result
+
+
+def test_declared_subclass_not_reported():
+    """A class that already declares inheritance from the ABC is excluded."""
+    conn = _make_db()
+    _add_abc(conn, "phases.py", "AuthorityPhase", ["validate_action", "roll_dice", "check_permissions"])
+    _add_subclass(conn, "world/concrete.py", "ConcretePhase", "AuthorityPhase",
+                  ["validate_action", "roll_dice", "check_permissions"])
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {})
+    assert "ConcretePhase" not in result
+    assert "No orphaned interfaces" in result
+
+
+def test_below_threshold_not_reported():
+    """Class with overlap below default threshold is not reported."""
+    conn = _make_db()
+    _add_abc(conn, "phases.py", "AuthorityPhase",
+             ["validate_action", "roll_dice", "check_permissions", "query_dungeon", "query_world"])
+    # 1/5 = 20% — below 40% threshold
+    _add_plain_class(conn, "world/unrelated.py", "UnrelatedClass", ["validate_action", "do_other"])
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {})
+    assert "No orphaned interfaces" in result
+
+
+def test_custom_threshold_filters_possibles():
+    """Passing threshold=0.60 excludes possible-tier matches, only shows strong."""
+    conn = _make_db()
+    _add_abc(conn, "phases.py", "AuthorityPhase",
+             ["validate_action", "roll_dice", "check_permissions", "query_dungeon", "query_world"])
+    # 2/5 = 40% overlap (possible at default, excluded at 0.60)
+    _add_plain_class(conn, "world/authority_system.py", "AuthoritySystem",
+                     ["validate_action", "roll_dice", "extra"])
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {"threshold": "0.60"})
+    assert "No orphaned interfaces" in result
+
+
+def test_no_abc_classes_returns_message():
+    conn = _make_db()
+    _add_plain_class(conn, "world/thing.py", "ThingClass", ["do_stuff"])
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {})
+    assert "No ABC" in result
+
+
+def test_no_classes_table_returns_message():
+    """Gracefully handles a corpus DB with no classes table."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("CREATE TABLE functions (id INTEGER PRIMARY KEY, name TEXT);")
+    oracle = _oracle(conn)
+    result = find_orphaned_interfaces(oracle, {})
+    assert "classes table not found" in result
+
+
+def test_scope_restricts_candidates():
+    """scope arg restricts which candidate classes are checked."""
+    conn = _make_db()
+    _add_abc(conn, "phases.py", "AuthorityPhase",
+             ["validate_action", "roll_dice", "check_permissions", "query_dungeon", "query_world"])
+    # 2/5 overlap — would be found without scope
+    _add_plain_class(conn, "world/authority_system.py", "AuthoritySystem",
+                     ["validate_action", "roll_dice", "extra"])
+    oracle = _oracle(conn)
+    # Restrict to engine/ — AuthoritySystem is in world/, so it's excluded
+    result = find_orphaned_interfaces(oracle, {"scope": "engine/"})
+    assert "AuthoritySystem" not in result
 
 
 # ---------------------------------------------------------------------------
