@@ -187,6 +187,11 @@ known traps, verified state, or next steps.
 Quality gate for Next Steps entries: "Would a fresh session know exactly what
 to run first without asking?" If not, add the file, the command, or the reason.
 
+Trajectory not plan: the handoff should read like a conversation mid-flight,
+not a to-do list. Include what failed, what is live in the code right now,
+and the first command to run. A reader who runs that command is continuing
+the trajectory; a reader who has to re-derive it got a plan.
+
 **Rationalizations -- these mean STOP and tag [?] instead:**
 - "I remember the session clearly, no need to re-verify" -- verify or tag [?]
 - "Tests were passing earlier" -- earlier is not now; re-run or tag [?]
