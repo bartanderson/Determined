@@ -186,13 +186,24 @@ applied to UI state).
   Artifacts/Pins/Bag/Doc health); deleted modes; moved Tour/Discovery/Logs
   behind ⚙ utility menu. Design Oracle stays in structure column (Run +
   cached result). Quick-actions block kept in sidebar (deferred).
-- **Phase C — Editor self-presentation + gear polish.** File tree on open;
-  evidence-chain drill-down from verdict strip to editor line; panel
-  focus/popout generalized.
+- **Phase C — Editor self-presentation + gear polish. (DONE 2026-07-19)**
+  File tree in editor sidebar (queries `files` table, filter + click to open);
+  verdict strip file paths linkified → opens editor; ⤢ popout added to
+  Shape, Frontier, Map, Knowledge panels.
+- **Phase D — Sidebar collapsible sections.** The structure column has five
+  stacked sections (Corpus map, Analyze, Oracle, Quick actions, Tools) each
+  with their own scroll, making the sidebar a wall of content. Fix: each
+  section gets a collapse chevron in its label row. Default state on corpus
+  load: Corpus map expanded, everything else collapsed. Analyze re-expands
+  automatically when no corpus is loaded. Oracle result can be long — add a
+  pop-out button on the result div only (not the whole section). This reduces
+  the sidebar to the "always visible peripheral" the redesign intended: corpus
+  map + gaps visible at a glance, tools on demand.
 
 Phase A is small (shell wiring, no new backend). Phase B is the bulk
 (HTML/JS moves, one new lens selector, no engine changes). Phase C touches
-one new server query (file tree) and the drill-down plumbing.
+one new server query (file tree) and the drill-down plumbing. Phase D is
+HTML/JS only — no backend changes.
 
 ## Decisions (2026-07-19, Bart)
 
