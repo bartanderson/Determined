@@ -95,11 +95,18 @@ POSIX-only and over-engineered for snippet verification — build the shim inste
 - Cross-language graph edges (Python calling C via ctypes, Lua calling C via FFI) are
   not currently modeled; worth noting as a future graph layer, not blocking anything now
 
-**Implementation sequencing:**
-1. Ingestion parsers per language (prerequisite for everything)
-2. `target_lang` param in `project_stub` (low-cost, do it now — RM-UI-2 is already done)
-3. `runtime_locator.py` shim (enables verify loop for non-Python output)
-4. Corpus chain: acquire projects, ingest, surface shape comparison in UI
+**Implementation sequencing — GATED (2026-07-20):**
+New language parsers and corpus chain are blocked until:
+1. RM69 corpus aggregation ships (file shape, subsystem shape, prerequisite map) — makes
+   individual stub judgments into a corpus-wide picture; without this, new corpora produce
+   more flat stub lists with no connective tissue.
+2. RM71 FSM ingestor ships (at minimum, encounter.json) — proves the "data as code"
+   pipeline and gives aggregation a richer signal before investing in new parsers.
+Then:
+3. Ingestion parsers per language (C/Zig/Lua in priority order)
+4. `target_lang` param in `project_stub`
+5. `runtime_locator.py` shim
+6. Corpus chain: acquire projects, ingest, surface shape comparison in UI
 
 ### Corpora to acquire
 

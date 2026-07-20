@@ -8,6 +8,12 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-20 (s223): Cross-language corpora and new language parsers are gated behind
+RM69 corpus aggregation (step 5: file shape, subsystem shape, prerequisite map) and
+RM71 FSM ingestor. Without aggregation, new corpora produce flat stub lists with no
+shape comparison. Without RM71, the "data as code" pipeline is unproven. Sequence:
+aggregation → FSM ingestor → language parsers → corpus chain.
+
 2026-07-20 (s222): Domain knowledge from corpus designers goes into Claude's interpretation
 context only — never into tool scoring logic. Tool must earn conclusions from corpus signals.
 When the tool misses something, the question is "what corpus-derivable signal would reveal
