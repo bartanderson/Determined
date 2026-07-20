@@ -123,11 +123,11 @@ peripheral; it never switches sections.
 | New tab | Absorbs | Notes |
 |---|---|---|
 | **Shape** (home) | Shape + verdict strip + Design Oracle result | Auto-runs on load (deterministic). Progressive per-quadrant fill. |
-| **Frontier** | Frontier + Build queue + Doc health | All three are "work to do" lenses over the same intent. Lens selector inside the tab. |
+| **Frontier** | Frontier + Build queue | Stubs and build queue as two lenses. Lens selector inside the tab. |
 | **Map** | Graph + Imports + Topology | Cytoscape views over the same corpus; one surface, view selector, seeded by trail context. |
 | **Call tree** | Call tree | Stays standalone (decision 4) — tree widget, not Cytoscape. |
 | **Editor** | Editor (+ file tree) | Opens with a file tree / recent-files list from the DB so it self-presents. Stays the symbol-level nav hub. |
-| **Knowledge** | Knowledge + Pins + Bag | Accumulated-context surfaces: artifacts, pinned clues, session bag. |
+| **Knowledge** | Knowledge + Pins + Bag + Doc health | Accumulated-context surfaces: artifacts, pinned clues, session bag, doc health proposals. Four lenses: Artifacts / Pins / Bag / Doc health. |
 | **Workbench** | Workbench | Parity backstop — every tool, grouped forms. Unchanged. |
 | **⌕ (Ask)** | Chat | Hidden-by-default query bar per the vision; icon tab, not a word. |
 
@@ -139,8 +139,8 @@ Commonplace-scoped; Logs is diagnostics; neither is corpus navigation).
 
 Deletion candidates are the point, not a side effect (XXI): mode CSS,
 rail-section state machine, `_startupFiredFor` auto-switch logic, the
-duplicated stats line, quick-actions block (its five entries become links
-in the surfaces that own them).
+duplicated stats line. Quick-actions block was kept (five NL-submit
+sidebar items); the plan to move them into owning surfaces was deferred.
 
 ## The on-load contract (the gate criterion, made structural)
 
@@ -153,7 +153,7 @@ in the surfaces that own them).
    the four results (no LLM).
 3. Frontier tab shows its count badge (stubs actionable) without being
    opened.
-4. Editor preloads the file tree (DB `files` table — no scan).
+4. Editor preloads the file tree (DB `files` table — no scan). _(Phase C — not yet shipped)_
 
 There is exactly one layout state on load. The corpus-map regression class
 of bug — "rendered but hidden by a sibling state machine" — becomes
@@ -180,9 +180,12 @@ applied to UI state).
   "actionable stub"), Frontier tab count badge, subsystem-shape paths made
   project-relative. Verified live against dj2: cold load self-presents
   corpus map + gaps + verdict strip + 4 quadrants + badge, zero user action.
-- **Phase B — Consolidation.** Merge Frontier/Build queue/Doc health;
-  merge the four graph views into Map; fold Pins+Bag into Knowledge;
-  delete modes; move Tour/Discovery/Logs behind ⚙.
+- **Phase B — Consolidation. (DONE 2026-07-19)** Merged Frontier+Build queue
+  (two lenses: Stubs/Build queue); merged Graph+Imports+Topology into Map
+  (three lenses); folded Pins+Bag+Doc health into Knowledge (four lenses:
+  Artifacts/Pins/Bag/Doc health); deleted modes; moved Tour/Discovery/Logs
+  behind ⚙ utility menu. Design Oracle stays in structure column (Run +
+  cached result). Quick-actions block kept in sidebar (deferred).
 - **Phase C — Editor self-presentation + gear polish.** File tree on open;
   evidence-chain drill-down from verdict strip to editor line; panel
   focus/popout generalized.
@@ -200,10 +203,10 @@ one new server query (file tree) and the drill-down plumbing.
 4. **Call tree keeps its own tab.** Map absorbs Graph + Imports + Topology
    only. Revisit after the redesign only if it proves to be a real issue.
 
-## Open questions (for pressure before Phase B)
+## Resolved decisions (Phase B)
 
-2. Frontier/Doc-health merge: doc proposals are accept/dismiss workflow,
-   stubs are navigate-and-implement. Same tab, or does Doc health belong
-   under Knowledge instead?
-3. Does the Design Oracle stay in the structure column (cached verdict +
-   Run) or become a fifth card on the Shape home?
+2. **Doc health → Knowledge tab** (not Frontier). Doc proposals are a
+   different workflow from stubs; Knowledge is the right home. Implemented
+   as the fourth lens: Artifacts / Pins / Bag / Doc health.
+3. **Design Oracle stays in structure column.** Cached verdict + Run button
+   in `#nav-oracle-section`. Not promoted to Shape home.
