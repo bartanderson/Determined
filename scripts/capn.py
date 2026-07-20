@@ -43,6 +43,8 @@ LOG_FILE = CAPN_DIR / "log.jsonl"
 SESSION_FILE = CAPN_DIR / "current_session.txt"
 
 MISS_FLOOR = 300  # minimum token cost estimate for a cache miss
+REPORT_FIRST = 5   # sessions before first auto-report notice
+REPORT_EVERY = 10  # sessions between subsequent notices
 
 
 def _ensure_dirs():
@@ -292,6 +294,14 @@ def cmd_prune():
     print(f"Pruned {pruned} stale entries." if pruned else "No stale entries found.")
 
 
+def _report_due(count: int) -> bool:
+    if count == REPORT_FIRST:
+        return True
+    if count > REPORT_FIRST and (count - REPORT_FIRST) % REPORT_EVERY == 0:
+        return True
+    return False
+
+
 def cmd_context():
     _ensure_dirs()
     session_id = uuid.uuid4().hex[:8]
@@ -299,6 +309,10 @@ def cmd_context():
     _log({"type": "session_start", "session": session_id})
 
     stats = _load_stats()
+    stats["session_count"] = stats.get("session_count", 0) + 1
+    _save_json(STATS_FILE, stats)
+    session_count = stats["session_count"]
+
     hits = stats.get("hits", 0)
     misses = stats.get("misses", 0)
     charted = stats.get("charted", 0)
@@ -328,6 +342,15 @@ Chart when you:
   python scripts/capn.py chart "<description>" --files path1 [path2] [--details "specifics"]
 
 Entries auto-expire when referenced files change. Run prune to clean stale entries.""")
+
+    if _report_due(session_count):
+        next_due = REPORT_FIRST + ((session_count - REPORT_FIRST) // REPORT_EVERY + 1) * REPORT_EVERY if session_count >= REPORT_FIRST else REPORT_FIRST
+        print(f"""
+*** CAPN REPORT DUE (session {session_count}) ***
+Run before starting work this session:
+  python scripts/capn.py report
+Next auto-notice at session {next_due if session_count > REPORT_FIRST else REPORT_FIRST + REPORT_EVERY}.
+""")
 
 
 def cmd_list():
