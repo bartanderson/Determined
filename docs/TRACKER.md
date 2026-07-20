@@ -139,6 +139,73 @@ and is already wrong." Check whether populated for dj2 before investing.
 
 ---
 
+## FUTURE — Signal fusion + multi-modal visual projection (2026-07-20)
+
+### The problem
+
+Every tool in Determined produces a single-lens view: classify_stub sees body shape
+and callers; detect_conventions sees naming families; rank_stubs sees priority order;
+walk_call_chain sees graph paths. The interesting findings emerge where multiple lenses
+converge on the same concept — a stub that is an outlier in a naming family AND has
+no callers AND is referenced by an FSM action AND has no knowledge artifact is a much
+stronger finding than any of those signals alone. Right now there is no place in the
+architecture that combines signals across tools for a single concept.
+
+### The design question
+
+Build a per-concept signal aggregation layer: given a concept, collect all signals
+that touch it (naming family membership/outlier status, call graph centrality,
+config FSM references, knowledge artifact presence, classify_stub confidence,
+rank_stubs priority), weight them, and produce a combined picture. This is signal
+fusion, not a new tool — it is a compositor that reads what the existing tools
+already produce.
+
+The detect_conventions emerging/established sort (min_family=3, sort ascending for
+emerging) is the first example of a signal that is interesting not just for its
+value but for its *position in a web*: a small naming family is an emerging
+convention; a stub that diverges from it is stranded mid-pattern. That positional
+meaning only becomes visible when signals are combined.
+
+### Visual projection paradigms to design for
+
+The current graph view is a start but the design review should consider the full
+space of visual projections for code analysis:
+
+- **Venn / overlap diagrams**: concepts that appear in multiple signal domains
+  simultaneously (naming family + FSM + no callers = high-confidence gap)
+- **Layered tables with drill-through**: a top-level table of concepts; selecting
+  one pulls a second table of all signals touching it; selecting a signal row
+  pulls the supporting corpus evidence. Walking a path = pulling on threads.
+- **Color encoding**: signal agreement depth as saturation; classification
+  confidence as hue; outlier status as contrast. Consistent palette across views.
+- **Thread-pulling in a large visual area**: not just a panel but a workspace
+  where multiple tables/graphs are open simultaneously and selections in one
+  propagate to others — a concept clicked in the naming-family view highlights
+  it in the call graph and in the stub list.
+- **Adjacency / convergence maps**: which concepts share the most signal
+  co-occurrences? That map shows the architectural seams.
+- **Time-axis projection** (future): how do signals change as stubs are resolved?
+  The "emerging convention" signal should decay as the family grows — tracking
+  that over time shows where the codebase is maturing. The *trajectory* of family
+  growth is itself a signal: a family accelerating from 4 to 12 members across
+  ingestion runs means the author was actively building toward that convention.
+  Determined could surface "accelerating families" as a stub-prioritization signal
+  stronger than raw size alone — not just where the gaps are, but where momentum
+  was building when work stopped.
+
+### Gate
+
+Not actionable until:
+1. classify_stub signal calibration is stable (current active work)
+2. detect_conventions sort (emerging/established) is shipped
+3. At least one more tool produces per-concept output that could be fused
+
+This is a design review item, not a coding task. When the time comes: design the
+fusion layer shape first, then the visual projection surface, then wire them.
+The GOT model (navigation-first, surfaces connect naturally) is the guiding principle.
+
+---
+
 ## FUTURE — icecream debug library (2026-07-20)
 
 `pip install icecream` — drop-in replacement for debug prints. `ic(expr)` auto-labels

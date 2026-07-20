@@ -9254,10 +9254,13 @@ def detect_conventions(oracle: "DBOracle", args: dict) -> str:
     Args:
         scope:      optional file path substring to restrict corpus
         min_family: minimum cluster size (default 3)
+        sort:       'established' (default) -- largest families first, dominant patterns lead
+                    'emerging'              -- smallest families first, nascent conventions lead
     """
     conn = oracle.conn
     scope = (args.get("scope") or "").strip()
     min_family = int(args.get("min_family", 3))
+    sort_mode = (args.get("sort") or "established").strip().lower()
 
     # ── 1. Fetch all functions (non-test, non-dunder) ────────────────────
     query = (
@@ -9435,7 +9438,9 @@ def detect_conventions(oracle: "DBOracle", args: dict) -> str:
             f"to define a canon. Try a broader scope or lower min_family."
         )
 
-    lines.append(f"Conventions: {len(analysable)} family/families found\n")
+    analysable.sort(key=lambda t: len(t[2]["members"]), reverse=(sort_mode != "emerging"))
+
+    lines.append(f"Conventions: {len(analysable)} family/families found ({sort_mode} sort)\n")
 
     for token, kind, analysis in analysable:
         canon = analysis["canon"]
