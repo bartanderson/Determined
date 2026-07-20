@@ -8,7 +8,22 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
-2026-07-20 (s224): Stale handoff lesson: when SESSION_STATE says "build X" but X already
+2026-07-20 (s227): Structural gap pattern framework -- five corpus-agnostic disconnect patterns.
+Derived from dj2 phases.py ABC analysis. Patterns apply to any language/corpus:
+(1) Disconnected Contract: impl exists, ABC exists, `class Foo(ABC)` never written.
+(2) Orphaned Design Doc: interface file never imported by any other file.
+(3) Phantom Factory: factory ABC (all `create_*` methods) with no subclass = wiring mechanism never built.
+(4) Stranded Pipeline Stage: stage with no edges to predecessor/successor in a known sequence.
+(5) Self-Identifying Orphan: class docstring claims "Phase: X" but doesn't inherit the X ABC.
+Tools shipped: find_isolated_modules (Pattern 2), find_phantom_factories (Pattern 3),
+detect_doc_drift Check 4 (Pattern 5). Pattern 1 tool (find_orphaned_interfaces) is medium effort, not yet built.
+
+2026-07-20 (s227): find_isolated_modules severity tiering -- test files produce noise.
+68 isolated modules in dj2: 1 critical (phases.py), 67 moderate (mostly tests/ and scripts).
+Test files are correct to show as isolated (nothing imports them from production code).
+Future enhancement: add a test-file filter tier or default-suppress test paths. Not done yet.
+
+2026-07-20 (s226): Stale handoff lesson: when SESSION_STATE says "build X" but X already
 exists, mention it in one sentence and move on. No re-testing needed to confirm what code
 proves. Update docs to reflect reality, then proceed to the actual next item.
 

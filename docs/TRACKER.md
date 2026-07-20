@@ -206,6 +206,23 @@ The GOT model (navigation-first, surfaces connect naturally) is the guiding prin
 
 ---
 
+## FUTURE — Sidebar panel collapse (2026-07-20)
+
+Left sidebar sections hide content but leave wasted space because `.sb-section` uses
+`flex: 1`, claiming equal flex share regardless of content visibility.
+
+**Fix:** change `.sb-section` to `flex: 0 0 auto` so sections shrink to content.
+Add collapse-to-label-bar toggle: clicking the section label shows/hides the body,
+collapsed state = 26px label bar only, no gap. Stable spatial order (nothing reorders).
+Model: VS Code sidebar section collapse behavior.
+
+Files: `determined/ui/static/style.css` (.sb-section rule), `determined/ui/templates/console.html`
+(click handler on `.sidebar-label` elements, toggle a `.collapsed` class).
+
+Deferred: not worth fixing now, do in next UI rework pass.
+
+---
+
 ## FUTURE — icecream debug library (2026-07-20)
 
 `pip install icecream` — drop-in replacement for debug prints. `ic(expr)` auto-labels
