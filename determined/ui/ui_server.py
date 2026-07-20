@@ -1849,6 +1849,27 @@ def handle_bag_clear(data):
     handle_bag_query({"bag": bag_id})
 
 
+@socketio.on("get_file_tree")
+def handle_get_file_tree(data):
+    """Return all file paths from the corpus DB for the editor file tree."""
+    if _oracle is None:
+        emit("file_tree_result", {"error": "no corpus loaded"}); return
+    try:
+        rows = _oracle.conn.execute(
+            "SELECT file_path FROM files ORDER BY file_path"
+        ).fetchall()
+        root = str(Path(_oracle.get_project_root())).replace("\\", "/")
+        paths = []
+        for (fp,) in rows:
+            rel = fp.replace("\\", "/")
+            if rel.startswith(root + "/"):
+                rel = rel[len(root) + 1:]
+            paths.append(rel)
+        emit("file_tree_result", {"paths": paths})
+    except Exception as exc:
+        emit("file_tree_result", {"error": str(exc)})
+
+
 @socketio.on("open_file")
 def handle_open_file(data):
     """Return full file content + DB symbol list for the editor panel."""

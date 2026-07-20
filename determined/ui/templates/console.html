@@ -375,6 +375,7 @@
           <button class="lens-sel-btn active" data-mv="graph">Graph</button>
           <button class="lens-sel-btn" data-mv="imports">Imports</button>
           <button class="lens-sel-btn" data-mv="topology">Topology</button>
+          <button id="map-popout-btn" class="send-btn" style="margin-left:auto;padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
         <div id="map-view-graph" style="display:flex;flex-direction:column;flex:1;min-height:0">
           <div class="graph-toolbar">
@@ -423,6 +424,7 @@
         <div class="lens-sel-bar">
           <button class="lens-sel-btn active" data-fl="stubs">Stubs</button>
           <button class="lens-sel-btn" data-fl="queue">Build queue</button>
+          <button id="frontier-popout-btn" class="send-btn" style="margin-left:auto;padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
         <div id="fl-stubs" style="display:flex;flex-direction:column;flex:1;min-height:0">
           <div class="graph-toolbar" style="flex-shrink:0;gap:.4rem">
@@ -518,12 +520,26 @@
           <button class="send-btn" id="ed-popout-btn" style="padding:3px 8px;font-size:.82em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
 
-        <!-- body: symbol sidebar + code -->
+        <!-- body: left sidebar + code -->
         <div id="ed-body" style="display:flex;flex:1;min-height:0;overflow:hidden">
-          <!-- symbol sidebar -->
-          <div id="ed-symbols" style="width:180px;min-width:140px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--bg);font-size:.78em;font-family:var(--font-mono);padding:4px 0">
-            <div style="padding:4px 8px;color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);margin-bottom:2px">Symbols</div>
-            <div id="ed-sym-list"></div>
+          <!-- left sidebar: file tree (no file open) or symbol list (file open) -->
+          <div id="ed-symbols" style="width:180px;min-width:140px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--bg);font-size:.78em;font-family:var(--font-mono)">
+            <!-- file tree pane -->
+            <div id="ed-file-tree-pane" style="display:flex;flex-direction:column;flex:1;min-height:0">
+              <div style="padding:4px 8px;color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;flex-shrink:0">
+                Files
+                <input id="ed-tree-filter" placeholder="filter…" style="flex:1;font-size:.85em;background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:1px 4px;color:var(--text1);min-width:0">
+              </div>
+              <div id="ed-file-tree" style="flex:1;overflow-y:auto;padding:2px 0"></div>
+            </div>
+            <!-- symbol list pane (shown when a file is open) -->
+            <div id="ed-sym-pane" style="display:none;flex-direction:column;flex:1;min-height:0">
+              <div style="padding:4px 8px;color:var(--text3);font-size:.75em;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;flex-shrink:0">
+                <span style="flex:1">Symbols</span>
+                <span id="ed-tree-toggle" style="cursor:pointer;opacity:.6;font-size:1em" title="Show file tree">☰</span>
+              </div>
+              <div id="ed-sym-list" style="flex:1;overflow-y:auto;padding:4px 0"></div>
+            </div>
           </div>
           <!-- code area -->
           <div id="ed-code-wrap" style="flex:1;overflow:auto;background:var(--bg);position:relative">
@@ -544,6 +560,7 @@
           <button class="lens-sel-btn" data-kl="pins">Pins</button>
           <button class="lens-sel-btn" data-kl="bag">Bag</button>
           <button class="lens-sel-btn" data-kl="dochealth">Doc health</button>
+          <button id="knowledge-popout-btn" class="send-btn" style="margin-left:auto;padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
         <div id="kn-view-artifacts" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;padding:10px 14px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
@@ -597,6 +614,7 @@
           <button id="shape-run-btn" class="send-btn" style="padding:3px 10px;font-size:.82em">Run ↵</button>
           <span id="shape-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
           <span id="shape-status" style="font-size:.78em;color:var(--text3);margin-left:auto"></span>
+          <button id="shape-popout-btn" class="send-btn" style="padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
         <div id="shape-verdict" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;font-family:var(--font-mono);font-size:.85em;line-height:1.7;white-space:pre-wrap"></div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -3498,11 +3516,16 @@ function edRenderTabs() {
 function edActivateFile(i) {
   _edActive = i;
   edRenderTabs();
-  if (i < 0 || i >= _edFiles.length) { edSymList.innerHTML = ""; edCodeBody.innerHTML = ""; return; }
+  if (i < 0 || i >= _edFiles.length) {
+    edSymList.innerHTML = ""; edCodeBody.innerHTML = "";
+    edShowFileTree(true);
+    return;
+  }
   const f = _edFiles[i];
   edPathInput.value = f.rel_path;
   edRenderSymbols(f.symbols);
   edRenderCode(f.lines, f.symbols);
+  edShowFileTree(false);
 }
 
 function edCloseFile(i) {
@@ -3672,6 +3695,125 @@ edPopoutBtn.addEventListener("click", () => {
     edPopoutBtn.title = "Pop out to full viewport";
   }
 });
+
+// ── editor file tree ──────────────────────────────────────
+const edFileTreePane = document.getElementById("ed-file-tree-pane");
+const edSymPane      = document.getElementById("ed-sym-pane");
+const edFileTreeEl   = document.getElementById("ed-file-tree");
+const edTreeFilter   = document.getElementById("ed-tree-filter");
+const edTreeToggle   = document.getElementById("ed-tree-toggle");
+let _edFileTree = [];   // all paths from last file_tree_result
+
+function edShowFileTree(show) {
+  edFileTreePane.style.display = show ? "flex" : "none";
+  edSymPane.style.display      = show ? "none" : "flex";
+}
+
+function edRenderFileTree(filter) {
+  const q = (filter || "").toLowerCase();
+  const paths = q ? _edFileTree.filter(p => p.toLowerCase().includes(q)) : _edFileTree;
+  edFileTreeEl.innerHTML = "";
+  if (!paths.length) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "padding:6px 8px;color:var(--text3);font-size:.8em";
+    empty.textContent = _edFileTree.length ? "no match" : "no corpus loaded";
+    edFileTreeEl.appendChild(empty);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  paths.forEach(p => {
+    const el = document.createElement("div");
+    el.style.cssText = "padding:2px 8px;cursor:pointer;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    el.title = p;
+    el.textContent = p.split("/").pop();
+    el.addEventListener("click", () => { edOpenFile(p); });
+    el.addEventListener("mouseenter", () => el.style.background = "var(--bg3)");
+    el.addEventListener("mouseleave", () => el.style.background = "");
+    frag.appendChild(el);
+  });
+  edFileTreeEl.appendChild(frag);
+}
+
+socket.on("file_tree_result", data => {
+  if (data.error) return;
+  _edFileTree = data.paths || [];
+  edRenderFileTree(edTreeFilter.value);
+});
+
+edTreeFilter.addEventListener("input", () => edRenderFileTree(edTreeFilter.value));
+
+edTreeToggle.addEventListener("click", () => edShowFileTree(true));
+
+// request file tree when editor tab is activated
+document.querySelectorAll(".tab[data-tab='editor']").forEach(t => {
+  t.addEventListener("click", () => {
+    if (_edFiles.length === 0) socket.emit("get_file_tree", {});
+  });
+});
+
+// also load on corpus_ready (handled below via edLoadFileTree flag)
+socket.on("corpus_ready", () => { socket.emit("get_file_tree", {}); }, { once: false });
+
+// ── verdict strip drill-down ───────────────────────────────
+// After the verdict strip renders, linkify file paths so clicking opens editor.
+const shapeVerdict = document.getElementById("shape-verdict");
+
+function verdictLinkify() {
+  const text = shapeVerdict.textContent;
+  if (!text.trim()) return;
+  // match relative paths like foo/bar.py or bar.py
+  const re = /\b([\w./\\-]+\.(?:py|ts|js|tsx|jsx|java|go|rb|cs|cpp|c|h))\b/g;
+  const html = escHtml(text).replace(
+    /\b([\w.\/\\-]+\.(?:py|ts|js|tsx|jsx|java|go|rb|cs|cpp|c|h))\b/g,
+    (m) => `<span class="verdict-file-link" style="color:var(--blue);cursor:pointer;text-decoration:underline" title="Open in editor">${m}</span>`
+  );
+  shapeVerdict.innerHTML = html;
+  shapeVerdict.querySelectorAll(".verdict-file-link").forEach(el => {
+    el.addEventListener("click", () => { edOpenFile(el.textContent); activateTab("editor"); });
+  });
+}
+
+// hook into the shape_result handler: linkify after verdict is populated
+const _origVerdictObserver = new MutationObserver(() => {
+  if (shapeVerdict.style.display !== "none" && shapeVerdict.textContent.trim()) {
+    verdictLinkify();
+    _origVerdictObserver.disconnect(); // reconnect on next shape run
+  }
+});
+_origVerdictObserver.observe(shapeVerdict, { childList: true, characterData: true, subtree: true });
+
+// re-arm after each shape run button click
+document.getElementById("shape-run-btn").addEventListener("click", () => {
+  _origVerdictObserver.observe(shapeVerdict, { childList: true, characterData: true, subtree: true });
+});
+
+// ── generalized panel popout ───────────────────────────────
+function makePanelPopout(panelId, btnId) {
+  const panel = document.getElementById(panelId);
+  const btn   = document.getElementById(btnId);
+  if (!panel || !btn) return;
+  let popped = false;
+  let savedStyle = "";
+  btn.addEventListener("click", () => {
+    popped = !popped;
+    if (popped) {
+      savedStyle = panel.style.cssText;
+      panel.style.cssText = "position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;background:var(--bg);overflow:auto";
+      btn.textContent = "✕ Restore";
+      btn.title = "Restore to panel";
+    } else {
+      panel.style.cssText = savedStyle;
+      panel.classList.add("active");
+      btn.textContent = "⤢";
+      btn.title = "Pop out to full viewport";
+    }
+  });
+}
+
+makePanelPopout("panel-shape",     "shape-popout-btn");
+makePanelPopout("panel-frontier",  "frontier-popout-btn");
+makePanelPopout("panel-map",       "map-popout-btn");
+makePanelPopout("panel-knowledge", "knowledge-popout-btn");
 
 // ── sidebar ───────────────────────────────────────────────
 // Single fixed structure column: all sections always visible, no rail,
