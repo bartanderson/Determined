@@ -577,6 +577,16 @@ def score_hypotheses(signals: dict) -> list[dict]:
         scores["blocked-on-prerequisite"] += 0.2
         evidence["design-intent-stated"].append(f"{caller_count} caller(s) — slot is live")
 
+        # Compound: called + no behavioral intent + empty body → slot wired up, nothing filled in
+        # "placeholder" doc (label only, no behavioral language) is the same as no doc here.
+        # The function exists in the call graph but carries no actionable content.
+        # Strongest structural indicator of blocked-on-prerequisite.
+        if doc_quality in ("none", "placeholder") and body == "empty_pass" and not has_intent:
+            scores["blocked-on-prerequisite"] += 1.0
+            evidence["blocked-on-prerequisite"].append(
+                "called but no behavioral intent + empty body — slot wired up, implementation missing"
+            )
+
     # ── Signal: body shape ───────────────────────────────────────────────
     if body == "empty_pass":
         # Weakest discriminator alone; combine with other signals
