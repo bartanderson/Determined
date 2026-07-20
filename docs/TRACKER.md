@@ -40,6 +40,105 @@ understanding, not the other way around.
 
 ---
 
+## FUTURE — Determined as knowledge compiler + MCTS reasoning engine (2026-07-20)
+
+### The synthesis
+
+Determined is already an oracle (symbols, call graph, imports, FSM artifacts, dead
+concepts). The knowledge compilation pattern says: use Claude to design the system
+once, then let the system generate training data forever. Determined is uniquely
+positioned to do this for code analysis.
+
+### The architecture
+
+```
+Determined (oracle over real corpora)
+    ↓
+classify_stub UNCERTAIN  ←── MCTS root node
+    ↓
+MCTS explores signal space       ← actions = evidence-gathering queries (imports, callee chain, dead artifacts, design notes)
+    ↓
+score_hypotheses(accumulated)    ← evaluate() / rollout
+    ↓
+resolution path                  ← one training sample
+    ↓
+run over N repos                 ← generator that never stops
+    ↓
+small stub-classification model  ← trained on resolution paths, not answers
+```
+
+### Key ideas
+
+**MCTS as evidence-gathering search:** Instead of pre-computing all signals
+(current approach), MCTS gathers evidence on-demand when flat signals don't
+converge. Actions = signal-gathering queries. Evaluate = score_hypotheses.
+When the tree finds a path that lifts confidence past threshold, that path is a
+resolution. The search trace is a training sample: not "here is the answer" but
+"here is the sequence of evidence-gathering that resolves this uncertainty."
+
+**Lazy evidence gathering:** Imports, callee-chain, dead artifacts, design notes
+are expensive to check for every stub. In MCTS they're only gathered when the
+cheap signals (body shape, caller count) leave confidence below threshold.
+Better architecture than the current front-loading approach.
+
+**Corpus as generator:** High-confidence MCTS resolutions from real repos are
+ground truth. Run over 10,000 repos = millions of labeled resolution paths.
+Claude designs the system once; Determined generates the data forever.
+
+**Curriculum (Plan A):** Ask Claude once: "What evidence about a function would
+an expert check, in what order, to determine why it's unimplemented?" That answer
+is the MCTS action space. Claude leaves the loop.
+
+**Judges (Plan C):** Each signal is already a deterministic judge. score_hypotheses
+is already a judge compositor. The goal is to make these calibrated enough to be
+a trustworthy rollout function — then MCTS can explore without LLM calls.
+
+### Prerequisites (what must land first)
+
+1. Signal weight calibration against dj2 known-answer stubs (threshold tuning)
+2. UNCERTAIN resolution paths documented (what evidence resolves each case)
+3. evaluate() stable enough to use as MCTS rollout function
+
+### Gate
+
+Don't build MCTS until the flat kernel (classify_stub) proves insufficient on
+real corpora. If calibrated signals resolve 90%+ of stubs without LLM escalation,
+MCTS is the path forward for the remaining 10%. If calibration stalls, MCTS
+is the answer.
+
+---
+
+## FUTURE — Untapped classify_stub signals (2026-07-20)
+
+Four signals exist in the DB but are not queried by extract_signals. Add in
+priority order when calibration work needs more signal surface.
+
+**1. `imports` table (highest value)**
+If the stub's docstring mentions CombatFSM but no file in corpus imports
+CombatFSM, that's a hard concept-not-applicable signal — definitively not
+just a name-match miss. Conversely, import present = concept is wired in.
+Query: `SELECT * FROM imports WHERE name LIKE '%{base}%'`.
+
+**2. `dead` knowledge_artifacts matching concept (high value)**
+2,255 dead-concept markers and inline notes are ingested but never queried.
+A `dead` artifact whose subject matches the stub's concept = strong
+concept-not-applicable. Stronger than removal-language scan on stub text
+alone because it's a corpus-wide annotation.
+Query: `SELECT subject FROM knowledge_artifacts WHERE kind='dead' AND LOWER(subject) LIKE '%{base}%'`.
+
+**3. `return_type` existence check (moderate value)**
+return_type is extracted but never scored. For stubs returning a named type
+(not dict/None/primitives), check whether that type exists as a class.
+`List['Race']` with no Race class = concept-not-applicable signal.
+Already in signals dict — just needs a scoring rule.
+
+**4. `behavioral_contracts` / `contract_violations` (low, check first)**
+Tables exist in schema. If a stub has a contract and violations, different
+classification dimension — not just "why does this stub exist" but "it exists
+and is already wrong." Check whether populated for dj2 before investing.
+
+---
+
 ## FUTURE — icecream debug library (2026-07-20)
 
 `pip install icecream` — drop-in replacement for debug prints. `ic(expr)` auto-labels
@@ -406,6 +505,11 @@ Function judgments aggregate into higher-level shapes:
       vars not set. Five distinct cases -- see HISTORY.md 2026-07-17 entry.
 - [ ] Hypothesis count cap (3? all above threshold?)
 - [ ] Threshold calibration against known cases (dj2 stubs are the test set)
+      Calibration run 2026-07-20: _get_combat_context → blocked-on-prerequisite [0.43] OK.
+      _get_encounter_context → design-intent-stated [0.70] — arguably correct (EncounterFSM
+      has config entries + Encounter classes exist + docstring states intent). Expected
+      blocked-on-prerequisite was an assumption. Tool is reading evidence correctly.
+      Subrace stubs (RM68) are excluded from calibration — DEFERRED dj2 cleanup, not classify_stub cases.
 - [ ] Concept presence: grep-based or embedding-based? (grep first)
 - [ ] Prerequisite map: match named concepts across blocked-on comments
 - [ ] UI/flow: how corpus-level projections surface -- NOT DESIGNED (separate item)
