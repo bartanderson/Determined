@@ -160,6 +160,129 @@ not planning.
 
 ---
 
+## RM71 — Structured data ingestor: normalize non-Python artifacts to graph schema (DESIGN)
+
+### The framing
+
+"Data as code" — config files, schemas, and build manifests carry the same kind of
+intent a codebase carries, just in different formats. A state machine config encodes
+behavioral flow. An OpenAPI spec encodes API topology. A build DAG encodes prerequisite
+structure. A package manifest encodes dependency chains.
+
+All of these reduce to the same underlying representation: **named nodes + directed
+edges + optional labels on edges**. Once normalized to that form, they're the same
+problem Determined already solves on Python call graphs — path finding, prerequisite
+chains, orphan detection, density analysis, blocked-on-prerequisite classification.
+
+The ingestor changes per format. The reasoning layer stays the same.
+
+### Target artifact types (priority order)
+
+**Highest value — already graph-shaped, carry directed flow:**
+- FSM configs (JSON/YAML) — states as nodes, transitions as edges, guards/actions
+  as labels. Already observed in dj2: `encounter.json` shows combat gated behind
+  encounter via `fight → resolving_fight → start_combat`. Prerequisites made explicit.
+- Build files (Makefile, Bazel BUILD, Cargo.toml) — explicit DAGs. Target depends
+  on target. The most formal prerequisite representation in any corpus.
+- Package manifests (package.json, requirements.txt, go.mod, Cargo.lock) —
+  dependency graphs with version constraints. Cycles detectable. Already a graph.
+- OpenAPI/Swagger specs — endpoints as nodes, request/response shapes as edges.
+  Directed flow of what calls what with what shape.
+- CI/CD configs (GitHub Actions YAML, GitLab CI) — job dependency graphs.
+  Same DAG structure as build files.
+
+**High value — schema/type graphs:**
+- GraphQL schemas — types as nodes, fields as edges, full traversable graph.
+- Protobuf/Avro/Thrift — data shape hierarchies, inheritance as directed edges.
+- SQL schemas — foreign keys are directed edges between tables. Referential
+  integrity is a DAG of data dependencies.
+
+**Moderate value — weaker but present directionality:**
+- Game data files (dj2's `07_encounter.json`, `14_campaign.json` etc.) —
+  structured domain data with relationships between named entities.
+- Markdown docs with headings — hierarchy as tree, cross-references as edges.
+
+### Normalization target
+
+Existing graph schema (graph_edges table) already stores caller/callee pairs.
+Structured data artifacts normalize to the same: source_node, target_node,
+edge_type (transition/depends_on/references/calls), label (guard/action/version).
+
+New table or extended graph_edges with artifact_type column so reasoning can
+be scoped to code-graph, config-graph, or both together.
+
+### What this unlocks
+
+- `_get_combat_context` stub + missing `combat.json` + `start_combat` only
+  reachable via `encounter.json` fight transition = `blocked-on-prerequisite`
+  with hard evidence from config, not inference from comments.
+- Prerequisite map in RM69 corpus projections gains config-layer data:
+  "X stubs blocked on Y" can now include "Y requires Z per build DAG."
+- Convention detector (RM70) gains a new artifact family to cluster:
+  naming patterns across config keys, not just function names.
+
+### Not yet started — design only
+
+Ingestor implementation path not specified. Format priority above is the
+starting sequence. Normalize to graph first, reason second.
+
+---
+
+## RM70 — Convention detector: structural family clustering and outlier surfacing (DESIGN)
+
+### Problem
+
+The tool classifies individual stubs but cannot see across a codebase to notice that
+a set of functions forms a family — defined not by type or module but by structural
+similarity across independent dimensions — and that some members of that family are
+outliers. The outlier is the interesting finding: it looks like it belongs but its
+internal composition diverges from what its siblings established.
+
+### Core idea
+
+A comparison classifier that discovers families bottom-up from corpus signals, with
+three gates before declaring anything analysable:
+
+1. **Existence gate** — 3+ functions share a structural naming pattern (prefix, suffix,
+   or infix). Below 3 there is no family, just coincidence. The 3+ threshold is the
+   minimum for a pattern to be worth naming. Naming clusters are extracted from the
+   corpus, not hardcoded — the tool finds what naming units the codebase actually uses.
+
+2. **Usefulness gate** — within the candidate cluster, enough independent feature
+   dimensions agree to define a canon. Features: what the function calls, what it
+   returns, body weight, parameter shape. Agreement on one dimension alone is noise.
+   The gate requires multiple dimensions to converge before the family is declared.
+
+3. **Confluence gate** — the agreeing features must be *independent* of each other.
+   Naming + calls + return shape all pointing the same direction is confluence.
+   Three variations of the same feature is not. Independence is what makes the
+   judgment defensible.
+
+Below all three gates: hold the candidate, accumulate evidence, do not declare.
+Above all three gates: the family is analysable and outliers can be surfaced.
+
+### Output
+
+- Family definition: the feature dimensions where members agree (the canon)
+- Per-member comparison: *related by* (matches canon) vs *differs by* (diverges)
+- Outlier surface: members that pass the naming gate but fail the confluence gate
+- Cross-family relationships: families that share some feature dimensions but not
+  others — structural bridges between conventions
+
+### Relationship to classify_stub
+
+Not a signal feeding into classify_stub. A standalone tool whose output is a
+structural map — families, canons, outliers, bridges — not a score. Richer than
+a classification, different question: not "why does this stub exist" but "what
+convention is this codebase expressing and where does it break down."
+
+### Not yet started — design only
+
+Implementation path not yet specified. Gate thresholds (feature agreement %, 
+independence criteria) need calibration against real corpora before committing.
+
+---
+
 ## RM69 — Judgment layer: classify_stub + corpus-level projections (DESIGN)
 
 ### Problem

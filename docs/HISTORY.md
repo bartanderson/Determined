@@ -8,6 +8,25 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-20 (s222): Domain knowledge from corpus designers goes into Claude's interpretation
+context only — never into tool scoring logic. Tool must earn conclusions from corpus signals.
+When the tool misses something, the question is "what corpus-derivable signal would reveal
+this?" not "how do we tell the tool what we know." The flip happens when the tool is sharp
+enough to drive fixes in the target corpus. Not before. (Memory: feedback_tool_vs_designer_knowledge.md)
+
+2026-07-20 (s222): classify_stub currently can't distinguish two stubs that look identical
+at the call site but have completely different support structure behind them. _get_encounter_context
+and _get_combat_context are both called from ContextBuilder.build() — siblings by position —
+but encounter has models, generator, FSM config, and emits events; combat has none of that.
+The missing signal: depth of support structure behind a stub, not just the stub itself.
+
+2026-07-20 (s222): FSM config (encounter.json) shows combat is gated behind encounter via
+fight transition: awaiting_choice → resolving_fight → start_combat action. No combat.json
+exists. This is a prerequisite made explicit in config, not inferable from Python alone.
+Filed as RM71: structured data ingestor — normalize FSM configs, build DAGs, OpenAPI specs,
+package manifests to the same node/edge graph schema the call graph already uses. Same
+reasoning layer, different ingestors per format.
+
 2026-07-19 (s220): When removing HTML elements, grep for bare `.getElementById("id").addEventListener`
 before committing. Removed `#mode-banner-clear` HTML but not its JS listener; the null
 dereference silently stopped all script execution mid-script (function declarations survived

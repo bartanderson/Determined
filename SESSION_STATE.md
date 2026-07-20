@@ -1,65 +1,71 @@
-Written at commit: 68044b2
+Written at commit: 8ec0b8c
 
-# SESSION STATE — session 221
-Written at commit: 68044b2 (2026-07-19)
+# SESSION STATE — session 222
+Written at commit: 8ec0b8c (2026-07-20)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Phase D of UI redesign shipped [V — commit 68044b2]**
+**Exploratory analysis session — no engine code changed [V]**
 
-Sidebar collapsible sections. Each section in the structure column now has a
-collapse chevron in its label row. State persisted per-section in localStorage.
+Validated Phase D collapse behavior with dj2 corpus loaded [V]:
+- Corpus map: OPEN, Analyze: closed, all others closed — correct.
 
-| Section | Default on corpus load |
-|---------|----------------------|
-| Corpus map | expanded |
-| Analyze | collapsed (collapses on `corpus_ready`) |
-| Oracle | collapsed |
-| Quick actions | collapsed |
-| Tools | collapsed |
-| Investigation | collapsed |
+Ran classify_stub probe against all dj2 stubs [V]. Key findings:
+- 5 subrace stubs → [0.97] concept-not-applicable (explicit removal language + sibling cluster). Tool working correctly.
+- 5 real-gap stubs: _get_encounter_context [0.70], process_consequences [0.40],
+  on_arc_completed UNCERTAIN, _register_world_tools UNCERTAIN, _get_combat_context UNCERTAIN.
+- 3 test stubs surfacing in list (known issue: list_stubs test-fixture filter).
 
-Analyze re-expands on `corpus_status` when no corpus loaded (so user can see
-the path input). Oracle result gets its own pop-out button (⤢) separate from
-section collapse — appears only when result is populated.
+**Design discussion — two new TRACKER items filed:**
 
-Also committed: CLAUDE.md step 2a updated from CLOSURE.md → UI_REDESIGN.md.
+**RM70 — Convention detector [?]** (TRACKER updated [V])
+Bottom-up family clustering: extract naming patterns from corpus, cluster by
+structural similarity (calls, returns, body weight), find canonical shape from
+members with 3+ threshold, surface outliers by deviation. Three gates: existence
+(3+), usefulness (feature agreement), confluence (independent dimensions).
+Not a classify_stub signal — standalone tool producing family maps.
 
-## Tests [V = verified, ? = recalled]
+**RM71 — Structured data ingestor [V]** (TRACKER updated [V])
+"Data as code" framing: FSM configs, build DAGs, OpenAPI specs, package manifests
+all reduce to named nodes + directed edges. Normalize to existing graph schema.
+Same reasoning layer (path finding, prerequisite chains, orphan detection) applies
+without modification. Priority: FSM JSON → build files → package manifests → OpenAPI.
+Unlocks: config-layer evidence for blocked-on-prerequisite; combat gated behind
+encounter is visible in encounter.json fight→resolving_fight→start_combat transition.
 
-- UI-only change; no Python engine code touched [V]
-- Page loads clean, no JS errors [V — read_console_messages returned none]
-- Collapse toggle verified via JS eval: Quick actions starts closed, click opens,
-  chevron updates to ▾ [V]
-- All sidebar body IDs present in HTML [V — grepped corpus-map-inner, sb-analyze-body, etc.]
+**Key methodology note filed to memory and HISTORY:**
+Domain knowledge from corpus designers goes into Claude's interpretation context only —
+never into tool scoring. Tool earns conclusions from corpus signals. The flip (using
+Determined to drive fixes in dj2) happens when the tool is sharp enough.
 
 ## Known issues [V = verified, ? = recalled]
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as
-FQNs (Class.method); tool queries bare names. Workaround: use graph_path.
+FQNs; tool queries bare names. Workaround: use graph_path.
 
-**classify_stub file_path_hint [?]:** path matching fails for TS corpora when
-file_path given. Workaround: omit file_path.
+**list_stubs surfaces test fixtures [V]:** check_parley, get_player_by_session,
+test_encounter_parley_failure appear in dj2 stub list. Filter needed in corpus_projections.
 
-**list_stubs test fixtures [?]:** test stubs surface in stub list. Not yet fixed.
+**classify_stub can't see support-structure depth [?]:** two stubs identical at call
+site but completely different backing infrastructure look the same to the scorer.
+_get_encounter_context vs _get_combat_context is the concrete example.
 
 **Server start command [V]:** always `.venv\Scripts\python.exe -m determined.ui.ui_server`
 from `C:\Users\bartl\dev\Determined`.
 
 ## NEXT SESSION — start here
 
-**Phase D is done [V].** All four phases of UI_REDESIGN.md are now shipped.
+No code changes this session. Pick up from RM69 implementation or RM70/RM71 design.
 
-**Next: read UI_REDESIGN.md in full** — check if there are any remaining open
-items or follow-up work noted. Then check TRACKER.md for what comes after the
-redesign (RM59 feature shape analysis is the active item).
+**Most actionable next step:** fix the test-fixture filter in corpus_projections.py
+(list_stubs excluding test paths) — small, concrete, verified gap.
 
-**RM59 — Feature shape analysis:**
-Three new tools: list_features (directory scan), feature_shape (path tracing),
-development_priorities (completeness ranking). Corpus-agnostic, directory-first.
-Phase 1 first: list_features + feature_shape. See TRACKER.md RM59 for full design.
+**Then:** look at classify_stub scoring for the "has callers, no other signal" case —
+`on_arc_completed` and `_register_world_tools` both have live callers but score UNCERTAIN.
+Caller-present with no doc and empty body should lean toward blocked-on-prerequisite.
+Calibration question: what threshold nudge makes that correct without breaking other cases?
 
-**Trap to watch**: when removing HTML elements, grep for all JS references to
-those element IDs before committing (see HISTORY.md entry 2026-07-19 s220).
+**Trap to watch:** domain knowledge goes into interpretation, not tool logic. Before
+adding any new classify_stub signal, ask: is this derivable from corpus alone?
