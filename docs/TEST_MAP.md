@@ -74,6 +74,7 @@ pytest tests/regression/<file>  [<file2> ...]
 | Source module | Test file(s) |
 |---|---|
 | cross_language_linker.py | test_cross_language_linker.py |
+| shape_scanner.py | test_shape_scanner.py |
 | dynamic_edges.py | test_dynamic_edges.py test_external_interface_dispatch.py test_http_chain.py |
 | language_walker.py | test_language_walker.py test_language_walker_persist.py test_cross_language_linker.py test_rust_trait_dispatch.py |
 | parse_ast.py | test_call_edge_extraction.py test_call_graph_accuracy.py test_classify_role_flask.py test_function_reference_edges.py test_inline_note_extraction.py test_runtime_bindings_wiring.py test_runtime_resolution_lock.py test_stub_detection.py |

@@ -264,10 +264,19 @@ be scoped to code-graph, config-graph, or both together.
 - Convention detector (RM70) gains a new artifact family to cluster:
   naming patterns across config keys, not just function names.
 
-### Not yet started — design only
+### Phase 1 — shape scanner DONE (2026-07-20, session 224)
 
-Ingestor implementation path not specified. Format priority above is the
-starting sequence. Normalize to graph first, reason second.
+determined/ingestion/shape_scanner.py — format-agnostic, multi-method induction,
+runs automatically at end of ingest, results in knowledge_artifacts (kind='shape_finding').
+Agent tool: list_shape_findings(). 13/13 tests passing.
+All 5 dj2 FSMs detected at 100% confidence. encounter.json: 4 nodes, 5 edges.
+
+### Phase 2 — normalizer (NEXT)
+
+Takes high-confidence directed_graph findings from shape scanner, writes transitions
+to graph_edges (edge_type='config_edge'), states/actions/guards to knowledge_artifacts.
+This unlocks _get_combat_context UNCERTAIN resolution.
+File: determined/ingestion/shape_normalizer.py (new).
 
 ---
 

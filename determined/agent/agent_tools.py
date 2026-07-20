@@ -8633,6 +8633,68 @@ TOOLS["stub_concept_ghost_map"] = (stub_concept_ghost_map, "assessor")
 TOOLS["stub_corpus_verdict"]    = (stub_corpus_verdict,    "assessor")
 
 
+def list_shape_findings(assessor: "Assessor", args: dict) -> str:
+    """
+    list_shape_findings([min_confidence]) — show structure found by the shape scanner
+    in non-code files (JSON, YAML, markdown, etc.).
+
+    Reports file, detected kind, confidence, and any missing references.
+    Findings are stored during ingest; re-ingest to refresh.
+
+    Args:
+        min_confidence: float, default 0.0 — filter below this threshold
+    """
+    import json
+    oracle = assessor.oracle
+    conn = oracle.conn
+    min_conf = float(args.get("min_confidence", 0.0))
+
+    rows = conn.execute(
+        """
+        SELECT subject, content FROM knowledge_artifacts
+        WHERE kind = 'shape_finding'
+        ORDER BY subject
+        """
+    ).fetchall()
+
+    if not rows:
+        return "list_shape_findings: no shape findings stored. Re-ingest the corpus to scan."
+
+    results = []
+    for subject, content_str in rows:
+        try:
+            data = json.loads(content_str)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        conf = data.get("confidence", 0.0)
+        if conf < min_conf:
+            continue
+        results.append((conf, subject, data))
+
+    if not results:
+        return f"list_shape_findings: no findings above confidence {min_conf}."
+
+    results.sort(key=lambda r: r[0], reverse=True)
+
+    lines = ["list_shape_findings\n"]
+    for conf, subject, data in results:
+        kind = data.get("kind", "unknown")
+        nodes = data.get("node_count", 0)
+        edges = data.get("edge_count", 0)
+        notes = data.get("notes", "")
+        missing = data.get("missing", [])
+        lines.append(f"  {subject}")
+        lines.append(f"    kind: {kind}  confidence: {conf:.0%}  nodes: {nodes}  edges: {edges}")
+        if notes:
+            lines.append(f"    signals: {notes}")
+        if missing:
+            lines.append(f"    missing refs: {', '.join(missing[:5])}")
+    return "\n".join(lines)
+
+
+TOOLS["list_shape_findings"] = (list_shape_findings, "assessor")
+
+
 # ------------------------------------------------------------------
 # RM64: verify_implementation -- close-the-loop check after re-ingest
 # ------------------------------------------------------------------
