@@ -9480,6 +9480,132 @@ TOOLS["detect_conventions"] = (detect_conventions, "oracle")
 # rank_stubs -- RM69 step 6: judgment-aware stub ranking
 # ------------------------------------------------------------------
 
+def _compute_outlier_stub_set(conn, scope: str = "") -> set:
+    """Return set of stub names that are outliers in any passing detect_conventions family."""
+    import json as _json
+
+    query = (
+        "SELECT name, file_path, is_stub, return_type, param_types_json "
+        "FROM functions WHERE name NOT LIKE '\\_\\_%\\_\\_' ESCAPE '\\'"
+    )
+    params: list = []
+    if scope:
+        query += " AND file_path LIKE ?"
+        params.append(f"%{scope}%")
+    rows = conn.execute(query, params).fetchall()
+    if not rows:
+        return set()
+
+    def _bucket(n, thresholds=(0, 1, 3, 8)):
+        for i, t in enumerate(thresholds):
+            if n <= t:
+                return str(i)
+        return str(len(thresholds))
+
+    def _rt_category(rt):
+        if not rt:
+            return "none"
+        rt = rt.lower().strip()
+        if rt in ("none", "nonetype", ""):
+            return "none"
+        if rt in ("bool",):
+            return "bool"
+        if rt in ("int", "float"):
+            return "numeric"
+        if rt in ("str", "string"):
+            return "str"
+        if "dict" in rt or "mapping" in rt:
+            return "dict"
+        if "list" in rt or "sequence" in rt or "iterable" in rt:
+            return "list"
+        return "object"
+
+    fn_features: dict = {}
+    for name, file_path, is_stub, return_type, ptj in rows:
+        try:
+            params_parsed = _json.loads(ptj) if ptj else {}
+            param_count = len(params_parsed) if isinstance(params_parsed, dict) else 0
+        except Exception:
+            param_count = 0
+        caller_count = conn.execute(
+            "SELECT COUNT(DISTINCT caller) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+            (name, f"%.{name}"),
+        ).fetchone()[0]
+        callee_count = conn.execute(
+            "SELECT COUNT(DISTINCT callee) FROM graph_edges WHERE caller = ?",
+            (name,),
+        ).fetchone()[0]
+        fn_features[name] = {
+            "is_stub":     bool(is_stub),
+            "callers":     _bucket(caller_count),
+            "callees":     _bucket(callee_count),
+            "return_type": _rt_category(return_type),
+            "param_count": _bucket(param_count),
+            "body_weight": "stub" if is_stub else "impl",
+        }
+
+    # Gate 1: cluster by naming prefix/suffix (min_family=3)
+    prefix_clusters: dict = {}
+    suffix_clusters: dict = {}
+    for name in fn_features:
+        prefix, suffix = _naming_pattern(name)
+        if prefix:
+            prefix_clusters.setdefault(prefix, []).append(name)
+        if suffix and suffix != prefix:
+            suffix_clusters.setdefault(suffix, []).append(name)
+
+    candidate_clusters: dict = {}
+    for token, members in prefix_clusters.items():
+        if len(members) >= 3:
+            candidate_clusters[f"prefix:{token}"] = members
+    for token, members in suffix_clusters.items():
+        if len(members) >= 3 and f"suffix:{token}" not in candidate_clusters:
+            candidate_clusters[f"suffix:{token}"] = members
+
+    FEATURE_DIMS = ["callers", "callees", "return_type", "param_count", "body_weight"]
+    outlier_stubs: set = set()
+
+    for _, members in candidate_clusters.items():
+        member_feats = [fn_features[m] for m in members if m in fn_features]
+        if not member_feats:
+            continue
+        canon: dict = {}
+        agreement: dict = {}
+        for dim in FEATURE_DIMS:
+            vals = [f[dim] for f in member_feats]
+            counts: dict = {}
+            for v in vals:
+                counts[v] = counts.get(v, 0) + 1
+            majority_val = max(counts, key=lambda k: counts[k])
+            canon[dim] = majority_val
+            agreement[dim] = counts[majority_val] / len(vals)
+
+        # Gate 2: 2+ dims agree at >=70%
+        agreeing_dims = [d for d, a in agreement.items() if a >= 0.70]
+        if len(agreeing_dims) < 2:
+            continue
+
+        # Gate 3: independence across categories
+        categories = {
+            "structural": {"callers", "callees"},
+            "type": {"return_type", "param_count"},
+            "role": {"body_weight"},
+        }
+        cats_hit = sum(1 for cat_dims in categories.values() if any(d in agreeing_dims for d in cat_dims))
+        if cats_hit < 2:
+            continue
+
+        for name in members:
+            if name not in fn_features or not fn_features[name]["is_stub"]:
+                continue
+            feats = fn_features[name]
+            diverges = [d for d in agreeing_dims if feats[d] != canon[d]]
+            if diverges:
+                outlier_stubs.add(name)
+
+    return outlier_stubs
+
+
 def rank_stubs(assessor: "Assessor", args: dict) -> str:
     """
     rank_stubs([scope][, mode=priority|gap|perusal][, limit=20]) -- rank stubs
@@ -9521,6 +9647,7 @@ def rank_stubs(assessor: "Assessor", args: dict) -> str:
         return "No stubs found" + (f" matching scope '{scope}'" if scope else "")
 
     tail_set, middle_set, head_set = _get_chain_positions(conn)
+    outlier_stubs = _compute_outlier_stub_set(conn, scope)
 
     scored: list[dict] = []
     for name, file_path in stubs:
@@ -9536,17 +9663,19 @@ def rank_stubs(assessor: "Assessor", args: dict) -> str:
 
         caller_count = signals.get("caller_count", 0)
         chain_bonus = 5 if name in tail_set else (2 if name in middle_set else 0)
-        composite = caller_count * top_score + chain_bonus
+        outlier_bonus = 3 if name in outlier_stubs else 0
+        composite = caller_count * top_score + chain_bonus + outlier_bonus
 
         scored.append({
-            "name":       name,
-            "file":       (file_path or "").replace("\\", "/").split("/")[-1],
-            "file_path":  file_path,
-            "cls":        top_cls,
-            "confidence": top_score,
-            "callers":    caller_count,
-            "chain_bonus":chain_bonus,
-            "composite":  composite,
+            "name":         name,
+            "file":         (file_path or "").replace("\\", "/").split("/")[-1],
+            "file_path":    file_path,
+            "cls":          top_cls,
+            "confidence":   top_score,
+            "callers":      caller_count,
+            "chain_bonus":  chain_bonus,
+            "outlier_bonus":outlier_bonus,
+            "composite":    composite,
         })
 
     if not scored:
@@ -9561,10 +9690,11 @@ def rank_stubs(assessor: "Assessor", args: dict) -> str:
         lines = [f"Priority stubs ({len(actionable)} actionable, top {min(limit, len(actionable))}):\n"]
         for s in actionable[:limit]:
             chain_tag = f" +chain({s['chain_bonus']})" if s["chain_bonus"] else ""
+            outlier_tag = f" +outlier({s['outlier_bonus']})" if s.get("outlier_bonus") else ""
             lines.append(
                 f"  [{s['composite']:.1f}] {s['name']} ({s['file']})"
                 f"  {s['cls']}  conf={s['confidence']:.2f}"
-                f"  callers={s['callers']}{chain_tag}"
+                f"  callers={s['callers']}{chain_tag}{outlier_tag}"
             )
         return "\n".join(lines)
 
