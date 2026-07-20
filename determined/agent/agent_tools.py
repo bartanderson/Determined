@@ -9092,7 +9092,91 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
             out.append(f"Stubs: all {len(stub_fns)} have design_note coverage")
             out.append("")
 
-    total = len(explicit_no_note) + len(inferred_no_note) + len(doc_stale) + len(stubs_no_note)
+    # -- Check 4: Class role-claim drift ------------------------------------------
+    # Classes whose docstring claims an architectural role (Phase/Layer/Component/Module)
+    # but don't structurally participate in the named role (no ABC inheritance match).
+    import re as _re
+    import json as _json
+
+    role_drift: list[tuple[str, str, str, str]] = []
+
+    _has_classes = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='classes' LIMIT 1"
+    ).fetchone()
+    if not _has_classes:
+        total = len(explicit_no_note) + len(inferred_no_note) + len(doc_stale) + len(stubs_no_note)
+        if total == 0:
+            out.append("PASS: no doc-drift detected")
+        else:
+            out.append(f"DRIFT: {total} issue(s) found -- update design_notes and docstrings before next review")
+        return "\n".join(out)
+
+    ROLE_PATTERNS = [
+        _re.compile(r'\bphase\s*[:=]\s*(\w+)', _re.IGNORECASE),
+        _re.compile(r'\blayer\s*[:=]\s*(\w+)', _re.IGNORECASE),
+        _re.compile(r'\bcomponent\s*[:=]\s*(\w+)', _re.IGNORECASE),
+        _re.compile(r'\bmodule\s*[:=]\s*(\w+)', _re.IGNORECASE),
+        _re.compile(r'\bimplements\s+(\w+)', _re.IGNORECASE),
+    ]
+
+    # All ABC names in corpus for cross-referencing
+    abc_names = set(
+        r[0] for r in conn.execute(
+            "SELECT name FROM classes WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+        ).fetchall()
+    )
+
+    cls_rows = conn.execute(
+        "SELECT name, file_path, base_classes_json FROM classes WHERE file_path IS NOT NULL"
+    ).fetchall()
+    for cls_name, fp, bj in cls_rows:
+        if not _in_feature(fp):
+            continue
+        # Get docstring from the class's __init__ or look it up in classes table
+        doc_row = conn.execute(
+            "SELECT docstring FROM functions WHERE name=? AND file_path=? AND class_name=? LIMIT 1",
+            ("__init__", fp, cls_name),
+        ).fetchone()
+        # Also try module-level class docstring stored on functions with matching class_name
+        if not doc_row or not doc_row[0]:
+            doc_row = conn.execute(
+                "SELECT docstring FROM functions WHERE file_path=? AND class_name=? AND docstring IS NOT NULL LIMIT 1",
+                (fp, cls_name),
+            ).fetchone()
+        if not doc_row or not doc_row[0]:
+            continue
+        doc = doc_row[0]
+
+        for pat in ROLE_PATTERNS:
+            m = pat.search(doc)
+            if not m:
+                continue
+            claimed = m.group(1)
+            # Check if any ABC in corpus has a name containing the claimed role word
+            matching_abc = [a for a in abc_names if claimed.lower() in a.lower()]
+            if not matching_abc:
+                continue  # no ABC for this role claim — can't verify
+            try:
+                bases = _json.loads(bj or "[]")
+            except Exception:
+                bases = []
+            if any(a in bases for a in matching_abc):
+                continue  # correctly wired
+            role_drift.append((
+                cls_name,
+                _short(fp),
+                claimed,
+                f"claims '{claimed}' role but does not inherit {matching_abc[0]}",
+            ))
+            break  # one finding per class is enough
+
+    if role_drift:
+        out.append(f"Class role-claim drift ({len(role_drift)}) -- docstring claims architectural role not expressed in inheritance:")
+        for cls_name, short, claimed, reason in role_drift:
+            out.append(f"  {cls_name}  ({short})  -- {reason}")
+        out.append("")
+
+    total = len(explicit_no_note) + len(inferred_no_note) + len(doc_stale) + len(stubs_no_note) + len(role_drift)
     if total == 0:
         out.append("PASS: no doc-drift detected")
     else:
@@ -9102,6 +9186,205 @@ def detect_doc_drift(assessor: "Assessor", args: dict) -> str:
 
 
 TOOLS["detect_doc_drift"] = (detect_doc_drift, "assessor")
+
+
+# ------------------------------------------------------------------
+# find_isolated_modules -- files that define things but are never imported
+# ------------------------------------------------------------------
+
+def find_isolated_modules(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_isolated_modules([scope]) -- find files that define functions or classes
+    but are never imported by any other file in the corpus.
+
+    An isolated module is either dead code or a disconnected design document.
+    Severity tiers:
+      critical -- defines ABC/Abstract base classes (contract enforcement disconnected)
+      high     -- defines only constants, enums, or type aliases
+      moderate -- defines functions/classes but no ABCs
+
+    Args:
+        scope: optional file path substring to restrict corpus
+    """
+    import json as _json
+
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+
+    # All files that define at least one function or class
+    fn_files_q = "SELECT DISTINCT file_path FROM functions WHERE file_path IS NOT NULL"
+    cls_files_q = "SELECT DISTINCT file_path FROM classes WHERE file_path IS NOT NULL"
+    params: list = []
+    if scope:
+        fn_files_q += " AND file_path LIKE ?"
+        cls_files_q += " AND file_path LIKE ?"
+        params = [f"%{scope}%", f"%{scope}%"]
+
+    fn_files  = set(r[0] for r in conn.execute(fn_files_q, params[:1] if scope else []).fetchall())
+    cls_files = set(r[0] for r in conn.execute(cls_files_q, params[1:] if scope else []).fetchall())
+    defining_files = fn_files | cls_files
+
+    if not defining_files:
+        return "No files with definitions found" + (f" in scope '{scope}'" if scope else "")
+
+    # All module names referenced in imports across the corpus
+    imported_modules = set(
+        r[0] for r in conn.execute("SELECT DISTINCT module FROM imports WHERE module IS NOT NULL").fetchall()
+    )
+
+    # Map file paths to their importable module name candidates
+    # Try both the bare filename stem and the last two path components (package.module)
+    def _module_candidates(fp: str) -> set:
+        parts = fp.replace("\\", "/").split("/")
+        stem = parts[-1].replace(".py", "").replace(".js", "").replace(".ts", "")
+        candidates = {stem}
+        if len(parts) >= 2:
+            candidates.add(f"{parts[-2]}.{stem}")
+            candidates.add(f"{parts[-2]}/{stem}")
+        return candidates
+
+    # ABC class names per file (to determine severity)
+    abc_files = set(
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT file_path FROM classes "
+            "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+        ).fetchall()
+    )
+
+    isolated: list[tuple[str, str]] = []  # (severity, file_path)
+    for fp in sorted(defining_files):
+        candidates = _module_candidates(fp)
+        if candidates & imported_modules:
+            continue  # at least one name is imported somewhere
+        # Not imported — assign severity
+        if fp in abc_files:
+            severity = "critical"
+        else:
+            severity = "moderate"
+        isolated.append((severity, fp))
+
+    if not isolated:
+        return "No isolated modules found — all defining files are imported somewhere in the corpus."
+
+    isolated.sort(key=lambda t: ({"critical": 0, "high": 1, "moderate": 2}.get(t[0], 3), t[1]))
+
+    lines = [f"Isolated modules ({len(isolated)} files define symbols but are never imported):\n"]
+    for severity, fp in isolated:
+        short = "/".join(fp.replace("\\", "/").split("/")[-2:])
+        lines.append(f"  [{severity}]  {short}")
+
+    lines.append("")
+    lines.append("Interpretation:")
+    lines.append("  critical  -- ABC/interface file disconnected from all consumers")
+    lines.append("  moderate  -- defines symbols; may be dead code or an orphaned design draft")
+    return "\n".join(lines)
+
+
+TOOLS["find_isolated_modules"] = (find_isolated_modules, "oracle")
+
+
+# ------------------------------------------------------------------
+# find_phantom_factories -- ABC factory classes with no implementations
+# ------------------------------------------------------------------
+
+def find_phantom_factories(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_phantom_factories([scope]) -- find abstract factory classes (ABCs whose
+    abstract methods are all create_*/build_*/make_*/get_* naming) that have no
+    concrete subclass anywhere in the corpus.
+
+    A phantom factory is a designed wiring mechanism that was never built.
+    Its absence means components are instantiated ad hoc, defeating the
+    architecture's dependency management intent.
+
+    Args:
+        scope: optional file path substring to restrict corpus
+    """
+    import json as _json
+
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+
+    FACTORY_PREFIXES = ("create_", "build_", "make_", "get_", "new_", "produce_")
+
+    abc_q = (
+        "SELECT name, methods_json, file_path FROM classes "
+        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+    )
+    params: list = []
+    if scope:
+        abc_q += " AND file_path LIKE ?"
+        params.append(f"%{scope}%")
+    abc_classes = conn.execute(abc_q, params).fetchall()
+
+    if not abc_classes:
+        return "No ABC/Abstract base classes found in corpus."
+
+    all_classes = conn.execute("SELECT name, base_classes_json FROM classes").fetchall()
+    subclass_map: dict[str, set] = {}
+    for sub_name, bj in all_classes:
+        try:
+            bases = _json.loads(bj or "[]")
+        except Exception:
+            bases = []
+        for base in bases:
+            subclass_map.setdefault(base, set()).add(sub_name)
+
+    phantom_factories: list[tuple[str, str, list[str]]] = []
+
+    for cls_name, methods_json, file_path in abc_classes:
+        try:
+            methods = _json.loads(methods_json or "[]")
+        except Exception:
+            continue
+
+        # Collect abstract methods only
+        abstract_methods = []
+        for method in methods:
+            row = conn.execute(
+                "SELECT decorators_json FROM functions WHERE name=? AND file_path=? LIMIT 1",
+                (method, file_path),
+            ).fetchone()
+            if row:
+                try:
+                    decs = _json.loads(row[0] or "[]")
+                except Exception:
+                    decs = []
+                if any("abstractmethod" in d for d in decs):
+                    abstract_methods.append(method)
+
+        if not abstract_methods:
+            continue
+
+        # Check if all abstract methods match factory naming
+        factory_methods = [m for m in abstract_methods
+                           if any(m.startswith(p) for p in FACTORY_PREFIXES)]
+        if len(factory_methods) < len(abstract_methods):
+            continue  # not a factory — has non-factory abstract methods
+
+        # Must have no concrete subclasses
+        if subclass_map.get(cls_name):
+            continue
+
+        short = (file_path or "").replace("\\", "/").split("/")[-1]
+        phantom_factories.append((cls_name, short, abstract_methods))
+
+    if not phantom_factories:
+        return "No phantom factories found — all factory ABCs have at least one concrete subclass."
+
+    lines = [
+        f"Phantom factories ({len(phantom_factories)} factory ABC(s) with no implementation):\n",
+        "These are designed wiring mechanisms that were never built.",
+        "Components are instantiated ad hoc; dependency graph is invisible to the runtime.\n",
+    ]
+    for cls_name, short, methods in phantom_factories:
+        lines.append(f"  {cls_name}  ({short})")
+        for m in sorted(methods):
+            lines.append(f"    {m}  [no implementation exists]")
+    return "\n".join(lines)
+
+
+TOOLS["find_phantom_factories"] = (find_phantom_factories, "oracle")
 
 
 # ------------------------------------------------------------------
