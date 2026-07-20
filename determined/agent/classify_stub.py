@@ -353,6 +353,40 @@ def extract_signals(
             has_removal = _has_removal(all_text)
             intent_text = all_text
 
+    # ── 10. Config-layer FSM presence ────────────────────────────────────
+    # Check whether any concept from the stub's docstring appears as an FSM
+    # name in knowledge_artifacts (fsm_state/fsm_action/fsm_guard subjects).
+    # Pattern: concept "CombatFSM" → look for "CombatFSM.*" subjects.
+    # Also check whether a *different* FSM references the concept as an action
+    # (e.g. EncounterFSM.start_combat) — config points to it, but no FSM exists.
+    config_fsm_present: list[str] = []   # FSMs whose name matches a concept
+    config_fsm_referenced: list[str] = []  # other FSMs that reference the concept
+    try:
+        for concept in concepts:
+            base = _concept_base(concept)
+            base_lower = base.lower()
+            # Direct: concept is the FSM name (e.g. CombatFSM → "Combat.")
+            direct = conn.execute(
+                "SELECT DISTINCT subject FROM knowledge_artifacts "
+                "WHERE kind IN ('fsm_state','fsm_action','fsm_guard') "
+                "AND LOWER(subject) LIKE ?",
+                (f"{base_lower}.%",),
+            ).fetchall()
+            if direct:
+                config_fsm_present.append(concept)
+            # Indirect: concept appears in another FSM's action/state name
+            # (e.g. EncounterFSM.start_combat references "combat")
+            indirect = conn.execute(
+                "SELECT DISTINCT subject FROM knowledge_artifacts "
+                "WHERE kind IN ('fsm_state','fsm_action','fsm_guard') "
+                "AND LOWER(subject) LIKE ? AND LOWER(subject) NOT LIKE ?",
+                (f"%{base_lower}%", f"{base_lower}.%"),
+            ).fetchall()
+            if indirect and not direct:
+                config_fsm_referenced.extend(r[0] for r in indirect)
+    except Exception:
+        pass  # knowledge_artifacts table absent in minimal test DBs
+
     return {
         "name":               name,
         "file_path":          file_path,
@@ -377,6 +411,9 @@ def extract_signals(
         "class_docstring":          class_ctx.get("class_docstring"),
         "class_sibling_stubs":      class_ctx.get("class_sibling_stubs", 0),
         "instance_vars_assigned":   class_ctx.get("instance_vars_assigned", True),
+        # Config-layer FSM signals
+        "config_fsm_present":       config_fsm_present,
+        "config_fsm_referenced":    config_fsm_referenced,
     }
 
 
@@ -675,6 +712,26 @@ def score_hypotheses(signals: dict) -> list[dict]:
             evidence["blocked-on-prerequisite"].append(
                 f"{class_siblings} sibling stub(s) in same file — design skeleton (class level)"
             )
+
+    # ── Signal: config-layer FSM presence ───────────────────────────────
+    # If a concept's FSM exists in config → supports design-intent-stated
+    # (foundation laid, implementation pending).
+    # If the concept is only referenced by another FSM's action (not its own
+    # config) → blocked-on-prerequisite: config points to it, but the FSM
+    # itself has no config file yet.
+    config_fsm_present   = signals.get("config_fsm_present", [])
+    config_fsm_referenced = signals.get("config_fsm_referenced", [])
+    if config_fsm_referenced and not config_fsm_present:
+        scores["blocked-on-prerequisite"] += 0.8
+        refs = ", ".join(config_fsm_referenced[:3])
+        evidence["blocked-on-prerequisite"].append(
+            f"concept referenced by config FSM action(s) ({refs}) but has no config file — config-gated prerequisite"
+        )
+    elif config_fsm_present:
+        scores["design-intent-stated"] += 0.3
+        evidence["design-intent-stated"].append(
+            f"concept FSM defined in config layer: {', '.join(config_fsm_present)}"
+        )
 
     # ── Normalise and rank ───────────────────────────────────────────────
     results = []
