@@ -964,6 +964,65 @@ REGISTRY: dict[str, dict] = {
         "category": "planning",
     },
 
+    "stub_corpus_verdict": {
+        "purpose": "Single-call corpus-wide stub verdict: runs file shape, subsystem shape, prerequisite map, and concept ghost map together and returns a combined summary. Use as a fast overview of the entire stub landscape.",
+        "args": {
+            "scope": "(optional) directory prefix to restrict analysis",
+        },
+        "output": "combined stub landscape summary: file shapes, subsystem clusters, prerequisite map, ghost concepts",
+        "feeds": ["stub_file_shape", "stub_subsystem_shape", "stub_prerequisite_map", "stub_concept_ghost_map"],
+        "use_when": "Want a single-query overview of all stub findings without running the four projection tools individually.",
+        "category": "planning",
+    },
+
+    # ── RM69 step 6: JUDGMENT-AWARE STUB RANKING ─────────────────────
+    "rank_stubs": {
+        "purpose": "Rank stubs by composite score combining frontier position (caller count, chain role) with classify_stub judgment (classification + confidence). Three modes: priority (actionable stubs ranked by urgency), gap (all stubs grouped by classification), perusal (top 2-3 interesting stubs for current context).",
+        "args": {
+            "scope":  "(optional) file path substring to restrict corpus",
+            "mode":   "priority | gap | perusal (default: priority)",
+            "limit":  "(optional) max results, default 20",
+        },
+        "output": "ranked stub list with classification, confidence, caller count, and chain bonus",
+        "feeds": ["classify_stub", "explore_stub", "feature_work_plan"],
+        "use_when": "Deciding which stubs to tackle next, or getting a quick picture of the stub landscape in a particular subsystem.",
+        "category": "planning",
+    },
+
+    # ── RM70: CONVENTION DETECTOR ────────────────────────────────────
+    "detect_conventions": {
+        "purpose": "Discover structural naming families in the corpus bottom-up (no hardcoded patterns) and surface outliers. Three gates: existence (3+ functions share a naming prefix/suffix), usefulness (multiple feature dimensions agree to define a canon), confluence (agreeing dimensions are independent). Output: family canon, per-member match/diverge, outlier surface.",
+        "args": {
+            "scope":      "(optional) file path substring to restrict corpus",
+            "min_family": "(optional) minimum cluster size, default 3",
+        },
+        "output": "convention families with canon definition, outliers with diverging dimensions, consistent families",
+        "feeds": ["rank_stubs", "classify_stub"],
+        "use_when": "Auditing codebase naming conventions, finding structurally anomalous functions, or getting a structural map of what patterns the codebase expresses.",
+        "category": "analysis",
+    },
+
+    # ── RM71: SHAPE SCANNER + NORMALIZER ────────────────────────────
+    "list_shape_findings": {
+        "purpose": "List shape_finding artifacts from the last shape scanner run. Shape findings are format-agnostic structural detections (directed_graph, FSM, etc.) from non-code files (JSON/YAML/TOML config, markdown).",
+        "args": {
+            "min_confidence": "(optional) minimum confidence threshold 0.0-1.0, default 0.0",
+            "kind":           "(optional) filter by kind e.g. directed_graph",
+        },
+        "output": "list of shape findings with kind, confidence, file path, node/edge counts",
+        "feeds": ["normalize_shape_findings", "classify_stub"],
+        "use_when": "Inspecting what structured data artifacts (FSMs, config graphs) were detected during ingest.",
+        "category": "analysis",
+    },
+    "normalize_shape_findings": {
+        "purpose": "Run the shape normalizer: convert high-confidence directed_graph shape findings into graph_edges (edge_type=config_edge) and knowledge_artifacts (fsm_state/fsm_action/fsm_guard). Idempotent — skips already-normalized files.",
+        "args": {},
+        "output": "normalization summary: files processed, edges written, nodes written, errors",
+        "feeds": ["list_shape_findings", "classify_stub"],
+        "use_when": "After re-ingest or after list_shape_findings shows un-normalized high-confidence findings.",
+        "category": "analysis",
+    },
+
     # ── RM63: FEATURE WORK PLAN ───────────────────────────────────────
     "feature_work_plan": {
         "purpose": "Produce a handoff-ready, ordered work plan for a feature directory: finds all stubs and missing callees, groups them into axes (by destination directory of unresolved callees), ranks axes by EP-weighted impact, sorts functions within each axis by topo order, and emits a grounded completion contract for each. Uncertain contracts are flagged [infer: ...]. Output is ready to paste into a large LLM prompt for the narrow implementation step.",

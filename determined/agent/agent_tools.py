@@ -9219,6 +9219,390 @@ def list_entry_points(assessor: "Assessor", args: dict) -> str:
 TOOLS["list_entry_points"] = (list_entry_points, "assessor")
 
 
+# ------------------------------------------------------------------
+# detect_conventions -- RM70 structural family clustering
+# ------------------------------------------------------------------
+
+def _extract_name_tokens(name: str) -> list[str]:
+    """Split a function name into its naming tokens (snake_case parts, strip leading _)."""
+    return [t for t in re.split(r'_+', name.lstrip('_')) if t]
+
+
+def _naming_pattern(name: str) -> tuple[str, str]:
+    """Return (prefix, suffix) — the first and last token of a snake_case name."""
+    tokens = _extract_name_tokens(name)
+    if not tokens:
+        return ("", "")
+    return (tokens[0], tokens[-1])
+
+
+def detect_conventions(oracle: "DBOracle", args: dict) -> str:
+    """
+    detect_conventions([scope][, min_family=3]) — find structural naming families
+    and surface outliers.
+
+    RM70: three-gate analysis.
+      Gate 1 (existence)  — 3+ functions share a naming prefix or suffix
+      Gate 2 (usefulness) — multiple independent feature dimensions agree within cluster
+      Gate 3 (confluence) — agreeing dimensions are independent of each other
+
+    Features per function: caller_count bucket, callee_count bucket, return_type
+    category, param_count bucket, body_weight (stub vs non-stub).
+
+    Output: families with canon + per-member match/diverge, outliers, cross-family bridges.
+
+    Args:
+        scope:      optional file path substring to restrict corpus
+        min_family: minimum cluster size (default 3)
+    """
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+    min_family = int(args.get("min_family", 3))
+
+    # ── 1. Fetch all functions (non-test, non-dunder) ────────────────────
+    query = (
+        "SELECT name, file_path, is_stub, return_type, param_types_json "
+        "FROM functions WHERE name NOT LIKE '\\_\\_%\\_\\_' ESCAPE '\\'"
+    )
+    params: list = []
+    if scope:
+        query += " AND file_path LIKE ?"
+        params.append(f"%{scope}%")
+    rows = conn.execute(query, params).fetchall()
+
+    if not rows:
+        return "No functions found" + (f" matching scope '{scope}'" if scope else "")
+
+    # ── 2. Compute per-function features ────────────────────────────────
+    def _bucket(n: int, thresholds=(0, 1, 3, 8)) -> str:
+        for i, t in enumerate(thresholds):
+            if n <= t:
+                return str(i)
+        return str(len(thresholds))
+
+    def _rt_category(rt: str | None) -> str:
+        if not rt:
+            return "none"
+        rt = rt.lower().strip()
+        if rt in ("none", "nonetype", ""):
+            return "none"
+        if rt in ("bool",):
+            return "bool"
+        if rt in ("int", "float"):
+            return "numeric"
+        if rt in ("str", "string"):
+            return "str"
+        if "dict" in rt or "mapping" in rt:
+            return "dict"
+        if "list" in rt or "sequence" in rt or "iterable" in rt:
+            return "list"
+        return "object"
+
+    import json as _json
+
+    fn_features: dict[str, dict] = {}
+    for name, file_path, is_stub, return_type, ptj in rows:
+        try:
+            params_parsed = _json.loads(ptj) if ptj else {}
+            param_count = len(params_parsed) if isinstance(params_parsed, dict) else 0
+        except Exception:
+            param_count = 0
+
+        caller_count = conn.execute(
+            "SELECT COUNT(DISTINCT caller) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+            (name, f"%.{name}"),
+        ).fetchone()[0]
+        callee_count = conn.execute(
+            "SELECT COUNT(DISTINCT callee) FROM graph_edges WHERE caller = ?",
+            (name,),
+        ).fetchone()[0]
+
+        fn_features[name] = {
+            "file_path":    file_path,
+            "is_stub":      bool(is_stub),
+            "callers":      _bucket(caller_count),
+            "callees":      _bucket(callee_count),
+            "return_type":  _rt_category(return_type),
+            "param_count":  _bucket(param_count),
+            "body_weight":  "stub" if is_stub else "impl",
+        }
+
+    # ── 3. Gate 1: cluster by naming prefix and suffix ───────────────────
+    prefix_clusters: dict[str, list[str]] = {}
+    suffix_clusters: dict[str, list[str]] = {}
+    for name in fn_features:
+        prefix, suffix = _naming_pattern(name)
+        if prefix:
+            prefix_clusters.setdefault(prefix, []).append(name)
+        if suffix and suffix != prefix:
+            suffix_clusters.setdefault(suffix, []).append(name)
+
+    # Merge prefix and suffix clusters; prefer prefix, deduplicate
+    candidate_clusters: dict[str, tuple[str, list[str]]] = {}  # key -> (kind, members)
+    for token, members in prefix_clusters.items():
+        if len(members) >= min_family:
+            candidate_clusters[f"prefix:{token}"] = ("prefix", members)
+    for token, members in suffix_clusters.items():
+        if len(members) >= min_family:
+            key = f"suffix:{token}"
+            if key not in candidate_clusters:
+                candidate_clusters[key] = ("suffix", members)
+
+    if not candidate_clusters:
+        return (
+            f"No naming families found with {min_family}+ members"
+            + (f" in scope '{scope}'" if scope else "")
+            + ". Corpus may be too small or naming is highly varied."
+        )
+
+    # ── 4. Gates 2+3: feature agreement and independence ────────────────
+    FEATURE_DIMS = ["callers", "callees", "return_type", "param_count", "body_weight"]
+
+    def _analyse_cluster(members: list[str]) -> dict:
+        """Return canon, per-member match/diverge, outliers."""
+        member_feats = [fn_features[m] for m in members if m in fn_features]
+        if not member_feats:
+            return {}
+
+        # For each dimension: find majority value and agreement fraction
+        canon: dict[str, str] = {}
+        agreement: dict[str, float] = {}
+        for dim in FEATURE_DIMS:
+            vals = [f[dim] for f in member_feats]
+            counts: dict[str, int] = {}
+            for v in vals:
+                counts[v] = counts.get(v, 0) + 1
+            majority_val = max(counts, key=lambda k: counts[k])
+            canon[dim] = majority_val
+            agreement[dim] = counts[majority_val] / len(vals)
+
+        # Gate 2: at least 2 dimensions agree at >= 70%
+        agreeing_dims = [d for d, a in agreement.items() if a >= 0.70]
+        if len(agreeing_dims) < 2:
+            return {}  # fails usefulness gate
+
+        # Gate 3: independence — dimensions must not be trivially correlated.
+        # Proxy: agreeing dimensions must span at least 2 distinct feature categories
+        # (structural: callers/callees vs type: return_type/param_count vs role: body_weight)
+        categories = {"structural": {"callers", "callees"}, "type": {"return_type", "param_count"}, "role": {"body_weight"}}
+        cats_hit = sum(
+            1 for cat_dims in categories.values()
+            if any(d in agreeing_dims for d in cat_dims)
+        )
+        if cats_hit < 2:
+            return {}  # fails confluence gate
+
+        # Per-member: which dims match canon, which diverge
+        member_analysis = []
+        for name in members:
+            if name not in fn_features:
+                continue
+            feats = fn_features[name]
+            matches = [d for d in agreeing_dims if feats[d] == canon[d]]
+            diverges = [d for d in agreeing_dims if feats[d] != canon[d]]
+            member_analysis.append({
+                "name":    name,
+                "file":    feats["file_path"].replace("\\", "/").split("/")[-1],
+                "stub":    feats["is_stub"],
+                "matches": matches,
+                "diverges": diverges,
+            })
+
+        outliers = [m for m in member_analysis if m["diverges"]]
+        return {
+            "canon":           canon,
+            "agreeing_dims":   agreeing_dims,
+            "agreement":       agreement,
+            "members":         member_analysis,
+            "outliers":        outliers,
+        }
+
+    # ── 5. Format output ─────────────────────────────────────────────────
+    lines: list[str] = []
+    analysable: list[tuple[str, str, dict]] = []
+
+    for key, (kind, members) in sorted(candidate_clusters.items()):
+        token = key.split(":", 1)[1]
+        analysis = _analyse_cluster(members)
+        if analysis:
+            analysable.append((token, kind, analysis))
+
+    if not analysable:
+        total = sum(1 for _, (_, m) in candidate_clusters.items() if len(m) >= min_family)
+        return (
+            f"Found {total} naming cluster(s) with {min_family}+ members but none passed "
+            f"the usefulness+confluence gates. Cluster feature dimensions are too varied "
+            f"to define a canon. Try a broader scope or lower min_family."
+        )
+
+    lines.append(f"Conventions: {len(analysable)} family/families found\n")
+
+    for token, kind, analysis in analysable:
+        canon = analysis["canon"]
+        agreeing = analysis["agreeing_dims"]
+        members = analysis["members"]
+        outliers = analysis["outliers"]
+
+        lines.append(f"━━ {kind}:{token}  ({len(members)} members, canon on {len(agreeing)} dims) ━━")
+        canon_parts = [f"{d}={canon[d]}" for d in agreeing]
+        lines.append(f"  Canon: {', '.join(canon_parts)}")
+
+        if outliers:
+            lines.append(f"  Outliers ({len(outliers)}):")
+            for o in outliers:
+                stub_tag = " [stub]" if o["stub"] else ""
+                div_parts = [f"{d}≠{canon[d]}" for d in o["diverges"]]
+                lines.append(f"    {o['name']} ({o['file']}){stub_tag} — differs by: {', '.join(div_parts)}")
+        else:
+            lines.append("  Outliers: none — family is internally consistent")
+
+        lines.append(f"  Members:")
+        for m in members:
+            stub_tag = " [stub]" if m["stub"] else ""
+            if m["diverges"]:
+                lines.append(f"    {m['name']} ({m['file']}){stub_tag}  ← diverges")
+            else:
+                lines.append(f"    {m['name']} ({m['file']}){stub_tag}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+TOOLS["detect_conventions"] = (detect_conventions, "oracle")
+
+
+# ------------------------------------------------------------------
+# rank_stubs -- RM69 step 6: judgment-aware stub ranking
+# ------------------------------------------------------------------
+
+def rank_stubs(assessor: "Assessor", args: dict) -> str:
+    """
+    rank_stubs([scope][, mode=priority|gap|perusal][, limit=20]) -- rank stubs
+    by composite score combining frontier position with classify_stub judgment.
+
+    Three modes (RM69 design):
+      priority  (default) — question-driven: "what should I work on next?"
+                Score = caller_count * confidence + chain_bonus
+                Filters to blocked-on-prerequisite and design-intent-stated only.
+      gap       — gap survey: "show me what's incomplete"
+                All stub classifications, grouped by classification, sorted by score.
+      perusal   — observation-driven: top 2-3 interesting clusters in a file/dir
+
+    Args:
+        scope:  optional file path substring to restrict
+        mode:   priority | gap | perusal (default: priority)
+        limit:  max results (default 20)
+    """
+    from determined.agent.classify_stub import extract_signals, score_hypotheses
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+    mode  = (args.get("mode") or "priority").strip().lower()
+    limit = int(args.get("limit", 20))
+
+    # Fetch stubs — exclude test files
+    query = (
+        "SELECT name, file_path FROM functions WHERE is_stub = 1 "
+        "AND file_path NOT LIKE '%test_%' AND file_path NOT LIKE '%_test%'"
+    )
+    params: list = []
+    if scope:
+        query += " AND file_path LIKE ?"
+        params.append(f"%{scope}%")
+    stubs = conn.execute(query, params).fetchall()
+
+    if not stubs:
+        return "No stubs found" + (f" matching scope '{scope}'" if scope else "")
+
+    tail_set, middle_set, head_set = _get_chain_positions(conn)
+
+    scored: list[dict] = []
+    for name, file_path in stubs:
+        signals = extract_signals(oracle, name, file_path_hint=file_path)
+        if "error" in signals:
+            continue
+        hypotheses = score_hypotheses(signals)
+        if not hypotheses:
+            top_cls, top_score = "genuinely-unknown", 0.0
+        else:
+            top = hypotheses[0]
+            top_cls, top_score = top["classification"], top["score"]
+
+        caller_count = signals.get("caller_count", 0)
+        chain_bonus = 5 if name in tail_set else (2 if name in middle_set else 0)
+        composite = caller_count * top_score + chain_bonus
+
+        scored.append({
+            "name":       name,
+            "file":       (file_path or "").replace("\\", "/").split("/")[-1],
+            "file_path":  file_path,
+            "cls":        top_cls,
+            "confidence": top_score,
+            "callers":    caller_count,
+            "chain_bonus":chain_bonus,
+            "composite":  composite,
+        })
+
+    if not scored:
+        return "No classifiable stubs found."
+
+    if mode == "priority":
+        # Only actionable classifications; sort by composite score
+        actionable = [s for s in scored if s["cls"] in ("blocked-on-prerequisite", "design-intent-stated")]
+        actionable.sort(key=lambda s: -s["composite"])
+        if not actionable:
+            return "No stubs classified as blocked-on-prerequisite or design-intent-stated."
+        lines = [f"Priority stubs ({len(actionable)} actionable, top {min(limit, len(actionable))}):\n"]
+        for s in actionable[:limit]:
+            chain_tag = f" +chain({s['chain_bonus']})" if s["chain_bonus"] else ""
+            lines.append(
+                f"  [{s['composite']:.1f}] {s['name']} ({s['file']})"
+                f"  {s['cls']}  conf={s['confidence']:.2f}"
+                f"  callers={s['callers']}{chain_tag}"
+            )
+        return "\n".join(lines)
+
+    elif mode == "gap":
+        # All stubs grouped by classification, sorted by confidence
+        from collections import defaultdict
+        by_cls: dict[str, list] = defaultdict(list)
+        for s in scored:
+            by_cls[s["cls"]].append(s)
+        for cls in by_cls:
+            by_cls[cls].sort(key=lambda s: -s["confidence"])
+
+        order = ["blocked-on-prerequisite", "design-intent-stated", "genuinely-unknown", "concept-not-applicable"]
+        lines = [f"Gap survey — {len(scored)} stubs across {len(by_cls)} classifications:\n"]
+        for cls in order:
+            group = by_cls.get(cls, [])
+            if not group:
+                continue
+            lines.append(f"  {cls} ({len(group)}):")
+            for s in group[:limit]:
+                lines.append(f"    [{s['confidence']:.2f}] {s['name']} ({s['file']})")
+            if len(group) > limit:
+                lines.append(f"    … and {len(group) - limit} more")
+            lines.append("")
+        return "\n".join(lines)
+
+    elif mode == "perusal":
+        # Top 3 most interesting (highest composite, mixed classifications)
+        scored.sort(key=lambda s: -s["composite"])
+        top = scored[:3]
+        lines = [f"Top stubs of interest" + (f" in '{scope}'" if scope else "") + ":\n"]
+        for s in top:
+            lines.append(f"  {s['name']} ({s['file']})")
+            lines.append(f"    -> {s['cls']}  conf={s['confidence']:.2f}  callers={s['callers']}")
+        return "\n".join(lines)
+
+    else:
+        return f"Unknown mode '{mode}'. Use: priority | gap | perusal"
+
+
+TOOLS["rank_stubs"] = (rank_stubs, "assessor")
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.

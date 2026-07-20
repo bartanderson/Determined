@@ -570,6 +570,14 @@ def test_dispatch_all_tools_registered():
         "stub_subsystem_shape",
         "stub_prerequisite_map",
         "stub_concept_ghost_map",
+        "stub_corpus_verdict",
+        # RM69 step 6: judgment-aware ranking
+        "rank_stubs",
+        # RM70: convention detector
+        "detect_conventions",
+        # RM71: shape scanner + normalizer
+        "list_shape_findings",
+        "normalize_shape_findings",
         # Design Oracle
         "design_oracle",
     }
