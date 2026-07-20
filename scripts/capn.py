@@ -39,10 +39,33 @@ CAPN_DIR = Path(".capn")
 ENTRIES_DIR = CAPN_DIR / "entries"
 MAP_FILE = CAPN_DIR / "map.json"
 STATS_FILE = CAPN_DIR / "stats.json"
+LOG_FILE = CAPN_DIR / "log.jsonl"
+SESSION_FILE = CAPN_DIR / "current_session.txt"
+
+MISS_FLOOR = 300  # minimum token cost estimate for a cache miss
 
 
 def _ensure_dirs():
     ENTRIES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _log(record: dict):
+    record["t"] = datetime.now(timezone.utc).isoformat()
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def _current_session() -> str:
+    if SESSION_FILE.exists():
+        return SESSION_FILE.read_text(encoding="utf-8").strip()
+    return "untracked"
+
+
+def _miss_waste_estimate(stats: dict) -> int:
+    hits = stats.get("hits", 0)
+    saved = stats.get("tokens_saved", 0)
+    mean = saved // hits if hits else 0
+    return max(mean, MISS_FLOOR)
 
 
 def _file_hash(path: str) -> str | None:
@@ -158,11 +181,14 @@ def cmd_ask(question: str, threshold: float = 0.3):
                   key=lambda x: x[2], reverse=True)
 
     stats = _load_stats()
+    session = _current_session()
     if hits:
         hit_tokens = sum(e.get("est_tokens", 0) for _, e, _ in hits[:5])
         stats["hits"] += 1
         stats["tokens_saved"] = stats.get("tokens_saved", 0) + hit_tokens
         _save_json(STATS_FILE, stats)
+        _log({"type": "ask", "result": "hit", "query": question,
+              "tokens_saved": hit_tokens, "session": session})
         lifetime_k = stats["tokens_saved"]
         lifetime_display = f"~{lifetime_k // 1_000}K" if lifetime_k >= 1_000 else f"~{lifetime_k}"
         for p, e, s in hits[:5]:
@@ -177,8 +203,12 @@ def cmd_ask(question: str, threshold: float = 0.3):
         if stale_count:
             print(f"({stale_count} stale entries skipped -- run capn prune)")
     else:
+        waste = _miss_waste_estimate(stats)
         stats["misses"] += 1
+        stats["tokens_wasted"] = stats.get("tokens_wasted", 0) + waste
         _save_json(STATS_FILE, stats)
+        _log({"type": "ask", "result": "miss", "query": question,
+              "tokens_wasted_est": waste, "session": session})
         print(f"No cache hits for: {question!r}")
         if stale_count:
             print(f"({stale_count} stale entries skipped)")
@@ -233,6 +263,8 @@ def cmd_chart(question: str, files: list[str], details: str = ""):
     stats = _load_stats()
     stats["charted"] += 1
     _save_json(STATS_FILE, stats)
+    _log({"type": "chart", "entry_id": entry_id, "question": question,
+          "session": _current_session()})
 
     print(f"Charted {entry_id}: {question}")
 
@@ -261,14 +293,21 @@ def cmd_prune():
 
 
 def cmd_context():
+    _ensure_dirs()
+    session_id = uuid.uuid4().hex[:8]
+    SESSION_FILE.write_text(session_id, encoding="utf-8")
+    _log({"type": "session_start", "session": session_id})
+
     stats = _load_stats()
     hits = stats.get("hits", 0)
     misses = stats.get("misses", 0)
     charted = stats.get("charted", 0)
     tokens_saved = stats.get("tokens_saved", 0)
+    tokens_wasted = stats.get("tokens_wasted", 0)
     total = hits + misses
     hit_rate = f"{100 * hits // total}%" if total else "n/a"
     saved_display = f"~{tokens_saved // 1_000}K" if tokens_saved >= 1_000 else f"~{tokens_saved}"
+    wasted_display = f"~{tokens_wasted // 1_000}K" if tokens_wasted >= 1_000 else f"~{tokens_wasted}"
 
     entries = _all_entries()
     fresh_count = sum(1 for _, e in entries if _entry_is_fresh(e))
@@ -277,7 +316,7 @@ def cmd_context():
     stale_note = f" ({stale_count} stale -- run capn prune)" if stale_count else ""
 
     print(f"""=== CAP'N HOOK: trap registry + lookup cache ===
-{fresh_count} entries{stale_note} | {charted} recorded | {hits}/{total} lookups hit ({hit_rate}) | est. {saved_display} tokens saved
+{fresh_count} entries{stale_note} | {charted} recorded | {hits}/{total} lookups hit ({hit_rate}) | est. {saved_display} tokens saved | est. {wasted_display} wasted on misses
 
 Before touching DB queries, symbol resolution, ingestion routing, or re-deriving any
 entry point or call chain you've looked up before:
@@ -305,6 +344,88 @@ def cmd_list():
             print(f"         {files_str}")
 
 
+def cmd_report(sessions: int = 10):
+    if not LOG_FILE.exists():
+        print("No log yet. Run some queries first.")
+        return
+
+    records = []
+    with LOG_FILE.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except Exception:
+                    pass
+
+    # Group by session
+    sessions_data: dict[str, dict] = {}
+    session_order: list[str] = []
+    current = None
+    for r in records:
+        sid = r.get("session", "untracked")
+        if r.get("type") == "session_start":
+            current = sid
+            if sid not in sessions_data:
+                session_order.append(sid)
+                sessions_data[sid] = {
+                    "started": r.get("t", "?"),
+                    "hits": 0, "misses": 0,
+                    "saved": 0, "wasted": 0,
+                    "queries": [], "charted": 0,
+                }
+        elif current and r.get("type") == "ask":
+            sd = sessions_data.setdefault(sid, {"started": r.get("t", "?"), "hits": 0,
+                                                 "misses": 0, "saved": 0, "wasted": 0,
+                                                 "queries": [], "charted": 0})
+            if r.get("result") == "hit":
+                sd["hits"] += 1
+                sd["saved"] += r.get("tokens_saved", 0)
+            else:
+                sd["misses"] += 1
+                sd["wasted"] += r.get("tokens_wasted_est", 0)
+            sd["queries"].append({"q": r.get("query", ""), "result": r.get("result", "?")})
+        elif current and r.get("type") == "chart":
+            sessions_data.get(sid, {})  # ensure exists
+            sessions_data.setdefault(sid, {}).get("charted", 0)
+            if sid in sessions_data:
+                sessions_data[sid]["charted"] = sessions_data[sid].get("charted", 0) + 1
+
+    recent = session_order[-sessions:]
+    print(f"=== CAP'N HOOK SESSION REPORT (last {len(recent)} sessions) ===\n")
+
+    total_saved = total_wasted = total_hits = total_misses = 0
+    for sid in recent:
+        sd = sessions_data[sid]
+        hits, misses = sd["hits"], sd["misses"]
+        saved, wasted = sd["saved"], sd["wasted"]
+        total = hits + misses
+        rate = f"{100 * hits // total}%" if total else "n/a"
+        date = sd["started"][:10] if len(sd["started"]) >= 10 else sd["started"]
+        print(f"  [{date}] session {sid}")
+        print(f"    hits={hits} misses={misses} rate={rate} | "
+              f"saved=~{saved} wasted=~{wasted} | charted={sd.get('charted', 0)}")
+        misses_list = [q["q"] for q in sd["queries"] if q["result"] == "miss"]
+        if misses_list:
+            print(f"    missed queries:")
+            for q in misses_list:
+                print(f"      - {q}")
+        total_saved += saved
+        total_wasted += wasted
+        total_hits += hits
+        total_misses += misses
+        print()
+
+    grand_total = total_hits + total_misses
+    grand_rate = f"{100 * total_hits // grand_total}%" if grand_total else "n/a"
+    print(f"  TOTALS ({len(recent)} sessions): hits={total_hits} misses={total_misses} "
+          f"rate={grand_rate} | saved=~{total_saved} wasted=~{total_wasted}")
+    net = total_saved - total_wasted
+    sign = "+" if net >= 0 else ""
+    print(f"  NET: {sign}{net} tokens ({'+' if net >= 0 else ''}{'ahead' if net >= 0 else 'behind'})")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -328,6 +449,9 @@ def main():
     sub.add_parser("prune", help="Remove entries whose files have changed")
     sub.add_parser("context", help="Print session-start instructions + stats")
     sub.add_parser("list", help="List all entries with freshness status")
+    p_report = sub.add_parser("report", help="Per-session token saved/wasted summary")
+    p_report.add_argument("--sessions", type=int, default=10,
+                          help="Number of recent sessions to show (default 10)")
 
     args = ap.parse_args()
     if args.cmd == "ask":
@@ -340,6 +464,8 @@ def main():
         cmd_context()
     elif args.cmd == "list":
         cmd_list()
+    elif args.cmd == "report":
+        cmd_report(args.sessions)
     else:
         ap.print_help()
 
