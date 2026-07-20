@@ -792,12 +792,14 @@ def handle_ingest(data):
             except Exception as design_exc:
                 socketio.emit("ingest_status", {"message": f"Design doc scan skipped: {design_exc}"}, to=sid)
             try:
-                from determined.ingestion.shape_scanner import scan_corpus, summarize
+                from determined.ingestion.shape_scanner import scan_corpus, summarize as summarize_scan
+                from determined.ingestion.shape_normalizer import normalize_findings, summarize_normalization
                 socketio.emit("ingest_status", {"message": "Scanning for hidden structure…"}, to=sid)
                 _shape_conn = sqlite3.connect(db_path)
-                shape_findings = scan_corpus(str(target), _shape_conn)
+                scan_corpus(str(target), _shape_conn)
+                norm_results = normalize_findings(str(target), _shape_conn)
                 _shape_conn.close()
-                socketio.emit("ingest_status", {"message": summarize(shape_findings)}, to=sid)
+                socketio.emit("ingest_status", {"message": summarize_normalization(norm_results)}, to=sid)
             except Exception as shape_exc:
                 socketio.emit("ingest_status", {"message": f"Shape scan skipped: {shape_exc}"}, to=sid)
             socketio.emit("ingest_done", {

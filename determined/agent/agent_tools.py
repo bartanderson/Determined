@@ -8695,6 +8695,32 @@ def list_shape_findings(assessor: "Assessor", args: dict) -> str:
 TOOLS["list_shape_findings"] = (list_shape_findings, "assessor")
 
 
+def normalize_shape_findings(assessor: "Assessor", args: dict) -> str:
+    """
+    normalize_shape_findings([min_confidence]) — write graph edges from
+    high-confidence directed_graph findings into graph_edges.
+
+    Reads shape_finding artifacts stored by the shape scanner, re-parses
+    each source file above min_confidence (default 0.7), and writes
+    config_edge rows to graph_edges plus fsm_state/fsm_action/fsm_guard
+    rows to knowledge_artifacts. Idempotent.
+
+    Args:
+        min_confidence: float, default 0.7
+    """
+    from determined.ingestion.shape_normalizer import normalize_findings, summarize_normalization
+    oracle = assessor.oracle
+    root = oracle.get_project_root()
+    if not root:
+        return "ERROR: project root not found in corpus DB"
+    min_conf = float(args.get("min_confidence", 0.7))
+    results = normalize_findings(root, oracle.conn, min_confidence=min_conf)
+    return summarize_normalization(results)
+
+
+TOOLS["normalize_shape_findings"] = (normalize_shape_findings, "assessor")
+
+
 # ------------------------------------------------------------------
 # RM64: verify_implementation -- close-the-loop check after re-ingest
 # ------------------------------------------------------------------

@@ -271,12 +271,16 @@ runs automatically at end of ingest, results in knowledge_artifacts (kind='shape
 Agent tool: list_shape_findings(). 13/13 tests passing.
 All 5 dj2 FSMs detected at 100% confidence. encounter.json: 4 nodes, 5 edges.
 
-### Phase 2 — normalizer (NEXT)
+### Phase 2 — normalizer DONE (2026-07-20, session 224)
 
-Takes high-confidence directed_graph findings from shape scanner, writes transitions
-to graph_edges (edge_type='config_edge'), states/actions/guards to knowledge_artifacts.
-This unlocks _get_combat_context UNCERTAIN resolution.
-File: determined/ingestion/shape_normalizer.py (new).
+determined/ingestion/shape_normalizer.py — driven by shape_finding artifacts,
+writes config_edge rows to graph_edges, fsm_state/fsm_action/fsm_guard to
+knowledge_artifacts. Idempotent. Agent tool: normalize_shape_findings().
+14/14 tests passing. E2E: all 5 dj2 FSMs normalized, 27 edges, 16 nodes.
+encounter.json: start_combat linked to awaiting_choice -> resolving_fight.
+
+Known: prose directed_graph findings (history.md etc.) produce "could not parse"
+error in normalizer — correct behavior, prose normalization is future work.
 
 ---
 
