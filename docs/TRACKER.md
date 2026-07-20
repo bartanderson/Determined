@@ -40,6 +40,42 @@ understanding, not the other way around.
 
 ---
 
+## FUTURE — icecream debug library (2026-07-20)
+
+`pip install icecream` — drop-in replacement for debug prints. `ic(expr)` auto-labels
+the expression and its value, includes file/line. Useful during signal extraction
+and scoring work in classify_stub. No urgency; grab it when debug logging becomes
+friction.
+
+---
+
+## FUTURE — Domain expert adapters from corpus (2026-07-20)
+
+Long-term destination: once Determined can describe a corpus as a whole (post-aggregation),
+that description is training signal for a domain adapter. The arc:
+
+  corpus → classify_stub → aggregation → prerequisite map
+    → corpus summary as training signal
+    → fine-tuned adapter for that domain (architecture, reasoning, coding, etc.)
+
+This is the "mine from your own work" approach — not extracting experts from an existing
+MoE (Mixtral/DeepSeek), not training sparse MoE from scratch, but accumulating
+domain knowledge from real corpora into small versioned adapters:
+
+  Architecture Adapter  ← from design-intent stubs + prerequisite maps
+  Reasoning Adapter     ← from reasoning traces across sessions
+  Coding Adapter        ← from dj2 / Determined corpus shape
+  DJ2 Expert            ← from full dj2 ingest once aggregation is sharp
+
+The matmul C corpus (FUTURE cross-language) is the first non-behavioral target —
+performance structure rather than design intent, stress-tests shape tools and is
+a natural first "what does this expert know?" extraction candidate.
+
+Gate: this is not actionable until corpus aggregation ships and Determined can
+describe a corpus as a whole. Not a distraction from current work — a destination.
+
+---
+
 ## FUTURE — Cross-language understanding (2026-07-18)
 
 ### The unified idea
