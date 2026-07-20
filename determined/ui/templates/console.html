@@ -175,11 +175,12 @@
     <!-- Corpus section -->
     <div class="sb-section" id="sb-corpus">
       <div class="sidebar-section" id="corpus-map" style="display:none">
+        <div class="sidebar-label" id="sb-corpusmap-label" style="display:flex;align-items:center">Corpus map</div>
         <div id="corpus-map-inner"></div>
       </div>
-      <div class="sidebar-section">
-        <div class="sidebar-label">Analyze</div>
-        <div class="sidebar-ingest">
+      <div class="sidebar-section" id="sb-analyze-section">
+        <div class="sidebar-label" id="sb-analyze-label">Analyze</div>
+        <div class="sidebar-ingest" id="sb-analyze-body">
           <input id="ingest-path" type="text" placeholder="Path to project…" autocomplete="off">
           <button id="ingest-btn" class="send-btn" style="width:100%;justify-content:center">Analyze ↵</button>
           <button id="resume-btn" class="send-btn" style="width:100%;justify-content:center;display:none;background:var(--surface2)">Switch corpus</button>
@@ -193,16 +194,18 @@
 
       <!-- Design Oracle panel -->
       <div class="sidebar-section" id="nav-oracle-section">
-        <div class="sidebar-label" style="display:flex;align-items:center;gap:5px">
+        <div class="sidebar-label" id="sb-oracle-label" style="display:flex;align-items:center;gap:5px">
           Design Oracle
           <span style="font-size:.7em;color:var(--text3);font-weight:400">CRITICAL · OPPORTUNITY · FOREWARNING</span>
         </div>
+        <div id="sb-oracle-body">
         <div style="display:flex;gap:4px;margin-bottom:4px">
           <input id="oracle-ctx-input" class="tp-input" placeholder="context symbol (optional)" autocomplete="off" style="flex:1">
           <button id="oracle-run-btn" class="tp-btn">Run</button>
         </div>
         <div id="oracle-result" style="display:none;font-size:.78em;line-height:1.55;white-space:pre-wrap;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:7px 9px;color:var(--text2);max-height:260px;overflow-y:auto"></div>
         <div id="oracle-spinner" style="display:none;font-size:.75em;color:var(--accent);padding:3px 2px">Running…</div>
+        </div><!-- /sb-oracle-body -->
       </div>
 
       <!-- Mode-specific quick actions (swapped per active mode) -->
@@ -213,7 +216,8 @@
 
       <!-- Generic quick actions -->
       <div class="sidebar-section" id="nav-generic-actions">
-        <div class="sidebar-label">Quick actions</div>
+        <div class="sidebar-label" id="sb-quickactions-label">Quick actions</div>
+        <div id="sb-quickactions-body">
         <div class="sidebar-item" data-submit="what should I work on">
           <span class="icon">☑</span>work queue
         </div>
@@ -229,13 +233,15 @@
         <div class="sidebar-item" data-submit="find todos">
           <span class="icon">✓</span>todos
         </div>
+        </div><!-- /sb-quickactions-body -->
       </div>
     </div>
 
     <!-- Tools section -->
     <div class="sb-section" id="sb-tools">
       <div class="sidebar-section" id="tool-picker-section">
-        <div class="sidebar-label">Tools</div>
+        <div class="sidebar-label" id="sb-tools-label">Tools</div>
+        <div id="sb-tools-body">
         <div id="tool-picker-body" class="sb-tools-body">
           <div class="tp-group-label">Navigate</div>
           <div class="tp-row">
@@ -280,13 +286,15 @@
             <button class="tp-btn" id="tp-files-btn">Run</button>
           </div>
         </div>
+        </div><!-- /sb-tools-body -->
       </div>
     </div>
 
     <!-- Investigation section (RM42) -->
     <div class="sb-section" id="sb-investigate">
       <div class="sidebar-section">
-        <div class="sidebar-label">Investigation</div>
+        <div class="sidebar-label" id="sb-investigate-label">Investigation</div>
+        <div id="sb-investigate-body">
         <div id="clue-list"></div>
         <div id="clue-empty">No clues pinned yet.<br>Click 📌 on any result to add it.</div>
         <button id="clue-ask-btn" style="display:none">Ask about these clues ↵</button>
@@ -295,6 +303,7 @@
           <div id="lens-label">Apply lens</div>
           <div id="lens-row"></div>
         </div>
+        </div><!-- /sb-investigate-body -->
       </div>
     </div>
 
@@ -3814,6 +3823,92 @@ makePanelPopout("panel-shape",     "shape-popout-btn");
 makePanelPopout("panel-frontier",  "frontier-popout-btn");
 makePanelPopout("panel-map",       "map-popout-btn");
 makePanelPopout("panel-knowledge", "knowledge-popout-btn");
+
+// ── sidebar collapsible sections (Phase D) ────────────────
+function sbMakeCollapsible(labelId, bodyId, storageKey, defaultOpen) {
+  const label = document.getElementById(labelId);
+  const body  = document.getElementById(bodyId);
+  if (!label || !body) return;
+
+  const chevron = document.createElement("span");
+  chevron.style.cssText = "margin-left:auto;font-size:.8em;opacity:.5;transition:transform .15s;flex-shrink:0";
+  label.style.cursor = "pointer";
+  label.style.userSelect = "none";
+  // ensure label is flex so chevron sits at the right
+  if (!label.style.display) label.style.display = "flex";
+  label.style.alignItems = "center";
+  label.appendChild(chevron);
+
+  const saved = localStorage.getItem("sb-collapse-" + storageKey);
+  let open = saved !== null ? saved === "1" : defaultOpen;
+
+  function apply(animate) {
+    body.style.display = open ? "" : "none";
+    chevron.textContent = open ? "▾" : "▸";
+  }
+  apply(false);
+
+  label.addEventListener("click", () => {
+    open = !open;
+    localStorage.setItem("sb-collapse-" + storageKey, open ? "1" : "0");
+    apply(true);
+  });
+
+  // expose for programmatic control
+  return { open: (v) => { open = v; apply(true); localStorage.setItem("sb-collapse-" + storageKey, v ? "1" : "0"); } };
+}
+
+const _sbCorpusMap  = sbMakeCollapsible("sb-corpusmap-label",    "corpus-map-inner",     "corpusmap",    true);
+const _sbAnalyze    = sbMakeCollapsible("sb-analyze-label",      "sb-analyze-body",      "analyze",      true);
+const _sbOracle     = sbMakeCollapsible("sb-oracle-label",       "sb-oracle-body",       "oracle",       false);
+const _sbQuickAct   = sbMakeCollapsible("sb-quickactions-label", "sb-quickactions-body", "quickactions", false);
+const _sbTools      = sbMakeCollapsible("sb-tools-label",        "sb-tools-body",        "tools",        false);
+const _sbInvestigate= sbMakeCollapsible("sb-investigate-label",  "sb-investigate-body",  "investigate",  false);
+
+// when corpus loads: collapse Analyze (it's done its job); expand corpus map handled by existing show logic
+socket.on("corpus_ready", () => {
+  if (_sbAnalyze) _sbAnalyze.open(false);
+});
+
+// when no corpus: ensure Analyze is expanded so user can see the input
+socket.on("corpus_status", data => {
+  if (!data.corpus && _sbAnalyze) _sbAnalyze.open(true);
+});
+
+// ── Oracle result pop-out ──────────────────────────────────
+(function() {
+  const resultEl  = document.getElementById("oracle-result");
+  const labelEl   = document.getElementById("sb-oracle-label");
+  if (!resultEl || !labelEl) return;
+  const popBtn = document.createElement("button");
+  popBtn.textContent = "⤢";
+  popBtn.title = "Pop out result";
+  popBtn.style.cssText = "margin-left:4px;padding:0 5px;font-size:.75em;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--text3);flex-shrink:0";
+  popBtn.style.display = "none";
+  labelEl.appendChild(popBtn);
+
+  let overlay = null;
+  popBtn.addEventListener("click", e => {
+    e.stopPropagation(); // don't collapse section
+    if (overlay) { overlay.remove(); overlay = null; popBtn.title = "Pop out result"; return; }
+    overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;top:60px;left:220px;right:40px;max-height:60vh;z-index:600;background:var(--bg);border:1px solid var(--border2);border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.3);overflow-y:auto;padding:12px 14px;font-size:.82em;line-height:1.6;white-space:pre-wrap;color:var(--text1)";
+    overlay.textContent = resultEl.textContent;
+    const close = document.createElement("button");
+    close.textContent = "✕";
+    close.style.cssText = "position:sticky;top:0;float:right;background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 6px;cursor:pointer;font-size:.8em";
+    close.addEventListener("click", () => { overlay.remove(); overlay = null; });
+    overlay.prepend(close);
+    document.body.appendChild(overlay);
+    popBtn.title = "Close pop-out";
+  });
+
+  // show pop-out button whenever oracle result is visible
+  const obs = new MutationObserver(() => {
+    popBtn.style.display = resultEl.style.display !== "none" && resultEl.textContent.trim() ? "" : "none";
+  });
+  obs.observe(resultEl, { attributes: true, attributeFilter: ["style"], childList: true });
+})();
 
 // ── sidebar ───────────────────────────────────────────────
 // Single fixed structure column: all sections always visible, no rail,

@@ -19,11 +19,12 @@ Read `docs/TRACKER.md` for the current open items and dashboard status.
 Do not conflate with SESSION_STATE.md -- TRACKER.md is the authoritative
 open-items list; SESSION_STATE.md is the most-recent-session snapshot.
 
-**Step 2a -- Check CLOSURE.md for current work priority**
-Read `docs/CLOSURE.md`. This is the primary work driver: three phases of
-checkboxes leading to the UI redesign gate. Pick up the next unchecked item
-in the current phase. When CLOSURE.md is fully checked off, remove this step
-or replace it with whatever the next long-term goal document is.
+**Step 2a -- Check UI_REDESIGN.md for current work priority**
+Read `docs/UI_REDESIGN.md`. This is the primary work driver: the shape-first
+UI redesign, phased A/B/C. CLOSURE.md's gate was fully checked 2026-07-18
+and Phase A shipped 2026-07-19 (session 219). Pick up the next unshipped
+phase; resolve the open questions listed in the doc with Bart before
+starting the phase they gate.
 
 **Step 3 -- Confirm memory is loaded**
 Check that the MEMORY.md auto-index has loaded via system context. If Bart
