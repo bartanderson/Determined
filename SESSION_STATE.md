@@ -1,41 +1,39 @@
-Written at commit: 8f4c118
+Written at commit: 68044b2
 
-# SESSION STATE — session 220
-Written at commit: 8f4c118 (2026-07-19)
+# SESSION STATE — session 221
+Written at commit: 68044b2 (2026-07-19)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Phase B of UI redesign shipped [V — commit 8f4c118]**
+**Phase D of UI redesign shipped [V — commit 68044b2]**
 
-Tab consolidation: 17 tabs + overflow → 8 primary tabs + ⚙ utility menu.
+Sidebar collapsible sections. Each section in the structure column now has a
+collapse chevron in its label row. State persisted per-section in localStorage.
 
-| Change | Detail |
-|--------|--------|
-| **Map tab** | Absorbs Graph + Imports + Topology; lens selector (Graph\|Imports\|Topology) |
-| **Frontier tab** | Absorbs Build queue; lens selector (Stubs\|Build queue) |
-| **Knowledge tab** | Absorbs Pins + Bag + Doc health; lens selector (Artifacts\|Pins\|Bag\|Doc health) |
-| **⚙ utility menu** | Tour + Discovery + Logs moved behind dropdown |
-| **Modes deleted** | Design/Trace/Review buttons, mode banner, mode CSS all removed |
-| **Tab bar** | Shape, Frontier, Map, Call tree, Editor, Knowledge, Workbench, ⌕ Chat |
+| Section | Default on corpus load |
+|---------|----------------------|
+| Corpus map | expanded |
+| Analyze | collapsed (collapses on `corpus_ready`) |
+| Oracle | collapsed |
+| Quick actions | collapsed |
+| Tools | collapsed |
+| Investigation | collapsed |
 
-**JS state**: `_mapView`, `_flLens`, `_knLens` track active lens per consolidated tab.
-`activateTab` updated: `gx-cy` visibility now `name === "map" && _mapView === "graph"`.
-`activateTab("graph")` → `activateTab("map")` in popover and tab-click handler.
-`activateTab("bag")` → `activateTab("knowledge")` + bag lens activation in intent_result.
+Analyze re-expands on `corpus_status` when no corpus loaded (so user can see
+the path input). Oracle result gets its own pop-out button (⤢) separate from
+section collapse — appears only when result is populated.
 
-**Trap found and fixed [V]**: `document.getElementById("mode-banner-clear").addEventListener(...)` at
-line 1212 — removed the mode-banner HTML but not this listener. Null dereference stopped all
-script execution before the lens variables were declared. Fixed with optional chaining (`?.`).
+Also committed: CLAUDE.md step 2a updated from CLOSURE.md → UI_REDESIGN.md.
 
 ## Tests [V = verified, ? = recalled]
 
 - UI-only change; no Python engine code touched [V]
-- Page loads clean, no JS errors [V — verified via browser console]
-- All three lens selectors toggle correctly (Graph/Imports/Topology, Stubs/Queue, Artifacts/Pins/Bag/Doc health) [V]
-- ⚙ utility dropdown opens/closes [V]
-- Tab bar renders with correct 8+1 structure [V — 11 .tab[data-tab] elements]
+- Page loads clean, no JS errors [V — read_console_messages returned none]
+- Collapse toggle verified via JS eval: Quick actions starts closed, click opens,
+  chevron updates to ▾ [V]
+- All sidebar body IDs present in HTML [V — grepped corpus-map-inner, sb-analyze-body, etc.]
 
 ## Known issues [V = verified, ? = recalled]
 
@@ -52,17 +50,16 @@ from `C:\Users\bartl\dev\Determined`.
 
 ## NEXT SESSION — start here
 
-**Phase B is done [V].** UI_REDESIGN.md Phase C is next.
+**Phase D is done [V].** All four phases of UI_REDESIGN.md are now shipped.
 
-**Phase C — Editor self-presentation + gear polish:**
-- Editor opens with file tree (DB `files` table — no scan needed)
-- Evidence-chain drill-down from verdict strip → editor line
-- Panel focus/popout generalized (editor already has ⤢ button)
+**Next: read UI_REDESIGN.md in full** — check if there are any remaining open
+items or follow-up work noted. Then check TRACKER.md for what comes after the
+redesign (RM59 feature shape analysis is the active item).
 
-**Before starting Phase C:** Read `docs/UI_REDESIGN.md` Phase C section.
-Consider whether evidence-chain drill-down requires a new socket event or
-can reuse existing `open_file` + `activateTab("editor")`.
+**RM59 — Feature shape analysis:**
+Three new tools: list_features (directory scan), feature_shape (path tracing),
+development_priorities (completeness ranking). Corpus-agnostic, directory-first.
+Phase 1 first: list_features + feature_shape. See TRACKER.md RM59 for full design.
 
 **Trap to watch**: when removing HTML elements, grep for all JS references to
-those element IDs (especially `.getElementById("...").addEventListener(...)` patterns)
-before committing. The mode-banner-clear null deref is the cautionary example.
+those element IDs before committing (see HISTORY.md entry 2026-07-19 s220).
