@@ -1,96 +1,106 @@
-Written at commit: 77fccdd
+Written at commit: ba82a15
 
-# SESSION STATE — session 224
-Written at commit: 77fccdd (2026-07-20)
+# SESSION STATE — session 225
+Written at commit: ba82a15 (2026-07-20)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Lesson locked: stale handoff → mention and move on [V]**
+**`_get_combat_context` resolved — DONE [V]**
 
-SESSION_STATE said "RM69 step 5 corpus aggregation" was next. Pre-code checklist
-found all three projections already implemented and 42/42 tests passing. Right
-response: one-sentence mention, update docs, proceed. No re-test needed to confirm
-what the code already proves.
+Added signal 10 to extract_signals: config-layer FSM presence.
+- Direct: concept IS an FSM with config entries → mild design-intent-stated boost
+- Indirect: concept appears in another FSM's action name (e.g. EncounterFSM.start_combat)
+  but has no own config file → blocked-on-prerequisite +0.8
+Result: _get_combat_context → blocked-on-prerequisite [0.43] with evidence
+"concept referenced by config FSM action(s) (EncounterFSM.start_combat) but has
+no config file — config-gated prerequisite". 42/42 tests passing. [V]
 
-**RM69 corpus aggregation — confirmed DONE [V]**
+**Calibration run on known-answer stubs [V]**
 
-stub_file_shape, stub_subsystem_shape, stub_prerequisite_map all in corpus_projections.py,
-wired in agent_tools.py, 42 tests passing. Smoke test against live dj2 correct.
+- _get_combat_context → blocked-on-prerequisite [0.43] CORRECT
+- _get_encounter_context → design-intent-stated [0.70] — arguably correct;
+  EncounterFSM has config entries + Encounter classes exist + docstring states intent.
+  Expected blocked-on-prerequisite was our assumption, not ground truth.
+- Subraces excluded: RM68 DEFERRED, not classify_stub test cases.
 
-**RM71 Phase 1 — shape scanner shipped [V]**
+**MCTS + knowledge-compiler synthesis captured in TRACKER [V]**
 
-Wrong start: began writing fsm_ingestor.py (format-specific). Bart corrected: wrong
-abstraction. Deleted it. Built determined/ingestion/shape_scanner.py instead:
-- Format-agnostic: JSON/YAML/TOML (structured) + .md/.txt/.rst (prose)
-- Four passes: node_collection, reference, topology, hierarchy
-- Convergence gating → ShapeFinding(kind, confidence, missing_refs)
-- Runs automatically at ingest end (hooked into ui_server.py)
-- Agent tool: list_shape_findings()
-- 13/13 tests [V]
-- Smoke test on dj2: 39 findings, all 5 FSMs at 100% confidence [V]
-- encounter.json: directed_graph, 4 nodes, 5 edges [V]
+Detailed FUTURE section written: Determined as oracle → MCTS explores signal space
+→ resolution paths as training data → small model. Untapped signals also captured:
+imports table, dead artifacts, return_type existence, behavioral_contracts.
 
-**RM71 Phase 2 — normalizer shipped [V]**
+**RM70 detect_conventions shipped [V]**
 
-determined/ingestion/shape_normalizer.py:
-- Driven by shape_finding artifacts (not format assumptions)
-- High-confidence directed_graph findings re-parsed → graph_edges (edge_type='config_edge')
-- States/actions/guards → knowledge_artifacts (fsm_state/fsm_action/fsm_guard)
-- Idempotent (skips files already normalized)
-- Agent tool: normalize_shape_findings()
-- 14/14 tests [V]
-- E2E on dj2: 5 FSMs, 27 edges, 16 nodes [V]
-- encounter.json: start_combat linked to awaiting_choice → resolving_fight [V]
+determined/agent/agent_tools.py — bottom-up naming family discovery, three gates:
+- Existence (3+ functions share naming prefix/suffix)
+- Usefulness (2+ feature dims agree >=70%): callers, callees, return_type, param_count, body_weight
+- Confluence (agreeing dims span 2+ feature categories)
+Output: family canon, per-member match/diverge, outlier surface.
+On dj2: 140 families. Stubs like _get_combat_context surface as outliers in `get` family.
 
-**Design decision: shape scanner philosophy [V]**
+**RM69 step 6 rank_stubs shipped [V]**
 
-Not per-format parsers. Multi-method induction mirroring structure_induction.py.
-Scope: all non-code files. Investigative scanner reports findings; normalizer
-writes graph edges from high-confidence hits. Bart's framing: "it just runs and reports."
+Three modes:
+- priority: actionable stubs ranked by caller_count * confidence + chain_bonus
+- gap: all stubs grouped by classification, sorted by confidence
+- perusal: top 2-3 interesting stubs for a scope
+Excludes test files. On dj2: 6 actionable stubs in priority mode; subraces at
+concept-not-applicable [0.97] correctly buried.
+
+Both registered in TOOLS, tool_registry, and test_agent_tools expected set.
+11 new tests in test_conventions_and_ranking.py. 188 tests passing. [V]
 
 ## Known issues [V = verified, ? = recalled]
 
-**`_get_combat_context` UNCERTAIN [?]:** Was UNCERTAIN at session start. RM71 phase 2
-now puts start_combat + encounter FSM edges in graph_edges. Classify_stub probe not
-yet run with new config-edge data — resolution unverified this session.
+**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
+tool queries bare names. Workaround: use graph_path.
 
 **Prose false positives in shape scanner [V]:** .recall/history.md (95%) and
 SESSION_STATE.md (65%) detected as directed_graph from -> arrows in prose. Normalizer
-correctly errors on these ("could not parse") since it only handles structured formats.
-Acceptable for now.
+correctly errors on these since it only handles structured formats. Acceptable for now.
 
-**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
-tool queries bare names. Workaround: use graph_path.
+**detect_conventions at corpus scope is noisy [V]:** 140 families on dj2 with no scope.
+Scope param helps. Threshold tuning (min_family, agreement %) needs calibration against
+real use cases before the output is agent-friendly at full corpus scale.
 
 **Server start command [V]:** always `.venv\Scripts\python.exe -m determined.ui.ui_server`
 from `C:\Users\bartl\dev\Determined`.
 
 ## NEXT SESSION — start here
 
-**Verify `_get_combat_context` resolution.** Run classify_stub on _get_combat_context
-against a freshly re-ingested dj2 DB (so config_edge rows are present). Expected:
-UNCERTAIN → blocked-on-prerequisite with config-layer evidence from encounter.json.
+**Calibrate detect_conventions output.** 140 families at full corpus is noisy.
+Two levers:
+1. Raise min_family (try 5) to filter small clusters
+2. Raise agreement threshold (try 80%) to require tighter canons
+Run against dj2 with different settings and find a threshold where output is
+useful without being overwhelming. Target: <20 families at corpus scope.
 
-Command to test:
+Command:
 ```
 .venv\Scripts\python.exe -c "
 import sys; sys.path.insert(0, '.')
 from determined.oracle.db_oracle import DBOracle
-from determined.assessor.assessor import Assessor
-from determined.agent.classify_stub import classify_stub
+from determined.agent.agent_tools import detect_conventions
 oracle = DBOracle('C_Users_bartl_dev_dj2.db')
-assessor = Assessor(oracle)
-print(classify_stub(assessor, {'name': '_get_combat_context'}))
-"
+print(detect_conventions(oracle, {'min_family': 5}))
+" 2>$null
 ```
 
-If still UNCERTAIN: the classify_stub signal extraction doesn't yet query config_edge
-rows. Check stub_classifier.py for where corpus signals are gathered and add a
-config_edge presence check.
+**Thread convention outlier score into rank_stubs composite (optional).**
+Currently rank_stubs uses caller_count * confidence + chain_bonus. Convention
+outlier status (stub that diverges from its naming family canon) is a natural
+additional signal. Wire detect_conventions result into rank_stubs priority mode.
 
-If resolved: move to RM70 (convention detector) or RM69 ranking integration per
-TRACKER sequencing.
+**Untapped signals (FUTURE, not urgent):**
+- imports table: concept named in docstring but not imported anywhere → concept-not-applicable
+- dead knowledge_artifacts matching concept: corpus-wide annotation, strong signal
+- return_type existence: named type not in classes table → concept-not-applicable
+See TRACKER FUTURE section for full design.
 
-**Re-ingest dj2 first** so shape scan + normalize run against the real DB.
+**RM69 open design questions remaining (from TRACKER):**
+- Hypothesis count cap (3? all above threshold?)
+- Prerequisite map: match named concepts across blocked-on comments
+- UI/flow: how corpus-level projections surface (blocked on UI redesign)
+- Ranking formula calibration needs more real cases
