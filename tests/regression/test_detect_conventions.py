@@ -14,7 +14,7 @@ import sqlite3
 import pytest
 from unittest.mock import MagicMock
 
-from determined.agent.agent_tools import detect_conventions
+from determined.agent.agent_tools import detect_conventions, _get_convention_for_symbol
 
 
 # ---------------------------------------------------------------------------
@@ -361,3 +361,67 @@ def test_prefix_wins_over_suffix_for_same_cluster():
     result = detect_conventions(_oracle(conn), {"min_family": 3})
     # prefix:get should appear; suffix:foo/bar/baz with only 1 member each won't
     assert "prefix:get" in result
+
+
+# ---------------------------------------------------------------------------
+# _get_convention_for_symbol
+# ---------------------------------------------------------------------------
+
+def _make_get_family(conn):
+    """Seed a passing prefix:get family of 4 non-stub, str-returning functions."""
+    for name in ("get_foo", "get_bar", "get_baz", "get_qux"):
+        _fn(conn, name, return_type="str", params={"x": "int"})
+
+
+def test_convention_for_symbol_in_family():
+    """Symbol that belongs to a passing convention returns family info."""
+    conn = _make_db()
+    _make_get_family(conn)
+    result = _get_convention_for_symbol(conn, "get_foo")
+    assert result["family"] == "prefix:get"
+    assert result["family_size"] == 4
+    assert result["is_outlier"] is False
+
+
+def test_convention_for_symbol_not_in_any_family():
+    """Symbol with a unique prefix returns empty family."""
+    conn = _make_db()
+    _make_get_family(conn)
+    _fn(conn, "run_thing", return_type="None", params={})
+    result = _get_convention_for_symbol(conn, "run_thing")
+    assert result["family"] is None
+    assert result["family_size"] == 0
+
+
+def test_convention_for_symbol_outlier_detected():
+    """Stub that diverges from canon is flagged as outlier."""
+    conn = _make_db()
+    # 3 non-stub str-returners form the canon; the 4th is a stub with None return
+    for name in ("get_foo", "get_bar", "get_baz"):
+        _fn(conn, name, return_type="str", params={"x": "int"})
+    _fn(conn, "get_odd", is_stub=1, return_type=None, params={})
+    result = _get_convention_for_symbol(conn, "get_odd")
+    assert result["family"] == "prefix:get"
+    assert result["is_outlier"] is True
+
+
+def test_convention_for_symbol_absent_from_corpus():
+    """Symbol that does not exist in functions table returns empty family."""
+    conn = _make_db()
+    _make_get_family(conn)
+    result = _get_convention_for_symbol(conn, "nonexistent_fn")
+    assert result["family"] is None
+
+
+def test_convention_for_symbol_generic_cluster_rejected():
+    """Cluster where >40% are outliers is rejected; no family returned."""
+    conn = _make_db()
+    # 3 non-stub str-returners + 2 diverging stubs = 40% outlier rate (borderline)
+    # Add a 6th diverging to push past 40%
+    for name in ("get_a", "get_b", "get_c"):
+        _fn(conn, name, return_type="str", params={"x": "int"})
+    for name in ("get_d", "get_e", "get_f"):
+        _fn(conn, name, is_stub=1, return_type=None, params={})
+    # 3/6 = 50% outliers — cluster should be rejected as too generic
+    result = _get_convention_for_symbol(conn, "get_d")
+    assert result["family"] is None

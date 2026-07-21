@@ -2778,6 +2778,42 @@ socket.on("classify_stub_spotlight_result", data => {
     }
   }
 
+  // ── Signal fusion table ──────────────────────────────────────
+  const f = data.fusion || {};
+  if (f.convention_family || f.chain_position !== "none" || f.outlier_bonus) {
+    const rows = [];
+    if (f.convention_family) {
+      const sizeLabel = f.convention_size <= 5 ? "emerging" : "established";
+      const outlierTag = f.convention_is_outlier
+        ? `<span style="color:var(--orange);margin-left:4px">⚠ outlier</span>` : "";
+      rows.push([
+        "Convention",
+        `${escHtml(f.convention_family)} (${f.convention_size} members, ${sizeLabel})${outlierTag}`,
+        f.convention_is_outlier,
+      ]);
+    }
+    if (f.chain_position && f.chain_position !== "none") {
+      const bonusTag = f.chain_bonus ? ` <span style="color:var(--orange)">(+${f.chain_bonus} priority)</span>` : "";
+      rows.push(["Chain pos", `${escHtml(f.chain_position)}${bonusTag}`, f.chain_bonus > 0]);
+    }
+    if (f.outlier_bonus) {
+      rows.push(["Outlier", `+${f.outlier_bonus} priority bonus`, true]);
+    }
+    if (rows.length) {
+      html += `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">`;
+      html += `<div style="font-size:.72em;color:var(--text3);margin-bottom:4px;letter-spacing:.04em">SIGNAL CONVERGENCE</div>`;
+      html += `<table style="font-size:.75em;border-collapse:collapse;width:100%">`;
+      rows.forEach(([label, value, highlight]) => {
+        const rowStyle = highlight ? "color:var(--text1)" : "color:var(--text2)";
+        html += `<tr style="${rowStyle}">`;
+        html += `<td style="padding:2px 8px 2px 0;white-space:nowrap;color:var(--text3)">${escHtml(label)}</td>`;
+        html += `<td>${value}</td>`;
+        html += `</tr>`;
+      });
+      html += `</table></div>`;
+    }
+  }
+
   content.innerHTML = html;
 
   // Enable propose button and annotate it with the top classification

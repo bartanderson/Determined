@@ -963,6 +963,9 @@ def handle_classify_stub_spotlight(data):
     def _run():
         try:
             from determined.agent.classify_stub import extract_signals, score_hypotheses
+            from determined.agent.agent_tools import (
+                _get_chain_positions, _compute_outlier_stub_set, _get_convention_for_symbol,
+            )
             signals = extract_signals(_oracle, symbol)
             if "error" in signals:
                 socketio.emit("classify_stub_spotlight_result",
@@ -970,6 +973,18 @@ def handle_classify_stub_spotlight(data):
                 return
             hypotheses = score_hypotheses(signals)
             top = hypotheses[0] if hypotheses else None
+
+            conn = _oracle.conn
+            tail_set, middle_set, head_set = _get_chain_positions(conn)
+            outlier_stubs = _compute_outlier_stub_set(conn)
+            convention = _get_convention_for_symbol(conn, symbol)
+
+            chain_pos = "tail" if symbol in tail_set else (
+                "head" if symbol in head_set else (
+                "middle" if symbol in middle_set else "none"))
+            chain_bonus = 5 if symbol in tail_set else (2 if symbol in middle_set else 0)
+            outlier_bonus = 3 if symbol in outlier_stubs else 0
+
             socketio.emit("classify_stub_spotlight_result", {
                 "symbol":        symbol,
                 "top_hypothesis": top["classification"] if top else None,
@@ -984,6 +999,14 @@ def handle_classify_stub_spotlight(data):
                     "is_protocol_or_abc": bool(signals.get("is_protocol_or_abc")),
                     "is_lifecycle":       bool(signals.get("is_lifecycle")),
                     "intent_text":        (signals.get("intent_text") or "")[:200],
+                },
+                "fusion": {
+                    "convention_family":     convention["family"],
+                    "convention_size":       convention["family_size"],
+                    "convention_is_outlier": convention["is_outlier"],
+                    "chain_position":        chain_pos,
+                    "chain_bonus":           chain_bonus,
+                    "outlier_bonus":         outlier_bonus,
                 },
                 "file_path":   signals.get("file_path", ""),
                 "line_number": signals.get("line_number"),

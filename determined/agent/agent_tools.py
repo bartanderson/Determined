@@ -10058,6 +10058,136 @@ def _compute_outlier_stub_set(conn, scope: str = "") -> set:
     return outlier_stubs
 
 
+def _get_convention_for_symbol(conn, name: str) -> dict:
+    """Return convention family membership for a single symbol.
+
+    Returns dict with keys: family (str|None), family_size (int), is_outlier (bool).
+    Runs the full 3-gate cluster analysis; looks up `name` in the passing clusters.
+    Empty family means the symbol belongs to no passing convention.
+    """
+    import json as _json
+
+    rows = conn.execute(
+        "SELECT name, file_path, is_stub, return_type, param_types_json "
+        "FROM functions WHERE name NOT LIKE '\\_\\_%\\_\\_' ESCAPE '\\' "
+        "AND file_path NOT LIKE '%/test_%' AND file_path NOT LIKE '%\\\\test_%'",
+    ).fetchall()
+    if not rows:
+        return {"family": None, "family_size": 0, "is_outlier": False}
+
+    def _bucket(n, thresholds=(0, 1, 3, 8)):
+        for i, t in enumerate(thresholds):
+            if n <= t:
+                return str(i)
+        return str(len(thresholds))
+
+    def _rt_category(rt):
+        if not rt:
+            return "none"
+        rt = rt.lower().strip()
+        if rt in ("none", "nonetype", ""):
+            return "none"
+        if rt in ("bool",):
+            return "bool"
+        if rt in ("int", "float"):
+            return "numeric"
+        if rt in ("str", "string"):
+            return "str"
+        if "dict" in rt or "mapping" in rt:
+            return "dict"
+        if "list" in rt or "sequence" in rt or "iterable" in rt:
+            return "list"
+        return "object"
+
+    fn_features: dict = {}
+    for row_name, file_path, is_stub, return_type, ptj in rows:
+        try:
+            params_parsed = _json.loads(ptj) if ptj else {}
+            param_count = len(params_parsed) if isinstance(params_parsed, dict) else 0
+        except Exception:
+            param_count = 0
+        caller_count = conn.execute(
+            "SELECT COUNT(DISTINCT caller) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+            (row_name, f"%.{row_name}"),
+        ).fetchone()[0]
+        callee_count = conn.execute(
+            "SELECT COUNT(DISTINCT callee) FROM graph_edges WHERE caller = ?",
+            (row_name,),
+        ).fetchone()[0]
+        fn_features[row_name] = {
+            "is_stub":     bool(is_stub),
+            "callers":     _bucket(caller_count),
+            "callees":     _bucket(callee_count),
+            "return_type": _rt_category(return_type),
+            "param_count": _bucket(param_count),
+            "body_weight": "stub" if is_stub else "impl",
+        }
+
+    prefix_clusters: dict = {}
+    suffix_clusters: dict = {}
+    for n in fn_features:
+        prefix, suffix = _naming_pattern(n)
+        if prefix:
+            prefix_clusters.setdefault(prefix, []).append(n)
+        if suffix and suffix != prefix:
+            suffix_clusters.setdefault(suffix, []).append(n)
+
+    candidate_clusters: dict = {}  # key -> members list
+    for token, members in prefix_clusters.items():
+        if len(members) >= 3:
+            candidate_clusters[f"prefix:{token}"] = members
+    for token, members in suffix_clusters.items():
+        if len(members) >= 3 and f"suffix:{token}" not in candidate_clusters:
+            candidate_clusters[f"suffix:{token}"] = members
+
+    FEATURE_DIMS = ["callers", "callees", "return_type", "param_count", "body_weight"]
+    categories = {
+        "structural": {"callers", "callees"},
+        "type": {"return_type", "param_count"},
+        "role": {"body_weight"},
+    }
+
+    for key, members in candidate_clusters.items():
+        if name not in members:
+            continue
+        member_feats = [fn_features[m] for m in members if m in fn_features]
+        if not member_feats:
+            continue
+        canon: dict = {}
+        agreement: dict = {}
+        for dim in FEATURE_DIMS:
+            vals = [f[dim] for f in member_feats]
+            counts: dict = {}
+            for v in vals:
+                counts[v] = counts.get(v, 0) + 1
+            majority_val = max(counts, key=lambda k: counts[k])
+            canon[dim] = majority_val
+            agreement[dim] = counts[majority_val] / len(vals)
+        agreeing_dims = [d for d, a in agreement.items() if a >= 0.70]
+        if len(agreeing_dims) < 2:
+            continue
+        cats_hit = sum(1 for cat_dims in categories.values() if any(d in agreeing_dims for d in cat_dims))
+        if cats_hit < 2:
+            continue
+        # Passes all 3 gates — check if name is outlier
+        feats = fn_features.get(name, {})
+        diverges = [d for d in agreeing_dims if feats.get(d) != canon.get(d)]
+        total_outliers = sum(
+            1 for m in members
+            if m in fn_features and any(fn_features[m].get(d) != canon.get(d) for d in agreeing_dims)
+        )
+        outlier_rate = total_outliers / len(members)
+        if outlier_rate > 0.40:
+            continue  # cluster too generic
+        return {
+            "family":      key,
+            "family_size": len(members),
+            "is_outlier":  bool(diverges),
+        }
+
+    return {"family": None, "family_size": 0, "is_outlier": False}
+
+
 def rank_stubs(assessor: "Assessor", args: dict) -> str:
     """
     rank_stubs([scope][, mode=priority|gap|perusal][, limit=20]) -- rank stubs
