@@ -1023,6 +1023,96 @@ def handle_classify_stub_spotlight(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("stub_fusion_table")
+def handle_stub_fusion_table(data):
+    """
+    Ranked stub list with per-stub fusion signals — the breadth view.
+    Emits stub_fusion_table_result:
+      { rows: [{name, file, classification, score, callers,
+                chain_position, chain_bonus, outlier_bonus,
+                convention_family, convention_is_outlier,
+                artifact_dead, artifact_inline_notes}],
+        error: str (on failure) }
+    """
+    if _oracle is None:
+        emit("stub_fusion_table_result", {"error": "no corpus loaded"})
+        return
+    scope = (data.get("scope") or "").strip()
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.classify_stub import extract_signals, score_hypotheses
+            from determined.agent.agent_tools import (
+                _get_chain_positions, _compute_outlier_stub_set,
+                _get_convention_for_symbol, _get_artifact_signals,
+            )
+            conn = _oracle.conn
+
+            query = (
+                "SELECT name, file_path FROM functions WHERE is_stub = 1 "
+                "AND file_path NOT LIKE '%test_%' AND file_path NOT LIKE '%_test%'"
+            )
+            params: list = []
+            if scope:
+                query += " AND file_path LIKE ?"
+                params.append(f"%{scope}%")
+            stubs = conn.execute(query, params).fetchall()
+
+            if not stubs:
+                socketio.emit("stub_fusion_table_result",
+                              {"rows": [], "scope": scope}, to=sid)
+                return
+
+            tail_set, middle_set, head_set = _get_chain_positions(conn)
+            outlier_stubs = _compute_outlier_stub_set(conn)
+
+            rows = []
+            for name, file_path in stubs:
+                sigs = extract_signals(_oracle, name, file_path_hint=file_path)
+                if "error" in sigs:
+                    continue
+                hyps = score_hypotheses(sigs)
+                top = hyps[0] if hyps else None
+                cls   = top["classification"] if top else "genuinely-unknown"
+                score = top["score"] if top else 0.0
+
+                caller_count = sigs.get("caller_count", 0)
+                chain_pos  = ("tail"   if name in tail_set   else
+                              "head"   if name in head_set   else
+                              "middle" if name in middle_set else "none")
+                chain_bonus   = 5 if name in tail_set   else (2 if name in middle_set else 0)
+                outlier_bonus = 3 if name in outlier_stubs else 0
+                composite = caller_count * score + chain_bonus + outlier_bonus
+
+                conv = _get_convention_for_symbol(conn, name)
+                arts = _get_artifact_signals(conn, name)
+
+                rows.append({
+                    "name":                  name,
+                    "file":                  (file_path or "").replace("\\", "/").split("/")[-1],
+                    "classification":        cls,
+                    "score":                 round(score, 2),
+                    "callers":               caller_count,
+                    "composite":             round(composite, 1),
+                    "chain_position":        chain_pos,
+                    "chain_bonus":           chain_bonus,
+                    "outlier_bonus":         outlier_bonus,
+                    "convention_family":     conv["family"],
+                    "convention_is_outlier": conv["is_outlier"],
+                    "artifact_dead":         arts["dead_artifact"],
+                    "artifact_inline_notes": arts["inline_notes"],
+                })
+
+            rows.sort(key=lambda r: -r["composite"])
+            socketio.emit("stub_fusion_table_result",
+                          {"rows": rows, "scope": scope}, to=sid)
+        except Exception as exc:
+            socketio.emit("stub_fusion_table_result", {"error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @socketio.on("store_finding_inline")
 def handle_store_finding_inline(data):
     """Store a single finding (from an inline ⚑ chip) without going through chat."""

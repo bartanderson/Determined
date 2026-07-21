@@ -626,6 +626,25 @@
           <button id="shape-popout-btn" class="send-btn" style="padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
         <div id="shape-verdict" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;font-family:var(--font-mono);font-size:.85em;line-height:1.7;white-space:pre-wrap"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0">
+          <button id="fusion-table-btn" class="send-btn" style="padding:3px 10px;font-size:.82em">Signal table ↵</button>
+          <span id="fusion-table-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
+          <span style="font-size:.78em;color:var(--text3)">all stubs ranked by signal convergence — click any row to open spotlight</span>
+        </div>
+        <div id="fusion-table-wrap" style="display:none;margin-bottom:12px;overflow-x:auto">
+          <table id="fusion-table" style="width:100%;border-collapse:collapse;font-size:.78em;font-family:var(--font-mono)">
+            <thead>
+              <tr style="color:var(--text3);border-bottom:1px solid var(--border);text-align:left">
+                <th style="padding:3px 10px 3px 0;font-weight:500">Symbol</th>
+                <th style="padding:3px 10px 3px 0;font-weight:500">File</th>
+                <th style="padding:3px 10px 3px 0;font-weight:500">Classification</th>
+                <th style="padding:3px 10px 3px 0;font-weight:500">Signals</th>
+                <th style="padding:3px 0;font-weight:500;text-align:right">Score</th>
+              </tr>
+            </thead>
+            <tbody id="fusion-table-body"></tbody>
+          </table>
+        </div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="shape-card" id="shape-file">
             <div class="shape-card-hdr">File shape <span class="shape-hint">stub density per file</span></div>
@@ -4421,6 +4440,72 @@ document.getElementById("shape-grid").addEventListener("click", e => {
   if (fileEl) { edOpenFile(fileEl.dataset.path); return; }
   const symEl = e.target.closest(".shape-nav-sym");
   if (symEl) { openSpotlight(symEl.dataset.sym); }
+});
+
+// ── Stub signal table ──────────────────────────────────────
+const _CLS_COLORS = {
+  "design-intent-stated":    "var(--green)",
+  "blocked-on-prerequisite": "var(--orange)",
+  "concept-not-applicable":  "var(--blue)",
+  "genuinely-unknown":       "var(--text3)",
+};
+const _CLS_LABELS = {
+  "design-intent-stated":    "design intent",
+  "blocked-on-prerequisite": "blocked",
+  "concept-not-applicable":  "not applicable",
+  "genuinely-unknown":       "unknown",
+};
+
+function fusionTableRun() {
+  const btn = document.getElementById("fusion-table-btn");
+  const running = document.getElementById("fusion-table-running");
+  btn.disabled = true;
+  running.style.display = "";
+  const scope = document.getElementById("shape-scope")?.value?.trim() || "";
+  socket.emit("stub_fusion_table", { scope });
+}
+
+socket.on("stub_fusion_table_result", data => {
+  const btn = document.getElementById("fusion-table-btn");
+  const running = document.getElementById("fusion-table-running");
+  const wrap = document.getElementById("fusion-table-wrap");
+  const tbody = document.getElementById("fusion-table-body");
+  btn.disabled = false;
+  running.style.display = "none";
+  wrap.style.display = "";
+
+  if (data.error) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red);padding:6px 0">${escHtml(data.error)}</td></tr>`;
+    return;
+  }
+  if (!data.rows || !data.rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text3);padding:6px 0">No stubs found</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = data.rows.map(r => {
+    const clsColor = _CLS_COLORS[r.classification] || "var(--text3)";
+    const clsLabel = _CLS_LABELS[r.classification] || r.classification;
+    const badges = [];
+    if (r.convention_is_outlier) badges.push(`<span style="color:var(--orange);margin-right:4px">⚠ outlier</span>`);
+    if (r.artifact_dead)         badges.push(`<span style="color:var(--blue);margin-right:4px">dead</span>`);
+    if (r.chain_bonus)           badges.push(`<span style="color:var(--text3);margin-right:4px">${r.chain_position}+${r.chain_bonus}</span>`);
+    if (r.artifact_inline_notes) badges.push(`<span style="color:var(--text3);margin-right:4px">${r.artifact_inline_notes}n</span>`);
+    const badgeStr = badges.join("") || `<span style="color:var(--text3)">—</span>`;
+    return `<tr class="fusion-row" data-sym="${escHtml(r.name)}" style="cursor:pointer;border-bottom:1px solid var(--border2)">
+      <td style="padding:4px 10px 4px 0;color:var(--accent)">${escHtml(r.name)}</td>
+      <td style="padding:4px 10px 4px 0;color:var(--text3)">${escHtml(r.file)}</td>
+      <td style="padding:4px 10px 4px 0"><span style="color:${clsColor}">${clsLabel}</span> <span style="color:var(--text3);font-size:.88em">${Math.round(r.score * 100)}%</span></td>
+      <td style="padding:4px 10px 4px 0">${badgeStr}</td>
+      <td style="padding:4px 0;text-align:right;color:var(--text2)">${r.composite}</td>
+    </tr>`;
+  }).join("");
+});
+
+document.getElementById("fusion-table-btn").addEventListener("click", fusionTableRun);
+document.getElementById("fusion-table-wrap").addEventListener("click", e => {
+  const row = e.target.closest(".fusion-row");
+  if (row) openSpotlight(row.dataset.sym);
 });
 
 // ── Tour panel ─────────────────────────────────────────────
