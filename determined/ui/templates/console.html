@@ -2780,7 +2780,9 @@ socket.on("classify_stub_spotlight_result", data => {
 
   // ── Signal fusion table ──────────────────────────────────────
   const f = data.fusion || {};
-  if (f.convention_family || f.chain_position !== "none" || f.outlier_bonus) {
+  const _fusionHasContent = f.convention_family || (f.chain_position && f.chain_position !== "none")
+      || f.outlier_bonus || f.artifact_dead || f.artifact_inline_notes || f.artifact_design_note;
+  if (_fusionHasContent) {
     const rows = [];
     if (f.convention_family) {
       const sizeLabel = f.convention_size <= 5 ? "emerging" : "established";
@@ -2798,6 +2800,15 @@ socket.on("classify_stub_spotlight_result", data => {
     }
     if (f.outlier_bonus) {
       rows.push(["Outlier", `+${f.outlier_bonus} priority bonus`, true]);
+    }
+    if (f.artifact_dead) {
+      rows.push(["Dead artifact", `<span style="color:var(--blue)">corpus flagged as dead code</span> — supports concept-not-applicable`, true]);
+    }
+    if (f.artifact_design_note) {
+      rows.push(["Design note", `<span style="color:var(--green)">design doc covers this symbol</span>`, false]);
+    }
+    if (f.artifact_inline_notes) {
+      rows.push(["Inline notes", `${f.artifact_inline_notes} comment${f.artifact_inline_notes > 1 ? "s" : ""} at this location`, false]);
     }
     if (rows.length) {
       html += `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">`;

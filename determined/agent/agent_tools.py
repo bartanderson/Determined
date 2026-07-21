@@ -10058,6 +10058,39 @@ def _compute_outlier_stub_set(conn, scope: str = "") -> set:
     return outlier_stubs
 
 
+def _get_artifact_signals(conn, name: str) -> dict:
+    """Return knowledge artifact signals for a stub.
+
+    Queries: dead markers, inline notes, and design_note coverage.
+    All are pure DB reads — no LLM, no side effects.
+
+    Returns:
+        dead_artifact   bool — a 'dead' kind artifact exists for this symbol name
+        inline_notes    int  — count of inline_note artifacts at this symbol
+        design_note     bool — a design_note artifact mentions this symbol name
+    """
+    dead = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='dead' AND subject LIKE ?",
+        (f"%{name}",),
+    ).fetchone()[0] > 0
+
+    inline_count = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='inline_note' AND subject=?",
+        (name,),
+    ).fetchone()[0]
+
+    design_match = conn.execute(
+        "SELECT COUNT(*) FROM knowledge_artifacts WHERE kind='design_note' AND content LIKE ?",
+        (f"%{name}%",),
+    ).fetchone()[0] > 0
+
+    return {
+        "dead_artifact": dead,
+        "inline_notes":  inline_count,
+        "design_note":   design_match,
+    }
+
+
 def _get_convention_for_symbol(conn, name: str) -> dict:
     """Return convention family membership for a single symbol.
 

@@ -964,7 +964,8 @@ def handle_classify_stub_spotlight(data):
         try:
             from determined.agent.classify_stub import extract_signals, score_hypotheses
             from determined.agent.agent_tools import (
-                _get_chain_positions, _compute_outlier_stub_set, _get_convention_for_symbol,
+                _get_chain_positions, _compute_outlier_stub_set,
+                _get_convention_for_symbol, _get_artifact_signals,
             )
             signals = extract_signals(_oracle, symbol)
             if "error" in signals:
@@ -978,6 +979,7 @@ def handle_classify_stub_spotlight(data):
             tail_set, middle_set, head_set = _get_chain_positions(conn)
             outlier_stubs = _compute_outlier_stub_set(conn)
             convention = _get_convention_for_symbol(conn, symbol)
+            artifacts = _get_artifact_signals(conn, symbol)
 
             chain_pos = "tail" if symbol in tail_set else (
                 "head" if symbol in head_set else (
@@ -1007,6 +1009,9 @@ def handle_classify_stub_spotlight(data):
                     "chain_position":        chain_pos,
                     "chain_bonus":           chain_bonus,
                     "outlier_bonus":         outlier_bonus,
+                    "artifact_dead":         artifacts["dead_artifact"],
+                    "artifact_inline_notes": artifacts["inline_notes"],
+                    "artifact_design_note":  artifacts["design_note"],
                 },
                 "file_path":   signals.get("file_path", ""),
                 "line_number": signals.get("line_number"),
