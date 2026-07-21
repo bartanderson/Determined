@@ -606,8 +606,8 @@ Function judgments aggregate into higher-level shapes:
       these by (class_name, file_path) and use class context as the primary signal:
       sibling stub density, class docstring, Protocol/ABC membership, declared instance
       vars not set. Five distinct cases -- see HISTORY.md 2026-07-17 entry.
-- [ ] Concept presence: grep-based or embedding-based? (grep first)
-- [ ] Prerequisite map: match named concepts across blocked-on comments
+- [x] Concept presence: grep-based (implemented in extract_signals via DB name/path LIKE queries)
+- [x] Prerequisite map: stub_prerequisite_map() built and registered (corpus_projections.py); smoke-tested on dj2 2026-07-20
 - [ ] UI/flow: how corpus-level projections surface -- NOT DESIGNED (separate item)
 - [x] Hypothesis count cap — RESOLVED: calibration run 2026-07-20 shows max 2 hypotheses
       across dj2 and Determined corpora. Theoretical concern, doesn't occur in practice.
