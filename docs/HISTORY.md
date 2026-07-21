@@ -8,6 +8,17 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-21 (s233): dead artifact subject LIKE over-match -- known limitation, not fixed.
+`_get_artifact_signals` queries `WHERE kind='dead' AND subject LIKE '%{name}'`.
+This over-matches when `name` is a suffix of another symbol (e.g. "stub" matches "my_stub").
+Real dead subjects are formatted "dead::symbol_name" so the trailing match is nearly exact in practice.
+Documented in test_artifact_signals_dead_partial_name_no_false_positive. Fix if it causes noise in real corpora.
+
+2026-07-21 (s233): UI verify blocked by auto-orient LLM call on corpus load.
+`load_db` socket handler fires a background auto-orient thread that calls the LLM.
+The LLM timeout (10s) blocks screenshot tool in browser. Workaround: verify via DOM reads
+(javascript_tool) instead of screenshot after load_db. classify_stub_spotlight itself is pure DB, unaffected.
+
 2026-07-21 (s230): detect_conventions calibration -- test file filter + outlier rate cap are the same pattern.
 Filter test files from the fetch query (NOT LIKE '%/test_%') and cap outlier rate at 40% in _analyse_cluster.
 One fix kills test noise (prefix:test 850-member family gone); the other kills overly-broad prefixes
