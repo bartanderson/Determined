@@ -8,6 +8,20 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-21 (s230): detect_conventions calibration -- test file filter + outlier rate cap are the same pattern.
+Filter test files from the fetch query (NOT LIKE '%/test_%') and cap outlier rate at 40% in _analyse_cluster.
+One fix kills test noise (prefix:test 850-member family gone); the other kills overly-broad prefixes
+(prefix:get 84/160 outliers no longer declares a family). Family count Determined 173→83. Do not write
+tests for detect_conventions until dj2 calibration run is done -- behavior not yet stable.
+
+2026-07-21 (s230): blast_radius lists same caller N times -- one graph edge per call-site, not per caller.
+Fixed with dedup-by-name in blast_radius() at point of use. ground_question (×25) not 25 separate lines.
+_list_callers_raw is correct; blast_radius was the display layer that needed the fix.
+
+2026-07-21 (s230): list_entry_points HTTP route path ambiguity -- _short() used 2 segments.
+Determined corpus includes examples/commonplace/ routes; with 2 segments they look like Determined-native
+routes. Bumped to 3 segments: commonplace/routes/api.py is unambiguous. Local function, no other callers.
+
 2026-07-20 (s229): Test harness fakes flagged as stubs -- expected, not a bug, don't re-investigate.
 Ingester correctly marks `return []` / `pass` bodies as is_stub=1 regardless of context.
 Fake/Mock/test-double methods in tests/ look identical to real stubs at AST level.

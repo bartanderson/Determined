@@ -1,7 +1,7 @@
-Written at commit: 8621717
+Written at commit: 874c6d3
 
 # SESSION STATE — session 230
-Written at commit: 8621717 (2026-07-21)
+Written at commit: 874c6d3 (2026-07-21)
 
 ## Active branch: main [V]
 
@@ -9,75 +9,60 @@ Written at commit: 8621717 (2026-07-21)
 
 **RM67 adversarial probe — Determined corpus [V]**
 
-Ran all 6 canonical questions against C_Users_bartl_dev_Determined.db.
-All passed. Two bugs found and fixed in the same session.
+All 6 canonical questions passed. Two bugs found and fixed:
+- blast_radius: 124 edges → 12 unique callers with (×N) dedup. agent_tools.py:195.
+- list_entry_points: _short() 2→3 segments; commonplace/routes/api.py now unambiguous.
+- tool_registry: find_isolated_modules, find_phantom_factories, find_orphaned_interfaces
+  added to REGISTRY. 57/57 test_agent_tools.py pass.
+TRACKER updated: Determined adversarial probe DONE.
 
-Q1 Entry points: PASS with finding — HTTP routes were Commonplace example routes
-  (examples/commonplace/), not Determined-native routes. Path display showed
-  only 2 segments so source was ambiguous. Fixed.
-Q2 Blast radius: PASS with finding — ground_question listed 25× (one edge per
-  call-site). Fixed with dedup.
-Q3 Feature shape: PASS — determined/agent: 329 syms, 1 stub, 39% completeness.
-Q4 Stubs: PASS — 3 stubs, 0 false positives. Both __init__ stubs (pattern_executor,
-  contract_drift_classifier) surface correctly after session 229 fix.
-Q5 Design drift: PASS (not testable — no layer rules defined, no confabulation).
-Q6 Call chains: PASS — main→cmd_ask→run_question correct; walk_call_chain(dispatch)
-  returns 160-node breadth-first expansion of all tool handlers.
+**detect_conventions (RM70) — calibration run on Determined corpus [V]**
 
-**blast_radius dedup fix [V]**
+Tool was already implemented (not noted in prior SESSION_STATE). Two calibration fixes:
+1. Filter test files from fetch query (NOT LIKE '%/test_%') — prefix:test 850 members gone.
+2. Outlier rate cap 40% in _analyse_cluster — prefix:get 84/160 outliers collapses correctly.
+Same pattern, two fixes. Family count Determined: 173→83. 57/57 tests pass.
+Notable finding: prefix:handle (50 socket handlers) leads; 4 HTML parser outliers correctly
+surface as naming coincidences not convention members.
 
-_list_callers_raw returns one row per call-site. blast_radius was listing the same
-caller N times. Fixed: group by caller name in blast_radius(), display as
-`ground_question (×25)`. 124 edges → 12 unique callers. agent_tools.py:195.
+**detect_conventions NOT yet tested on dj2 [V]**
 
-**list_entry_points HTTP route path depth fix [V]**
-
-_short(fp) used last 2 segments → `routes/api.py` (ambiguous). Bumped to 3 segments
-→ `commonplace/routes/api.py` (clear). Local function inside list_entry_points.
-agent_tools.py:9625.
-
-**tool_registry gap fixed [V]**
-
-find_isolated_modules, find_phantom_factories, find_orphaned_interfaces were in TOOLS
-but missing from REGISTRY. test_tool_registry_covers_all_tools was failing.
-Added full registry entries to tool_registry.py. 57/57 tests pass.
-
-**TRACKER: stub-targeted editing FUTURE item added [V]**
-
-Monaco at the projection site — editing surfaces at the stub when classify_stub
-produces a solution candidate. Not a general editor. Deferred until solution
-generation exists.
-
-**57/57 test_agent_tools.py pass [V]**
+Calibration against dj2 is the next step. Do NOT write tests until dj2 run is done —
+behavior may need further adjustment. Tests codify stable behavior; not stable yet.
 
 ## Known issues [V = verified, ? = recalled]
 
-**find_isolated_modules — test files are noisy [V]:** 67/68 moderate isolations
-in dj2 are test files. Correct signal but visually noisy. Future: test-path
-suppression tier or `exclude_tests` arg.
+**detect_conventions dj2 calibration pending [V]:** Next session starts here.
+Run detect_conventions against dj2. Look for new calibration issues. Fix, then write tests.
+
+**find_isolated_modules — test files are noisy [?]:** 67/68 moderate isolations
+in dj2 are test files. Future: exclude_tests arg.
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as
 FQNs; tool queries bare names. Workaround: use graph_path.
-
-**Prose false positives in shape scanner [?]:** SESSION_STATE.md and history.md
-detected as directed_graph from -> arrows. Normalizer errors on these. Acceptable.
 
 **Server start command [V]:** always `.venv\Scripts\python.exe -m determined.ui.ui_server`
 from `C:\Users\bartl\dev\Determined`.
 
 ## NEXT SESSION — start here
 
-**RM67 adversarial probe is complete. All convergence probes done across all corpora.**
+Run detect_conventions against dj2. Use this script as starting point:
 
-Update TRACKER RM67 convergence status to reflect this session's adversarial probe
-result before doing anything else (not done yet — only in-session notes above).
+  .venv\Scripts\python.exe scratchpad/run_conventions.py
 
-**Remaining open items in TRACKER:**
+(Script is in session scratchpad — may not persist. If gone, run:)
 
-RM70 convention detector — DESIGN phase. No implementation started. Next feature arc.
-Read RM70 in TRACKER before designing anything.
+  from determined.oracle.db_oracle import DBOracle
+  from determined.agent.agent_tools import detect_conventions
+  oracle = DBOracle(r"C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db")
+  print(detect_conventions(oracle, {"min_family": 3}))
+  print(detect_conventions(oracle, {"min_family": 3, "sort": "emerging"}))
 
-RM68 subrace removal in dj2 — deferred, low priority.
+Look for: noisy families, wrong outlier judgments, mis-grouped members, anything
+that doesn't match your intuition about dj2's conventions. Fix, then write tests.
 
-**Run capn report when session count reaches 5.**
-Counter resets after report. Next auto-notice at session 14.
+**After dj2 calibration:** write test_detect_conventions.py. Model on test_structural_gap_tools.py.
+See docs/TEST_MAP.md for the pattern.
+
+**RM68** (subrace removal in dj2) — deferred, low priority.
+**RM70** (convention detector) — implementation done, calibration in progress.
