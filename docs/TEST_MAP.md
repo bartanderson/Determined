@@ -14,7 +14,7 @@ pytest tests/regression/<file>  [<file2> ...]
 |---|---|
 | agent_prompt.py | test_agent_prompt.py |
 | agent_resolver.py | test_agent_resolver.py test_technique3.py |
-| agent_tools.py | test_agent_tools.py test_design_gaps.py test_detect_topology.py test_feature_shape.py test_feature_work_plan.py test_find_abc_gaps.py test_find_bridges_and_ghosts.py test_goal_intake.py test_http_chain.py test_implementation_order.py test_infer_behavior.py test_readiness_check.py test_scaffold_from_pattern.py test_search_web.py test_technique3.py test_verify_and_drift.py test_data_flow.py test_completion_contract.py test_edit_file.py |
+| agent_tools.py | test_agent_tools.py test_design_gaps.py test_detect_conventions.py test_detect_topology.py test_feature_shape.py test_feature_work_plan.py test_find_abc_gaps.py test_find_bridges_and_ghosts.py test_goal_intake.py test_http_chain.py test_implementation_order.py test_infer_behavior.py test_readiness_check.py test_scaffold_from_pattern.py test_search_web.py test_technique3.py test_verify_and_drift.py test_data_flow.py test_completion_contract.py test_edit_file.py |
 | claim_verifier.py | test_claim_verifier.py |
 | classify_stub.py | test_classify_stub.py |
 | corpus_projections.py | test_corpus_projections.py |
