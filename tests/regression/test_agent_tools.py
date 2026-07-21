@@ -580,6 +580,10 @@ def test_dispatch_all_tools_registered():
         "normalize_shape_findings",
         # Design Oracle
         "design_oracle",
+        # structural gap tools
+        "find_isolated_modules",
+        "find_orphaned_interfaces",
+        "find_phantom_factories",
     }
 
     assert set(TOOLS.keys()) == expected

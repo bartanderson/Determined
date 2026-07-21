@@ -206,6 +206,25 @@ The GOT model (navigation-first, surfaces connect naturally) is the guiding prin
 
 ---
 
+## FUTURE — Stub-targeted editing: solutions at the projection site (2026-07-20)
+
+When classify_stub or a future solution-generator produces an attempted implementation,
+the natural next step is to place it in source without leaving Determined. This is not
+a general code editor — it is editing surfaced *at the stub*, as part of the stub
+resolution workflow.
+
+Shape: projection panel shows the candidate implementation; user accepts/edits inline;
+Determined writes the file back and re-ingests the symbol. Monaco (single JS bundle,
+all languages) is the right embed for the edit surface — read-only by default, write
+mode activated from the stub projection result. The mode switch is stub-scoped, not
+corpus-wide. No general node-graph editing until this narrower use case proves the
+pattern.
+
+Gate: not actionable until classify_stub produces solution candidates (post-MCTS or
+post-calibration). Design the write-back + re-ingest path when that lands.
+
+---
+
 ## FUTURE — Sidebar panel collapse (2026-07-20)
 
 Left sidebar sections hide content but leave wasted space because `.sb-section` uses

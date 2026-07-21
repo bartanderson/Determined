@@ -907,6 +907,39 @@ REGISTRY: dict[str, dict] = {
         "category": "planning",
     },
 
+    # ── STRUCTURAL GAP TOOLS ─────────────────────────────────────────
+    "find_isolated_modules": {
+        "purpose": "Find files that define functions or classes but are never imported by any other file in the corpus. Isolated modules are either dead code or disconnected design documents. Severity tiers: critical (defines ABCs), high (constants/enums/types only), moderate (functions/classes, no ABCs).",
+        "args": {
+            "scope": "(optional) file path substring to restrict the search",
+        },
+        "output": "per-file list of isolated modules with severity tier and symbol count",
+        "feeds": ["find_phantom_factories", "find_orphaned_interfaces", "blast_radius"],
+        "use_when": "After initial corpus exploration to find dead or disconnected modules before diving into call chains.",
+        "category": "structural",
+    },
+    "find_phantom_factories": {
+        "purpose": "Find abstract factory classes (ABCs with create_*/build_*/make_*/get_* abstract methods) that have no concrete subclass anywhere in the corpus. A phantom factory is a designed wiring mechanism that was never built -- its absence means components are instantiated ad hoc.",
+        "args": {
+            "scope": "(optional) file path substring to restrict the search",
+        },
+        "output": "per-ABC list of phantom factories with method names and file location",
+        "feeds": ["find_orphaned_interfaces", "find_missing_bridges", "feature_work_plan"],
+        "use_when": "When investigating why dependency injection or factory patterns seem broken -- surfaces ABCs that were designed but never implemented.",
+        "category": "structural",
+    },
+    "find_orphaned_interfaces": {
+        "purpose": "Find classes whose method names overlap significantly with an ABC's abstract methods but don't declare inheritance from that ABC. An orphaned interface fulfills the ABC contract in practice but is invisible to the type system and ABC membership checks.",
+        "args": {
+            "scope": "(optional) file path substring to restrict candidate classes",
+            "threshold": "(optional) minimum overlap fraction to report, default 0.40",
+        },
+        "output": "per-class list of orphaned interfaces with overlap %, matched methods, and the ABC they shadow",
+        "feeds": ["find_phantom_factories", "find_missing_bridges"],
+        "use_when": "After find_phantom_factories -- check whether any class is already doing the factory's job without being registered as a subclass.",
+        "category": "structural",
+    },
+
     # ── RM69: CLASSIFY STUB ──────────────────────────────────────────
     "classify_stub": {
         "purpose": "Judgment layer: classify why a stub exists. Runs deterministic signal extraction (body shape, intent language, caller count, concept presence, sibling density, file character) then scores four competing hypotheses with evidence: concept-not-applicable, blocked-on-prerequisite, design-intent-stated, genuinely-unknown. Shows ranked hypotheses with confidence scores. When top score < 0.4, returns UNCERTAIN with raw signals.",

@@ -192,9 +192,14 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
             lines.append("Direct callers:")
             lines.append("  (none)")
         else:
-            lines.append(f"Direct callers ({len(callers)}):")
+            # Deduplicate by caller name (one edge per call-site; same caller may appear N times)
+            seen: dict = {}
             for c in callers:
-                lines.append(f"  {c['caller']}")
+                seen.setdefault(c["caller"], {"count": 0, **c})["count"] += 1
+            lines.append(f"Direct callers ({len(seen)}):")
+            for name, info in seen.items():
+                suffix = f" (×{info['count']})" if info["count"] > 1 else ""
+                lines.append(f"  {name}{suffix}")
 
         # Extended impact via subgraph
         sg = _graph_subgraph_raw(oracle, target, radius=2)
@@ -9618,7 +9623,7 @@ def list_entry_points(assessor: "Assessor", args: dict) -> str:
     out: list[str] = [f"Entry points: {scope_label}", ""]
 
     def _short(fp: str) -> str:
-        return "/".join((fp or "").replace("\\", "/").split("/")[-2:])
+        return "/".join((fp or "").replace("\\", "/").split("/")[-3:])
 
     if tier_filter in ("all", "explicit"):
         if explicit_http:
