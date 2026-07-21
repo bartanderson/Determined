@@ -217,7 +217,7 @@ def cmd_ask(question: str, threshold: float = 0.3):
         sys.exit(1)  # exit 1 signals a miss so callers can branch
 
 
-def cmd_chart(question: str, files: list[str], details: str = ""):
+def cmd_chart(question: str, files: list[str], details: str = "", work_cost: int = 500):
     if "\n" in question:
         print("Error: question cannot contain newlines", file=sys.stderr)
         sys.exit(1)
@@ -234,10 +234,8 @@ def cmd_chart(question: str, files: list[str], details: str = ""):
     entry_id = uuid.uuid4().hex[:8]
     now = datetime.now(timezone.utc).isoformat()
 
-    est_tokens = (len(question) + len(details)) // 4
-
     fm_lines = ["---", "capn: 1", f"id: {entry_id}", f"at: {now}",
-                f"est_tokens: {est_tokens}"]
+                f"est_tokens: {work_cost}"]
     if file_hashes:
         fm_lines.append("files:")
         for fp, h in file_hashes.items():
@@ -468,6 +466,8 @@ def main():
     p_chart.add_argument("--files", nargs="+", required=True,
                          help="Source files this discovery is grounded in")
     p_chart.add_argument("--details", default="", help="Extra context")
+    p_chart.add_argument("--work-cost", type=int, default=500,
+                         help="Estimated tokens saved by hitting this cache entry (default 500)")
 
     sub.add_parser("prune", help="Remove entries whose files have changed")
     sub.add_parser("context", help="Print session-start instructions + stats")
@@ -480,7 +480,7 @@ def main():
     if args.cmd == "ask":
         cmd_ask(args.question, args.threshold)
     elif args.cmd == "chart":
-        cmd_chart(args.question, args.files, args.details)
+        cmd_chart(args.question, args.files, args.details, args.work_cost)
     elif args.cmd == "prune":
         cmd_prune()
     elif args.cmd == "context":
