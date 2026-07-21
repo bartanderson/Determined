@@ -9714,7 +9714,8 @@ def detect_conventions(oracle: "DBOracle", args: dict) -> str:
     # ── 1. Fetch all functions (non-test, non-dunder) ────────────────────
     query = (
         "SELECT name, file_path, is_stub, return_type, param_types_json "
-        "FROM functions WHERE name NOT LIKE '\\_\\_%\\_\\_' ESCAPE '\\'"
+        "FROM functions WHERE name NOT LIKE '\\_\\_%\\_\\_' ESCAPE '\\' "
+        "AND file_path NOT LIKE '%/test_%' AND file_path NOT LIKE '%\\\\test_%'"
     )
     params: list = []
     if scope:
@@ -9861,6 +9862,8 @@ def detect_conventions(oracle: "DBOracle", args: dict) -> str:
             })
 
         outliers = [m for m in member_analysis if m["diverges"]]
+        if len(outliers) / len(member_analysis) > 0.40:
+            return {}  # prefix too generic to define a convention
         return {
             "canon":           canon,
             "agreeing_dims":   agreeing_dims,
