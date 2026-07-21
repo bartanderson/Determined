@@ -606,17 +606,15 @@ Function judgments aggregate into higher-level shapes:
       these by (class_name, file_path) and use class context as the primary signal:
       sibling stub density, class docstring, Protocol/ABC membership, declared instance
       vars not set. Five distinct cases -- see HISTORY.md 2026-07-17 entry.
-- [ ] Hypothesis count cap (3? all above threshold?)
-- [ ] Threshold calibration against known cases (dj2 stubs are the test set)
-      Calibration run 2026-07-20: _get_combat_context → blocked-on-prerequisite [0.43] OK.
-      _get_encounter_context → design-intent-stated [0.70] — arguably correct (EncounterFSM
-      has config entries + Encounter classes exist + docstring states intent). Expected
-      blocked-on-prerequisite was an assumption. Tool is reading evidence correctly.
-      Subrace stubs (RM68) are excluded from calibration — DEFERRED dj2 cleanup, not classify_stub cases.
 - [ ] Concept presence: grep-based or embedding-based? (grep first)
 - [ ] Prerequisite map: match named concepts across blocked-on comments
 - [ ] UI/flow: how corpus-level projections surface -- NOT DESIGNED (separate item)
-- [ ] Ranking formula calibration needs real cases
+- [x] Hypothesis count cap — RESOLVED: calibration run 2026-07-20 shows max 2 hypotheses
+      across dj2 and Determined corpora. Theoretical concern, doesn't occur in practice.
+- [x] Threshold calibration — RESOLVED: scores reading correctly. _get_combat_context [0.43]
+      blocked-on-prerequisite, _get_encounter_context [0.70] design-intent-stated. Both correct.
+      Full calibration run 2026-07-20: 8 dj2 stubs + 12 Determined stubs. No misfires on real stubs.
+      Test-file stubs are noise (see RM69 test stub investigation note below).
 
 ### Dependencies / not yet started
 

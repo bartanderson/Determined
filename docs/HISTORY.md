@@ -8,6 +8,20 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-20 (s229): Test harness fakes flagged as stubs -- expected, not a bug, don't re-investigate.
+Ingester correctly marks `return []` / `pass` bodies as is_stub=1 regardless of context.
+Fake/Mock/test-double methods in tests/ look identical to real stubs at AST level.
+Decision: ingester stays dumb. classify_stub handles judgment. Test doubles are noise
+that classify_stub should score past (lifecycle __init__ fix) or that a caller filters
+by file path. Do not add class-name pattern matching (Fake*, Mock*) to the ingester --
+too tailored. Accept that classify_stub output on test corpora includes test-file noise.
+
+2026-07-20 (s229): Stateless __init__(self): pass is not a stub -- fix in classify_stub not ingester.
+PatternExecutor and ContractDriftClassifier both have `pass` __init__ and are correctly stateless.
+Ingester flags them is_stub=1 (correct by its rules). classify_stub scores them blocked-on-prerequisite
+(wrong). Fix: in score_hypotheses, under the is_lifecycle branch, if the class has implemented
+sibling methods, suppress blocked-on-prerequisite and score toward genuinely-unknown or not-a-gap.
+
 2026-07-20 (s227): Structural gap pattern framework -- five corpus-agnostic disconnect patterns.
 Derived from dj2 phases.py ABC analysis. Patterns apply to any language/corpus:
 (1) Disconnected Contract: impl exists, ABC exists, `class Foo(ABC)` never written.

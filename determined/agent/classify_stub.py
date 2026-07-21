@@ -309,6 +309,12 @@ def extract_signals(
         "WHERE file_path = ? AND is_stub = 1 AND name != ?",
         (file_path, name)
     ).fetchall()
+
+    # Implemented (non-stub) sibling count — used to detect stateless __init__
+    implemented_sibling_count = conn.execute(
+        "SELECT COUNT(*) FROM functions WHERE file_path = ? AND is_stub = 0 AND name != ?",
+        (file_path, name)
+    ).fetchone()[0]
     sibling_stubs = [r[0] for r in sibling_rows]
     sibling_stub_count = len(sibling_stubs)
     # Trend: fraction of siblings with removal language in their full text
@@ -405,6 +411,7 @@ def extract_signals(
         "file_character":     file_character,
         "docstring_quality":  docstring_quality,
         "return_type":        return_type,
+        "implemented_sibling_count": implemented_sibling_count,
         # Lifecycle / class context (populated only when is_lifecycle=True)
         "is_lifecycle":             is_lifecycle,
         "is_protocol_or_abc":       class_ctx.get("is_protocol_or_abc", False),
@@ -549,10 +556,11 @@ def score_hypotheses(signals: dict) -> list[dict]:
     sib_removal_trend = signals.get("sibling_removal_trend", 0.0)
     file_char        = signals.get("file_character", "unknown")
     doc_quality      = signals.get("docstring_quality", "none")
-    is_lifecycle     = signals.get("is_lifecycle", False)
-    is_protocol_abc  = signals.get("is_protocol_or_abc", False)
-    class_siblings   = signals.get("class_sibling_stubs", 0)
-    vars_assigned    = signals.get("instance_vars_assigned", True)
+    is_lifecycle          = signals.get("is_lifecycle", False)
+    is_protocol_abc       = signals.get("is_protocol_or_abc", False)
+    class_siblings        = signals.get("class_sibling_stubs", 0)
+    vars_assigned         = signals.get("instance_vars_assigned", True)
+    impl_sibling_count    = signals.get("implemented_sibling_count", 0)
 
     # ── Signal: removal/obsolescence language ────────────────────────────
     # Strongest positive signal for concept-not-applicable.  Takes priority
@@ -699,12 +707,24 @@ def score_hypotheses(signals: dict) -> list[dict]:
                 "class inherits from Protocol/ABC — method is an interface contract"
             )
         elif not vars_assigned:
-            # __init__ assigns no self.x = attributes: class body is unimplemented.
-            scores["blocked-on-prerequisite"] += 0.6
-            scores["genuinely-unknown"] += 0.2
-            evidence["blocked-on-prerequisite"].append(
-                "__init__ assigns no instance vars — class body not yet implemented"
-            )
+            if impl_sibling_count >= 1:
+                # Class has implemented methods and __init__ assigns no state:
+                # stateless class, pass is correct. Not a gap. Override any
+                # blocked-on-prerequisite score that fired from the compound
+                # "called + empty body" signal earlier.
+                scores["blocked-on-prerequisite"] = 0.0
+                scores["genuinely-unknown"] = min(scores["genuinely-unknown"], 0.1)
+                evidence["blocked-on-prerequisite"].clear()
+                evidence["genuinely-unknown"] = [
+                    f"__init__ is pass but class has {impl_sibling_count} implemented method(s) — likely stateless by design"
+                ]
+            else:
+                # __init__ assigns no self.x = attributes: class body is unimplemented.
+                scores["blocked-on-prerequisite"] += 0.6
+                scores["genuinely-unknown"] += 0.2
+                evidence["blocked-on-prerequisite"].append(
+                    "__init__ assigns no instance vars — class body not yet implemented"
+                )
         # Use class sibling stubs as a stronger design-skeleton signal when
         # file-level siblings were sparse (lifecycle methods share a class).
         if class_siblings >= 3 and not is_protocol_abc:

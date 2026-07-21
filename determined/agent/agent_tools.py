@@ -1713,11 +1713,16 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     import json as _json
 
     conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+    scope_clause = " AND file_path LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
 
     # 1. Collect all classes that inherit from ABC (or Abstract bases)
     abc_classes = conn.execute(
         "SELECT name, methods_json, file_path FROM classes "
-        "WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'"
+        "WHERE (base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%')"
+        + scope_clause,
+        scope_param,
     ).fetchall()
 
     if not abc_classes:
@@ -1760,7 +1765,8 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     concrete_gaps: list[tuple[str, str, list[str]]] = []  # (subclass, abc_base, missing_methods)
 
     all_classes = conn.execute(
-        "SELECT name, base_classes_json, file_path FROM classes"
+        "SELECT name, base_classes_json, file_path FROM classes" + (scope_clause or ""),
+        scope_param,
     ).fetchall()
 
     for sub_name, bases_json, sub_file in all_classes:
@@ -1790,7 +1796,9 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
                 concrete_gaps.append((sub_name, abc_name, missing))
 
     # Find ABCs with NO concrete subclasses at all — unimplemented interfaces (highest severity)
-    all_class_names = set(r[0] for r in conn.execute("SELECT name FROM classes").fetchall())
+    all_class_names = set(r[0] for r in conn.execute(
+        "SELECT name FROM classes" + (scope_clause or ""), scope_param
+    ).fetchall())
     subclass_names: dict[str, set] = {abc: set() for abc in abc_method_map}
     for sub_name, bases_json, sub_file in all_classes:
         try:
