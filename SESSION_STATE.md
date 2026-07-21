@@ -1,56 +1,54 @@
-Written at commit: f91ff8a
+Written at commit: 8621717
 
-# SESSION STATE — session 229
-Written at commit: f91ff8a (2026-07-20)
+# SESSION STATE — session 230
+Written at commit: 8621717 (2026-07-21)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**find_abc_gaps scope param fixed [V]**
+**RM67 adversarial probe — Determined corpus [V]**
 
-Scope arg was accepted but silently ignored — all scopes returned identical output.
-Added `AND file_path LIKE ?` filter to three queries: abc_classes, all_classes,
-all_class_names. Pattern consistent with other structural gap tools.
-20/20 tests pass (test_structural_gap_tools.py).
+Ran all 6 canonical questions against C_Users_bartl_dev_Determined.db.
+All passed. Two bugs found and fixed in the same session.
 
-**RM69 open design questions resolved [V]**
+Q1 Entry points: PASS with finding — HTTP routes were Commonplace example routes
+  (examples/commonplace/), not Determined-native routes. Path display showed
+  only 2 segments so source was ambiguous. Fixed.
+Q2 Blast radius: PASS with finding — ground_question listed 25× (one edge per
+  call-site). Fixed with dedup.
+Q3 Feature shape: PASS — determined/agent: 329 syms, 1 stub, 39% completeness.
+Q4 Stubs: PASS — 3 stubs, 0 false positives. Both __init__ stubs (pattern_executor,
+  contract_drift_classifier) surface correctly after session 229 fix.
+Q5 Design drift: PASS (not testable — no layer rules defined, no confabulation).
+Q6 Call chains: PASS — main→cmd_ask→run_question correct; walk_call_chain(dispatch)
+  returns 160-node breadth-first expansion of all tool handlers.
 
-Calibration run across dj2 (8 stubs) and Determined (12 stubs) answered all
-outstanding questions:
+**blast_radius dedup fix [V]**
 
-- Hypothesis count cap: moot. Max 2 hypotheses observed in practice across both
-  corpora. Theoretical concern, doesn't occur.
-- Threshold calibration: scores reading correctly. _get_combat_context [0.43]
-  blocked-on-prerequisite, _get_encounter_context [0.70] design-intent-stated.
-  No misfires on real stubs.
-- Concept presence: already grep-based in extract_signals (lines 291-304).
-- Prerequisite map: stub_prerequisite_map() already built, registered, tested.
-  Smoke-tested on dj2: CombatFSM surfaces as GHOST, EncounterFSM as live.
-- All four corpus projections (stub_file_shape, stub_subsystem_shape,
-  stub_prerequisite_map, stub_concept_ghost_map) were already complete.
-  42 tests pass (test_corpus_projections.py).
+_list_callers_raw returns one row per call-site. blast_radius was listing the same
+caller N times. Fixed: group by caller name in blast_radius(), display as
+`ground_question (×25)`. 124 edges → 12 unique callers. agent_tools.py:195.
 
-RM69 is functionally complete. Only remaining open item: UI/flow surface —
-explicitly deferred, not designed.
+**list_entry_points HTTP route path depth fix [V]**
 
-**classify_stub stateless __init__ false positive fixed [V]**
+_short(fp) used last 2 segments → `routes/api.py` (ambiguous). Bumped to 3 segments
+→ `commonplace/routes/api.py` (clear). Local function inside list_entry_points.
+agent_tools.py:9625.
 
-PatternExecutor and ContractDriftClassifier both have `pass` __init__ and are
-correctly stateless. Were misfiring as blocked-on-prerequisite [0.40].
-Fix: in score_hypotheses lifecycle branch, when impl_sibling_count >= 1 and
-no instance vars assigned, override blocked-on-prerequisite to 0.0 and score
-toward genuinely-unknown. Both now return UNCERTAIN (correct).
-42 tests pass (test_classify_stub.py).
+**tool_registry gap fixed [V]**
 
-**Test harness fake stubs — documented, closed [V]**
+find_isolated_modules, find_phantom_factories, find_orphaned_interfaces were in TOOLS
+but missing from REGISTRY. test_tool_registry_covers_all_tools was failing.
+Added full registry entries to tool_registry.py. 57/57 tests pass.
 
-9 stubs in tests/regression/ are fake/mock class methods (return []). Ingester
-correctly flags them is_stub=1; they are expected noise. Decision: do not add
-class-name pattern matching (Fake*, Mock*) to the ingester — too tailored.
-Documented in HISTORY.md. Do not re-investigate.
+**TRACKER: stub-targeted editing FUTURE item added [V]**
 
-**104 tests pass across all three touched test files [V]**
+Monaco at the projection site — editing surfaces at the stub when classify_stub
+produces a solution candidate. Not a general editor. Deferred until solution
+generation exists.
+
+**57/57 test_agent_tools.py pass [V]**
 
 ## Known issues [V = verified, ? = recalled]
 
@@ -69,17 +67,17 @@ from `C:\Users\bartl\dev\Determined`.
 
 ## NEXT SESSION — start here
 
-**RM69 is done. All structural gap tools complete. Corpus projections complete.**
+**RM67 adversarial probe is complete. All convergence probes done across all corpora.**
+
+Update TRACKER RM67 convergence status to reflect this session's adversarial probe
+result before doing anything else (not done yet — only in-session notes above).
 
 **Remaining open items in TRACKER:**
 
-RM67 convergence probe loop — adversarial probe (6 canonical questions) against
-Determined itself not yet run. This is the self-model gate in RM67. Low urgency
-but is the stated next step for Determined-analyzing-Determined convergence.
+RM70 convention detector — DESIGN phase. No implementation started. Next feature arc.
+Read RM70 in TRACKER before designing anything.
 
-RM68 subrace removal in dj2 — deferred, low priority. Remove subraces,
-get_subraces_for_race, get_race_for_subrace, semantic_match_subrace,
-semantic_match_fighting_style from dj2. Blast radius already confirmed low.
+RM68 subrace removal in dj2 — deferred, low priority.
 
 **Run capn report when session count reaches 5.**
 Counter resets after report. Next auto-notice at session 14.

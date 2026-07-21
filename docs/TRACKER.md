@@ -706,7 +706,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 
 | Corpus | Target | Status |
 |--------|--------|--------|
-| Determined (Python) | Full convergence | structural integrity done; probe TBD |
+| Determined (Python) | Full convergence | structural integrity done; probe DONE (2026-07-21) |
 | dj2 (Python+JS) | Full convergence | 331 inferred EPs (accepted ceiling); 10 stubs split: 5 RM68-remove, 5 AI-layer (RM69 to classify) |
 | Commonplace (Python) | Full convergence | 1 stub (suggest_tags); deferred to RM69 |
 | rotjs (TS) | Probe-passes | 6 stubs; lib/src dual-rep known |
@@ -743,7 +743,7 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 
 ### Convergence status
 
-- [x] Determined: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] Determined: probe DONE (2026-07-18, CLOSURE.md Phase 2); adversarial re-run DONE (2026-07-21, session 230) — 3 stubs clean, no false positives, 2 bugs fixed (blast_radius dedup, EP route path depth)
 - [x] dj2: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 5 RM68-remove stubs, 5 AI-layer gaps; judgment per RM69
 - [x] Commonplace: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 1 stub (suggest_tags), judgment per RM69
 - [x] rotjs: probe DONE (2026-07-18, CLOSURE.md Phase 2)
