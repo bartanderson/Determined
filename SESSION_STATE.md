@@ -1,63 +1,48 @@
-Written at commit: b708f33 (2026-07-22)
+Written at commit: 81decfb (2026-07-22)
 
-# SESSION STATE — session 234
+# SESSION STATE — session 235
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Housekeeping / orientation (session 234):**
-- Drift from s233 handoff: 2 commits had already landed (1f41cfa capn fix, 066e252
-  return_type + import signals) — both from s233's next list, both now done.
-- Committed `.claude/hooks/validate_shell.py` + updated `.claude/settings.json` [V]
-  (140f7ac) — PreToolUse hook blocks Bash-isms in PowerShell and Windows paths in Bash.
-- Verified `python3 == python` (both 3.11.9) in this environment. Memory updated.
-- Closed untapped signals #4: `behavioral_contracts` / `contract_violations` tables
-  do not exist in dj2 DB schema. Marked all 4 untapped signals done in TRACKER.md.
-- Wrote `docs/VISUAL_PROJECTION.md` — full implementation spec for Phases 1–3 of the
-  visual projection work (all gates cleared). No code written yet.
+**Visual projection — all three phases shipped** (session 235):
+- Phase 1 (1972baa): row click → spotlight + graph pre-loaded in Map tab (background,
+  no forced tab switch). Added `data-family` attribute to `.fusion-row` elements.
+- Phase 2+3 (81decfb): family grouping with clickable header rows (filter/clear),
+  convergence summary line above table ("Signals: 7/10 outlier · 5 dead artifact").
+  All frontend-only — no backend changes, no new socket events.
+- Verified in browser via DOM checks (screenshot blocked by known load_db LLM thread
+  constraint): 5 family headers, 10 rows, convergence visible, filter/clear cycle correct.
 
-## Signal fusion state [V]
+All changes in `determined/ui/templates/console.html` only. [V]
 
-All signals wired end-to-end:
+## Signal fusion + visual projection state [V]
+
+All signals wired and projected:
 - Convention (family, size, is_outlier)
 - Chain (position, bonus)
 - Artifact (dead, inline_notes, design_note)
 - return_type existence check
 - Import concept cross-check
-- Breadth view: signal table (Shape tab "Signal table ↵" button)
+- Breadth view: signal table with family grouping, convergence summary, graph pre-load
 - Depth view: spotlight SIGNAL CONVERGENCE table
+
+`docs/VISUAL_PROJECTION.md` — spec fully implemented. No remaining phases.
 
 ## NEXT SESSION — start here
 
-Read `docs/VISUAL_PROJECTION.md` first. Full Phase 1–3 spec is there, ready to implement.
-No questions outstanding. No backend changes needed for any phase.
+Visual projection is done. Check TRACKER.md for the next open item.
 
-**Phase 1 first** (~30 min, 2 lines of new code + 1 data attribute):
+The active item in CLAUDE.md is **RM59** (feature shape analysis — `list_features`,
+`feature_shape`, `development_priorities`). Check TRACKER.md RM59 for current phase
+status before starting.
 
-File: `determined/ui/templates/console.html`
-
-1. Add `data-family="${escHtml(r.convention_family || '')}"` to `.fusion-row` TR element
-   (currently at ~line 4508, inside `data.rows.map(...)` in `stub_fusion_table_result` handler).
-
-2. Extend the click handler (~line 4519–4522):
-   ```javascript
-   document.getElementById("fusion-table-wrap").addEventListener("click", e => {
-     const row = e.target.closest(".fusion-row");
-     if (!row) return;
-     const sym = row.dataset.sym;
-     openSpotlight(sym);
-     gxInput.value = sym;   // NEW
-     gxMap(sym);            // NEW
-   });
-   ```
-
-Validate: click table row → spotlight opens → switch to Map tab → graph shows that symbol.
-
-**Phase 2** (~1 session): family grouping. Extract row rendering into `fusionRowHtml()`,
-add `fusionTableRender()`, family header rows with click-to-filter. All in spec.
-
-**Phase 3** (~30 min): `fusionConvergenceRender()` — signal frequency summary line above table.
+First command:
+```
+python scripts/capn.py ask "what have we already implemented for RM59 feature shape tools"
+```
+Then read TRACKER.md RM59 block.
 
 ## Known issues [V = verified, ? = recalled]
 
@@ -66,6 +51,11 @@ over-matches when name is a suffix of another symbol. Documented in test. Fix if
 
 **load_db auto-orient blocks screenshot [V]:** background LLM thread on corpus load
 causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
+
+**Corpus switch UI flow [V]:** `socket.emit("load_db", {path: "..."})` is the direct
+load path. "Switch corpus" button (resumeBtn) is only visible when a corpus is already
+loaded; it emits `list_dbs` which returns a picker modal. To load from a fresh server
+start: emit load_db directly with the absolute .db path.
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
 tool queries bare names. Workaround: use graph_path.
