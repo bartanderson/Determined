@@ -1,48 +1,48 @@
-Written at commit: 81decfb (2026-07-22)
+Written at commit: bf61aa7 (2026-07-22)
 
-# SESSION STATE — session 235
+# SESSION STATE — session 235 (addendum)
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Visual projection — all three phases shipped** (session 235):
-- Phase 1 (1972baa): row click → spotlight + graph pre-loaded in Map tab (background,
-  no forced tab switch). Added `data-family` attribute to `.fusion-row` elements.
-- Phase 2+3 (81decfb): family grouping with clickable header rows (filter/clear),
-  convergence summary line above table ("Signals: 7/10 outlier · 5 dead artifact").
-  All frontend-only — no backend changes, no new socket events.
-- Verified in browser via DOM checks (screenshot blocked by known load_db LLM thread
-  constraint): 5 family headers, 10 rows, convergence visible, filter/clear cycle correct.
+**Visual projection — all three phases shipped** (1972baa, 81decfb):
+- Phase 1: row click → spotlight + graph pre-loaded in Map tab. `data-family` on rows.
+- Phase 2: family grouping with clickable headers, filter/clear.
+- Phase 3: convergence summary line above table.
+- All frontend-only. No backend changes.
 
-All changes in `determined/ui/templates/console.html` only. [V]
-
-## Signal fusion + visual projection state [V]
-
-All signals wired and projected:
-- Convention (family, size, is_outlier)
-- Chain (position, bonus)
-- Artifact (dead, inline_notes, design_note)
-- return_type existence check
-- Import concept cross-check
-- Breadth view: signal table with family grouping, convergence summary, graph pre-load
-- Depth view: spotlight SIGNAL CONVERGENCE table
-
-`docs/VISUAL_PROJECTION.md` — spec fully implemented. No remaining phases.
+**Direction clarified (end of session):**
+- No dj2 modifications until Determined is complete (not just "no dj2 work" — the
+  gate is using Determined fully on dj2 without going back and forth).
+- Next arc: cross-language ingestion + new corpora. Already partially done (TS/JS/Go/Rust
+  walkers exist). Need to actually ingest the reference corpora and verify they walk cleanly.
+- Signal calibration is GATED on multi-corpus ingestion — dj2 alone is not a valid
+  yardstick. Calibrate weights/thresholds after you have diverse ground truth:
+  0-stub corpora (specificity), known-gap corpora (sensitivity), cross-language.
 
 ## NEXT SESSION — start here
 
-Visual projection is done. Check TRACKER.md for the next open item.
+**Cross-language corpora ingestion.** The walkers exist; the corpora are cloned.
+Goal: ingest all reference corpora, verify they produce sensible output, surface any
+walker bugs that only show up on real code at scale.
 
-The active item in CLAUDE.md is **RM59** (feature shape analysis — `list_features`,
-`feature_shape`, `development_priorities`). Check TRACKER.md RM59 for current phase
-status before starting.
+Reference corpora locations [?]:
+```
+C:\Users\bartl\dev\corpora\dnd-dungeon-gen    (JS)
+C:\Users\bartl\dev\corpora\dungeoncrawler     (TS)
+C:\Users\bartl\dev\corpora\rotjs              (TS)
+C:\Users\bartl\dev\corpora\end-of-eden        (Go)
+C:\Users\bartl\dev\corpora\ruggrogue          (Rust)
+```
 
-First command:
+First command — check what's already ingested:
 ```
-python scripts/capn.py ask "what have we already implemented for RM59 feature shape tools"
+python scripts/capn.py ask "cross-language corpus ingestion status"
 ```
-Then read TRACKER.md RM59 block.
+Then read TRACKER.md RM67 language scope table (shows probe status per corpus).
+Then ingest any that are missing or stale, run `list_features` + `development_priorities`
+on each, verify output makes sense against known ground truth.
 
 ## Known issues [V = verified, ? = recalled]
 
@@ -52,10 +52,8 @@ over-matches when name is a suffix of another symbol. Documented in test. Fix if
 **load_db auto-orient blocks screenshot [V]:** background LLM thread on corpus load
 causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
 
-**Corpus switch UI flow [V]:** `socket.emit("load_db", {path: "..."})` is the direct
-load path. "Switch corpus" button (resumeBtn) is only visible when a corpus is already
-loaded; it emits `list_dbs` which returns a picker modal. To load from a fresh server
-start: emit load_db directly with the absolute .db path.
+**Corpus switch UI flow [V]:** emit `load_db` with absolute .db path to load directly.
+"Switch corpus" button only visible when corpus already loaded.
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
 tool queries bare names. Workaround: use graph_path.
