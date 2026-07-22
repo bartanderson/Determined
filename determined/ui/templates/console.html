@@ -4505,7 +4505,7 @@ socket.on("stub_fusion_table_result", data => {
     if (r.chain_bonus)           badges.push(`<span style="color:var(--text3);margin-right:4px">${r.chain_position}+${r.chain_bonus}</span>`);
     if (r.artifact_inline_notes) badges.push(`<span style="color:var(--text3);margin-right:4px">${r.artifact_inline_notes}n</span>`);
     const badgeStr = badges.join("") || `<span style="color:var(--text3)">—</span>`;
-    return `<tr class="fusion-row" data-sym="${escHtml(r.name)}" style="cursor:pointer;border-bottom:1px solid var(--border2)">
+    return `<tr class="fusion-row" data-sym="${escHtml(r.name)}" data-family="${escHtml(r.convention_family || '')}" style="cursor:pointer;border-bottom:1px solid var(--border2)">
       <td style="padding:4px 10px 4px 0;color:var(--accent)">${escHtml(r.name)}</td>
       <td style="padding:4px 10px 4px 0;color:var(--text3)">${escHtml(r.file)}</td>
       <td style="padding:4px 10px 4px 0"><span style="color:${clsColor}">${clsLabel}</span> <span style="color:var(--text3);font-size:.88em">${Math.round(r.score * 100)}%</span></td>
@@ -4518,7 +4518,11 @@ socket.on("stub_fusion_table_result", data => {
 document.getElementById("fusion-table-btn").addEventListener("click", fusionTableRun);
 document.getElementById("fusion-table-wrap").addEventListener("click", e => {
   const row = e.target.closest(".fusion-row");
-  if (row) openSpotlight(row.dataset.sym);
+  if (!row) return;
+  const sym = row.dataset.sym;
+  openSpotlight(sym);
+  gxInput.value = sym;
+  gxMap(sym);
 });
 
 // ── Tour panel ─────────────────────────────────────────────
