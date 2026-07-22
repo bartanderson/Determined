@@ -812,6 +812,39 @@ prior decisions, known gaps, and risk flags before touching the code. Natural tw
 
 ---
 
+### Idea 6 — Token-budget-at-write-time (context-window discipline for stored artifacts)
+
+**The gap:** knowledge_artifacts and workflow_items are stored as raw text with no token
+budget enforcement. At retrieval time, a bloated artifact consumes context window
+silently — no warning, no truncation, no record of the cost.
+
+**The principle:** count tokens *at write time*, not read time. A tokenizer call
+(tiktoken or gigatoken) at `_store_knowledge_artifact` is cheap; LLM context wasted
+on a 2000-token design note that could have been 200 is not.
+
+**Concrete behavior:**
+- Count tokens on every artifact before storing. Reject if over threshold (proposed:
+  500 tokens for `design_note`, 200 for `inline_note`, 1000 for `doc_section`).
+- If over threshold: do not store. Emit a `workflow_item` with
+  `kind='backlog'` and subject `"summarize-before-store: <artifact subject>"`.
+  The summarization pass (Idea 2's garden tool) picks it up.
+- At retrieval time, rank candidates by token density (meaningful claims per token),
+  not just recency or kind.
+
+**Why this matters:** the knowledge layer's value is what the LLM can fit in context
+during a query. A system that stores freely but retrieves selectively still wastes
+tokens on storage — and selectively retrieving a bloated artifact is still expensive.
+Enforce the budget at the point of entry, not the point of use.
+
+**Implementation shape:** one helper `_count_tokens(text) -> int` using tiktoken
+(no dependency on gigatoken; correctness over speed for single-artifact counting).
+Called inside `_store_knowledge_artifact` before the INSERT.
+
+**Gate: RM69 design phase.** Bake in at schema design time alongside the citation gate
+(Idea 4). Both are entry-point disciplines that are harder to retrofit than to build in.
+
+---
+
 ## RM68 — Remove subrace concept from dj2 (DEFERRED)
 
 **Context:** The OG system rewrite replaced the original D&D data model with a more
