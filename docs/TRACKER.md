@@ -361,6 +361,249 @@ Then:
 
 ---
 
+## FUTURE — Slater integration arc (2026-07-22)
+
+**Source:** https://github.com/Hikari-Systems/slater
+Slater is a Rust graph database that serves graphs that don't fit in memory (hundreds
+of millions of nodes, billions of edges) in low hundreds of MB of RAM, via the standard
+Bolt protocol. Any neo4j driver (Python, JS, Go, Java) works unchanged. Disk-native
+vector search (Vamana + PQ; cosine/L2/dot ANN) lives next to the graph. Written with
+Claude Code by Hikari Systems. Open source, Apache-2.0.
+
+Six distinct ideas follow in priority order. Read all of them before acting on any —
+they compose, and the later ones build on decisions the earlier ones make.
+
+---
+
+### Idea 1 — Slater as a Rust corpus (READY NOW, no gates)
+
+**What:** Clone and ingest Slater as the primary validation corpus for the Rust walker.
+Better than ruggrogue (a game loop) because Slater has clean architectural separation
+between build path (slater-build) and serve path (slater server), heavy trait usage,
+and a clear module hierarchy in `crates/`. It is also Claude Code-generated Rust —
+meta-interesting as a data point on how AI-assisted code organizes itself.
+
+**Steps:**
+
+1. Clone:
+   ```
+   git clone https://github.com/Hikari-Systems/slater C:\Users\bartl\dev\corpora\slater
+   ```
+
+2. Load via UI corpus switcher with absolute path to the cloned directory.
+
+3. Immediately after ingest, run the canonical six-probe loop (RM67):
+   - `list_entry_points` — expect Bolt handler traits, build CLI entry points
+   - `list_stubs` — expect 0 or very few (it is complete server software); any stubs are
+     probably interface methods or platform-conditional code (`#[cfg(...)]`)
+   - `list_features` — expect features: bolt_server, slater_build, delta/LSM, vector_search,
+     acl, storage_backends
+   - `development_priorities` — use as Rust walker regression baseline
+   - `walk_call_chain` on a known entry point (the Bolt handler accept loop)
+   - `blast_radius` on a core struct (the cache LRU)
+
+4. Known Rust walker edge cases to watch for:
+   - `impl Trait for Type` blocks — methods go on the concrete type, not the trait
+   - `#[cfg(feature = "...")]` / `#[cfg(test)]` — conditional code may produce false stubs
+   - Crate-level re-exports (`pub use crate::foo::Bar`) — may produce duplicate symbols
+   - `mod.rs` files and inline `mod foo { ... }` — both valid Rust module forms
+   - Lifetimes in function signatures — should not break param_types_json extraction
+   - Macros (`#[derive(...)]`, `vec![]`, `tokio::main`) — walker must not try to parse
+     macro bodies as function bodies
+
+5. Add a row to RM67 language scope table once probed:
+   `| slater (Rust) | Probe-passes | <stub count>; <known issues> |`
+
+6. File any Rust walker bugs found as sub-items here before closing.
+
+**No gate. Clone and ingest in the session you read this.**
+
+---
+
+### Idea 2 — Build/serve split as corpus generation model (feeds RM69 design)
+
+**What:** Slater's architecture is: `slater-build` compiles a graph offline into a
+content-addressed immutable "generation" directory; `slater` serves from it with a
+bounded cache. Swapping generations is atomic (one `current` pointer flip). This maps
+cleanly onto what Determined already does — ingest (build) and query (serve) — but
+Determined does not formalize the split or version the output.
+
+**The steal:** When designing RM69 corpus aggregation, adopt the generation model:
+
+- **Ingest = build pass.** Produces a frozen, content-identified corpus snapshot
+  (the DB file, keyed by a hash or ingest timestamp).
+- **Query layer serves from the frozen snapshot.** Never mutates it mid-query.
+- **Re-ingest produces a new generation**, not an in-place mutation of the existing DB.
+  The old generation stays accessible until explicitly pruned.
+- **One "current" record** points to the active generation (could be a sidecar JSON
+  or a symlink). Switching corpora = updating the current pointer.
+
+**Why this matters for RM69:** aggregation tools (file shape, subsystem shape,
+prerequisite map) produce corpus-wide summaries. Those summaries need to be stable
+within a session — a re-ingest mid-session should not silently invalidate them. The
+generation model makes this explicit: summaries are stamped against a generation ID;
+stale summaries are detected, not silently served.
+
+**Implementation shape when RM69 is being designed:**
+- `ingestion/generation.py` — `GenerationManifest(corpus_path, ingest_sha, timestamp,
+  symbol_count, edge_count)`; written as `generation_manifest.json` next to the DB
+- Query tools read the manifest at startup; if manifest is absent or stale, warn before
+  running aggregation
+- `corpus_aggregation.py` stamps summaries with `generation_id`
+
+**Gate: implement when RM69 architecture is being designed. Do not add generation.py
+before RM69 is active — premature if aggregation doesn't exist yet.**
+
+---
+
+### Idea 3 — Vector + graph colocation (design principle for RM69)
+
+**What:** Today Determined keeps embeddings in `semantic_summaries` and call edges in
+`graph_edges` — joined in Python across two queries. Slater shows that vector KNN and
+graph traversal can be one query:
+
+```cypher
+MATCH (n:Function)
+WHERE db.idx.vector.queryNodes(n, $embedding, 10)
+RETURN n, [(n)-[:CALLS]->(m) | m] AS callees
+```
+
+**The principle (apply now, not later):** When designing RM69's aggregation layer,
+make the schema choice that keeps embeddings and their associated graph edges
+co-queryable — either in the same table join with a covering index, or in a
+single tool call that fetches both in one DB round-trip. Avoid a pattern where
+"find semantically similar symbols" and "find their call context" are two
+independently-coded Python steps with a Python merge in between.
+
+Concrete RM69 implication: `subsystem_shape` and `prerequisite_map` will need both
+semantic clustering (embedding similarity) and structural clustering (call graph
+proximity). Design the query so those two signals are gathered together, not
+separately.
+
+**This is a design discipline, not a migration. No new code before RM69 is active.**
+
+---
+
+### Idea 4 — Cypher as graph query interface (migration path, future)
+
+**What:** Determined's graph queries are raw SQL with Python BFS loops. Cypher (the
+neo4j query language Slater speaks) is native to the questions Determined asks.
+
+**Side-by-side comparison:**
+
+| Question | Current (SQL + Python) | Cypher |
+|---|---|---|
+| Stubs and their caller counts | 2-table JOIN + GROUP BY | `MATCH (c)-[:CALLS]->(s {is_stub:1}) RETURN s.name, count(c)` |
+| 5-hop call chain from a stub | BFS loop in Python, ~40 lines | `MATCH p=(s)-[:CALLS*..5]->(n) RETURN p` |
+| Files by stub density | subquery + ORDER BY | `MATCH (f)-[:CONTAINS]->(s {is_stub:1}) RETURN f.path, count(s) ORDER BY count(s) DESC` |
+| Sibling stubs (share a caller) | self-join SQL | `MATCH (c)-[:CALLS]->(s1 {is_stub:1}), (c)-[:CALLS]->(s2 {is_stub:1}) WHERE s1 <> s2 RETURN s1, s2` |
+
+**DB migration detail (when this becomes active):**
+
+Node types to define:
+- `:Function` — properties: name, fqdn, file_path, is_stub, is_tool, is_entry_point,
+  body_shape, http_route, docstring, param_types_json, caller_count, language
+- `:File` — properties: path, language, role (entry_point/config/test/module)
+- `:Module` — properties: name, package
+
+Edge types to define (map from graph_edges.edge_type):
+- `:CALLS` (call edges, the primary graph)
+- `:IMPORTS` (import edges)
+- `:CONTAINS` (File -> Function)
+- `:FUNCTION_REFERENCE` (callback/dict-registered references)
+- `:DATA_FLOW` (data_flow edges)
+- `:HTTP_FETCH` (JS fetch -> Flask route)
+- `:JS_EVENT_BINDING` (socketio emit -> handler)
+
+Migration steps:
+1. Write `scripts/export_to_cypher.py` — reads corpus DB, emits a `.cypher` dump
+   in Slater's primitive-Cypher format (`CREATE (n:Function {…})`, `MATCH … CREATE [:CALLS]`)
+2. Run `slater-build --input dump.cypher --graph <corpus_name> --data-dir <data_dir>`
+3. Start `slater` (Docker or binary) on port 7687
+4. Install neo4j Python driver: `pip install neo4j`
+5. Write `determined/graph/bolt_oracle.py` — wraps neo4j driver, exposes same interface
+   as current SQLite graph queries in `agent_tools.py`
+6. **Parallel-run test suite:** run every graph query (walk_call_chain, blast_radius,
+   find_abc_gaps, list_callers, list_callees, list_entry_points, list_stubs) against
+   both SQLite and Bolt paths; assert result sets identical for same corpus
+7. Once parallel tests pass on dj2 + at least one non-Python corpus: drop SQLite graph
+   query path, remove graph_edges queries from agent_tools.py, delete bolt_oracle.py
+   bridge (now it's just the driver)
+
+**Parallel test is the gate for dropping SQLite.** Do not drop until every graph tool
+passes it on at least two corpora.
+
+**Gate: not before SQLite becomes a query bottleneck OR MCTS arc (Idea 6) makes
+multi-hop Cypher clearly worthwhile. Estimate: this becomes relevant after 2-3
+large C/Zig corpora are ingested and query latency is measurable.**
+
+---
+
+### Idea 5 — Scale path for large corpora (observational, no action yet)
+
+**What:** SQLite is fine for corpora up to ~50K edges. Slater's bounded-memory model
+(3-pool LRU: decompressed-block, vector-index, result) keeps RSS flat regardless of
+graph size — a 400 GB graph costs the same RAM as a 4 GB graph to serve.
+
+**When this matters:** The C/Zig corpora planned in the cross-language arc are
+structurally denser than Python/TS game code. A large C++ game engine or systems
+project could have 200K-2M edges. If `list_callers` or `blast_radius` start
+taking more than a few seconds, the graph layer is the bottleneck.
+
+**Trigger to act:** ingest a C corpus and run `blast_radius` on a widely-called
+symbol. If it takes > 5 seconds on a 100K-edge corpus, migrate to Idea 4 (Cypher/Bolt)
+as the fix, not SQLite optimization.
+
+**No action until triggered. Do not pre-optimize.**
+
+---
+
+### Idea 6 — MCTS evidence gathering over Bolt (downstream of MCTS arc)
+
+**What:** The MCTS reasoning arc (TRACKER: FUTURE — MCTS reasoning engine) requires
+iterative call graph traversal as the evidence-gathering step — gather evidence about
+a stub by following its call chain, then score hypotheses, then branch. In Python+SQLite
+this is recursive BFS: multiple DB round-trips, Python graph objects, manual dedup.
+
+In Cypher over Bolt, the same traversal is:
+```cypher
+-- All paths from stub to depth 5, excluding builtins:
+MATCH p = (stub {name: $name})-[:CALLS*..5]->(n)
+WHERE NOT n.is_external
+RETURN p
+
+-- Sibling stubs (two stubs sharing a caller):
+MATCH (c)-[:CALLS]->(s1 {is_stub:1}), (c)-[:CALLS]->(s2 {is_stub:1})
+WHERE s1.fqdn <> s2.fqdn
+RETURN c.name, s1.name, s2.name
+
+-- Import evidence (what a stub's file imports):
+MATCH (stub {name: $name})<-[:CONTAINS]-(f)-[:IMPORTS]->(dep)
+RETURN dep.name
+```
+
+Each MCTS action = one Cypher query. The search tree does not need Python graph objects.
+The evaluate() function reads the Bolt response directly.
+
+**Gate: MCTS arc itself (gated on flat kernel proving insufficient post-calibration).
+File this note here so when MCTS design starts, the team knows Bolt is the right
+query surface, not a new Python BFS implementation.**
+
+---
+
+### Implementation order summary
+
+| Idea | When | Gate |
+|------|------|------|
+| 1 — Slater as Rust corpus | Now | None — clone and ingest |
+| 2 — Generation model for RM69 | When RM69 is designed | RM69 active |
+| 3 — Vector+graph colocation principle | When RM69 is designed | RM69 active |
+| 4 — Cypher/Bolt migration | After large C corpora, or MCTS | Scale trigger or MCTS arc |
+| 5 — Scale path observation | Monitor | > 5s query on 100K-edge corpus |
+| 6 — MCTS over Bolt | MCTS arc | Flat kernel insufficient |
+
+---
+
 ## FUTURE — Design Oracle (2026-07-18)
 
 A tool that reads across the already-ingested corpus and surfaces three signals at the
@@ -461,6 +704,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | dnd-dungeon-gen (JS) | Probe-passes | 6 stubs; JS callee resolution gap known |
 | end-of-eden (Go) | Probe-passes | 0 stubs; 15% unresolved (external libs, correct) |
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
+| slater (Rust) | Probe-passes | NOT YET INGESTED — see Slater integration arc below |
 
 HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
 
