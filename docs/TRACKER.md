@@ -840,8 +840,82 @@ Enforce the budget at the point of entry, not the point of use.
 (no dependency on gigatoken; correctness over speed for single-artifact counting).
 Called inside `_store_knowledge_artifact` before the INSERT.
 
+**Cross-validation:** omp (oh-my-pi harness, MIT) ships exactly this as a 40-LOC Rust
+native module (`pi-natives tokens` crate) with both O200k and Cl100k BPE tables embedded
+in-process. They reach for it because it's cheap enough to call on every artifact; we
+should too.
+
 **Gate: RM69 design phase.** Bake in at schema design time alongside the citation gate
 (Idea 4). Both are entry-point disciplines that are harder to retrofit than to build in.
+
+---
+
+### Idea 7 — snapcompact-style context compression (vision-based, zero-LLM compaction)
+
+**Source:** omp harness (https://omp.sh, MIT). Technique: when context fills, render
+history to pixel-font PNGs rather than calling a summarizer LLM. A 1568×1568 frame at
+6×10 pixel font carries ~40K chars, billed as 3,279 image tokens vs ~10K text tokens —
+about 1/3 the cost for near-verbatim read-back.
+
+**The benchmark that matters:** on SQuAD v1.1 F1, prose-compacted context (both Gemini
+and Opus summarizers) scored near zero — the summarizer shredded the facts it was supposed
+to keep. PNG-compacted context scored 0.88 vs 0.90 for raw uncompacted text. The loss is
+2 F1 points, not 90.
+
+**Why this didn't fit before, why it fits now:** yesterday this was a curiosity. Today,
+after the token-budget-at-write-time conversation, the shape is clear: Idea 6 disciplines
+what goes IN; snapcompact disciplines what survives AFTER context accumulates. They're
+complementary at different points in the pipeline.
+
+**Point of use in Determined (shifted to the front):** any deep analysis chain that
+accumulates LLM context across multiple tool calls — `development_priorities`,
+`walk_call_chain` with context injection, future `corpus_aggregation`. Right now we
+truncate or don't manage this at all. snapcompact is a better answer than truncation
+because it preserves facts; prose summarization actively destroys them.
+
+**What it requires:** the receiving model must support vision. Qwen3-8B status unknown —
+verify before designing around this. If it doesn't support vision, the principle still
+holds as a future-model target.
+
+**Implementation shape (when the time comes):**
+- `context_compactor.py` — renders accumulated context as PNG using pixel font
+- Called by long-chain tools before pushing context to LLM if token count exceeds
+  a threshold (e.g., 6K tokens)
+- omp's snapcompact crate is 1,440 LOC Rust; a Python equivalent using PIL is viable
+  if Rust is out of scope
+
+**Gate: verify Qwen3-8B vision support, then ungated.** This is applicable immediately
+once confirmed — no dependency on RM69 or any other arc. Priority: front of queue for
+any session that involves long LLM call chains.
+
+---
+
+### Idea 8 — mnemopi as RM69 prior art (read before designing the knowledge layer)
+
+**Source:** omp harness (https://omp.sh, MIT). mnemopi is their shipped, production
+knowledge layer — local SQLite, vector embeddings, graph tools.
+
+**Their API surface:**
+- `retain` — queue durable facts into the active memory bank
+- `recall` — search the bank
+- `reflect` — synthesize an answer over the bank (LLM-driven)
+- `memory_edit` — update, forget, or invalidate a recalled memory by id
+
+**Their scope model:** global / per-project / per-project-tagged. Delegated subagents
+inherit the parent's memory state — meaning memory scoping is hierarchical, not flat.
+
+**Why this matters for RM69:** we're about to design a knowledge layer (knowledge_artifacts
++ RM69 aggregation) that covers the same ground. mnemopi is a shipped version of that
+design by a team that has been running it in production. The schema decisions they made
+under real load are more valuable than anything we can reason up from first principles.
+
+**Pre-RM69 reading assignment:** before writing the first line of RM69 schema, read
+mnemopi's source. Specifically: how they handle scope inheritance, how `reflect` is
+implemented (LLM-over-bank vs retrieval-then-generate), and whether `memory_edit` by id
+is preferable to our current update-by-subject approach.
+
+**Gate: RM71 active (i.e., read during RM71 design, apply at RM69 design).** The reading
+is ungated; the application is RM69.
 
 ---
 
