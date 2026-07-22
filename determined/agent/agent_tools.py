@@ -10091,6 +10091,113 @@ def _get_artifact_signals(conn, name: str) -> dict:
     }
 
 
+_PRIMITIVE_TYPES = frozenset({
+    "none", "nonetype", "any", "object",
+    "str", "string", "int", "float", "bool", "bytes",
+    "dict", "list", "tuple", "set", "frozenset",
+    "optional", "union", "type",
+})
+
+_GENERIC_STRIP = re.compile(r'^(?:list|dict|tuple|set|optional|sequence|iterable|type)\[', re.I)
+_INNER_TYPE = re.compile(r"[\w']+")
+
+
+def _extract_named_type(return_type: str) -> str | None:
+    """Strip generics from a return_type annotation and return the inner named type, or None."""
+    if not return_type:
+        return None
+    rt = return_type.strip()
+    # unwrap outermost generic (List[X] -> X, Optional[X] -> X, Dict[K, V] -> None)
+    m = re.match(r'^\w+\[(.+)\]$', rt)
+    if m:
+        inner = m.group(1).strip()
+        # Dict has two params — not a single named type
+        if "," in inner:
+            return None
+        rt = inner.strip("'\"")
+    # skip primitives and bare generics
+    if rt.lower() in _PRIMITIVE_TYPES:
+        return None
+    # must look like a class name (starts with uppercase or is a quoted name)
+    bare = rt.strip("'\"")
+    if not bare or bare[0].islower():
+        return None
+    return bare
+
+
+def _get_return_type_signal(conn, name: str) -> dict:
+    """Check whether a stub's return type names a class that exists in the corpus.
+
+    Returns:
+        return_type_name   str|None  — extracted named type (None if primitive/generic)
+        return_type_exists bool|None — True/False if named, None if no named type
+    """
+    row = conn.execute(
+        "SELECT return_type FROM functions WHERE name=? AND is_stub=1 LIMIT 1",
+        (name,),
+    ).fetchone()
+    if not row or not row[0]:
+        return {"return_type_name": None, "return_type_exists": None}
+
+    named = _extract_named_type(row[0])
+    if named is None:
+        return {"return_type_name": None, "return_type_exists": None}
+
+    exists = conn.execute(
+        "SELECT COUNT(*) FROM classes WHERE name=?", (named,)
+    ).fetchone()[0] > 0
+
+    return {"return_type_name": named, "return_type_exists": exists}
+
+
+_IMPORT_NOISE = frozenset({
+    "get", "set", "add", "run", "load", "save", "init", "main",
+    "make", "build", "find", "show", "list", "move", "type",
+    "from", "with", "self", "data", "info", "none",
+})
+
+
+def _get_import_signal(conn, name: str, docstring: str | None = None) -> dict:
+    """Check whether concepts mentioned in the stub appear in corpus imports.
+
+    Extracts significant tokens from stub name and docstring, then queries
+    imports.module for each. A concept with zero imports = concept likely not
+    wired into this corpus (concept-not-applicable evidence).
+
+    Returns:
+        concept_in_imports   bool|None — True if any concept token matches an import,
+                                         False if tokens found but none match,
+                                         None if no significant tokens extracted
+        unmatched_concepts   list[str] — concept tokens with zero import matches
+    """
+    # extract tokens from name (snake_case split) and docstring
+    name_tokens = [t for t in re.split(r'[_\s]+', name.lower()) if len(t) >= 5 and t not in _IMPORT_NOISE]
+    doc_tokens: list[str] = []
+    if docstring:
+        doc_tokens = [t.lower() for t in re.findall(r'\b[A-Za-z]\w{4,}\b', docstring)
+                      if t.lower() not in _IMPORT_NOISE]
+
+    # deduplicate, prefer docstring tokens (more specific)
+    candidates = list(dict.fromkeys(doc_tokens + name_tokens))[:8]
+    if not candidates:
+        return {"concept_in_imports": None, "unmatched_concepts": []}
+
+    unmatched = []
+    for token in candidates:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM imports WHERE LOWER(module) LIKE ?",
+            (f"%{token}%",),
+        ).fetchone()[0]
+        if count == 0:
+            unmatched.append(token)
+
+    matched_any = len(unmatched) < len(candidates)
+    return {
+        "concept_in_imports": matched_any,
+        "unmatched_concepts": unmatched,
+    }
+
+
 def _get_convention_for_symbol(conn, name: str) -> dict:
     """Return convention family membership for a single symbol.
 

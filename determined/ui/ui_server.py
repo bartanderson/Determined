@@ -966,6 +966,7 @@ def handle_classify_stub_spotlight(data):
             from determined.agent.agent_tools import (
                 _get_chain_positions, _compute_outlier_stub_set,
                 _get_convention_for_symbol, _get_artifact_signals,
+                _get_return_type_signal, _get_import_signal,
             )
             signals = extract_signals(_oracle, symbol)
             if "error" in signals:
@@ -980,6 +981,9 @@ def handle_classify_stub_spotlight(data):
             outlier_stubs = _compute_outlier_stub_set(conn)
             convention = _get_convention_for_symbol(conn, symbol)
             artifacts = _get_artifact_signals(conn, symbol)
+            rt_signal = _get_return_type_signal(conn, symbol)
+            import_signal = _get_import_signal(
+                conn, symbol, signals.get("intent_text") or signals.get("docstring"))
 
             chain_pos = "tail" if symbol in tail_set else (
                 "head" if symbol in head_set else (
@@ -1012,6 +1016,10 @@ def handle_classify_stub_spotlight(data):
                     "artifact_dead":         artifacts["dead_artifact"],
                     "artifact_inline_notes": artifacts["inline_notes"],
                     "artifact_design_note":  artifacts["design_note"],
+                    "return_type_name":      rt_signal["return_type_name"],
+                    "return_type_exists":    rt_signal["return_type_exists"],
+                    "concept_in_imports":    import_signal["concept_in_imports"],
+                    "unmatched_concepts":    import_signal["unmatched_concepts"],
                 },
                 "file_path":   signals.get("file_path", ""),
                 "line_number": signals.get("line_number"),
@@ -1046,6 +1054,7 @@ def handle_stub_fusion_table(data):
             from determined.agent.agent_tools import (
                 _get_chain_positions, _compute_outlier_stub_set,
                 _get_convention_for_symbol, _get_artifact_signals,
+                _get_return_type_signal, _get_import_signal,
             )
             conn = _oracle.conn
 
@@ -1087,6 +1096,9 @@ def handle_stub_fusion_table(data):
 
                 conv = _get_convention_for_symbol(conn, name)
                 arts = _get_artifact_signals(conn, name)
+                rt_sig = _get_return_type_signal(conn, name)
+                imp_sig = _get_import_signal(
+                    conn, name, sigs.get("intent_text") or sigs.get("docstring"))
 
                 rows.append({
                     "name":                  name,
@@ -1102,6 +1114,9 @@ def handle_stub_fusion_table(data):
                     "convention_is_outlier": conv["is_outlier"],
                     "artifact_dead":         arts["dead_artifact"],
                     "artifact_inline_notes": arts["inline_notes"],
+                    "return_type_name":      rt_sig["return_type_name"],
+                    "return_type_exists":    rt_sig["return_type_exists"],
+                    "concept_in_imports":    imp_sig["concept_in_imports"],
                 })
 
             rows.sort(key=lambda r: -r["composite"])

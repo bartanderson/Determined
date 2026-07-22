@@ -2800,7 +2800,8 @@ socket.on("classify_stub_spotlight_result", data => {
   // ── Signal fusion table ──────────────────────────────────────
   const f = data.fusion || {};
   const _fusionHasContent = f.convention_family || (f.chain_position && f.chain_position !== "none")
-      || f.outlier_bonus || f.artifact_dead || f.artifact_inline_notes || f.artifact_design_note;
+      || f.outlier_bonus || f.artifact_dead || f.artifact_inline_notes || f.artifact_design_note
+      || f.return_type_name != null || f.concept_in_imports != null;
   if (_fusionHasContent) {
     const rows = [];
     if (f.convention_family) {
@@ -2828,6 +2829,18 @@ socket.on("classify_stub_spotlight_result", data => {
     }
     if (f.artifact_inline_notes) {
       rows.push(["Inline notes", `${f.artifact_inline_notes} comment${f.artifact_inline_notes > 1 ? "s" : ""} at this location`, false]);
+    }
+    if (f.return_type_name != null) {
+      if (f.return_type_exists === false) {
+        rows.push(["Return type", `<span style="color:var(--orange)">${escHtml(f.return_type_name)}</span> — named type not found in corpus (concept-not-applicable evidence)`, true]);
+      } else if (f.return_type_exists === true) {
+        rows.push(["Return type", `${escHtml(f.return_type_name)} — class exists in corpus`, false]);
+      }
+    }
+    if (f.concept_in_imports === false && f.unmatched_concepts && f.unmatched_concepts.length) {
+      rows.push(["Imports", `<span style="color:var(--orange)">no corpus imports match: ${f.unmatched_concepts.slice(0,3).map(escHtml).join(", ")}</span> — concept may not apply`, true]);
+    } else if (f.concept_in_imports === true) {
+      rows.push(["Imports", "concept terms found in corpus imports", false]);
     }
     if (rows.length) {
       html += `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">`;
