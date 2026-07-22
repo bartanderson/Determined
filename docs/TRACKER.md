@@ -108,34 +108,12 @@ is the answer.
 
 ---
 
-## FUTURE — Untapped classify_stub signals (2026-07-20)
+## FUTURE — Untapped classify_stub signals (2026-07-20) [ALL SHIPPED 2026-07-22]
 
-Four signals exist in the DB but are not queried by extract_signals. Add in
-priority order when calibration work needs more signal surface.
-
-**1. `imports` table (highest value)**
-If the stub's docstring mentions CombatFSM but no file in corpus imports
-CombatFSM, that's a hard concept-not-applicable signal — definitively not
-just a name-match miss. Conversely, import present = concept is wired in.
-Query: `SELECT * FROM imports WHERE name LIKE '%{base}%'`.
-
-**2. `dead` knowledge_artifacts matching concept (high value)**
-2,255 dead-concept markers and inline notes are ingested but never queried.
-A `dead` artifact whose subject matches the stub's concept = strong
-concept-not-applicable. Stronger than removal-language scan on stub text
-alone because it's a corpus-wide annotation.
-Query: `SELECT subject FROM knowledge_artifacts WHERE kind='dead' AND LOWER(subject) LIKE '%{base}%'`.
-
-**3. `return_type` existence check (moderate value)**
-return_type is extracted but never scored. For stubs returning a named type
-(not dict/None/primitives), check whether that type exists as a class.
-`List['Race']` with no Race class = concept-not-applicable signal.
-Already in signals dict — just needs a scoring rule.
-
-**4. `behavioral_contracts` / `contract_violations` (low, check first)**
-Tables exist in schema. If a stub has a contract and violations, different
-classification dimension — not just "why does this stub exist" but "it exists
-and is already wrong." Check whether populated for dj2 before investing.
+1. imports table - DONE (066e252)
+2. dead knowledge_artifacts - DONE (artifact signals, session 233)
+3. return_type existence check - DONE (066e252)
+4. behavioral_contracts / contract_violations - tables do not exist in dj2 schema; skip.
 
 ---
 
