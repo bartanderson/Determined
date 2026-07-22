@@ -629,8 +629,10 @@
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0">
           <button id="fusion-table-btn" class="send-btn" style="padding:3px 10px;font-size:.82em">Signal table ↵</button>
           <span id="fusion-table-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
+          <span id="fusion-family-clear" style="display:none;cursor:pointer;color:var(--text3);font-size:.82em"></span>
           <span style="font-size:.78em;color:var(--text3)">all stubs ranked by signal convergence — click any row to open spotlight</span>
         </div>
+        <div id="fusion-convergence" style="display:none;font-size:.82em;color:var(--text2);margin-bottom:6px;line-height:1.6"></div>
         <div id="fusion-table-wrap" style="display:none;margin-bottom:12px;overflow-x:auto">
           <table id="fusion-table" style="width:100%;border-collapse:collapse;font-size:.78em;font-family:var(--font-mono)">
             <thead>
@@ -4469,6 +4471,9 @@ const _CLS_LABELS = {
   "genuinely-unknown":       "unknown",
 };
 
+let _fusionRows   = [];
+let _activeFamily = null;
+
 function fusionTableRun() {
   const btn = document.getElementById("fusion-table-btn");
   const running = document.getElementById("fusion-table-running");
@@ -4496,33 +4501,133 @@ socket.on("stub_fusion_table_result", data => {
     return;
   }
 
-  tbody.innerHTML = data.rows.map(r => {
-    const clsColor = _CLS_COLORS[r.classification] || "var(--text3)";
-    const clsLabel = _CLS_LABELS[r.classification] || r.classification;
-    const badges = [];
-    if (r.convention_is_outlier) badges.push(`<span style="color:var(--orange);margin-right:4px">⚠ outlier</span>`);
-    if (r.artifact_dead)         badges.push(`<span style="color:var(--blue);margin-right:4px">dead</span>`);
-    if (r.chain_bonus)           badges.push(`<span style="color:var(--text3);margin-right:4px">${r.chain_position}+${r.chain_bonus}</span>`);
-    if (r.artifact_inline_notes) badges.push(`<span style="color:var(--text3);margin-right:4px">${r.artifact_inline_notes}n</span>`);
-    const badgeStr = badges.join("") || `<span style="color:var(--text3)">—</span>`;
-    return `<tr class="fusion-row" data-sym="${escHtml(r.name)}" data-family="${escHtml(r.convention_family || '')}" style="cursor:pointer;border-bottom:1px solid var(--border2)">
-      <td style="padding:4px 10px 4px 0;color:var(--accent)">${escHtml(r.name)}</td>
-      <td style="padding:4px 10px 4px 0;color:var(--text3)">${escHtml(r.file)}</td>
-      <td style="padding:4px 10px 4px 0"><span style="color:${clsColor}">${clsLabel}</span> <span style="color:var(--text3);font-size:.88em">${Math.round(r.score * 100)}%</span></td>
-      <td style="padding:4px 10px 4px 0">${badgeStr}</td>
-      <td style="padding:4px 0;text-align:right;color:var(--text2)">${r.composite}</td>
-    </tr>`;
-  }).join("");
+  _fusionRows   = data.rows;
+  _activeFamily = null;
+  fusionTableRender();
 });
+
+function fusionRowHtml(r) {
+  const clsColor = _CLS_COLORS[r.classification] || "var(--text3)";
+  const clsLabel = _CLS_LABELS[r.classification] || r.classification;
+  const badges = [];
+  if (r.convention_is_outlier) badges.push(`<span style="color:var(--orange);margin-right:4px">⚠ outlier</span>`);
+  if (r.artifact_dead)         badges.push(`<span style="color:var(--blue);margin-right:4px">dead</span>`);
+  if (r.chain_bonus)           badges.push(`<span style="color:var(--text3);margin-right:4px">${r.chain_position}+${r.chain_bonus}</span>`);
+  if (r.artifact_inline_notes) badges.push(`<span style="color:var(--text3);margin-right:4px">${r.artifact_inline_notes}n</span>`);
+  const badgeStr = badges.join("") || `<span style="color:var(--text3)">—</span>`;
+  return `<tr class="fusion-row" data-sym="${escHtml(r.name)}" data-family="${escHtml(r.convention_family || '')}" style="cursor:pointer;border-bottom:1px solid var(--border2)">
+    <td style="padding:4px 10px 4px 0;color:var(--accent)">${escHtml(r.name)}</td>
+    <td style="padding:4px 10px 4px 0;color:var(--text3)">${escHtml(r.file)}</td>
+    <td style="padding:4px 10px 4px 0"><span style="color:${clsColor}">${clsLabel}</span> <span style="color:var(--text3);font-size:.88em">${Math.round(r.score * 100)}%</span></td>
+    <td style="padding:4px 10px 4px 0">${badgeStr}</td>
+    <td style="padding:4px 0;text-align:right;color:var(--text2)">${r.composite}</td>
+  </tr>`;
+}
+
+function fusionConvergenceRender() {
+  const el = document.getElementById("fusion-convergence");
+  if (!el || !_fusionRows.length || _activeFamily) { if (el) el.style.display = "none"; return; }
+
+  const n           = _fusionRows.length;
+  const nOutlier    = _fusionRows.filter(r => r.convention_is_outlier).length;
+  const nDead       = _fusionRows.filter(r => r.artifact_dead).length;
+  const nNoImport   = _fusionRows.filter(r => r.concept_in_imports === false).length;
+  const nNoRetType  = _fusionRows.filter(r => r.return_type_name && !r.return_type_exists).length;
+  const nChain      = _fusionRows.filter(r => r.chain_bonus > 0).length;
+
+  const parts = [];
+  if (nOutlier)  parts.push(`<span style="color:var(--orange)">${nOutlier}/${n} outlier</span>`);
+  if (nDead)     parts.push(`<span style="color:var(--blue)">${nDead} dead artifact</span>`);
+  if (nNoImport) parts.push(`<span style="color:var(--text3)">${nNoImport} concept not in imports</span>`);
+  if (nNoRetType)parts.push(`<span style="color:var(--text3)">${nNoRetType} missing return type</span>`);
+  if (nChain)    parts.push(`<span style="color:var(--text3)">${nChain} in chain</span>`);
+
+  if (!parts.length) { el.style.display = "none"; return; }
+  el.innerHTML = "Signals: " + parts.join(" · ");
+  el.style.display = "";
+}
+
+function _updateFamilyClear() {
+  const el = document.getElementById("fusion-family-clear");
+  if (!el) return;
+  if (_activeFamily) {
+    el.textContent = `✕ ${_activeFamily}`;
+    el.style.display = "";
+  } else {
+    el.style.display = "none";
+  }
+}
+
+function fusionTableRender() {
+  const tbody = document.getElementById("fusion-table-body");
+  const rows  = _activeFamily
+    ? _fusionRows.filter(r => r.convention_family === _activeFamily)
+    : _fusionRows;
+
+  fusionConvergenceRender();
+  _updateFamilyClear();
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text3);padding:6px 0">No stubs</td></tr>`;
+    return;
+  }
+
+  let html = "";
+  if (!_activeFamily) {
+    const families = {};
+    const ungrouped = [];
+    rows.forEach(r => {
+      if (r.convention_family) {
+        (families[r.convention_family] = families[r.convention_family] || []).push(r);
+      } else {
+        ungrouped.push(r);
+      }
+    });
+    const sortedFamilies = Object.entries(families).sort((a, b) => b[1].length - a[1].length);
+    sortedFamilies.forEach(([fam, members]) => {
+      const outlierCount = members.filter(r => r.convention_is_outlier).length;
+      const outlierNote  = outlierCount ? ` · <span style="color:var(--orange)">${outlierCount} ⚠</span>` : "";
+      html += `<tr class="fusion-family-header" data-family="${escHtml(fam)}" style="cursor:pointer;background:var(--bg3);border-bottom:1px solid var(--border)">
+        <td colspan="4" style="padding:3px 10px 3px 0;color:var(--text2);font-size:.88em">
+          ▸ <strong>${escHtml(fam)}</strong> — ${members.length} stubs${outlierNote}
+        </td>
+        <td style="padding:3px 0;text-align:right;color:var(--text3);font-size:.82em">click to filter</td>
+      </tr>`;
+      members.forEach(r => { html += fusionRowHtml(r); });
+    });
+    ungrouped.forEach(r => { html += fusionRowHtml(r); });
+  } else {
+    rows.forEach(r => { html += fusionRowHtml(r); });
+  }
+  tbody.innerHTML = html;
+}
 
 document.getElementById("fusion-table-btn").addEventListener("click", fusionTableRun);
 document.getElementById("fusion-table-wrap").addEventListener("click", e => {
+  const header = e.target.closest(".fusion-family-header");
+  if (header) {
+    const fam = header.dataset.family;
+    if (_activeFamily === fam) {
+      _activeFamily = null;
+    } else {
+      _activeFamily = fam;
+      const first = _fusionRows.find(r => r.convention_family === fam);
+      if (first) { gxInput.value = first.name; gxMap(first.name); }
+    }
+    fusionTableRender();
+    return;
+  }
   const row = e.target.closest(".fusion-row");
   if (!row) return;
   const sym = row.dataset.sym;
   openSpotlight(sym);
   gxInput.value = sym;
   gxMap(sym);
+});
+
+document.getElementById("fusion-family-clear").addEventListener("click", () => {
+  _activeFamily = null;
+  fusionTableRender();
 });
 
 // ── Tour panel ─────────────────────────────────────────────
