@@ -313,7 +313,7 @@ into the prompt path. `target_lang` as an explicit param is the right level of c
 **3. Cross-language corpus chain** — run Determined against a curated chain of projects
 in the language family and let the tool demonstrate its own invariants across them.
 The chain shows where design patterns are universal vs. language-shaped.
-Candidate chain: dj2 (Python) → clx (Lua) → [small Zig project] → [small C project].
+Candidate chain: dj2 (Python) → clx (Lua) → Mach Engine (Zig) → Brogue CE (C).
 This is also the strongest possible demo: same tool, same pipeline, different languages.
 
 **Verify loop shim** (prerequisite for emission, Windows-native):
@@ -347,17 +347,51 @@ Then:
 
 - **Optimized matmul (C)** — houslast3/85.30-GFLOPS-Single-Core-FP32-Matrix-Multiplication-on-AMD-Zen-3
   Hand-optimized SIMD/AVX matmul kernel. Tiny call graph, no stubs, all structure is performance
-  structure (loop tiling, register blocking). Maximally different shape from dj2 — good stress test
-  for corpus shape tools on non-behavioral, non-Python code. Verify repo exists and has clean C
-  source before ingesting. (Source URL was a Google Translate mirror — check original.)
-- **ML trainer codebase (C/Python)** — a minimal LLM training loop that uses a kernel like the
-  above. First corpus where design intent is mathematical, not behavioral. Good cross-language
-  boundary test (Python training loop → C kernel via ctypes/cffi). Corpus candidate TBD.
-- C/C++: small game engines, embedded systems tools, CLI utilities
-- Zig: projects once ingestion lands
-- Lua/clx: projects if ingestion proves viable
-- Cross-language pair: one project with a Python/C boundary (ctypes or cffi) to test
-  cross-language edge modeling
+  structure (loop tiling, register blocking). Stress test for corpus shape tools on non-behavioral
+  C. Verify repo exists and has clean C source before ingesting. (Source URL was a Google Translate
+  mirror — check original.)
+  NOTE: this fills the "C walker validation / compute shape" slot only. It is NOT a behavioral
+  corpus — no design-intent stubs. A separate behavioral C corpus is required (see Brogue CE below).
+
+- **Brogue CE (C)** — https://github.com/tmewett/BrogueCE
+  Actively maintained C roguelike. Fills the "behavioral C" slot that matmul cannot: real
+  design-intent stubs, FSM-heavy dungeon generation, clear subsystem separation (dungeon/monster/
+  item/display). Domain synergy with dj2, end-of-eden, ruggrogue. Clone to
+  `C:\Users\bartl\dev\corpora\brogue-ce`. Ingest after C walker is built.
+  Expected: moderate stub count (it is actively developed), strong FSM signal, C-specific patterns
+  (function pointers as callbacks, struct-based OOP, preprocessor conditionals).
+
+- **llm.c (C + Python)** — https://github.com/karpathy/llm.c
+  Minimal LLM training loop: C kernel (CUDA/CPU matmul, attention) called from Python via ctypes.
+  Fills TWO slots simultaneously: (1) ML trainer codebase with mathematical design intent, and
+  (2) cross-language boundary pair (Python -> C via ctypes). The ctypes boundary is the primary
+  test target for cross-language edge modeling. Clone to `C:\Users\bartl\dev\corpora\llm.c`.
+  Ingest Python side and C side separately, then verify cross-language edges link them.
+  Expected: Python side has clear entry points (train.py, test.py); C side has near-zero stubs
+  (optimized kernels); the ctypes boundary is where the interesting cross-language signal lives.
+
+- **Mach Engine (Zig)** — https://github.com/hexops/mach
+  Zig game engine. Fills the Zig corpus slot with game-domain synergy matching the rest of the
+  chain. Mach is actively developed and covers the full stack: windowing, audio, GPU via WebGPU.
+  Clone to `C:\Users\bartl\dev\corpora\mach`. Ingest after Zig walker is built.
+  Expected: high EP count (platform entry points per backend), trait-like Zig interfaces (comptime
+  dispatch), backend-conditional modules (#if builtin.os similar patterns). Walker must handle
+  Zig's comptime and anytype generics without treating them as unknown symbols.
+
+- **clx (Lua)** — https://github.com/samyeyo/clx
+  LuaJIT application framework. First Lua ingest — validates the walker before a larger Lua
+  game target. Also directly relevant as the dj2 emission target: stubs classified as
+  "game logic / scriptable" route to Lua, and clx is the runtime they'd land in. Clone to
+  `C:\Users\bartl\dev\corpora\clx`. Ingest as soon as Lua walker is built.
+  Expected: framework-style corpus (high public API surface, few stubs — intentional API, not
+  gaps). Follow-on: a LOVE2D game written in Lua once the walker is validated here.
+
+- **C/C++**: beyond matmul and Brogue CE, small embedded systems tools or CLI utilities if
+  the C walker needs further validation across different C idioms.
+
+- **Cross-language pair note**: llm.c IS the cross-language pair — its Python/C ctypes boundary
+  is the primary test. No separate corpus needed unless ctypes edge modeling needs a simpler
+  example first (in which case, find a 200-line ctypes wrapper to start).
 
 ---
 
@@ -705,6 +739,10 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | end-of-eden (Go) | Probe-passes | 0 stubs; 15% unresolved (external libs, correct) |
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
 | slater (Rust) | Probe-passes | NOT YET INGESTED — see Slater integration arc below |
+| brogue-ce (C) | Probe-passes | NOT YET INGESTED — C walker not built; behavioral C corpus |
+| llm.c (C+Python) | Probe-passes | NOT YET INGESTED — C walker + ctypes cross-language boundary |
+| mach (Zig) | Probe-passes | NOT YET INGESTED — Zig walker not built |
+| clx (Lua) | Probe-passes | NOT YET INGESTED — Lua walker not built; first Lua ingest |
 
 HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
 
