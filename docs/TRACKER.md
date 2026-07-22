@@ -978,7 +978,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | dnd-dungeon-gen (JS) | Probe-passes | 6 stubs; JS callee resolution gap known |
 | end-of-eden (Go) | Probe-passes | 0 stubs; 15% unresolved (external libs, correct) |
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
-| slater (Rust) | Probe-passes | NOT YET INGESTED — see Slater integration arc below |
+| slater (Rust) | Probe-passes | probe DONE (2026-07-22) — 195 files, 0 stubs, 1985 inferred EPs (all tests/benchmarks, correct for library crate); walk_call_chain blind across async boundary (serve_with_listener = 0 nodes); blast_radius 593 for evict_to_budget (cache is foundational); 78 dup names = normal module aliasing |
 | brogue-ce (C) | Probe-passes | NOT YET INGESTED — C walker not built; behavioral C corpus |
 | llm.c (C+Python) | Probe-passes | NOT YET INGESTED — C walker + ctypes cross-language boundary |
 | mach (Zig) | Probe-passes | NOT YET INGESTED — Zig walker not built |
@@ -1020,6 +1020,7 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 - [x] dnd-dungeon-gen: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] end-of-eden: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] ruggrogue: probe DONE (2026-07-18, CLOSURE.md Phase 2)
+- [x] slater: probe DONE (2026-07-22, session 237) — 0 stubs (complete server software); 1985 inferred EPs all tests/benchmarks (correct for Rust library crate); #[cfg(test)] no false stubs confirmed; walk_call_chain blind across async boundary (serve_with_listener → 0 nodes, known Rust walker gap); blast_radius clean (593 extended for evict_to_budget); 78 dup names = normal module aliasing, not walker inflation
 
 ---
 
