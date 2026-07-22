@@ -679,6 +679,139 @@ not planning.
 
 ---
 
+## FUTURE — Knowledge layer improvements (CodeAlmanac ideas, 2026-07-22)
+
+**Source:** https://github.com/AlmanacCode/codealmanac
+CodeAlmanac is a living wiki (committed markdown under `almanac/`) maintained by AI agents
+that scan session transcripts, ingest PRs/diffs, and run periodic cleanup. Opposite direction
+from Determined (they go transcripts→wiki→humans; we go code→graph→AI) but same problem space.
+Five ideas worth stealing, each independent.
+
+---
+
+### Idea 1 — Transcript → knowledge_artifacts (session decisions enter the queryable layer)
+
+**The gap:** Decisions made during Claude Code sessions live in SESSION_STATE.md for one
+handoff, then effectively vanish from the knowledge layer. "Calibration gated on multi-corpus,"
+"no dj2 work until Determined is complete," "dead artifact LIKE over-match" — these are real
+constraints that `check_design_violations` and `knowledge_status` never see, because they're
+only in markdown handoff files, not in `knowledge_artifacts`.
+
+**The steal:** After a session, or on a periodic pass, scan recent Claude Code session
+transcripts for extractable decisions and store them as `knowledge_artifacts` with
+`kind='design_note'` and `provenance='session_transcript'`. The same LLM call that currently
+drives `ingest_design_docs` can drive this — the input is just a transcript excerpt instead
+of a design doc.
+
+**What it enables:** `check_design_violations` surfaces session decisions when analyzing new
+code ("this change conflicts with the constraint: calibration must follow multi-corpus ingest").
+`knowledge_status` includes session-derived constraints alongside SOTS and design docs.
+
+**Where transcripts live (Claude Code):** `%APPDATA%\Claude\projects\<project-id>\`
+Each `.jsonl` file is one session. The sync job only needs to scan files newer than the last
+run timestamp — same pattern as CodeAlmanac's sync.
+
+**Implementation shape:**
+- `scripts/sync_transcripts.py` — walks `%APPDATA%\Claude\projects\<project-id>\`, reads
+  `.jsonl` files newer than a stored `last_sync` timestamp, extracts user+assistant turns,
+  calls `ingest_design_docs`-style LLM prompt to extract decisions/constraints/gotchas,
+  stores as `knowledge_artifacts` with `provenance='transcript:<session-id>'`
+- Gate for extraction: only store claims that include a "why" (constraint, decision, or
+  lesson) — skip task narration and code discussion
+- Run manually first (`python scripts/sync_transcripts.py --corpus dj2`) before considering
+  automation
+
+**Gate: implement after RM69 corpus aggregation exists — the aggregation layer is what makes
+the knowledge queryable in a useful way. Not before.**
+
+---
+
+### Idea 2 — Garden pass (scheduled knowledge maintenance)
+
+**The gap:** We have `docstring_health` (finds stale/missing docstrings), `detect_doc_drift`
+(finds design-note drift), and `gap_analysis` (brainstorms fills). But there is no pass that
+runs these together on a cadence and queues the findings. Knowledge rot accumulates silently.
+
+**The steal:** A `garden_corpus` tool that runs the three maintenance tools in sequence,
+deduplicates findings against existing `workflow_items`, and queues new ones. Same concept
+as CodeAlmanac's garden agent — periodic cleanup of the knowledge layer, not the code layer.
+
+**Implementation shape:**
+- `determined/agent/garden.py` — `garden_corpus(oracle)`:
+  1. Run `docstring_health(oracle, top_n=20)` — queue stale docstrings as workflow_items kind='debt'
+  2. Run `detect_doc_drift(oracle)` — queue drift findings as workflow_items kind='drift'
+  3. Run `gap_analysis(oracle, scope='all')` — queue gap suggestions as workflow_items kind='opportunity'
+  4. Dedup: skip items where identical subject+kind already exists in workflow_items
+  5. Return summary: N new items queued, N already known
+- Wired as agent tool `garden_corpus`, socket handler `garden`, UI button in Tools tab
+- Run manually per session ("garden dj2") before considering any scheduling
+
+**No automation until the manual tool proves its value. Don't schedule what you haven't
+run by hand a few times.**
+
+**Gate: no hard prerequisite, but more useful once more corpora are ingested — gardening
+one Python corpus is thin; gardening dj2 + dungeoncrawler + end-of-eden is interesting.**
+
+---
+
+### Idea 3 — CodeAlmanac as upstream knowledge source (zero new code)
+
+If you ever run CodeAlmanac alongside Determined on the same repo, point `ingest_design_docs`
+at the `almanac/` folder. Their agents maintain architecture/, decisions/, guides/ in
+human-readable markdown. Determined ingests it as `design_notes`. The two tools compose:
+CodeAlmanac writes the "why" layer, Determined queries it during code analysis.
+
+We already do this with SOTS (25 tenets ingested as design_notes from `docs/sots.md`).
+`almanac/` is just the same pattern with agent-maintained content instead of hand-written docs.
+
+**No code change. If a repo has an almanac/ folder, add it to the ingest_design_docs call.**
+
+---
+
+### Idea 4 — `sources:` citation gate on LLM-generated knowledge
+
+**The gap:** LLM-generated `knowledge_artifacts` (from `annotate_function`, `ingest_design_docs`,
+`gap_analysis`) can be vague or ungrounded. A design note that says "this module handles
+persistence" with no source citation is hard to audit and rots silently.
+
+**The steal:** Require every LLM-generated knowledge artifact to cite at least one source
+(file path, line number, or commit SHA) before storage. Reject or flag uncited claims.
+
+**Where to apply:**
+- `ingest_design_docs`: already has `provenance` field; enforce that it points to a specific
+  file, not just a corpus name
+- `annotate_function`: annotation prompt should cite the call site or docstring it derived
+  from; store as `source_ref` alongside the artifact
+- `gap_analysis`: brainstorm outputs are generative and inherently uncited — tag them
+  `kind='opportunity'` and `confidence='unverified'` to distinguish from cited facts
+
+**Gate: RM69 design phase. Bake the citation requirement in at design time — retrofitting
+it onto existing artifacts is harder than requiring it from the start.**
+
+---
+
+### Idea 5 — `knowledge_for_file(path)` tool (inverse lookup)
+
+**The gap:** `describe_file(path)` goes file → symbols → structural analysis. But nothing
+answers "what does the knowledge layer know about this file?" — design notes, inline notes,
+semantic summaries, workflow items, and backlog entries whose content or provenance references
+this path.
+
+**The tool:** `knowledge_for_file(path)` — query across all knowledge_artifact kinds WHERE
+content LIKE '%<path>%' OR provenance LIKE '%<path>%', plus semantic_summaries WHERE
+file_path = path, plus workflow_items WHERE subject LIKE '%<path>%'. Return ranked by
+relevance (exact file_path match > mention in content).
+
+**Use case:** about to edit a file — "what do we know about it?" — surfaces constraints,
+prior decisions, known gaps, and risk flags before touching the code. Natural two-step orient:
+`describe_file` for structure, `knowledge_for_file` for what's known about it.
+
+**Size:** ~30 lines of SQL + formatting. Can be added alongside any other task.
+
+**Gate: none.**
+
+---
+
 ## RM68 — Remove subrace concept from dj2 (DEFERRED)
 
 **Context:** The OG system rewrite replaced the original D&D data model with a more
