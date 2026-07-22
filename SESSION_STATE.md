@@ -1,78 +1,74 @@
-Written at commit: 7f9bbc3 (2026-07-21)
+Written at commit: b708f33 (2026-07-22)
 
-# SESSION STATE — session 233
+# SESSION STATE — session 234
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-Three commits shipping the signal fusion layer:
+**Housekeeping / orientation (session 234):**
+- Drift from s233 handoff: 2 commits had already landed (1f41cfa capn fix, 066e252
+  return_type + import signals) — both from s233's next list, both now done.
+- Committed `.claude/hooks/validate_shell.py` + updated `.claude/settings.json` [V]
+  (140f7ac) — PreToolUse hook blocks Bash-isms in PowerShell and Windows paths in Bash.
+- Verified `python3 == python` (both 3.11.9) in this environment. Memory updated.
+- Closed untapped signals #4: `behavioral_contracts` / `contract_violations` tables
+  do not exist in dj2 DB schema. Marked all 4 untapped signals done in TRACKER.md.
+- Wrote `docs/VISUAL_PROJECTION.md` — full implementation spec for Phases 1–3 of the
+  visual projection work (all gates cleared). No code written yet.
 
-**f934815 — RM-FUSION-1: convention + chain + outlier signals in spotlight**
-- `_get_convention_for_symbol(conn, name)` — 3-gate cluster analysis, returns
-  {family, family_size, is_outlier} for one symbol.
-- Socket handler `handle_classify_stub_spotlight` extended: emits `fusion` field
-  with convention_family, convention_size, convention_is_outlier, chain_position,
-  chain_bonus, outlier_bonus.
-- Frontend: SIGNAL CONVERGENCE table below hypothesis chips.
-- 5 new tests in test_detect_conventions.py (27 total).
+## Signal fusion state [V]
 
-**959c343 — knowledge artifact signals**
-- `_get_artifact_signals(conn, name)` — dead markers, inline notes, design doc.
-- Fusion payload gains: artifact_dead, artifact_inline_notes, artifact_design_note.
-- Frontend: dead (blue), design note (green), inline note count rows.
-- 8 new tests in test_agent_tools.py.
-
-**7f9bbc3 — stub signal table (breadth view)**
-- New socket event `stub_fusion_table`: ranks all stubs, runs convention +
-  artifact signals per stub, returns sorted rows.
-- Shape tab: "Signal table ↵" button above the grid. Renders ranked table:
-  symbol | file | classification+% | badges (⚠ outlier, dead, chain, Nn) | score.
-- Row click → openSpotlight() drill-through to per-stub depth.
-
-**Verified live on dj2 [V]:**
-- stub_fusion_table returns 10 stubs; _get_encounter_context ranks first
-  (composite 3.7, design-intent 70%, ⚠ outlier, 1 inline note)
-- Row click opens spotlight with judgment section visible
-- process_consequences spotlight shows: convention ⚠ outlier, dead artifact,
-  2 inline notes, +3 priority bonus — all render in SIGNAL CONVERGENCE table
-- 132 tests pass across classify_stub + detect_conventions + agent_tools
-
-## Known issues [V = verified, ? = recalled]
-
-**dead artifact LIKE over-match [V]:** `WHERE subject LIKE '%{name}'` over-matches
-when name is a suffix of another symbol. Documented in test, not fixed.
-
-**load_db auto-orient blocks screenshot [V]:** background LLM thread on corpus
-load causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
-
-**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as
-FQNs; tool queries bare names. Workaround: use graph_path.
-
-**Server start command [V]:** `.venv\Scripts\python.exe -m determined.ui.ui_server`
-from `C:\Users\bartl\dev\Determined`.
+All signals wired end-to-end:
+- Convention (family, size, is_outlier)
+- Chain (position, bonus)
+- Artifact (dead, inline_notes, design_note)
+- return_type existence check
+- Import concept cross-check
+- Breadth view: signal table (Shape tab "Signal table ↵" button)
+- Depth view: spotlight SIGNAL CONVERGENCE table
 
 ## NEXT SESSION — start here
 
-Run: `git log --oneline -5` first.
+Read `docs/VISUAL_PROJECTION.md` first. Full Phase 1–3 spec is there, ready to implement.
+No questions outstanding. No backend changes needed for any phase.
 
-**Signal fusion is working end-to-end.** The breadth view (signal table) and
-depth view (spotlight) are connected. Natural next directions:
+**Phase 1 first** (~30 min, 2 lines of new code + 1 data attribute):
 
-1. **return_type existence check** (TRACKER: Untapped signals #3) — for stubs
-   returning a named type, check whether that type exists as a class in corpus.
-   Add to `_get_artifact_signals` or new `_get_return_type_signal(conn, name)`.
-   Query: check `classes` table for return_type name.
+File: `determined/ui/templates/console.html`
 
-2. **imports table check** (TRACKER: Untapped signals #1, highest value) — if
-   stub's docstring mentions CombatFSM but no file imports CombatFSM, strong
-   concept-not-applicable. Query: `imports WHERE name LIKE '%{base}%'`.
+1. Add `data-family="${escHtml(r.convention_family || '')}"` to `.fusion-row` TR element
+   (currently at ~line 4508, inside `data.rows.map(...)` in `stub_fusion_table_result` handler).
 
-3. **Visual projection surface** — the table exists; the next design question
-   is multi-stub workspace: selections in table propagate to graph view, concept
-   clicked in naming-family view highlights it in the stub list. TRACKER FUTURE
-   section has the full design. Read it before coding.
+2. Extend the click handler (~line 4519–4522):
+   ```javascript
+   document.getElementById("fusion-table-wrap").addEventListener("click", e => {
+     const row = e.target.closest(".fusion-row");
+     if (!row) return;
+     const sym = row.dataset.sym;
+     openSpotlight(sym);
+     gxInput.value = sym;   // NEW
+     gxMap(sym);            // NEW
+   });
+   ```
 
-The fusion field shape is stable. New signals are additive — add helper, wire
-into handler (both `handle_classify_stub_spotlight` and `handle_stub_fusion_table`),
-add badge or row to frontend.
+Validate: click table row → spotlight opens → switch to Map tab → graph shows that symbol.
+
+**Phase 2** (~1 session): family grouping. Extract row rendering into `fusionRowHtml()`,
+add `fusionTableRender()`, family header rows with click-to-filter. All in spec.
+
+**Phase 3** (~30 min): `fusionConvergenceRender()` — signal frequency summary line above table.
+
+## Known issues [V = verified, ? = recalled]
+
+**dead artifact LIKE over-match [V]:** `WHERE kind='dead' AND subject LIKE '%{name}'`
+over-matches when name is a suffix of another symbol. Documented in test. Fix if noisy.
+
+**load_db auto-orient blocks screenshot [V]:** background LLM thread on corpus load
+causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
+
+**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
+tool queries bare names. Workaround: use graph_path.
+
+**Server start command [V]:** `.venv\Scripts\python.exe -m determined.ui.ui_server`
+from `C:\Users\bartl\dev\Determined`.
