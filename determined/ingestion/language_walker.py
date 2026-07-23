@@ -50,6 +50,29 @@ _GO_BUILTINS = frozenset({
 })
 
 
+# C standard library functions to filter from callees
+_C_BUILTINS = frozenset({
+    # stdio
+    "printf", "fprintf", "sprintf", "snprintf", "scanf", "fscanf", "sscanf",
+    "fopen", "fclose", "fread", "fwrite", "fgets", "fputs", "feof", "ferror",
+    "fflush", "fseek", "ftell", "rewind", "fgetc", "fputc", "getc", "putc",
+    "getchar", "putchar", "puts", "gets", "perror",
+    # stdlib
+    "malloc", "calloc", "realloc", "free", "exit", "abort", "atexit",
+    "atoi", "atof", "atol", "atoll", "strtol", "strtod", "strtoul",
+    "qsort", "bsearch", "rand", "srand", "abs", "labs",
+    "getenv", "setenv", "system",
+    # string
+    "strlen", "strcpy", "strncpy", "strcat", "strncat", "strcmp", "strncmp",
+    "strchr", "strrchr", "strstr", "strtok", "strdup",
+    "memcpy", "memmove", "memset", "memcmp", "memchr",
+    # math
+    "sqrt", "pow", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "log", "log2", "log10", "exp", "ceil", "floor", "fabs", "fmod", "round",
+    # assert / POSIX basics
+    "assert", "open", "close", "read", "write", "stat", "mkdir", "unlink",
+})
+
 # Rust built-in types, traits, macros, and std identifiers to filter from callees
 _RUST_BUILTINS = frozenset({
     # macros (called with !)
@@ -127,6 +150,8 @@ class LanguageWalker:
             return self._go_symbols()
         if lang == "rust":
             return self._rust_symbols()
+        if lang == "c":
+            return self._c_symbols()
         return []
 
     def call_edges(self) -> list[tuple]:
@@ -135,7 +160,7 @@ class LanguageWalker:
         resolved is False at this stage; cross-file resolution happens in persist layer.
         """
         lang = self._language
-        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust"):
+        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c"):
             return []
         return self._shared_call_edges(self._lang_spec())
 
@@ -160,6 +185,12 @@ class LanguageWalker:
                 callee_extractor=self._rust_callee_name,
                 builtins=_RUST_BUILTINS,
                 fn_ranges_builder=self._rust_fn_ranges,
+            )
+        if lang == "c":
+            return LangSpec(
+                callee_extractor=self._c_callee_name,
+                builtins=_C_BUILTINS,
+                fn_ranges_builder=self._c_fn_ranges,
             )
         raise ValueError(f"No LangSpec for language: {lang}")
 
@@ -442,7 +473,24 @@ class LanguageWalker:
         lines = self._lines
         lang = self._language
 
-        if lang in ("go",):
+        if lang in ("go", "c"):
+            # Check for /* ... */ block comment ending immediately above
+            end_idx = start_line - 1
+            while end_idx >= 0 and not lines[end_idx].strip():
+                end_idx -= 1
+            if end_idx >= 0 and lines[end_idx].strip().endswith("*/"):
+                i = end_idx
+                while i >= 0 and "/*" not in lines[i]:
+                    i -= 1
+                if i >= 0:
+                    block = lines[i:end_idx + 1]
+                    parts = []
+                    for bl in block:
+                        s = bl.strip().lstrip("/*").lstrip("*").strip()
+                        if s:
+                            parts.append(s)
+                    if parts:
+                        return " ".join(parts)
             # Walk backwards collecting `//` lines
             collected = []
             i = start_line - 1
@@ -1070,6 +1118,115 @@ class LanguageWalker:
         return None
 
     # ------------------------------------------------------------------
+    # C: symbols, call edges (Phase 4)
+    # ------------------------------------------------------------------
+
+    def _c_fn_declarator(self, node):
+        """Walk the declarator chain to find a function_declarator and its name.
+
+        Handles:
+          int foo(...)           -> declarator = function_declarator
+          int *foo(...)          -> declarator = pointer_declarator -> function_declarator
+          static int foo(...)    -> same as above (storage class is a separate child)
+
+        Returns (name: str, fn_decl_node) or (None, None) if not a function.
+        """
+        decl = node.field("declarator")
+        if decl is None:
+            return None, None
+        # Unwrap pointer_declarator chains (for pointer return types like int *foo(...))
+        while decl is not None and decl.kind() in ("pointer_declarator", "abstract_pointer_declarator"):
+            decl = decl.field("declarator")
+        if decl is None or decl.kind() != "function_declarator":
+            return None, None
+        name_node = decl.field("declarator")
+        if name_node is None or name_node.kind() != "identifier":
+            return None, None
+        return name_node.text(), decl
+
+    def _c_is_stub(self, node) -> bool:
+        """A C function definition is a stub if its body is empty or trivially sentinel."""
+        body = node.field("body")
+        if body is None:
+            return True
+        text = body.text().strip()
+        if text in ("{}", "{ }"):
+            return True
+        inner = text.lstrip("{").rstrip("}").strip()
+        if not inner:
+            return True
+        # Single trivial sentinel return: return; / return 0; / return NULL;
+        import re as _re
+        if _re.match(r'^return\s*(0+|NULL|nullptr|false)?\s*;$', inner):
+            return True
+        return False
+
+    def _c_symbols(self) -> list[dict]:
+        results = []
+        root = self._root.root()
+
+        # function_definition: full function with body (primarily .c files)
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            name, _ = self._c_fn_declarator(node)
+            if name is None:
+                continue
+            fqdn = f"{self._basename}::{name}"
+            results.append(self._make_symbol(
+                fqdn, node,
+                is_stub=self._c_is_stub(node),
+                docstring=self._preceding_comment(node),
+            ))
+
+        # declaration with function_declarator: forward declaration = stub
+        # (.h files and forward decls in .c files)
+        for node in root.find_all({"rule": {"kind": "declaration"}}):
+            name, _ = self._c_fn_declarator(node)
+            if name is None:
+                continue
+            fqdn = f"{self._basename}::{name}"
+            results.append(self._make_symbol(
+                fqdn, node,
+                is_stub=True,
+                docstring=self._preceding_comment(node),
+            ))
+
+        return results
+
+    def _c_fn_ranges(self) -> list[tuple]:
+        ranges = []
+        root = self._root.root()
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            name, _ = self._c_fn_declarator(node)
+            if name:
+                r = node.range()
+                ranges.append((r.start.line, r.end.line, f"{self._basename}::{name}"))
+        ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        return ranges
+
+    def _c_callee_name(self, func_node) -> str | None:
+        """Extract callee name from a C call_expression function field.
+
+        Patterns:
+          identifier          -> bare name: foo(x)
+          field_expression    -> struct/pointer access: obj.m(x) or obj->m(x)
+          parenthesized_expr  -> function pointer call (*fp)(x) -- skip
+        """
+        kind = func_node.kind()
+        if kind == "identifier":
+            return func_node.text()
+        if kind == "field_expression":
+            arg = func_node.field("argument")
+            field = func_node.field("field")
+            if arg is None or field is None:
+                return None
+            if arg.kind() == "identifier":
+                return f"{arg.text()}.{field.text()}"
+            # Complex receiver (cast, chain) — emit method name only
+            return field.text()
+        # Function pointer calls and other complex expressions: skip
+        return None
+
+    # ------------------------------------------------------------------
     # Go: interface types
     # ------------------------------------------------------------------
 
@@ -1484,4 +1641,6 @@ def detect_language(file_path: str) -> str | None:
         ".tsx": "tsx",
         ".go": "go",
         ".rs": "rust",
+        ".c": "c",
+        ".h": "c",
     }.get(ext)

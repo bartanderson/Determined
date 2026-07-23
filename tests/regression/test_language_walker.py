@@ -857,3 +857,122 @@ def test_rust_data_flow_l2_var():
 def test_rust_data_flow_empty_for_python():
     w = LanguageWalker("x = 1\n", "/fake/mod.py", "python")
     assert w.data_flow_edges() == []
+
+
+# ---------------------------------------------------------------------------
+# C: detect_language
+# ---------------------------------------------------------------------------
+
+def test_detect_language_c():
+    assert detect_language("foo.c") == "c"
+
+def test_detect_language_h():
+    assert detect_language("foo.h") == "c"
+
+
+# ---------------------------------------------------------------------------
+# C: symbols — basic function definition
+# ---------------------------------------------------------------------------
+
+C_SIMPLE_FN = """\
+int add(int a, int b) {
+    return a + b;
+}
+"""
+
+def test_c_symbol_extracted():
+    w = LanguageWalker(C_SIMPLE_FN, "/fake/math.c", "c")
+    assert "math::add" in symbol_names(w)
+
+def test_c_symbol_not_stub():
+    w = LanguageWalker(C_SIMPLE_FN, "/fake/math.c", "c")
+    sym = next(s for s in w.symbols() if s["name"] == "math::add")
+    assert sym["is_stub"] is False
+
+def test_c_symbol_line_number():
+    w = LanguageWalker(C_SIMPLE_FN, "/fake/math.c", "c")
+    sym = next(s for s in w.symbols() if s["name"] == "math::add")
+    assert sym["line_number"] == 1
+
+
+# ---------------------------------------------------------------------------
+# C: stub detection
+# ---------------------------------------------------------------------------
+
+C_EMPTY_BODY = """\
+void noop(void) {}
+"""
+
+def test_c_stub_empty_body():
+    w = LanguageWalker(C_EMPTY_BODY, "/fake/lib.c", "c")
+    sym = next(s for s in w.symbols() if s["name"] == "lib::noop")
+    assert sym["is_stub"] is True
+
+C_HEADER_DECL = """\
+int foo(int x, int y);
+"""
+
+def test_c_stub_header_declaration():
+    w = LanguageWalker(C_HEADER_DECL, "/fake/api.h", "c")
+    syms = w.symbols()
+    assert any(s["name"] == "api::foo" and s["is_stub"] for s in syms)
+
+
+# ---------------------------------------------------------------------------
+# C: pointer return type (int *foo(...))
+# ---------------------------------------------------------------------------
+
+C_POINTER_RETURN = """\
+char *get_name(int id) {
+    return names[id];
+}
+"""
+
+def test_c_pointer_return_symbol():
+    w = LanguageWalker(C_POINTER_RETURN, "/fake/util.c", "c")
+    assert "util::get_name" in symbol_names(w)
+
+def test_c_pointer_return_not_stub():
+    w = LanguageWalker(C_POINTER_RETURN, "/fake/util.c", "c")
+    sym = next(s for s in w.symbols() if s["name"] == "util::get_name")
+    assert sym["is_stub"] is False
+
+
+# ---------------------------------------------------------------------------
+# C: call edges
+# ---------------------------------------------------------------------------
+
+C_CALL = """\
+int compute(int x) {
+    return helper(x);
+}
+
+int helper(int x) {
+    return x * 2;
+}
+"""
+
+def test_c_call_edge_emitted():
+    w = LanguageWalker(C_CALL, "/fake/mod.c", "c")
+    edges = {(e[0], e[1]) for e in w.call_edges()}
+    assert ("mod::compute", "helper") in edges
+
+def test_c_builtin_filtered():
+    src = """\
+void greet(void) {
+    printf("hello\\n");
+}
+"""
+    w = LanguageWalker(src, "/fake/greet.c", "c")
+    callees = {e[1] for e in w.call_edges()}
+    assert "printf" not in callees
+
+def test_c_struct_field_call_edge():
+    src = """\
+void process(State *s) {
+    s->update(s);
+}
+"""
+    w = LanguageWalker(src, "/fake/engine.c", "c")
+    edges = {(e[0], e[1]) for e in w.call_edges()}
+    assert ("engine::process", "s.update") in edges

@@ -1006,6 +1006,10 @@ they are dead concept remnants. The concept should not exist, not be stubbed.
 **Why deferred:** Correct thing to do but not blocking anything. Low blast radius.
 No other system depends on subraces returning real data (they already return []/None).
 
+**Gate: do NOT do this work during Determined sessions.** This is a dj2-side task.
+It will surface naturally from Determined's analysis of dj2 when the time comes.
+Only execute when Bart explicitly says to work on it in a dj2 session.
+
 ---
 
 ## RM67 — Convergence protocol (ACTIVE)
