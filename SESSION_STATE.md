@@ -1,72 +1,62 @@
-Written at commit: 2f1923f
+Written at commit: 04b87fe
 
-# SESSION STATE — session 242
+# SESSION STATE — session 243
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**RM71 verified end-to-end against live dj2 corpus.** [V — CLI ingest + DB query]
+**C language walker built and verified (Phase 4 of cross-language arc).** [V — two commits]
 
-Ingest ran via `.venv\Scripts\python.exe -m determined.engine.run_engine C:\Users\bartl\dev\dj2`.
-DB written to `C_Users_bartl_dev_dj2.db` in the repo root.
+### Commit 5dbdd4d — C walker core
+- `language_walker.py`: `_c_symbols()`, `_c_fn_ranges()`, `_c_callee_name()`, `_c_fn_declarator()`, `_c_is_stub()`, `_C_BUILTINS` frozenset; `detect_language()` extended for `.c`/`.h`
+- `scan_project_files.py`: `.c` and `.h` added to `_JS_TS_EXTENSIONS`
+- `test_language_walker.py`: 13 new C tests (77 total, all pass) [V]
 
-**Verification results [V]:**
+### Commit 04b87fe — Header dedup post-pass
+- `persistence_engine.py`: `c_h_file_paths` tracker + DELETE post-pass runs BEFORE cross-file resolution pass
+  - Removes header declarations that have matching `.c` implementations (matched by bare function name = suffix after `::`)
+- `test_language_walker_persist.py`: 3 new C dedup tests (11 total, all pass) [V]
+- `TRACKER.md`: brogue-ce probe DONE row; gates-cleared note in corpus sequencing section
+- `HISTORY.md`: header dedup trap documented
 
-`symbols_in_file('encounter.json')` — 14 rows, correct stub flags:
-- 4 states (is_stub=0): initiating, awaiting_choice, resolving_fight, completed
-- 5 events (is_stub=0): next, fight, flee, parley, combat_ended
-- 3 actions (is_stub=1): start_combat, resolve_flee, resolve_parley
-- 2 guards (is_stub=1): flee_possible, parley_possible
+### brogue-ce ingest results [V]
+- Before dedup: 1519 symbols, 572 stubs (542 from .h headers = false positives)
+- After dedup: 977 symbols, 30 true stubs (9 unmatched header decls + 21 empty-body .c fns)
+- 7233 call edges, 3 features: brogue (947 syms), platform (28 syms), variants (2 syms)
 
-FSM stubs corpus-wide — 12 stubs across 3 FSMs (Barter, Encounter, Trade).
-All 5 FSM files discovered: barter.json, buy.json, encounter.json, sell.json, trade.json.
-
-`fsm_transition edges` — 5 edges for encounter.json, source_id/target_id = bare names,
-caller/callee = full canonical names. edge_type='fsm_transition'. [V]
-
-**UI ingest note:** Socket double-emit from automation caused "database is locked".
-Workaround: use CLI ingest (`python -m determined.engine.run_engine <path>`) for
-reliable re-ingest. UI ingest works fine when triggered once from the modal.
+### Six-probe loop (brogue-ce) [V]
+- Q1: 127 inferred EPs, 0 explicit (correct for C game)
+- Q2: 30 true stubs after dedup
+- Q5: `Architect::cellHasTerrainFlag` HOT (96 direct callers) — foundational terrain query
+- Q6: `Architect::initializeLevel` chain 189 nodes — dungeon generation subsystem
 
 ---
 
-## NEXT SESSION -- start here
+## NEXT SESSION — start here
 
-**RM71 is fully done and verified. Next: RM69 corpus aggregation (now unblocked).**
+**C walker done. RM67 brogue-ce row DONE. Next: llm.c OR Zig walker.**
 
-RM69 was gated on RM71 shipping. Read `docs/TRACKER.md` RM69 section before starting —
-check if a design already exists or if design-first is still needed.
+Options:
+1. **llm.c (C+Python)** — clone to `C:\Users\bartl\dev\corpora\llm.c`, run `tools/ingest_lang_corpus.py`, six-probe. Tests ctypes cross-language boundary (unique value).
+2. **Zig walker** — same LanguageWalker extension pattern. Corpus: Mach Engine at `C:\Users\bartl\dev\corpora\mach`.
 
-Alternative: wire context_compactor into development_priorities or walk_call_chain.
-Find where text accumulates past 6K threshold and add the compress_context() call.
-
-**To load dj2 in UI next session:**
-- Start server: `.venv\Scripts\python.exe -m determined.ui.ui_server`
-- Corpus already ingested at `C_Users_bartl_dev_dj2.db`
-- Load without re-ingest: `socket.emit("load_db", {path: "<abs path to C_Users_bartl_dev_dj2.db>"})`
+To verify brogue-ce still ingests correctly:
+```
+.venv\Scripts\python.exe tools/ingest_lang_corpus.py C:\Users\bartl\dev\corpora\brogue-ce
+```
+Expected: 977 symbols, 7233 edges.
 
 ---
 
 ## Known issues [V = verified, ? = carried]
 
-**dead artifact LIKE over-match [V prior]:** `WHERE kind='dead' AND subject LIKE '%{name}'`
-over-matches when name is a suffix of another symbol. Fix if noisy in real corpora.
+**Pre-existing: knowledge_for_file missing from REGISTRY [V this session]** — `test_tool_registry_covers_all_tools` fails. Not caused by C walker changes. 102 other regression tests pass.
 
-**load_db auto-orient blocks screenshot [V prior]:** background LLM thread on corpus load
-causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
+**dead artifact LIKE over-match [V prior]:** documented in test, fix if noisy.
 
-**Corpus switch UI flow [V prior]:** emit `socket.emit("load_db", {path: <abs db path>})`
-to load directly. Double-emitting ingest causes "database is locked."
+**load_db auto-orient blocks screenshot [V prior]:** workaround: DOM reads via javascript_tool.
 
-**UI ingest automation [V this session]:** Never emit "ingest" more than once per session.
-Use CLI ingest for scripted re-ingest to avoid lock collisions.
+**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs; tool queries bare names. Workaround: use graph_path.
 
-**walk_call_chain blind for async Rust [V prior]:** tokio::spawn entry points return 0 nodes.
-No fix planned until Rust walker arc.
-
-**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
-tool queries bare names. Workaround: use graph_path.
-
-**Server start command [V prior]:** `.venv\Scripts\python.exe -m determined.ui.ui_server`
-from `C:\Users\bartl\dev\Determined`.
+**C walker: 9 unmatched header stubs in brogue-ce [V]** — `deepestLevelForGameVariant`, `initializeDynamicColors`, `logBuffer`, `cellCanHoldGas`, `autoFight`, `updateFieldOfView`, `chooseMonster`, `clearInventory`, `checkForDungeonErrors`. Platform-conditional or truly absent. Acceptable ceiling.

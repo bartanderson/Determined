@@ -8,6 +8,13 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-23 (s243): C header declarations cause massive stub inflation without a dedup pass.
+In brogue-ce, 542 of 551 stubs were Rogue.h declarations that have .c implementations. FQDN
+mismatch is the trap: header FQDN is `Rogue::fn`, implementation is `Architect::fn` — full-name
+match fails, bare-name-suffix match (after `::`) finds them. Fix: delete matched header rows
+before the cross-file resolution pass in persistence_engine.py. Must run BEFORE resolution so
+resolver only sees .c implementations. After dedup: 977 symbols (was 1519), 30 real stubs.
+
 2026-07-23 (s243): Retire Qwen3-8B (port 8081); Qwen3-VL-8B-Instruct is now the sole main
 model. Two models was wasteful and violated the original design intent. The compactor was
 built for a two-server architecture (text on 8081, vision on 8082) but the design always
