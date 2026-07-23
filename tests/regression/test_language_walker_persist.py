@@ -154,3 +154,72 @@ def test_reingest_does_not_duplicate(db_with_js, js_project):
         "SELECT COUNT(*) FROM functions WHERE name LIKE 'dungeon.%'"
     ).fetchone()[0]
     assert rows == 2  # buildDungeon + generateRooms, not 4
+
+
+# ---------------------------------------------------------------------------
+# Tests: C header stub dedup post-pass
+# ---------------------------------------------------------------------------
+
+C_HEADER = """\
+int movePlayer(int dx, int dy);
+int unimplementedFn(void);
+"""
+
+C_IMPL = """\
+int movePlayer(int dx, int dy) {
+    return dx + dy;
+}
+"""
+
+
+@pytest.fixture()
+def c_project(tmp_path):
+    (tmp_path / "game.h").write_text(C_HEADER, encoding="utf-8")
+    (tmp_path / "game.c").write_text(C_IMPL, encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture()
+def db_with_c(c_project):
+    conn = sqlite3.connect(":memory:")
+    ensure_schema(conn)
+    class _EmptyGraph:
+        edges = []
+    persist_all(
+        connection=conn,
+        file_analyses=[],
+        graph=_EmptyGraph(),
+        project_prefixes=[],
+        project_root=str(c_project),
+    )
+    conn.commit()
+    return conn
+
+
+def test_c_header_dedup_removes_matched_declaration(db_with_c):
+    """Header declarations with a .c implementation must be deduplicated."""
+    rows = db_with_c.execute(
+        "SELECT name, is_stub FROM functions ORDER BY name"
+    ).fetchall()
+    by_name = {r[0]: r[1] for r in rows}
+    # game::movePlayer should exist once (from game.c, is_stub=0)
+    matching = [n for n in by_name if "movePlayer" in n]
+    assert len(matching) == 1, f"Expected 1 movePlayer, got {matching}"
+    assert by_name[matching[0]] == 0, "movePlayer should not be a stub"
+
+
+def test_c_header_dedup_keeps_true_stubs(db_with_c):
+    """Header declarations with no .c implementation are kept as stubs."""
+    rows = db_with_c.execute(
+        "SELECT name, is_stub FROM functions ORDER BY name"
+    ).fetchall()
+    by_name = {r[0]: r[1] for r in rows}
+    matching = [n for n in by_name if "unimplementedFn" in n]
+    assert len(matching) == 1, f"Expected 1 unimplementedFn, got {matching}"
+    assert by_name[matching[0]] == 1, "unimplementedFn should remain a stub"
+
+
+def test_c_total_symbol_count_after_dedup(db_with_c):
+    """After dedup: 1 .c impl (movePlayer) + 1 true stub (unimplementedFn) = 2 total."""
+    count = db_with_c.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
+    assert count == 2

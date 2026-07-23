@@ -830,6 +830,9 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
     rust_traits: dict[str, list[str]] = {}
     rust_impl_map: dict[str, list[str]] = {}
 
+    # Track C header file paths for the header-stub dedup post-pass.
+    c_h_file_paths: list[str] = []
+
     for path in js_files:
         lang = detect_language(str(path))
         if lang is None:
@@ -912,6 +915,9 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                     if t not in existing:
                         existing.append(t)
 
+        if lang == "c" and str(path).endswith(".h"):
+            c_h_file_paths.append(str(path))
+
         logger and logger.write(f"[JS/TS] {path.name}: {len(walker.symbols())} symbols, {len(walker.call_edges())} edges")
 
     # Go interface dispatch post-pass: add synthetic edges from each interface method
@@ -932,6 +938,28 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
         for lang, ifaces in ext_ifaces_by_lang.items():
             if ifaces:
                 _external_interface_dispatch_pass(cursor, ifaces, lang, file_paths, logger=logger)
+
+    # C header stub dedup post-pass: remove header declarations that have a matching
+    # .c implementation.  Header declarations are correctly marked is_stub=1 (no body),
+    # but if a .c file defines the same function (matched by bare name after ::), the
+    # header row is redundant and inflates stub counts.  Must run before the cross-file
+    # resolution pass so that resolution only sees .c implementations as candidates.
+    if c_h_file_paths:
+        c_h_placeholders = ",".join("?" * len(c_h_file_paths))
+        cursor.execute(f"""
+            DELETE FROM functions
+            WHERE is_stub=1
+              AND file_path IN ({c_h_placeholders})
+              AND EXISTS (
+                  SELECT 1 FROM functions c2
+                  WHERE c2.is_stub=0
+                    AND c2.file_path LIKE '%.c'
+                    AND SUBSTR(c2.name, INSTR(c2.name, '::')+2)
+                        = SUBSTR(functions.name, INSTR(functions.name, '::')+2)
+              )
+        """, c_h_file_paths)
+        removed = cursor.rowcount
+        logger and logger.write(f"[C] header dedup: removed {removed} matched declarations")
 
     # Cross-file resolution post-pass: mark an edge resolved=1 and write back the
     # resolved callee's FQDN into callee (and target_id) so that tools can join on

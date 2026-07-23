@@ -389,15 +389,16 @@ dynamic_edges pass already handles similar gaps for JS-to-Python links.
 
 ---
 
-**Implementation sequencing — GATED (2026-07-20):**
-New language parsers and corpus chain are blocked until:
-1. RM69 corpus aggregation ships (file shape, subsystem shape, prerequisite map) -- makes
-   individual stub judgments into a corpus-wide picture; without this, new corpora produce
-   more flat stub lists with no connective tissue.
-2. RM71 FSM ingestor ships (at minimum, encounter.json) -- proves the "data as code"
-   pipeline and gives aggregation a richer signal before investing in new parsers.
-Then:
-3. Ingestion parsers per language (C/Zig/Lua in priority order)
+**Implementation sequencing — gates cleared, C shipped (2026-07-23):**
+Both gates cleared:
+1. RM69 corpus aggregation -- DONE (CLOSURE.md Phase 1, 2026-07-17)
+2. RM71 FSM ingestor -- DONE (2026-07-22, session 241)
+
+C walker shipped (session 243): `language_walker.py`, `scan_project_files.py`, header dedup
+post-pass in `persistence_engine.py`. brogue-ce ingested, probed, convergence verified.
+
+Remaining:
+3. Ingestion parsers: Zig, Lua
 4. `target_lang` param in `project_stub`
 5. `runtime_locator.py` shim
 6. Corpus chain: acquire projects, ingest, surface shape comparison in UI
@@ -1045,7 +1046,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | end-of-eden (Go) | Probe-passes | 0 stubs; 15% unresolved (external libs, correct) |
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
 | slater (Rust) | Probe-passes | probe DONE (2026-07-22) — 195 files, 0 stubs, 1985 inferred EPs (all tests/benchmarks, correct for library crate); walk_call_chain blind across async boundary (serve_with_listener = 0 nodes); blast_radius 593 for evict_to_budget (cache is foundational); 78 dup names = normal module aliasing |
-| brogue-ce (C) | Probe-passes | NOT YET INGESTED — C walker not built; behavioral C corpus |
+| brogue-ce (C) | Probe-passes | probe DONE (2026-07-23) — 977 symbols, 7233 edges; C walker built (session 243); 30 true stubs (9 unmatched header decls + 21 empty-body); header dedup post-pass ships 542 false-positive header stubs; cellHasTerrainFlag HOT (96 callers = terrain query in dungeon gen); initializeLevel chain 189 nodes; 0 explicit EPs (correct for C game), 127 inferred EPs |
 | llm.c (C+Python) | Probe-passes | NOT YET INGESTED — C walker + ctypes cross-language boundary |
 | mach (Zig) | Probe-passes | NOT YET INGESTED — Zig walker not built |
 | clx (Lua) | Probe-passes | NOT YET INGESTED — Lua walker not built; first Lua ingest |
