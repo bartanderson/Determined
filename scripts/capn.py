@@ -505,6 +505,121 @@ def cmd_report(sessions: int = 10):
     print(f"  NET: {sign}{net} tokens ({'+' if net >= 0 else ''}{'ahead' if net >= 0 else 'behind'})")
 
 
+def cmd_savings(as_json: bool = False):
+    """Aggregate saved/wasted tokens by day, week, and month."""
+    from collections import defaultdict
+
+    if not LOG_FILE.exists():
+        print("No log yet.")
+        return
+
+    records = []
+    with LOG_FILE.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except Exception:
+                    pass
+
+    asks = [r for r in records if r.get("type") == "ask" and "t" in r]
+
+    def week_of(date_str: str) -> str:
+        from datetime import datetime, timedelta
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return (d - timedelta(days=d.weekday())).strftime("%Y-%m-%d")
+
+    def make_bucket():
+        return {"saved": 0, "wasted": 0, "hits": 0, "misses": 0}
+
+    by_day: dict = defaultdict(make_bucket)
+    by_week: dict = defaultdict(make_bucket)
+    by_month: dict = defaultdict(make_bucket)
+
+    for r in asks:
+        day = r["t"][:10]
+        buckets = [by_day[day], by_week[week_of(day)], by_month[day[:7]]]
+        if r.get("result") == "hit":
+            for b in buckets:
+                b["saved"] += r.get("tokens_saved", 0)
+                b["hits"] += 1
+        else:
+            for b in buckets:
+                b["wasted"] += r.get("tokens_wasted_est", 0)
+                b["misses"] += 1
+
+    if as_json:
+        from datetime import datetime
+
+        def to_rows(d: dict, label_fn) -> list:
+            rows = []
+            cum_s = cum_w = 0
+            for k in sorted(d):
+                b = d[k]
+                cum_s += b["saved"]
+                cum_w += b["wasted"]
+                rows.append({
+                    "period": k,
+                    "label": label_fn(k),
+                    "saved": b["saved"],
+                    "wasted": b["wasted"],
+                    "hits": b["hits"],
+                    "misses": b["misses"],
+                    "cum_saved": cum_s,
+                    "cum_wasted": cum_w,
+                })
+            return rows
+
+        def day_label(k):
+            from datetime import datetime
+            return datetime.strptime(k, "%Y-%m-%d").strftime("%b %-d")
+
+        def week_label(k):
+            from datetime import datetime
+            return datetime.strptime(k, "%Y-%m-%d").strftime("%-d %b")
+
+        def month_label(k):
+            from datetime import datetime
+            return datetime.strptime(k + "-01", "%Y-%m-%d").strftime("%b %Y")
+
+        total_s = sum(b["saved"] for b in by_day.values())
+        total_w = sum(b["wasted"] for b in by_day.values())
+        total_h = sum(b["hits"] for b in by_day.values())
+        total_m = sum(b["misses"] for b in by_day.values())
+        out = {
+            "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "totals": {"saved": total_s, "wasted": total_w, "hits": total_h, "misses": total_m},
+            "day": to_rows(by_day, day_label),
+            "week": to_rows(by_week, week_label),
+            "month": to_rows(by_month, month_label),
+        }
+        print(json.dumps(out, indent=2))
+        return
+
+    def print_table(title, d: dict):
+        print(f"\n{title}")
+        print(f"  {'Period':<13} {'Saved':>7} {'Wasted':>8} {'Net':>8} {'Hits':>5} {'Misses':>7}")
+        print("  " + "-" * 52)
+        cum_s = cum_w = 0
+        for k in sorted(d):
+            b = d[k]
+            cum_s += b["saved"]
+            cum_w += b["wasted"]
+            net = b["saved"] - b["wasted"]
+            sign = "+" if net >= 0 else ""
+            print(f"  {k:<13} {b['saved']:>7,} {b['wasted']:>8,} {sign}{net:>7,} {b['hits']:>5} {b['misses']:>7}")
+        print("  " + "-" * 52)
+        net_tot = cum_s - cum_w
+        sign = "+" if net_tot >= 0 else ""
+        print(f"  {'TOTAL':<13} {cum_s:>7,} {cum_w:>8,} {sign}{net_tot:>7,}")
+
+    print("=== CAP'N HOOK — SAVINGS REPORT ===")
+    print_table("BY DAY", by_day)
+    print_table("BY WEEK (Mon)", by_week)
+    print_table("BY MONTH", by_month)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -533,6 +648,8 @@ def main():
     p_report = sub.add_parser("report", help="Per-session token saved/wasted summary")
     p_report.add_argument("--sessions", type=int, default=10,
                           help="Number of recent sessions to show (default 10)")
+    p_savings = sub.add_parser("savings", help="Savings aggregated by day/week/month")
+    p_savings.add_argument("--json", action="store_true", help="Output JSON for chart embedding")
 
     args = ap.parse_args()
     if args.cmd == "ask":
@@ -547,6 +664,8 @@ def main():
         cmd_list()
     elif args.cmd == "report":
         cmd_report(args.sessions)
+    elif args.cmd == "savings":
+        cmd_savings(as_json=args.json)
     else:
         ap.print_help()
 
