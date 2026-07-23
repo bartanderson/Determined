@@ -48,7 +48,22 @@ Written at commit: 4a83730
 
 ## NEXT SESSION — start here
 
-**llm.c six-probe is incomplete.** The C-only six-probe was done in session 244's
+**First: fix G7 slowness in run_regression.py.**
+G7 takes 3:42 — all other groups combined are faster. The language walker tests
+are 0.51s so they're not the culprit. Find the slow file(s) in G7 by timing each
+individually, then either move them to a separate opt-in group or mark their slow
+tests properly. Do this before any other work so regression is usable.
+
+Files in G7 to time: test_intent_view_wiring.py, test_layer_rules.py,
+test_local_agent.py, test_oracle_cli_smoke.py, test_oracle_router_persistence_lock.py,
+test_pattern_executor.py (plus the language walker files which are already fast).
+
+Command to time one file:
+```
+Measure-Command { .venv\Scripts\pytest tests/regression/test_pattern_executor.py -q }
+```
+
+**Second: llm.c six-probe is incomplete.** The C-only six-probe was done in session 244's
 opening. After CUDA+Python support landed, re-ingest is at 729 symbols / 2960 edges
 but we haven't re-run the full six-probe against the new corpus. Options:
 
