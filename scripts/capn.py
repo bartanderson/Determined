@@ -302,6 +302,58 @@ def _report_due(count: int) -> bool:
     return False
 
 
+def _last_session_summary() -> str:
+    """Return a one-line summary of the most recently completed session, or ''."""
+    if not LOG_FILE.exists():
+        return ''
+    records = []
+    try:
+        with LOG_FILE.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except Exception:
+                        pass
+    except Exception:
+        return ''
+
+    # Walk backwards to find the last *completed* session (one with ask/chart events).
+    sessions: dict[str, dict] = {}
+    order: list[str] = []
+    for r in records:
+        sid = r.get("session", "")
+        if not sid:
+            continue
+        if sid not in sessions:
+            sessions[sid] = {"hits": 0, "misses": 0, "charted": 0, "date": ""}
+            order.append(sid)
+        if r.get("type") == "session_start":
+            sessions[sid]["date"] = r.get("t", "")[:10]
+        elif r.get("type") == "ask":
+            if r.get("result") == "hit":
+                sessions[sid]["hits"] += 1
+            else:
+                sessions[sid]["misses"] += 1
+        elif r.get("type") == "chart":
+            sessions[sid]["charted"] += 1
+
+    # Find the most recent session that had actual activity (not just a start event).
+    for sid in reversed(order):
+        sd = sessions[sid]
+        if sd["hits"] + sd["misses"] + sd["charted"] > 0:
+            h, m, c = sd["hits"], sd["misses"], sd["charted"]
+            date = sd["date"] or "?"
+            parts = []
+            if h + m:
+                parts.append(f"{h}/{h+m} hits")
+            if c:
+                parts.append(f"{c} charted")
+            return f"{date} session {sid[:6]}  --  {', '.join(parts)}"
+    return ''
+
+
 def cmd_context():
     _ensure_dirs()
     session_id = uuid.uuid4().hex[:8]
@@ -320,28 +372,32 @@ def cmd_context():
     tokens_wasted = stats.get("tokens_wasted", 0)
     total = hits + misses
     hit_rate = f"{100 * hits // total}%" if total else "n/a"
-    saved_display = f"~{tokens_saved // 1_000}K" if tokens_saved >= 1_000 else f"~{tokens_saved}"
-    wasted_display = f"~{tokens_wasted // 1_000}K" if tokens_wasted >= 1_000 else f"~{tokens_wasted}"
+
+    def _tok(n):
+        return f"~{n // 1_000}K" if n >= 1_000 else f"~{n}"
 
     entries = _all_entries()
     fresh_count = sum(1 for _, e in entries if _entry_is_fresh(e))
     stale_count = len(entries) - fresh_count
 
-    stale_note = f" ({stale_count} stale -- run capn prune)" if stale_count else ""
+    stale_line = f"  stale:  {stale_count} entries need pruning  (run: capn prune)" if stale_count else ""
+    last_line = _last_session_summary()
 
-    print(f"""=== CAP'N HOOK: trap registry + lookup cache ===
-{fresh_count} entries{stale_note} | {charted} recorded | {hits}/{total} lookups hit ({hit_rate}) | est. {saved_display} tokens saved | est. {wasted_display} wasted on misses
+    status_lines = [
+        f"=== CAP'N HOOK: trap registry + lookup cache ===",
+        f"  cache:  {fresh_count} fresh entries  |  {charted} ever charted",
+        f"  stats:  {hits}/{total} hits ({hit_rate})  |  saved {_tok(tokens_saved)}  |  wasted {_tok(tokens_wasted)} on misses",
+    ]
+    if stale_line:
+        status_lines.append(stale_line)
+    if last_line:
+        status_lines.append(f"  last:   {last_line}")
 
-Before touching DB queries, symbol resolution, ingestion routing, or re-deriving any
-entry point or call chain you've looked up before:
-  python scripts/capn.py ask "<what you're about to do or find>"
-
-Chart when you:
-  - hit a non-obvious trap (wrong column, silent default, schema quirk, routing collision)
-  - locate something that took more than a grep to find (entry point, non-obvious chain)
-  python scripts/capn.py chart "<description>" --files path1 [path2] [--details "specifics"]
-
-Entries auto-expire when referenced files change. Run prune to clean stale entries.""")
+    print('\n'.join(status_lines))
+    print("""
+Hooks auto-fire on Bash/Read. To ask manually or chart a discovery:
+  python scripts/capn.py ask "<what you're about to do>"
+  python scripts/capn.py chart "<what you found>" --files path1 [--details "specifics"]""")
 
     if _report_due(session_count):
         next_due = REPORT_FIRST + ((session_count - REPORT_FIRST) // REPORT_EVERY + 1) * REPORT_EVERY if session_count >= REPORT_FIRST else REPORT_FIRST
