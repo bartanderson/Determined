@@ -117,7 +117,8 @@ def test_answer_history_grows_across_questions():
         return "The travel system handles movement."
 
     history: list = []
-    with patch("determined.agent.local_agent._call_ollama", side_effect=_stub):
+    with patch("determined.agent.local_agent._call_ollama", side_effect=_stub), \
+         patch("determined.agent.local_agent.detect_pattern", return_value=(None, None)):
         _, history = _answer("what is the travel system?", history, oracle, assessor)
         _, history = _answer("how does it connect?", history, oracle, assessor)
 
