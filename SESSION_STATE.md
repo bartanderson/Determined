@@ -1,57 +1,50 @@
-Written at commit: 5df648b
+Written at commit: 2f1923f
 
-# SESSION STATE — session 241
+# SESSION STATE — session 242
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**RM71 FSM ingestor — fully implemented and committed.** [V]
+**RM71 verified end-to-end against live dj2 corpus.** [V — CLI ingest + DB query]
 
-**Drift found at session start [V]:**
-- Two commits had landed since session 239's handoff (96158ae):
-  - `9bcd7f7` — `knowledge_for_file` already shipped (option 1 from prior handoff)
-  - `afe0b97` — RM71 design already written and committed (option 3)
-- Both options from the prior "decide next" list were done before this session started.
+Ingest ran via `.venv\Scripts\python.exe -m determined.engine.run_engine C:\Users\bartl\dev\dj2`.
+DB written to `C_Users_bartl_dev_dj2.db` in the repo root.
 
-**This session (single commit `5df648b`):**
-- `determined/ingestion/fsm_walker.py` — new, 110 LOC [V]
-  - `discover_fsm_files(root)` — `rglob("*.json")` filtered to paths with `"fsms"` in parts
-  - `_parse_fsm(path)` — returns (fsm_name, symbols, transitions); raises ValueError on bad input
-  - `ingest_fsm_file(path, conn, project_root)` — idempotent; deletes then re-inserts
-  - `ingest_fsm_pass(conn, root)` — discovery wrapper; skips bad files with print
-- `determined/engine/run_engine.py` — 3 lines added after `persist_all()` [V]
-  - `from determined.ingestion.fsm_walker import ingest_fsm_pass; ingest_fsm_pass(connection, Path(corpus.root_path))`
-- `tests/regression/test_fsm_walker.py` — 16 offline tests, all pass (0.14s) [V]
-- `docs/TEST_MAP.md` — fsm_walker.py row added [V]
-- `docs/TRACKER.md` — RM71 marked DONE 2026-07-22 [V]
+**Verification results [V]:**
 
-**Schema used [V]:**
-- States/events → `functions(is_stub=0)`, name = `FsmName::state::statename`
-- Actions/guards → `functions(is_stub=1)`, name = `FsmName::action::actionname`
-- Transitions → `graph_edges(edge_type='fsm_transition')`, source_id/target_id = bare names via normalize_symbol
-- file_path = `normalize_file_path(path)` (absolute, forward slashes)
+`symbols_in_file('encounter.json')` — 14 rows, correct stub flags:
+- 4 states (is_stub=0): initiating, awaiting_choice, resolving_fight, completed
+- 5 events (is_stub=0): next, fight, flee, parley, combat_ended
+- 3 actions (is_stub=1): start_combat, resolve_flee, resolve_parley
+- 2 guards (is_stub=1): flee_possible, parley_possible
 
-**What RM71 unlocks (not yet verified against live dj2 ingest):**
-- `list_stubs` returns FSM actions/guards alongside Python stubs [?]
-- `symbols_in_file('encounter.json')` lists all 14 FSM nodes [?]
-- `blast_radius(start_combat)` sees FSM node + Python callers [?]
+FSM stubs corpus-wide — 12 stubs across 3 FSMs (Barter, Encounter, Trade).
+All 5 FSM files discovered: barter.json, buy.json, encounter.json, sell.json, trade.json.
+
+`fsm_transition edges` — 5 edges for encounter.json, source_id/target_id = bare names,
+caller/callee = full canonical names. edge_type='fsm_transition'. [V]
+
+**UI ingest note:** Socket double-emit from automation caused "database is locked".
+Workaround: use CLI ingest (`python -m determined.engine.run_engine <path>`) for
+reliable re-ingest. UI ingest works fine when triggered once from the modal.
 
 ---
 
 ## NEXT SESSION -- start here
 
-**Verify RM71 against live dj2 corpus.** Re-ingest dj2 and confirm:
-1. `symbols_in_file('encounter.json')` returns 14 rows
-2. `list_stubs` includes FSM actions/guards
-3. `blast_radius(start_combat)` surfaces both FSM and Python sides
+**RM71 is fully done and verified. Next: RM69 corpus aggregation (now unblocked).**
 
-Server start: `.venv\Scripts\python.exe -m determined.ui.ui_server` from `C:\Users\bartl\dev\Determined`
-Load dj2 corpus via UI or `socket.emit("load_db", {path: <abs db path>})` — must re-ingest for FSM rows to appear.
+RM69 was gated on RM71 shipping. Read `docs/TRACKER.md` RM69 section before starting —
+check if a design already exists or if design-first is still needed.
 
-**After verification, next candidates from TRACKER:**
-- RM69 corpus aggregation (gated: needed RM71 first — now unblocked)
-- Wire context_compactor into a tool (development_priorities or walk_call_chain)
+Alternative: wire context_compactor into development_priorities or walk_call_chain.
+Find where text accumulates past 6K threshold and add the compress_context() call.
+
+**To load dj2 in UI next session:**
+- Start server: `.venv\Scripts\python.exe -m determined.ui.ui_server`
+- Corpus already ingested at `C_Users_bartl_dev_dj2.db`
+- Load without re-ingest: `socket.emit("load_db", {path: "<abs path to C_Users_bartl_dev_dj2.db>"})`
 
 ---
 
@@ -66,8 +59,11 @@ causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
 **Corpus switch UI flow [V prior]:** emit `socket.emit("load_db", {path: <abs db path>})`
 to load directly. Double-emitting ingest causes "database is locked."
 
+**UI ingest automation [V this session]:** Never emit "ingest" more than once per session.
+Use CLI ingest for scripted re-ingest to avoid lock collisions.
+
 **walk_call_chain blind for async Rust [V prior]:** tokio::spawn entry points return 0 nodes.
-Documented in RM67 slater row. No fix planned until Rust walker arc.
+No fix planned until Rust walker arc.
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
 tool queries bare names. Workaround: use graph_path.
