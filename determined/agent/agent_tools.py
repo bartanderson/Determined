@@ -543,6 +543,15 @@ def walk_call_chain(
                 """,
                 (symbol,),
             ).fetchone()
+        if row is None and "::" not in symbol:
+            # C/CUDA walkers use file_stem::name FQNs; retry with :: suffix match
+            row = oracle.conn.execute(
+                """
+                SELECT name, file_path, is_stub, param_types_json, return_type, docstring
+                FROM functions WHERE name LIKE '%::' || ? LIMIT 1
+                """,
+                (symbol,),
+            ).fetchone()
         if row is None:
             continue
 
