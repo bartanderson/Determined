@@ -1,113 +1,91 @@
-Written at commit: df8c585
+Written at commit: d7786c0
 
-# SESSION STATE — session 245
+# SESSION STATE — session 246
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Four commits landed:**
+**Four commits landed (capn infrastructure only — no engine changes):**
 
-### Commit 3a57b6b — G7 slowness fix [V]
-- `test_local_agent.py`: `test_answer_history_grows_across_questions` was taking
-  ~90s because "how does it connect?" matched a named pattern and routed to
-  `PatternExecutor.run()`, which has its own `_call_ollama` import not covered by
-  the local_agent patch. Added `patch("determined.agent.local_agent.detect_pattern",
-  return_value=(None, None))` to keep the test focused on history accumulation.
-- G7 group: 3:42 → 9s [V]
+### Commit 83d310b — capn auto-hook into PreToolUse/PostToolUse [V]
+- `scripts/capn_hook.py` (new): fires on Bash/PowerShell/Read tool calls.
+  PreToolUse: regex-matches command against 9 patterns (SQL, walk_call_chain,
+  reingest, key module names); runs `capn ask` and outputs hit into Claude's
+  context before the tool runs. On miss: writes `.capn/.hook_miss` flag.
+  PostToolUse: if miss flag exists and tool returned >100 chars of output,
+  emits one-line "consider charting" nudge.
+- `scripts/capn.py`: `_score()` updated to include file paths in haystack --
+  Read hooks on `db_oracle.py` now score 1.00 against entries that reference
+  that file (was 0.0 before, wrong query terms).
+- `.claude/settings.json`: added PreToolUse hooks for Bash/PowerShell and Read,
+  PostToolUse hook for all three. Existing validate_shell hook untouched.
+- Non-matching commands (git status, ls) exit in microseconds -- no noise.
 
-### Commit 2d38c0c — kernel_launch edge_type fix [V]
-- `language_walker.py`: `_cuda_kernel_launches()` was storing `edge_type="static"`
-  instead of `"kernel_launch"` — fixed to `"kernel_launch"`.
-- `persistence_engine.py`: cross-file resolution post-pass was gated to
-  `edge_type = 'static'` — changed to `IN ('static', 'kernel_launch')` so kernel
-  callee FQNs get upgraded alongside static edges.
-- `test_language_walker_persist.py`: test updated to query `kernel_launch` instead
-  of `static` for kernel launch edge assertion.
-- 106 walker tests pass [V]
+### Commit 9b4f091 — capn context display [V]
+- `cmd_context()` restructured to 5-line status block:
+  cache size / hit rate / saved+wasted / stale note / last session summary.
+- Added `_last_session_summary()` helper that scans log for most recent session
+  with actual activity (hits + misses + charted > 0).
 
-### Commit 0c457f1 — walk_call_chain bare-name fallback for C/CUDA [V]
-- `agent_tools.py`: `walk_call_chain` with bare name (e.g. "gpt2_forward") was
-  returning empty for C/CUDA corpora because the DB stores names as FQNs
-  (`train_gpt2::gpt2_forward`). Added `LIKE '%::' || ?` fallback after the
-  existing `.` suffix match for JS/TS. Bare names now resolve correctly. [V]
-- 79/80 agent_tools tests pass (pre-existing `test_tool_registry_covers_all_tools`
-  failure is unrelated to this change) [V]
+### Commit 55db266 — capn savings command [V]
+- `capn savings` prints aggregated saved/wasted/net by day, week, month.
+- `capn savings --json` outputs structured JSON with cumulative fields per row
+  (for chart embedding when wanted).
+- Current data: 2/22 hits (9%), ~1K saved, ~13K wasted, net -11.5K.
+  All pre-hook; the saved line will grow from here.
 
-### Commit 3204437 — llm.c six-probe DONE [V]
-
-**llm.c six-probe findings:**
-- 72 files: 20 .c/.h, 38 .cu/.cuh, 14 .py
-- 729 symbols, 2960 edges, 148 `__global__` kernels (is_tool=1)
-- 151 kernel_launch edges (correct after fix; were 0 before)
-- 22 stubs: classification —
-  - 8 CUDA false-positives: `block_dim`, `grid_dim`, `blockDim`, `gridDim`
-    (dim3 variables captured as function stubs — known C walker limitation)
-  - 2 CUDA utility false-positives: `Packed128`, `cast_value` (template stubs)
-  - 2 external API stubs: `memcpy` (stdlib), `nvtxRangePush` (NVIDIA profiling)
-  - 4 cuDNN conditional-compile stubs: `cudnn_att::*` — only built with
-    `-DUSE_CUDNN`; acceptable known ceiling
-  - 2 device_file_io stubs: `cmp`, `random_data` — may be real gaps
-  - 4 `make_random_float` variants — test utility functions, acceptable
-- Python (14 files): separate PyTorch implementations of the C training loop.
-  NOT ctypes wrappers. 0 ctypes edges (correct). No cross-language connection.
-- Blast radius: `gpt2_build_from_checkpoint` → 131 extended symbols (correct)
-- Call chain: `gpt2_forward` traces to encoder→layernorm→matmul→attention→
-  residual→gelu→softmax→crossentropy (correct GPT-2 forward pass) [V]
+### Commit d7786c0 — RM72 added to TRACKER [V]
+- `docs/TRACKER.md`: RM72 "Determined graph explorer (desktop, WebGPU/C++)"
+  added as FUTURE item. Gated behind UI redesign completion and C++ walker.
+  Scope: force-directed graph navigation only -- zoom/pan, click-to-expand,
+  call chain highlight, blast radius. Not a query interface. LearnWebGPU is
+  both the reference tutorial and the C++ walker validation corpus.
 
 ---
 
 ## Known issues [V = verified, ? = carried]
 
-**Pre-existing: knowledge_for_file missing from REGISTRY [V]** — `test_tool_registry_covers_all_tools`
-fails. Not caused by this session's changes. All other tests pass.
+**Pre-existing: knowledge_for_file missing from REGISTRY [?]** —
+`test_tool_registry_covers_all_tools` fails. Not caused by this session.
 
-**CUDA stubs: dim3 vars captured as stubs [V]** — `block_dim`, `grid_dim`, `blockDim`,
-`gridDim` appear as function stubs in CUDA files. Low-priority false-positive;
-acceptable known ceiling.
+**CUDA stubs: dim3 vars captured as stubs [?]** — `block_dim`, `grid_dim`,
+`blockDim`, `gridDim` appear as function stubs. Low-priority known ceiling.
 
-**dead artifact LIKE over-match [V prior]:** documented in test, fix if noisy.
+**capn: 3 stale entries need pruning [V]** — run `python scripts/capn.py prune`.
+Entries for pattern_executor._call_ollama patch, C walker _c_is_stub, and
+brogue-ce header stubs are stale (files changed). Safe to prune.
 
-**load_db auto-orient blocks screenshot [V prior]:** workaround: DOM reads via javascript_tool.
+**capn hit rate: 9% [V]** — expected at this stage. Hooks just went live.
+Missed queries will surface chart candidates over the next few sessions.
 
-**walk_call_chain broken for TS/JS corpora [?]:** The `.` suffix match handles some cases
-but may have edge cases. C/CUDA :: suffix match is now fixed. Workaround: use graph_path.
-
-**C walker: 9 unmatched header stubs in brogue-ce [V prior]** — platform-conditional.
-Acceptable ceiling.
+**walk_call_chain broken for TS/JS corpora [?]** — .suffix match handles
+some cases but may have edge cases. Workaround: use graph_path.
 
 ---
 
 ## NEXT SESSION — start here
 
-**Option 1: Zig walker (mach engine corpus)** [recommended]
+**Option 1: Zig walker (mach engine corpus)** [recommended from prior session]
 Next NOT YET INGESTED language in RM67 language scope table.
-Zig has ast-grep support. Same LanguageWalker extension pattern as Go/Rust.
-Find Zig corpus (Mach Engine: github.com/hexops/mach).
 Target file: `determined/ingestion/language_walker.py`.
+Corpus: Mach Engine (github.com/hexops/mach).
 
-**Option 2: Lua walker (clx corpus)**
-Same pattern. `clx` is the Lua corpus in the language scope table.
+**Option 2: Rust walker validation (slater corpus)**
+Six-probe loop on slater if not already done.
 
-**Option 3: llm.c stub deeper triage**
-22 stubs identified; `device_file_io::cmp` and `device_file_io::random_data`
-may be real gaps worth classifying. Low priority.
+**Option 3: prune capn stale entries then continue RM67 work**
+Quick housekeeping: `python scripts/capn.py prune` (removes 3 stale entries).
+Then pick Option 1 or 2.
 
-**Verify G7 is still fast (sanity check before any work):**
+**Sanity check before any work:**
 ```
 .venv\Scripts\python.exe tools/run_regression.py --group G7
 ```
 Expected: < 15s.
 
-**Verify walk_call_chain fix works after re-ingest:**
+**capn is now auto-firing.** No need to call it manually before DB/symbol work --
+the PreToolUse hook does it. Chart discoveries with:
 ```
-.venv\Scripts\python.exe -c "
-import sys; sys.path.insert(0, '.')
-from determined.oracle.db_oracle import DBOracle
-from determined.agent.agent_tools import walk_call_chain
-oracle = DBOracle('C_Users_bartl_dev_corpora_llm_c.db')
-chain = walk_call_chain('gpt2_forward', oracle, max_depth=1)
-print(chain[0]['symbol'] if chain else 'BROKEN')
-"
+python scripts/capn.py chart "<what you found>" --files <file> [--details "..."]
 ```
-Expected: `train_gpt2::gpt2_forward`
