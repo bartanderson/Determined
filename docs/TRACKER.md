@@ -1047,7 +1047,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
 | slater (Rust) | Probe-passes | probe DONE (2026-07-22) — 195 files, 0 stubs, 1985 inferred EPs (all tests/benchmarks, correct for library crate); walk_call_chain blind across async boundary (serve_with_listener = 0 nodes); blast_radius 593 for evict_to_budget (cache is foundational); 78 dup names = normal module aliasing |
 | brogue-ce (C) | Probe-passes | probe DONE (2026-07-23) — 977 symbols, 7233 edges; C walker built (session 243); 30 true stubs (9 unmatched header decls + 21 empty-body); header dedup post-pass ships 542 false-positive header stubs; cellHasTerrainFlag HOT (96 callers = terrain query in dungeon gen); initializeLevel chain 189 nodes; 0 explicit EPs (correct for C game), 127 inferred EPs |
-| llm.c (C+Python) | Probe-passes | ingested 2026-07-23 (729 symbols / 2960 edges); six-probe pending |
+| llm.c (C+Python+CUDA) | Probe-passes | probe DONE (2026-07-23, session 245) — 729 symbols / 2960 edges; 148 CUDA kernels; 151 kernel_launch edges; 22 stubs (mostly false-positives); Python = parallel PyTorch impls, not ctypes |
 | mach (Zig) | Probe-passes | NOT YET INGESTED — Zig walker not built |
 | clx (Lua) | Probe-passes | NOT YET INGESTED — Lua walker not built; first Lua ingest |
 
@@ -1088,6 +1088,7 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 - [x] end-of-eden: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] ruggrogue: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] slater: probe DONE (2026-07-22, session 237) — 0 stubs (complete server software); 1985 inferred EPs all tests/benchmarks (correct for Rust library crate); #[cfg(test)] no false stubs confirmed; walk_call_chain blind across async boundary (serve_with_listener → 0 nodes, known Rust walker gap); blast_radius clean (593 extended for evict_to_budget); 78 dup names = normal module aliasing, not walker inflation
+- [x] llm.c (C+Python+CUDA): probe DONE (2026-07-23, session 245) — 729 symbols / 2960 edges (20 .c/.h + 38 .cu/.cuh + 14 .py); 148 __global__ kernels as is_tool=1; 151 kernel_launch edges (bug fixed this session: was stored as "static"); 22 stubs: 8 CUDA dim3/template false-positives (block_dim, grid_dim, Packed128 etc), 4 cudnn_att conditional-compile stubs (correct, require -DUSE_CUDNN), 2 external API stubs (memcpy, nvtxRangePush), 8 possible real stubs; walk_call_chain FQN fallback fixed; Python (14 files) = separate PyTorch impls, not ctypes wrappers, 0 ctypes edges (correct); blast_radius gpt2_build_from_checkpoint shows 131 extended symbols (correct, whole model struct is impacted)
 
 ---
 
