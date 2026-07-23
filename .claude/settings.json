@@ -50,6 +50,36 @@
             "command": "python3 .claude/hooks/validate_shell.py",
             "shell": "bash",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 scripts/capn_hook.py pre",
+            "shell": "bash",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/capn_hook.py pre",
+            "shell": "bash",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/capn_hook.py post",
+            "shell": "bash",
+            "timeout": 5
           }
         ]
       }

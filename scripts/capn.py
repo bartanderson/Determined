@@ -164,7 +164,9 @@ def _score(query: str, entry: dict) -> float:
     q_words = set(re.findall(r'\w+', query.lower()))
     if not q_words:
         return 0.0
-    haystack = (entry.get("question", "") + " " + entry.get("details", "")).lower()
+    # Include file paths in the haystack so file-based lookups surface relevant entries.
+    files_str = " ".join(entry.get("files", {}).keys())
+    haystack = (entry.get("question", "") + " " + entry.get("details", "") + " " + files_str).lower()
     h_words = set(re.findall(r'\w+', haystack))
     return len(q_words & h_words) / len(q_words)
 
