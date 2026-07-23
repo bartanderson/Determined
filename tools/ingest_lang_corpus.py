@@ -1,9 +1,10 @@
 """
-ingest_lang_corpus.py -- ingest a non-Python corpus (Go, Rust, JS/TS) into a corpus DB.
+ingest_lang_corpus.py -- ingest a corpus (Go, Rust, JS/TS, C, CUDA, Python) into a corpus DB.
 
-The normal EngineRunner requires at least one Python file and crashes on pure Go/Rust
-corpora. This script creates the DB schema and then calls persist_all with an empty
-Python layer so the LanguageWalker step (step 5c) runs and handles the actual files.
+Supports pure-language corpora and mixed C+Python or CUDA+Python corpora.  When Python
+files are present alongside non-Python source, both layers are ingested: the Python
+analysis pipeline (AST-based) runs first, then the LanguageWalker step picks up
+C/CUDA/Go/Rust/JS/TS files.
 
 Usage:
     python tools/ingest_lang_corpus.py <corpus_root>
@@ -54,11 +55,25 @@ def main() -> None:
 
     conn = sqlite3.connect(db_path)
 
-    # Empty Python layer — persist_all still runs the LanguageWalker step (5c)
-    # which handles Go/Rust/JS/TS files discovered under project_root.
+    # Check for Python files — if present, run the Python analysis pipeline too.
+    from determined.ingestion.scan_project_files import discover_python_files, scan_project_files
+    py_files = discover_python_files(src)
+    if py_files:
+        print(f"Found {len(py_files)} Python file(s) — running Python analysis pipeline.")
+        file_analyses = list(scan_project_files(
+            project_root=str(src),
+            project_prefixes=[],
+            repo_root=str(src),
+        ))
+        print(f"  {len(file_analyses)} Python file(s) analysed.")
+    else:
+        file_analyses = []
+
+    # persist_all runs the LanguageWalker step (5c) which handles
+    # C/CUDA/Go/Rust/JS/TS files, plus the Python layer if file_analyses is non-empty.
     persist_all(
         connection=conn,
-        file_analyses=[],
+        file_analyses=file_analyses,
         graph=None,
         project_prefixes=[],
         project_root=str(src),

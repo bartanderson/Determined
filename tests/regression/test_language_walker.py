@@ -976,3 +976,88 @@ void process(State *s) {
     w = LanguageWalker(src, "/fake/engine.c", "c")
     edges = {(e[0], e[1]) for e in w.call_edges()}
     assert ("engine::process", "s.update") in edges
+
+
+# ---------------------------------------------------------------------------
+# CUDA: Phase 5 — symbol extraction, qualifiers, kernel launches
+# ---------------------------------------------------------------------------
+
+CUDA_SRC = """\
+__global__ void attention_kernel(float* q, float* k, int T) {
+    int i = blockIdx.x;
+    q[i] = helper(k[i]);
+}
+
+__device__ float helper(float x) {
+    return x * 2.0f;
+}
+
+void host_launch(float* q, float* k) {
+    attention_kernel<<<32, 256>>>(q, k, 512);
+}
+"""
+
+def test_detect_language_cu():
+    assert detect_language("train.cu") == "cuda"
+
+def test_detect_language_cuh():
+    assert detect_language("common.cuh") == "cuda"
+
+def test_cuda_global_kernel_symbol():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    names = symbol_names(w)
+    assert "kern::attention_kernel" in names
+
+def test_cuda_device_fn_symbol():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    names = symbol_names(w)
+    assert "kern::helper" in names
+
+def test_cuda_host_fn_symbol():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    names = symbol_names(w)
+    assert "kern::host_launch" in names
+
+def test_cuda_global_is_tool():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    syms = {s["name"]: s for s in w.symbols()}
+    assert syms["kern::attention_kernel"]["is_tool"] == 1
+
+def test_cuda_device_not_tool():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    syms = {s["name"]: s for s in w.symbols()}
+    assert syms["kern::helper"]["is_tool"] == 0
+
+def test_cuda_global_decorator_stored():
+    import json
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    syms = {s["name"]: s for s in w.symbols()}
+    dec = json.loads(syms["kern::attention_kernel"]["decorators_json"])
+    assert "__global__" in dec
+
+def test_cuda_kernel_not_stub():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    syms = {s["name"]: s for s in w.symbols()}
+    assert syms["kern::attention_kernel"]["is_stub"] is False
+
+def test_cuda_regular_call_edge():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    edges = {(e[0], e[1]) for e in w.call_edges()}
+    assert ("kern::attention_kernel", "helper") in edges
+
+def test_cuda_kernel_launch_edge():
+    w = LanguageWalker(CUDA_SRC, "/fake/kern.cu", "cuda")
+    edges = {(e[0], e[1]) for e in w.call_edges()}
+    assert ("kern::host_launch", "attention_kernel") in edges
+
+def test_cuda_builtin_filtered():
+    src = """\
+__global__ void kern(float* x) {
+    __syncthreads();
+    atomicAdd(x, 1.0f);
+}
+"""
+    w = LanguageWalker(src, "/fake/k.cu", "cuda")
+    callees = {e[1] for e in w.call_edges()}
+    assert "__syncthreads" not in callees
+    assert "atomicAdd" not in callees

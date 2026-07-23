@@ -788,6 +788,13 @@ def persist_all(connection, file_analyses, graph, project_prefixes, logger=None,
         run_cross_language_link(connection, Path(project_root))
 
     # -----------------------------------------
+    # 5e. CTYPES CROSS-LANGUAGE LINK
+    # -----------------------------------------
+    if project_root:
+        from determined.ingestion.ctypes_linker import run_ctypes_link
+        run_ctypes_link(connection, Path(project_root))
+
+    # -----------------------------------------
     # 6. RECALCULATE is_hot FROM GRAPH
     # -----------------------------------------
     _recalculate_hot_files(connection)

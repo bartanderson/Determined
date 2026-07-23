@@ -68,7 +68,7 @@ def should_ignore_path(path: Path, ignored_directory_names: Iterable[str]) -> bo
     return any(part in ignored for part in path.parts)
 
 
-_JS_TS_EXTENSIONS = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".c", ".h"}
+_JS_TS_EXTENSIONS = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".c", ".h", ".cu", ".cuh"}
 
 
 def discover_js_ts_files(

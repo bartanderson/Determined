@@ -223,3 +223,143 @@ def test_c_total_symbol_count_after_dedup(db_with_c):
     """After dedup: 1 .c impl (movePlayer) + 1 true stub (unimplementedFn) = 2 total."""
     count = db_with_c.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
     assert count == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: CUDA persist — .cu symbols appear in functions, kernel launches as edges
+# ---------------------------------------------------------------------------
+
+CUDA_KERN = """\
+__global__ void layernorm_kernel(float* out, const float* inp, int N) {
+    int i = blockIdx.x;
+    out[i] = scale(inp[i]);
+}
+
+__device__ float scale(float x) {
+    return x * 2.0f;
+}
+
+void launch_layernorm(float* out, const float* inp, int N) {
+    layernorm_kernel<<<N, 256>>>(out, inp, N);
+}
+"""
+
+
+@pytest.fixture()
+def cuda_project(tmp_path):
+    (tmp_path / "layernorm.cu").write_text(CUDA_KERN, encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture()
+def db_with_cuda(cuda_project):
+    conn = sqlite3.connect(":memory:")
+    ensure_schema(conn)
+    class _EmptyGraph:
+        edges = []
+    persist_all(
+        connection=conn,
+        file_analyses=[],
+        graph=_EmptyGraph(),
+        project_prefixes=[],
+        project_root=str(cuda_project),
+    )
+    conn.commit()
+    return conn
+
+
+def test_cuda_global_kernel_in_functions(db_with_cuda):
+    rows = db_with_cuda.execute("SELECT name FROM functions").fetchall()
+    names = {r[0] for r in rows}
+    assert "layernorm::layernorm_kernel" in names
+
+
+def test_cuda_device_fn_in_functions(db_with_cuda):
+    rows = db_with_cuda.execute("SELECT name FROM functions").fetchall()
+    names = {r[0] for r in rows}
+    assert "layernorm::scale" in names
+
+
+def test_cuda_global_marked_as_tool(db_with_cuda):
+    row = db_with_cuda.execute(
+        "SELECT is_tool FROM functions WHERE name = 'layernorm::layernorm_kernel'"
+    ).fetchone()
+    assert row is not None and row[0] == 1
+
+
+def test_cuda_kernel_launch_edge_stored(db_with_cuda):
+    rows = db_with_cuda.execute(
+        "SELECT caller, callee FROM graph_edges WHERE edge_type = 'static'"
+    ).fetchall()
+    pairs = {(r[0], r[1]) for r in rows}
+    # Callee is upgraded to qualified FQN by the cross-file resolution post-pass
+    assert ("layernorm::launch_layernorm", "layernorm::layernorm_kernel") in pairs
+
+
+# ---------------------------------------------------------------------------
+# Tests: ctypes linker — Python → C cross-language edges
+# ---------------------------------------------------------------------------
+
+CTYPES_PY = """\
+import ctypes
+
+lib = ctypes.CDLL("./libgame.so")
+
+def run_physics(dt):
+    lib.physics_step(dt)
+    lib.collide_all()
+"""
+
+C_IMPL_FOR_CTYPES = """\
+void physics_step(float dt) { }
+void collide_all(void) { }
+"""
+
+
+@pytest.fixture()
+def ctypes_project(tmp_path):
+    (tmp_path / "physics.py").write_text(CTYPES_PY, encoding="utf-8")
+    (tmp_path / "physics.c").write_text(C_IMPL_FOR_CTYPES, encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture()
+def db_with_ctypes(ctypes_project):
+    import sys
+    sys.path.insert(0, str(ctypes_project))
+    conn = sqlite3.connect(":memory:")
+    ensure_schema(conn)
+    from determined.ingestion.scan_project_files import scan_project_files
+    file_analyses = list(scan_project_files(
+        project_root=str(ctypes_project),
+        project_prefixes=[],
+        repo_root=str(ctypes_project),
+    ))
+    class _EmptyGraph:
+        edges = []
+    persist_all(
+        connection=conn,
+        file_analyses=file_analyses,
+        graph=_EmptyGraph(),
+        project_prefixes=[],
+        project_root=str(ctypes_project),
+    )
+    conn.commit()
+    return conn
+
+
+def test_ctypes_call_edges_emitted(db_with_ctypes):
+    rows = db_with_ctypes.execute(
+        "SELECT caller, callee, edge_type FROM graph_edges WHERE edge_type = 'ctypes_call'"
+    ).fetchall()
+    callees = {r[1] for r in rows}
+    assert "physics_step" in callees
+    assert "collide_all" in callees
+
+
+def test_ctypes_caller_is_python_fn(db_with_ctypes):
+    rows = db_with_ctypes.execute(
+        "SELECT caller FROM graph_edges WHERE edge_type = 'ctypes_call' AND callee = 'physics_step'"
+    ).fetchall()
+    assert rows, "No ctypes_call edge to physics_step"
+    assert "run_physics" in rows[0][0]

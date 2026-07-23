@@ -50,6 +50,44 @@ _GO_BUILTINS = frozenset({
 })
 
 
+# CUDA runtime / math builtins to filter from callees
+_CUDA_BUILTINS = frozenset({
+    # CUDA runtime API
+    "cudaMalloc", "cudaFree", "cudaMemcpy", "cudaMemset", "cudaMemcpyAsync",
+    "cudaDeviceSynchronize", "cudaGetLastError", "cudaCheckError",
+    "cudaGetDeviceCount", "cudaSetDevice", "cudaGetDeviceProperties",
+    "cudaStreamCreate", "cudaStreamDestroy", "cudaStreamSynchronize",
+    "cudaEventCreate", "cudaEventDestroy", "cudaEventRecord", "cudaEventSynchronize",
+    "cudaEventElapsedTime", "cudaFuncSetAttribute",
+    # cuBLAS
+    "cublasCreate", "cublasDestroy", "cublasSgemm", "cublasSgemmEx",
+    "cublasSetMathMode",
+    # Thread/block intrinsics
+    "blockIdx", "blockDim", "threadIdx", "gridDim", "warpSize",
+    "__syncthreads", "__syncwarp", "__threadfence", "__threadfence_block",
+    # Atomic operations
+    "atomicAdd", "atomicSub", "atomicMax", "atomicMin", "atomicCAS",
+    "atomicExch", "atomicAnd", "atomicOr", "atomicXor",
+    # CUDA math
+    "sqrtf", "rsqrtf", "expf", "logf", "powf", "fabsf", "fmaxf", "fminf",
+    "floorf", "ceilf", "roundf", "tanhf", "sinf", "cosf", "__expf",
+    "__fmaf_rn", "__float2int_rn", "__int2float_rn",
+    # Warp shuffle
+    "__shfl_sync", "__shfl_down_sync", "__shfl_up_sync", "__shfl_xor_sync",
+    "__ballot_sync", "__any_sync", "__all_sync",
+    # Memory
+    "__ldg", "__stcs", "make_float2", "make_float4", "make_int2", "make_int4",
+})
+
+# Regex for CUDA kernel launches: name<<<grid, block>>>(args)
+_CUDA_KERNEL_LAUNCH_RE = re.compile(r'\b(\w+)\s*<<<[^>]*>>>\s*\(')
+
+# CUDA qualifier keywords
+_CUDA_QUALIFIERS = frozenset({"__global__", "__device__", "__host__"})
+
+# Languages that need a different tree-sitter backend than their logical name
+_TS_LANGUAGE_MAP = {"cuda": "cpp"}
+
 # C standard library functions to filter from callees
 _C_BUILTINS = frozenset({
     # stdio
@@ -134,7 +172,8 @@ class LanguageWalker:
         self._lines = src.splitlines()
         self._file_path = file_path
         self._language = language
-        self._root = SgRoot(src, language)
+        ts_lang = _TS_LANGUAGE_MAP.get(language, language)
+        self._root = SgRoot(src, ts_lang)
         self._basename = os.path.splitext(os.path.basename(file_path))[0]
 
     # ------------------------------------------------------------------
@@ -152,6 +191,8 @@ class LanguageWalker:
             return self._rust_symbols()
         if lang == "c":
             return self._c_symbols()
+        if lang == "cuda":
+            return self._cuda_symbols()
         return []
 
     def call_edges(self) -> list[tuple]:
@@ -160,9 +201,12 @@ class LanguageWalker:
         resolved is False at this stage; cross-file resolution happens in persist layer.
         """
         lang = self._language
-        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c"):
+        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c", "cuda"):
             return []
-        return self._shared_call_edges(self._lang_spec())
+        edges = self._shared_call_edges(self._lang_spec())
+        if lang == "cuda":
+            edges.extend(self._cuda_kernel_launches())
+        return edges
 
     def _lang_spec(self) -> LangSpec:
         """Return the LangSpec for self._language. Called only for supported languages."""
@@ -191,6 +235,12 @@ class LanguageWalker:
                 callee_extractor=self._c_callee_name,
                 builtins=_C_BUILTINS,
                 fn_ranges_builder=self._c_fn_ranges,
+            )
+        if lang == "cuda":
+            return LangSpec(
+                callee_extractor=self._cuda_callee_name,
+                builtins=_CUDA_BUILTINS | _C_BUILTINS,
+                fn_ranges_builder=self._cuda_fn_ranges,
             )
         raise ValueError(f"No LangSpec for language: {lang}")
 
@@ -1227,6 +1277,112 @@ class LanguageWalker:
         return None
 
     # ------------------------------------------------------------------
+    # CUDA: symbols, call edges (Phase 5)
+    # ------------------------------------------------------------------
+
+    def _cuda_qualifier(self, node) -> str | None:
+        """Return the CUDA qualifier (__global__, __device__, __host__) for a function, if any.
+
+        Checks the type field first (catches single qualifier), then falls back to
+        scanning the full function text (catches __host__ __device__ combos).
+        """
+        type_node = node.field("type")
+        if type_node is not None:
+            t = type_node.text()
+            if t in _CUDA_QUALIFIERS:
+                return t
+        # Fallback: scan the raw text for any CUDA qualifier
+        text = node.text()
+        for q in ("__global__", "__device__", "__host__"):
+            if q in text:
+                return q
+        return None
+
+    def _cuda_is_stub(self, node) -> bool:
+        body = node.field("body")
+        if body is None:
+            return True
+        text = body.text().strip()
+        if text in ("{}", "{ }"):
+            return True
+        inner = text.lstrip("{").rstrip("}").strip()
+        if not inner:
+            return True
+        if re.match(r'^return\s*(0+|NULL|nullptr|false)?\s*;$', inner):
+            return True
+        return False
+
+    def _cuda_symbols(self) -> list[dict]:
+        results = []
+        root = self._root.root()
+
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            name, _ = self._c_fn_declarator(node)
+            if name is None:
+                continue
+            fqdn = f"{self._basename}::{name}"
+            qualifier = self._cuda_qualifier(node)
+            decorators = [qualifier] if qualifier else None
+            results.append({
+                **self._make_symbol(
+                    fqdn, node,
+                    is_stub=self._cuda_is_stub(node),
+                    docstring=self._preceding_comment(node),
+                ),
+                "decorators_json": json.dumps(decorators) if decorators else None,
+                "is_tool": 1 if qualifier == "__global__" else 0,
+            })
+
+        # Forward declarations from headers
+        for node in root.find_all({"rule": {"kind": "declaration"}}):
+            name, _ = self._c_fn_declarator(node)
+            if name is None:
+                continue
+            fqdn = f"{self._basename}::{name}"
+            results.append(self._make_symbol(fqdn, node, is_stub=True,
+                                             docstring=self._preceding_comment(node)))
+
+        return results
+
+    def _cuda_fn_ranges(self) -> list[tuple]:
+        ranges = []
+        root = self._root.root()
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            name, _ = self._c_fn_declarator(node)
+            if name:
+                r = node.range()
+                ranges.append((r.start.line, r.end.line, f"{self._basename}::{name}"))
+        ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        return ranges
+
+    def _cuda_callee_name(self, func_node) -> str | None:
+        return self._c_callee_name(func_node)
+
+    def _cuda_kernel_launches(self) -> list[tuple]:
+        """Emit call edges for CUDA kernel launches: name<<<grid, block>>>(args)."""
+        fn_ranges = self._cuda_fn_ranges()
+        results = []
+        for m in _CUDA_KERNEL_LAUNCH_RE.finditer(self._src):
+            kernel_name = m.group(1)
+            # Find line number (0-based) of this match
+            line = self._src[:m.start()].count("\n")
+            caller = self._enclosing_fqdn_by_line(line, fn_ranges)
+            if caller is None:
+                continue
+            results.append((caller, kernel_name, "static", False))
+        return results
+
+    def _enclosing_fqdn_by_line(self, line: int, fn_ranges: list[tuple]) -> str | None:
+        candidates = [
+            (start, end, fqdn)
+            for start, end, fqdn in fn_ranges
+            if start <= line <= end
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda x: x[0])[2]
+
+    # ------------------------------------------------------------------
     # Go: interface types
     # ------------------------------------------------------------------
 
@@ -1643,4 +1799,6 @@ def detect_language(file_path: str) -> str | None:
         ".rs": "rust",
         ".c": "c",
         ".h": "c",
+        ".cu": "cuda",
+        ".cuh": "cuda",
     }.get(ext)
