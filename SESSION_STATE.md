@@ -1,58 +1,49 @@
-Written at commit: 3b9c0d2
+Written at commit: 96158ae
 
-# SESSION STATE — session 238
+# SESSION STATE — session 239
 
-## Active branch: main
+## Active branch: main [V]
 
 ## What happened this session
 
-**Code-only session. Doc-only commits from prior session (237) are HEAD.**
+**Thin cleanup session.** Session 238 had already committed everything before compaction.
 
-**Idea 7 gate cleared [V]:**
-- Qwen3-VL-8B-Instruct-Q4_K_M.gguf confirmed on machine (5GB, 2026-07-22)
-- `determined/agent/context_compactor.py` written and manually tested
-- OCR quality: 5/6 key terms at font size 14; `<transcript>` extraction working
-- Vision server on port 8082; LLM server on 8081 (no conflict)
-- TRACKER Idea 7 gate updated to CLEARED [V]
-- HISTORY.md: two entries added (Instruct vs Thinking bug, font size rule) [V]
+**Discovered at session start [V — git log]:**
+- `determined/agent/context_compactor.py` committed in 3b9c0d2 (session 238)
+- `tests/regression/test_context_compactor.py` committed in same commit — 14 offline tests
+- HISTORY.md already updated (Instruct-vs-Thinking bug, font-size-14 rule)
+- TRACKER Idea 7 gate already cleared in 340f941
 
-**context_compactor.py state [V — file read this session]:**
-- File: `determined/agent/context_compactor.py` (untracked — not committed yet)
-- Public API: `compress_context(text, threshold=6000)`, `render_to_png()`, `is_available()`
-- Constants: CANVAS_W/H = 1568, FONT_SIZE = 14, COMPRESS_THRESHOLD = 6000, VISION_MAX_TOKENS = 8192
-- VISION_BASE_URL = "http://localhost:8082"
-- Uses `<transcript>...</transcript>` tag extraction; falls back to stripping `<think>` blocks
+**Actual new work this session:**
+- `docs/TEST_MAP.md` — added `context_compactor.py | test_context_compactor.py` row (was missed in s238) [V]
+- `docs/TRACKER.md` — updated Idea 7 "Remaining:" note to "DONE (session 238/239)" [V]
+- Memory: `project_llm_services.md` — added vision server section (port 8082, Qwen3-VL-8B-Instruct) [V]
 
-**Server start command (from file header) [V]:**
-```
-C:\Users\bartl\models\llama-server\llama-server.exe -m "C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Instruct-GGUF\snapshots\f982a07559d4a2f6c8744d840bf6fccab30eea96\Qwen3VL-8B-Instruct-Q4_K_M.gguf" --mmproj "C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Thinking-GGUF\snapshots\bca5838231f8cc1303cf8810afffcfbdc41bc75a\mmproj-Qwen3VL-8B-Thinking-Q8_0.gguf" --port 8082 --image-min-tokens 1024 --jinja
-```
-Note: mmproj lives in Thinking model dir -- cross-model compatible, this is correct.
+**context_compactor.py status [V]:**
+- Committed, 14 tests pass, TEST_MAP wired
+- API: `compress_context(text, threshold=6000)`, `render_to_png()`, `is_available()`
+- Server: port 8082, `--jinja --image-min-tokens 1024`, Instruct model only
+- NOT yet wired into any tool (development_priorities, walk_call_chain, etc.)
 
 ---
 
 ## NEXT SESSION -- start here
 
-**First action: commit context_compactor.py and write its tests.**
+**Decide: wire context_compactor into a tool, or RM71 design, or knowledge_for_file quick win.**
 
-1. `git add determined/agent/context_compactor.py` and commit
-2. Write `tests/regression/test_context_compactor.py` -- server-offline tests only:
-   - `render_to_png()` returns valid PNG bytes
-   - `is_available()` returns False when port 8082 not running
-   - `compress_context()` returns None when text under threshold
-   - `compress_context()` returns None when server unavailable
-   - `<transcript>` extraction regex on known response strings
-   - `<think>` block stripping fallback
-   No live-server tests in the regression suite.
-3. Add `context_compactor` to `docs/TEST_MAP.md`
-4. Run `tests/regression/test_context_compactor.py` alone, then confirm full suite
+Options ranked by effort:
 
-**After tests pass:** decide whether to wire context_compactor into
-`development_priorities` or `walk_call_chain` as the first real use.
+1. **Quick win** — `knowledge_for_file(path)` (TRACKER Idea 5): ~30 lines SQL, inverse of
+   `describe_file`, no gate, no dependencies. One PR. Good warmup.
 
-**Design question: RM71 vs RM69.** Still the active arc question from s237.
-- RM71 (FSM ingestor) -> RM69 (corpus aggregation) -> C/Zig/Lua walkers
-- Quick win anytime: `knowledge_for_file(path)` (TRACKER Idea 5) -- ~30 lines SQL, no gate
+2. **Wire context_compactor** — pick `development_priorities` or `walk_call_chain` as first
+   call site. Look for where text accumulates and hits the 6K threshold. Small change, high
+   signal — confirms the end-to-end path works.
+
+3. **RM71 design** — FSM ingestor (prerequisite for RM69). Write the formal TRACKER section
+   first, then begin. No code before the design is on paper.
+
+All three are valid. If Bart has a preference, take it; otherwise suggest in that order.
 
 ---
 
@@ -65,7 +56,7 @@ over-matches when name is a suffix of another symbol. Fix if noisy in real corpo
 causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
 
 **Corpus switch UI flow [V prior]:** emit `socket.emit("load_db", {path: <abs db path>})`
-to load directly. Double-emitting `ingest` causes "database is locked."
+to load directly. Double-emitting ingest causes "database is locked."
 
 **walk_call_chain blind for async Rust [V prior]:** tokio::spawn entry points return 0 nodes.
 Documented in RM67 slater row. No fix planned until Rust walker arc.
