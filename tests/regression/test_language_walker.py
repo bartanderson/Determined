@@ -1061,3 +1061,116 @@ __global__ void kern(float* x) {
     callees = {e[1] for e in w.call_edges()}
     assert "__syncthreads" not in callees
     assert "atomicAdd" not in callees
+
+
+# ------------------------------------------------------------------
+# Zig walker tests
+# ------------------------------------------------------------------
+
+def test_detect_language_zig():
+    from determined.ingestion.language_walker import detect_language
+    assert detect_language("src/main.zig") == "zig"
+    assert detect_language("src/build.zig") == "zig"
+
+
+def test_zig_free_function_symbol():
+    src = "pub fn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n"
+    w = LanguageWalker(src, "/fake/math.zig", "zig")
+    names = {s["name"] for s in w.symbols()}
+    assert "math::add" in names
+
+
+def test_zig_function_line_number():
+    src = "\n\npub fn foo() void {\n}\n"
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    sym = next(s for s in w.symbols() if s["name"] == "x::foo")
+    assert sym["line_number"] == 3
+
+
+def test_zig_stub_empty_body():
+    src = "fn stubFn(x: u32) bool {\n}\n"
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    sym = next(s for s in w.symbols() if "stubFn" in s["name"])
+    assert sym["is_stub"] is True
+
+
+def test_zig_non_stub_has_body():
+    src = "pub fn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n"
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    sym = next(s for s in w.symbols())
+    assert sym["is_stub"] is False
+
+
+def test_zig_struct_method_namespace():
+    src = """\
+pub const Vec2 = struct {
+    x: f32,
+    y: f32,
+    pub fn length(self: Vec2) f32 {
+        return self.x + self.y;
+    }
+};
+"""
+    w = LanguageWalker(src, "/fake/vec.zig", "zig")
+    names = {s["name"] for s in w.symbols()}
+    assert "Vec2::length" in names
+    assert "vec::length" not in names
+
+
+def test_zig_struct_stub_method():
+    src = """\
+pub const Thing = struct {
+    pub fn noop(self: *Thing) void {
+    }
+};
+"""
+    w = LanguageWalker(src, "/fake/t.zig", "zig")
+    sym = next(s for s in w.symbols() if "noop" in s["name"])
+    assert sym["name"] == "Thing::noop"
+    assert sym["is_stub"] is True
+
+
+def test_zig_call_edge_bare_function():
+    src = """\
+pub fn foo() void {}
+pub fn bar() void {
+    foo();
+}
+"""
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    edges = w.call_edges()
+    callers = {(e[0], e[1]) for e in edges}
+    assert ("x::bar", "foo") in callers
+
+
+def test_zig_call_edge_method_call():
+    src = """\
+pub fn run(s: *State) void {
+    s.update();
+}
+"""
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    callees = {e[1] for e in w.call_edges()}
+    assert "s.update" in callees
+
+
+def test_zig_call_edge_type_method():
+    src = """\
+pub fn make() void {
+    const v = Vec2.init(1.0, 2.0);
+    _ = v;
+}
+"""
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    callees = {e[1] for e in w.call_edges()}
+    assert "Vec2.init" in callees
+
+
+def test_zig_param_types():
+    import json
+    src = "pub fn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n"
+    w = LanguageWalker(src, "/fake/x.zig", "zig")
+    sym = w.symbols()[0]
+    params = json.loads(sym["param_types_json"])
+    assert any(p["name"] == "a" and p["type"] == "i32" for p in params)
+    assert any(p["name"] == "b" and p["type"] == "i32" for p in params)

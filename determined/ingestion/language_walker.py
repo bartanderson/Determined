@@ -4,6 +4,7 @@ LanguageWalker: multi-language symbol and edge extraction via ast-grep (tree-sit
 Phase 1: JS/TS
 Phase 2: Go     (implement before Go corpus ingestion)
 Phase 3: Rust   (implement before Rust corpus ingestion)
+Phase 4: Zig    (tree-sitter-zig backend; ast-grep-py does not bundle Zig)
 
 All downstream RMs import from this module, not from ast-grep directly.
 Swapping the backend touches only this file.
@@ -20,6 +21,14 @@ try:
     _AST_GREP_AVAILABLE = True
 except ImportError:
     _AST_GREP_AVAILABLE = False
+
+try:
+    import tree_sitter_zig as _tszig
+    from tree_sitter import Language as _TSLanguage, Parser as _TSParser
+    _ZIG_LANGUAGE = _TSLanguage(_tszig.language())
+    _ZIG_AVAILABLE = True
+except ImportError:
+    _ZIG_AVAILABLE = False
 
 # JS/TS built-ins to filter from callee lists
 _JS_BUILTINS = frozenset({
@@ -77,6 +86,27 @@ _CUDA_BUILTINS = frozenset({
     "__ballot_sync", "__any_sync", "__all_sync",
     # Memory
     "__ldg", "__stcs", "make_float2", "make_float4", "make_int2", "make_int4",
+})
+
+# Zig standard library identifiers / builtins to filter from callee lists
+_ZIG_BUILTINS = frozenset({
+    # std namespaces used as call targets
+    "std", "mem", "math", "fmt", "io", "fs", "os", "process", "debug",
+    "testing", "heap", "json", "time", "net", "http", "crypto", "rand",
+    # builtin functions (@-prefixed; captured without @ by callee extractor)
+    "import", "compileError", "compileLog", "TypeOf", "typeInfo", "Type",
+    "sizeOf", "alignOf", "offsetOf", "bitSizeOf", "fieldParentPtr",
+    "ptrCast", "intCast", "floatCast", "truncate", "enumToInt", "intToEnum",
+    "embedFile", "cImport", "cInclude", "cDefine", "cUndef",
+    "memcpy", "memset", "shuffle", "reduce", "splat", "select",
+    "atomicLoad", "atomicStore", "atomicRmw", "cmpxchgWeak", "cmpxchgStrong",
+    "fence", "prefetch",
+    # common primitives
+    "print", "format", "allocPrint", "allocPrintZ",
+    "assert", "expect", "expectEqual", "expectEqualSlices", "expectError",
+    "panic",
+    # allocator methods that appear everywhere
+    "alloc", "create", "dupe", "free", "destroy", "realloc",
 })
 
 # Regex for CUDA kernel launches: name<<<grid, block>>>(args)
@@ -166,15 +196,23 @@ class LanguageWalker:
     """
 
     def __init__(self, src: str, file_path: str, language: str):
-        if not _AST_GREP_AVAILABLE:
-            raise RuntimeError("ast-grep-py not installed. Run: pip install ast-grep-py")
         self._src = src
         self._lines = src.splitlines()
         self._file_path = file_path
         self._language = language
-        ts_lang = _TS_LANGUAGE_MAP.get(language, language)
-        self._root = SgRoot(src, ts_lang)
         self._basename = os.path.splitext(os.path.basename(file_path))[0]
+        self._root = None
+        self._zig_tree = None
+        if language == "zig":
+            if not _ZIG_AVAILABLE:
+                raise RuntimeError("tree-sitter-zig not installed. Run: pip install tree-sitter tree-sitter-zig")
+            _parser = _TSParser(_ZIG_LANGUAGE)
+            self._zig_tree = _parser.parse(src.encode("utf-8", errors="replace"))
+        else:
+            if not _AST_GREP_AVAILABLE:
+                raise RuntimeError("ast-grep-py not installed. Run: pip install ast-grep-py")
+            ts_lang = _TS_LANGUAGE_MAP.get(language, language)
+            self._root = SgRoot(src, ts_lang)
 
     # ------------------------------------------------------------------
     # Public API
@@ -193,6 +231,8 @@ class LanguageWalker:
             return self._c_symbols()
         if lang == "cuda":
             return self._cuda_symbols()
+        if lang == "zig":
+            return self._zig_symbols()
         return []
 
     def call_edges(self) -> list[tuple]:
@@ -201,6 +241,8 @@ class LanguageWalker:
         resolved is False at this stage; cross-file resolution happens in persist layer.
         """
         lang = self._language
+        if lang == "zig":
+            return self._zig_call_edges()
         if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c", "cuda"):
             return []
         edges = self._shared_call_edges(self._lang_spec())
@@ -587,11 +629,14 @@ class LanguageWalker:
     def _make_symbol(self, fqdn: str, node, is_stub: bool = False,
                      return_type: str | None = None,
                      param_types_json: str | None = None,
-                     docstring: str | None = None) -> dict:
+                     docstring: str | None = None,
+                     line_number: int | None = None) -> dict:
+        if line_number is None:
+            line_number = node.range().start.line + 1
         return {
             "file_path": self._file_path,
             "name": fqdn,
-            "line_number": node.range().start.line + 1,
+            "line_number": line_number,
             "return_type": return_type,
             "arguments_json": "[]",
             "param_types_json": param_types_json,
@@ -1780,6 +1825,187 @@ class LanguageWalker:
             return None
         return None
 
+    # ------------------------------------------------------------------
+    # Zig backend (tree-sitter-zig; ast-grep-py does not bundle Zig)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _zig_find_all(node, kind: str) -> list:
+        """Depth-first collect all nodes of given type under node."""
+        results = []
+        stack = [node]
+        while stack:
+            n = stack.pop()
+            if n.type == kind:
+                results.append(n)
+            stack.extend(reversed(n.children))
+        return results
+
+    @staticmethod
+    def _zig_child(node, kind: str):
+        """Return first direct child with the given type, or None."""
+        for child in node.children:
+            if child.type == kind:
+                return child
+        return None
+
+    def _zig_struct_name_map(self) -> dict:
+        """
+        Return {(start_line, end_line): struct_name} for each `const Name = struct { }`.
+        Uses line-range tuples as keys because tree-sitter Python wraps nodes in new
+        Python objects on each access, so id() is not stable across calls.
+        """
+        result = {}
+        root = self._zig_tree.root_node
+        for vd in self._zig_find_all(root, "variable_declaration"):
+            struct_node = self._zig_child(vd, "struct_declaration")
+            if struct_node is None:
+                continue
+            ident = self._zig_child(vd, "identifier")
+            name = ident.text.decode("utf-8", errors="replace") if ident else self._basename
+            key = (struct_node.start_point[0], struct_node.end_point[0])
+            result[key] = name
+        return result
+
+    def _zig_is_stub(self, fn_node) -> bool:
+        """True if the function body block is empty (no statements)."""
+        block = self._zig_child(fn_node, "block")
+        if block is None:
+            return True
+        non_brace = [c for c in block.children if c.type not in ("{", "}")]
+        return len(non_brace) == 0
+
+    def _zig_preceding_comment(self, fn_node) -> str | None:
+        """Return the doc-comment text immediately preceding this node, or None."""
+        start_line = fn_node.start_point[0]
+        if start_line == 0:
+            return None
+        prev_line = self._lines[start_line - 1].strip()
+        if prev_line.startswith("///") or prev_line.startswith("//"):
+            return prev_line.lstrip("/").strip()
+        return None
+
+    def _zig_param_types(self, fn_node) -> str | None:
+        """Extract parameter types from a Zig function_declaration node."""
+        import json as _json
+        params_node = self._zig_child(fn_node, "parameters")
+        if params_node is None:
+            return None
+        result = []
+        for param in params_node.children:
+            if param.type != "parameter":
+                continue
+            children = param.children
+            if len(children) < 3:
+                continue
+            name = children[0].text.decode("utf-8", errors="replace") if children else ""
+            type_node = children[2] if len(children) > 2 else None
+            type_str = type_node.text.decode("utf-8", errors="replace").strip() if type_node else ""
+            if name and type_str:
+                result.append({"name": name, "type": type_str})
+        return _json.dumps(result) if result else None
+
+    def _zig_symbols(self) -> list[dict]:
+        root = self._zig_tree.root_node
+        struct_map = self._zig_struct_name_map()
+        results = []
+
+        for fn_node in self._zig_find_all(root, "function_declaration"):
+            name_node = self._zig_child(fn_node, "identifier")
+            if name_node is None:
+                continue
+            fn_name = name_node.text.decode("utf-8", errors="replace")
+
+            # Determine namespace: struct method or free function
+            parent = fn_node.parent
+            if parent is not None and parent.type == "struct_declaration":
+                key = (parent.start_point[0], parent.end_point[0])
+                namespace = struct_map.get(key, self._basename)
+            else:
+                namespace = self._basename
+            fqdn = f"{namespace}::{fn_name}"
+
+            is_stub = self._zig_is_stub(fn_node)
+            start_line = fn_node.start_point[0]
+            results.append(self._make_symbol(
+                fqdn, None,
+                is_stub=is_stub,
+                param_types_json=self._zig_param_types(fn_node),
+                docstring=self._zig_preceding_comment(fn_node),
+                line_number=start_line + 1,
+            ))
+
+        return results
+
+    def _zig_fn_ranges(self) -> list[tuple]:
+        root = self._zig_tree.root_node
+        struct_map = self._zig_struct_name_map()
+        ranges = []
+
+        for fn_node in self._zig_find_all(root, "function_declaration"):
+            name_node = self._zig_child(fn_node, "identifier")
+            if name_node is None:
+                continue
+            fn_name = name_node.text.decode("utf-8", errors="replace")
+
+            parent = fn_node.parent
+            if parent is not None and parent.type == "struct_declaration":
+                key = (parent.start_point[0], parent.end_point[0])
+                namespace = struct_map.get(key, self._basename)
+            else:
+                namespace = self._basename
+            fqdn = f"{namespace}::{fn_name}"
+
+            start = fn_node.start_point[0]
+            end = fn_node.end_point[0]
+            ranges.append((start, end, fqdn))
+
+        ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        return ranges
+
+    def _zig_callee_name(self, call_node) -> str | None:
+        """Extract callee name from a Zig call_expression node."""
+        if not call_node.children:
+            return None
+        func = call_node.children[0]
+        if func.type == "identifier":
+            return func.text.decode("utf-8", errors="replace")
+        if func.type == "field_expression":
+            # field_expression: obj . method — last identifier is the method name
+            idents = [c for c in func.children if c.type == "identifier"]
+            if len(idents) >= 2:
+                # MyStruct.init or self.getValue → use "Type.method" style
+                obj = idents[0].text.decode("utf-8", errors="replace")
+                method = idents[-1].text.decode("utf-8", errors="replace")
+                return f"{obj}.{method}"
+        return None
+
+    def _zig_call_edges(self) -> list[tuple]:
+        root = self._zig_tree.root_node
+        fn_ranges = self._zig_fn_ranges()
+        results = []
+
+        for call_node in self._zig_find_all(root, "call_expression"):
+            callee = self._zig_callee_name(call_node)
+            if callee is None:
+                continue
+            # Strip leading @ for builtin calls
+            bare = callee.lstrip("@")
+            if bare in _ZIG_BUILTINS:
+                continue
+            # Attribute to enclosing function
+            line = call_node.start_point[0]
+            caller_fqdn = None
+            for start, end, fqdn in fn_ranges:
+                if start <= line <= end:
+                    caller_fqdn = fqdn
+                    break
+            if caller_fqdn is None:
+                continue
+            results.append((caller_fqdn, callee, "static", False))
+
+        return results
+
 
 # ------------------------------------------------------------------
 # Helpers
@@ -1801,4 +2027,5 @@ def detect_language(file_path: str) -> str | None:
         ".h": "c",
         ".cu": "cuda",
         ".cuh": "cuda",
+        ".zig": "zig",
     }.get(ext)

@@ -56,7 +56,12 @@ class EngineRunner:
                     r.bucket = "unknown"
 
         if not file_analyses:
-            raise RuntimeError("Engine ingestion produced no analyses")
+            from determined.ingestion.scan_project_files import discover_js_ts_files
+            non_python = list(discover_js_ts_files(corpus.root_path))
+            if not non_python:
+                raise RuntimeError("Engine ingestion produced no analyses")
+            # Pure non-Python corpus (Zig/Go/Rust/C/JS/TS) — Python layer is empty;
+            # persist_js_ts_layer will handle the actual files.
 
         processed_count = len(file_analyses)
 
