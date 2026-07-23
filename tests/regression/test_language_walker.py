@@ -1174,3 +1174,92 @@ def test_zig_param_types():
     params = json.loads(sym["param_types_json"])
     assert any(p["name"] == "a" and p["type"] == "i32" for p in params)
     assert any(p["name"] == "b" and p["type"] == "i32" for p in params)
+
+
+# ------------------------------------------------------------------
+# Lua walker tests
+# ------------------------------------------------------------------
+
+def test_detect_language_lua():
+    from determined.ingestion.language_walker import detect_language
+    assert detect_language("src/main.lua") == "lua"
+    assert detect_language("scripts/init.lua") == "lua"
+
+
+def test_lua_local_function_symbol():
+    src = "local function add(a, b)\n    return a + b\nend\n"
+    w = LanguageWalker(src, "/fake/math.lua", "lua")
+    names = {s["name"] for s in w.symbols()}
+    assert "math::add" in names
+
+
+def test_lua_global_function_symbol():
+    src = "function greet(name)\n    print(name)\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    names = {s["name"] for s in w.symbols()}
+    assert "x::greet" in names
+
+
+def test_lua_stub_empty_body():
+    src = "function stubFn()\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    sym = next(s for s in w.symbols() if "stubFn" in s["name"])
+    assert sym["is_stub"] is True
+
+
+def test_lua_non_stub_has_body():
+    src = "function add(a, b)\n    return a + b\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    sym = next(s for s in w.symbols())
+    assert sym["is_stub"] is False
+
+
+def test_lua_table_dot_method_fqdn():
+    src = "function MyClass.new(v)\n    return v\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    names = {s["name"] for s in w.symbols()}
+    assert "MyClass.new" in names
+
+
+def test_lua_colon_method_fqdn():
+    src = "function MyClass:getValue()\n    return self.value\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    names = {s["name"] for s in w.symbols()}
+    assert "MyClass::getValue" in names
+
+
+def test_lua_colon_stub_method():
+    src = "function MyClass:reset()\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    sym = next(s for s in w.symbols() if "reset" in s["name"])
+    assert sym["name"] == "MyClass::reset"
+    assert sym["is_stub"] is True
+
+
+def test_lua_call_edge_bare():
+    src = "local function foo() end\nlocal function bar()\n    foo()\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    callees = {e[1] for e in w.call_edges()}
+    assert "foo" in callees
+
+
+def test_lua_call_edge_dot_method():
+    src = "local function run()\n    MyClass.new(1)\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    callees = {e[1] for e in w.call_edges()}
+    assert "MyClass.new" in callees
+
+
+def test_lua_call_edge_colon_method():
+    src = "local function run(obj)\n    obj:update()\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    callees = {e[1] for e in w.call_edges()}
+    assert "obj:update" in callees
+
+
+def test_lua_builtin_filtered():
+    src = "local function setup()\n    print('hello')\n    math.floor(1.5)\nend\n"
+    w = LanguageWalker(src, "/fake/x.lua", "lua")
+    callees = {e[1] for e in w.call_edges()}
+    assert "print" not in callees
+    assert "math.floor" not in callees

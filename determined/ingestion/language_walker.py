@@ -30,6 +30,15 @@ try:
 except ImportError:
     _ZIG_AVAILABLE = False
 
+try:
+    import tree_sitter_lua as _tslua
+    if not _ZIG_AVAILABLE:
+        from tree_sitter import Language as _TSLanguage, Parser as _TSParser
+    _LUA_LANGUAGE = _TSLanguage(_tslua.language())
+    _LUA_AVAILABLE = True
+except ImportError:
+    _LUA_AVAILABLE = False
+
 # JS/TS built-ins to filter from callee lists
 _JS_BUILTINS = frozenset({
     "console", "Math", "Object", "Array", "Promise", "JSON", "String",
@@ -107,6 +116,24 @@ _ZIG_BUILTINS = frozenset({
     "panic",
     # allocator methods that appear everywhere
     "alloc", "create", "dupe", "free", "destroy", "realloc",
+})
+
+# Lua standard library identifiers to filter from callee lists
+_LUA_BUILTINS = frozenset({
+    # standard functions
+    "print", "pairs", "ipairs", "next", "type", "tostring", "tonumber",
+    "error", "assert", "pcall", "xpcall", "select", "unpack", "table.unpack",
+    "rawget", "rawset", "rawequal", "rawlen",
+    "setmetatable", "getmetatable", "require",
+    "load", "loadfile", "loadstring", "dofile", "collectgarbage",
+    # module namespaces used as call targets
+    "coroutine", "string", "table", "math", "io", "os", "package",
+    "debug", "utf8", "bit", "jit", "ffi",
+    # common method names on built-in types
+    "format", "gsub", "sub", "find", "match", "gmatch", "lower", "upper",
+    "len", "rep", "reverse", "byte", "char",
+    "insert", "remove", "sort", "concat", "move",
+    "floor", "ceil", "abs", "max", "min", "sqrt", "huge", "pi",
 })
 
 # Regex for CUDA kernel launches: name<<<grid, block>>>(args)
@@ -203,11 +230,17 @@ class LanguageWalker:
         self._basename = os.path.splitext(os.path.basename(file_path))[0]
         self._root = None
         self._zig_tree = None
+        self._lua_tree = None
         if language == "zig":
             if not _ZIG_AVAILABLE:
                 raise RuntimeError("tree-sitter-zig not installed. Run: pip install tree-sitter tree-sitter-zig")
             _parser = _TSParser(_ZIG_LANGUAGE)
             self._zig_tree = _parser.parse(src.encode("utf-8", errors="replace"))
+        elif language == "lua":
+            if not _LUA_AVAILABLE:
+                raise RuntimeError("tree-sitter-lua not installed. Run: pip install tree-sitter tree-sitter-lua")
+            _parser = _TSParser(_LUA_LANGUAGE)
+            self._lua_tree = _parser.parse(src.encode("utf-8", errors="replace"))
         else:
             if not _AST_GREP_AVAILABLE:
                 raise RuntimeError("ast-grep-py not installed. Run: pip install ast-grep-py")
@@ -233,6 +266,8 @@ class LanguageWalker:
             return self._cuda_symbols()
         if lang == "zig":
             return self._zig_symbols()
+        if lang == "lua":
+            return self._lua_symbols()
         return []
 
     def call_edges(self) -> list[tuple]:
@@ -243,6 +278,8 @@ class LanguageWalker:
         lang = self._language
         if lang == "zig":
             return self._zig_call_edges()
+        if lang == "lua":
+            return self._lua_call_edges()
         if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c", "cuda"):
             return []
         edges = self._shared_call_edges(self._lang_spec())
@@ -2006,6 +2043,125 @@ class LanguageWalker:
 
         return results
 
+    # ------------------------------------------------------------------
+    # Lua backend (tree-sitter-lua)
+    # ------------------------------------------------------------------
+
+    def _lua_fn_name_and_fqdn(self, fn_node) -> tuple[str, str] | None:
+        """
+        Extract (bare_name, fqdn) from a function_declaration node.
+
+        Name node types:
+          identifier             → local/global bare fn   fqdn = basename::name
+          dot_index_expression   → Table.fn               fqdn = Table.fn (as-is)
+          method_index_expression→ Table:method           fqdn = Table::method
+        """
+        for child in fn_node.children:
+            if child.type == "identifier":
+                name = child.text.decode("utf-8", errors="replace")
+                return name, f"{self._basename}::{name}"
+            if child.type == "dot_index_expression":
+                full = child.text.decode("utf-8", errors="replace")
+                return full, full
+            if child.type == "method_index_expression":
+                full = child.text.decode("utf-8", errors="replace")
+                fqdn = full.replace(":", "::", 1)
+                return full, fqdn
+        return None
+
+    def _lua_is_stub(self, fn_node) -> bool:
+        """True if the function body has no block (empty function or comment-only)."""
+        for child in fn_node.children:
+            if child.type == "block":
+                stmts = [c for c in child.children if c.type != "comment"]
+                return len(stmts) == 0
+        return True
+
+    def _lua_param_types(self, fn_node) -> str | None:
+        """Extract parameter names from a Lua function_declaration node."""
+        import json as _json
+        params_node = None
+        for child in fn_node.children:
+            if child.type == "parameters":
+                params_node = child
+                break
+        if params_node is None:
+            return None
+        result = []
+        for child in params_node.children:
+            if child.type == "identifier":
+                result.append({"name": child.text.decode("utf-8", errors="replace"), "type": ""})
+        return _json.dumps(result) if result else None
+
+    def _lua_symbols(self) -> list[dict]:
+        root = self._lua_tree.root_node
+        results = []
+        for fn_node in self._zig_find_all(root, "function_declaration"):
+            parsed = self._lua_fn_name_and_fqdn(fn_node)
+            if parsed is None:
+                continue
+            _, fqdn = parsed
+            is_stub = self._lua_is_stub(fn_node)
+            line_number = fn_node.start_point[0] + 1
+            results.append(self._make_symbol(
+                fqdn, None,
+                is_stub=is_stub,
+                param_types_json=self._lua_param_types(fn_node),
+                docstring=self._zig_preceding_comment(fn_node),
+                line_number=line_number,
+            ))
+        return results
+
+    def _lua_fn_ranges(self) -> list[tuple]:
+        root = self._lua_tree.root_node
+        ranges = []
+        for fn_node in self._zig_find_all(root, "function_declaration"):
+            parsed = self._lua_fn_name_and_fqdn(fn_node)
+            if parsed is None:
+                continue
+            _, fqdn = parsed
+            start = fn_node.start_point[0]
+            end = fn_node.end_point[0]
+            ranges.append((start, end, fqdn))
+        ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        return ranges
+
+    def _lua_callee_name(self, call_node) -> str | None:
+        """Extract callee name from a Lua function_call node."""
+        if not call_node.children:
+            return None
+        func = call_node.children[0]
+        if func.type == "identifier":
+            return func.text.decode("utf-8", errors="replace")
+        if func.type == "dot_index_expression":
+            return func.text.decode("utf-8", errors="replace")
+        if func.type == "method_index_expression":
+            # obj:method → emit as "obj:method" (colon notation)
+            return func.text.decode("utf-8", errors="replace")
+        return None
+
+    def _lua_call_edges(self) -> list[tuple]:
+        root = self._lua_tree.root_node
+        fn_ranges = self._lua_fn_ranges()
+        results = []
+        for call_node in self._zig_find_all(root, "function_call"):
+            callee = self._lua_callee_name(call_node)
+            if callee is None:
+                continue
+            bare = callee.split(".")[0].split(":")[0]
+            if bare in _LUA_BUILTINS or callee in _LUA_BUILTINS:
+                continue
+            line = call_node.start_point[0]
+            caller_fqdn = None
+            for start, end, fqdn in fn_ranges:
+                if start <= line <= end:
+                    caller_fqdn = fqdn
+                    break
+            if caller_fqdn is None:
+                continue
+            results.append((caller_fqdn, callee, "static", False))
+        return results
+
 
 # ------------------------------------------------------------------
 # Helpers
@@ -2028,4 +2184,5 @@ def detect_language(file_path: str) -> str | None:
         ".cu": "cuda",
         ".cuh": "cuda",
         ".zig": "zig",
+        ".lua": "lua",
     }.get(ext)
