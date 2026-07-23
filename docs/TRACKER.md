@@ -888,8 +888,8 @@ holds as a future-model target.
 machine. `determined/agent/context_compactor.py` written and manually tested — OCR quality
 5/6 key terms at font size 14, `<transcript>` extraction working, max_tokens 8192.
 Server runs on port 8082. See HISTORY.md for llama.cpp Thinking-suppression workaround.
-Remaining: write `tests/regression/test_context_compactor.py` (server-offline tests only),
-then commit. No RM69 dependency — front of queue.
+DONE (session 238/239): `context_compactor.py` written and committed; 14 offline tests pass.
+No RM69 dependency — usable in any long LLM call chain now.
 
 ---
 
