@@ -30,7 +30,7 @@ from determined.agent.agent_resolver import (
     resolve_and_expand, facts_to_text,
 )
 from determined.agent.local_agent import (
-    _decompose_prompt, _assemble_prompt, _call_ollama,
+    _decompose_prompt, _assemble_prompt, _call_llm,
     _postprocess_answer, _is_survey_needs, build_survey_answer,
     _is_git_history_needs, build_git_history_answer,
     _is_impact_needs, build_impact_answer,
@@ -60,7 +60,7 @@ def run_question(
         needs_source = "heuristic"
     else:
         decompose_msgs = _decompose_prompt(question, [], grounding=grounding)
-        needs_text = _call_ollama(decompose_msgs, label="")
+        needs_text = _call_llm(decompose_msgs, label="")
         if needs_text.startswith("ERROR:"):
             return {"question": question, "error": needs_text}
         needs = parse_needs(needs_text)
@@ -90,7 +90,7 @@ def run_question(
         answer = pw_fact if pw_fact else "(no work items found)"
     else:
         assemble_msgs = _assemble_prompt(question, facts_text, [], facts=facts, needs=needs)
-        answer = _call_ollama(assemble_msgs, label="")
+        answer = _call_llm(assemble_msgs, label="")
         answer = _postprocess_answer(answer, facts)
 
     return {

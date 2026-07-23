@@ -383,7 +383,7 @@ def _postprocess_answer(answer: str, facts: list[dict]) -> str:
 # LLM call
 # ------------------------------------------------------------------
 
-def _call_ollama(messages: list[dict], verbose: bool = False, label: str = "") -> str:
+def _call_llm(messages: list[dict], verbose: bool = False, label: str = "") -> str:
     text = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "ERROR: llama-server is not running. Start the UI to launch it automatically, or run llama-server manually on port 8081."
     if verbose and label:
         print(f"\n[{label}]\n{text}\n[/{label}]", flush=True)
@@ -441,7 +441,7 @@ def _answer(
         # If grounding found nothing, inject corpus index so model has real names to use
         effective_grounding = grounding or _corpus_index(oracle)
         decompose_msgs = _decompose_prompt(user_input, history, grounding=effective_grounding)
-        needs_text = _call_ollama(decompose_msgs, verbose=verbose, label="phase1-decompose")
+        needs_text = _call_llm(decompose_msgs, verbose=verbose, label="phase1-decompose")
         if needs_text.startswith("ERROR:"):
             return needs_text, history
         needs = parse_needs(needs_text)
@@ -480,7 +480,7 @@ def _answer(
         answer = dp_fact if dp_fact else "(no features found)"; bypass = "development_priorities"
     else:
         assemble_msgs = _assemble_prompt(user_input, facts_text, history, facts=facts, needs=needs)
-        answer = _call_ollama(assemble_msgs, verbose=verbose, label="phase3-assemble")
+        answer = _call_llm(assemble_msgs, verbose=verbose, label="phase3-assemble")
         # Verification loop (RM21 Technique 1): check structural claims against DB
         corrections = _verify_claims(answer, oracle.conn)
         if corrections:
@@ -488,7 +488,7 @@ def _answer(
             revised_msgs = _assemble_prompt(user_input, corrected_facts, history, facts=facts, needs=needs)
             if verbose:
                 print(f"\n[verify] {len(corrections)} correction(s); re-assembling", flush=True)
-            answer = _call_ollama(revised_msgs, verbose=verbose, label="phase3-verify")
+            answer = _call_llm(revised_msgs, verbose=verbose, label="phase3-verify")
         answer = _postprocess_answer(answer, facts)
 
     if _trace is not None:
@@ -597,7 +597,7 @@ def run(db_path: str, verbose: bool = False) -> None:
                     "Suggest a priority order for the active backlog/next_up items, "
                     "considering dependencies and logical sequencing."},
             ]
-            suggestion = _call_ollama(msgs, verbose=verbose, label="reprioritize")
+            suggestion = _call_llm(msgs, verbose=verbose, label="reprioritize")
             print(f"\nAgent: {suggestion}\n")
             continue
 

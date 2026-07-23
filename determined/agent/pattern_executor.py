@@ -219,7 +219,7 @@ class PatternExecutor:
     def __init__(self):
         pass
 
-    def _call_ollama(self, messages: list[dict], label: str = "", verbose: bool = False) -> str:
+    def _call_llm(self, messages: list[dict], label: str = "", verbose: bool = False) -> str:
         from determined.agent.llm_client import chat as _llm_chat
         text = _llm_chat(messages) or "(interpretation unavailable: no response)"
         if verbose and label:
@@ -287,7 +287,7 @@ class PatternExecutor:
                         f"Result:\n{result[:1500]}\n\n"
                         f"What does this tell you about {subject_label}? (1-2 sentences)"},
                 ]
-                interpretation = self._call_ollama(msgs, label=f"step-{i+1}-interp", verbose=verbose)
+                interpretation = self._call_llm(msgs, label=f"step-{i+1}-interp", verbose=verbose)
 
             findings.append({
                 "step": i + 1,
@@ -312,7 +312,7 @@ class PatternExecutor:
                 f"=== INVESTIGATION FINDINGS ===\n{findings_text}\n=== END ===\n\n"
                 f"Synthesize these findings into a concise answer."},
         ]
-        answer = self._call_ollama(final_msgs, label="pattern-final", verbose=verbose)
+        answer = self._call_llm(final_msgs, label="pattern-final", verbose=verbose)
 
         if verbose:
             print(f"\n[pattern-executor complete]\n", flush=True)
@@ -427,7 +427,7 @@ class PatternExecutor:
                 "noting stub vs implemented status for each function."
             )},
         ]
-        return self._call_ollama(synthesis_msgs, label="trace-synthesis", verbose=verbose)
+        return self._call_llm(synthesis_msgs, label="trace-synthesis", verbose=verbose)
 
     def run_no_llm(
         self,

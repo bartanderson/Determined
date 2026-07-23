@@ -2976,7 +2976,7 @@ def handle_discovery_start(_data=None):
 
     def _run():
         from determined.agent.agent_tools import dispatch
-        from determined.agent.local_agent import _call_ollama
+        from determined.agent.local_agent import _call_llm
         from determined.intent.workflow_store import store_artifact, ensure_artifact_columns
 
         narrations = []
@@ -3006,7 +3006,7 @@ def handle_discovery_start(_data=None):
             # Narrate
             prompt = step["narrate"].format(result=str(result)[:6000])
             try:
-                narration = _call_ollama([{"role": "user", "content": prompt}])
+                narration = _call_llm([{"role": "user", "content": prompt}])
             except Exception as exc:
                 narration = f"(narration unavailable: {exc})"
 
@@ -3029,7 +3029,7 @@ def handle_discovery_start(_data=None):
         summaries_text = "\n\n".join(narrations)
         synthesis_prompt = _DISCOVERY_SYNTHESIS_PROMPT.format(summaries=summaries_text)
         try:
-            synthesis = _call_ollama([{"role": "user", "content": synthesis_prompt}])
+            synthesis = _call_llm([{"role": "user", "content": synthesis_prompt}])
         except Exception as exc:
             synthesis = f"(synthesis unavailable: {exc})"
 

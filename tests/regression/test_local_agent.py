@@ -1,7 +1,7 @@
 ﻿# tools/analysis/tests/regression/test_local_agent.py
 #
 # Smoke tests for local_agent.py (three-phase pipeline).
-# Does not call LLM - patches _call_ollama to return controlled responses.
+# Does not call LLM - patches _call_llm to return controlled responses.
 
 import sqlite3
 from unittest.mock import patch
@@ -60,7 +60,7 @@ def test_answer_basic_three_phase():
         "The encounter system handles random encounters.",
     ])
 
-    with patch("determined.agent.local_agent._call_ollama",
+    with patch("determined.agent.local_agent._call_llm",
                side_effect=lambda msgs, verbose=False, label="": next(responses)):
         # Use a question that doesn't trigger any heuristic so LLM decompose fires
         answer, history = _answer("count the encounter modules", [], oracle, assessor)
@@ -82,7 +82,7 @@ def test_answer_no_needs_still_answers():
         "I cannot find specific information about that topic.",  # Phase 3
     ])
 
-    with patch("determined.agent.local_agent._call_ollama",
+    with patch("determined.agent.local_agent._call_llm",
                side_effect=lambda msgs, verbose=False, label="": next(responses)):
         answer, history = _answer("what is the meaning of life?", [], oracle, assessor)
 
@@ -96,7 +96,7 @@ def test_answer_phase1_error_short_circuits():
     oracle = _FakeOracle()
     assessor = _FakeAssessor(oracle)
 
-    with patch("determined.agent.local_agent._call_ollama",
+    with patch("determined.agent.local_agent._call_llm",
                return_value="ERROR: llama-server is not running"):
         answer, history = _answer("anything", [], oracle, assessor)
 
@@ -117,7 +117,7 @@ def test_answer_history_grows_across_questions():
         return "The travel system handles movement."
 
     history: list = []
-    with patch("determined.agent.local_agent._call_ollama", side_effect=_stub), \
+    with patch("determined.agent.local_agent._call_llm", side_effect=_stub), \
          patch("determined.agent.local_agent.detect_pattern", return_value=(None, None)):
         _, history = _answer("what is the travel system?", history, oracle, assessor)
         _, history = _answer("how does it connect?", history, oracle, assessor)
@@ -146,7 +146,7 @@ def test_answer_multiple_needs_deduped():
             return phase1_response
         return "Deduped correctly."
 
-    with patch("determined.agent.local_agent._call_ollama", side_effect=_stub):
+    with patch("determined.agent.local_agent._call_llm", side_effect=_stub):
         answer, _ = _answer("find encounter twice", [], oracle, assessor)
 
     assert "phase1-decompose" in call_log

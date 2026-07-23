@@ -307,7 +307,7 @@ def _build_prompt(ctx: dict, classification: Optional[str] = None) -> str:
 # LLM call
 # ------------------------------------------------------------------
 
-def _call_ollama(prompt: str) -> str:
+def _call_llm(prompt: str) -> str:
     from determined.agent.llm_client import generate as _llm_generate
     result = _llm_generate(prompt)
     return result if result else "# [llm_client error: no response]"
@@ -343,7 +343,7 @@ def project_stub(db_path: str, stub_name: str, *, classification: Optional[str] 
         print(f"  sibling callees: {ctx['sibling_callees']}")
 
     prompt = _build_prompt(ctx, classification=classification)
-    body = _call_ollama(prompt)
+    body = _call_llm(prompt)
 
     return {
         "stub_name": stub_name,
