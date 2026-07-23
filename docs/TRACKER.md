@@ -1084,14 +1084,14 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | slater (Rust) | Probe-passes | probe DONE (2026-07-22) — 195 files, 0 stubs, 1985 inferred EPs (all tests/benchmarks, correct for library crate); walk_call_chain blind across async boundary (serve_with_listener = 0 nodes); blast_radius 593 for evict_to_budget (cache is foundational); 78 dup names = normal module aliasing |
 | brogue-ce (C) | Probe-passes | probe DONE (2026-07-23) — 977 symbols, 7233 edges; C walker built (session 243); 30 true stubs (9 unmatched header decls + 21 empty-body); header dedup post-pass ships 542 false-positive header stubs; cellHasTerrainFlag HOT (96 callers = terrain query in dungeon gen); initializeLevel chain 189 nodes; 0 explicit EPs (correct for C game), 127 inferred EPs |
 | llm.c (C+Python+CUDA) | Probe-passes | probe DONE (2026-07-23, session 245) — 729 symbols / 2960 edges; 148 CUDA kernels; 151 kernel_launch edges; 22 stubs (mostly false-positives); Python = parallel PyTorch impls, not ctypes |
-| mach (Zig) | Probe-passes | NOT YET INGESTED — Zig walker not built |
+| mach (Zig) | Probe-passes | probe DONE (2026-07-23, session 247) — 3425 symbols / 9359 edges (132 .zig files); Zig walker built via tree-sitter-zig (ast-grep-py does not bundle Zig); 80 stubs: all correct (coreaudio_c/Darwin C-FFI extern decls + 34 ObjC @selector stubs); 14% edge resolution (method calls unresolvable without type inference, same ceiling as Rust/Go); 3079 inferred EPs (correct for framework library — every pub fn is API surface); dup names init/deinit normal Zig idiom; proc::getExtProcAddress HOT (598 edges, OpenGL extension loader) |
 | clx (Lua) | Probe-passes | NOT YET INGESTED — Lua walker not built; first Lua ingest |
 
 HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
 
 ### Future additions
 
-- **Zig** — language target; supports C and C++ interop; ast-grep has Zig support built in. Add when a suitable Zig corpus is available. Same LanguageWalker extension pattern as Go/Rust.
+- **Zig** — DONE (session 247). Uses tree-sitter-zig backend (ast-grep-py does not bundle Zig). Deps: `tree-sitter==0.23.2 tree-sitter-zig==1.1.2`.
 - **bethechatbot.com** — future corpus or reference addition. Review site for what specifically to pull in.
 
 ### Per-session probe loop (deterministic, no LLM)
@@ -1125,6 +1125,7 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 - [x] ruggrogue: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] slater: probe DONE (2026-07-22, session 237) — 0 stubs (complete server software); 1985 inferred EPs all tests/benchmarks (correct for Rust library crate); #[cfg(test)] no false stubs confirmed; walk_call_chain blind across async boundary (serve_with_listener → 0 nodes, known Rust walker gap); blast_radius clean (593 extended for evict_to_budget); 78 dup names = normal module aliasing, not walker inflation
 - [x] llm.c (C+Python+CUDA): probe DONE (2026-07-23, session 245) — 729 symbols / 2960 edges (20 .c/.h + 38 .cu/.cuh + 14 .py); 148 __global__ kernels as is_tool=1; 151 kernel_launch edges (bug fixed this session: was stored as "static"); 22 stubs: 8 CUDA dim3/template false-positives (block_dim, grid_dim, Packed128 etc), 4 cudnn_att conditional-compile stubs (correct, require -DUSE_CUDNN), 2 external API stubs (memcpy, nvtxRangePush), 8 possible real stubs; walk_call_chain FQN fallback fixed; Python (14 files) = separate PyTorch impls, not ctypes wrappers, 0 ctypes edges (correct); blast_radius gpt2_build_from_checkpoint shows 131 extended symbols (correct, whole model struct is impacted)
+- [x] mach (Zig): probe DONE (2026-07-23, session 247) — 3425 symbols / 9359 edges; Zig walker built (tree-sitter-zig backend); 80 stubs all correct (C FFI extern decls + ObjC @selector stubs); 14% resolution (method calls = expected ceiling); 3079 inferred EPs (framework library, correct); init/deinit dups = Zig idiom
 
 ---
 
