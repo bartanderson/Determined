@@ -479,6 +479,7 @@ def test_dispatch_all_tools_registered():
         "workflow_status", "store_workflow_item", "rerank_workflow",
         "prioritize_work",
         "list_findings_by_kind",
+        "knowledge_for_file",
         "missing_docstrings",
         "find_todos",
         "git_log_for",

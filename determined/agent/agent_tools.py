@@ -1512,6 +1512,71 @@ def list_findings_by_kind(assessor: "Assessor", args: dict) -> str:
     return "\n".join(lines)
 
 
+def knowledge_for_file(assessor: "Assessor", args: dict) -> str:
+    """
+    knowledge_for_file(file_path) - everything the knowledge layer knows about a file.
+    Inverse of describe_file: returns design notes, inline notes, semantic summaries,
+    and active workflow items whose subject or content references this path.
+    file_path may be a bare filename or relative path.
+    """
+    file_path = args.get("file_path", "").strip()
+    if not file_path:
+        return "ERROR: file_path argument required"
+
+    resolved = _resolve_file_path(assessor.oracle, file_path)
+    if resolved:
+        file_path = resolved
+
+    conn = assessor._knowledge_conn
+    if conn is None:
+        return f"No knowledge DB available for '{file_path}'"
+
+    pat = f"%{file_path}%"
+    lines = [f"Knowledge for '{file_path}':"]
+
+    # knowledge_artifacts: subject, content, or provenance references the path
+    ka_rows = conn.execute(
+        "SELECT subject, kind, content, provenance, needs_review "
+        "FROM knowledge_artifacts "
+        "WHERE subject LIKE ? OR content LIKE ? OR provenance LIKE ? "
+        "ORDER BY CASE WHEN subject LIKE ? THEN 0 ELSE 1 END, kind",
+        (pat, pat, pat, pat),
+    ).fetchall()
+    if ka_rows:
+        lines.append(f"\n  Artifacts ({len(ka_rows)}):")
+        for subject, kind, content, prov, stale in ka_rows:
+            flag = " [STALE]" if stale else ""
+            lines.append(f"    [{kind} / {prov}]{flag} {subject}")
+            lines.append(f"      {content[:280]}")
+
+    # semantic_summaries: subject is the file path
+    ss_rows = conn.execute(
+        "SELECT subject, content FROM semantic_summaries WHERE subject LIKE ? LIMIT 3",
+        (pat,),
+    ).fetchall()
+    if ss_rows:
+        lines.append(f"\n  Semantic summaries ({len(ss_rows)}):")
+        for subject, content in ss_rows:
+            lines.append(f"    {subject}")
+            lines.append(f"      {content[:280]}")
+
+    # workflow_items: active items whose subject or content references the path
+    wi_rows = conn.execute(
+        "SELECT kind, subject, content FROM workflow_items "
+        "WHERE status='active' AND (subject LIKE ? OR content LIKE ?)",
+        (pat, pat),
+    ).fetchall()
+    if wi_rows:
+        lines.append(f"\n  Active workflow items ({len(wi_rows)}):")
+        for kind, subject, content in wi_rows:
+            lines.append(f"    [{kind}] {subject}")
+            lines.append(f"      {content[:280]}")
+
+    if len(lines) == 1:
+        return f"No stored knowledge for '{file_path}'"
+    return "\n".join(lines)
+
+
 def store_finding(assessor: "Assessor", args: dict) -> str:
     """
     store_finding(symbol, kind, content) - write a derived finding to knowledge.db.
@@ -7773,6 +7838,7 @@ TOOLS = {
     "graph_subgraph":       (graph_subgraph,       "oracle"),
     "graph_clusters":       (graph_clusters,       "oracle"),
     "list_findings_by_kind": (list_findings_by_kind, "assessor"),
+    "knowledge_for_file":    (knowledge_for_file,    "assessor"),
     "missing_docstrings":   (missing_docstrings,   "oracle"),
     "find_todos":           (find_todos,           "oracle"),
     "git_log_for":          (git_log_for,          "oracle"),
