@@ -982,6 +982,42 @@ is ungated; the application is RM69.
 
 ---
 
+## RM72 — Determined graph explorer (desktop, WebGPU/C++) (FUTURE)
+
+**What:** A standalone native desktop tool for visually navigating Determined corpus
+call graphs. Reads directly from a corpus SQLite DB. Separate from the web UI —
+not a replacement, a companion for large-graph exploration.
+
+**Why:** The web UI node layout snaps and collapses at scale. Large corpora (llm.c:
+729 symbols / 2960 edges; a C++ game engine would be 10x that) need a layout engine
+that handles scale without fighting the user. This is a display problem, not an
+analysis problem — the data is already in the DB.
+
+**Core capabilities (no more):**
+- Force-directed layout that stays stable at corpus scale
+- Smooth zoom and pan on large graphs
+- Click a node to expand callers/callees in place
+- Highlight a call chain end-to-end (visual walk_call_chain)
+- Blast radius from a selected node — lights up downstream symbols
+- Open any corpus `.db` file directly
+
+**Not in scope:** query interface, analysis tools, dashboards, anything the web UI
+already does. Graph navigation only.
+
+**Tech:** C++ desktop app, WebGPU via Dawn. LearnWebGPU
+(https://eliemichel.github.io/LearnWebGPU/) is the reference tutorial; the repo
+is also a natural C++ walker validation corpus for Determined once RM72 is active.
+
+**Gate:** Do not start until:
+1. UI redesign (UI_REDESIGN.md) is complete -- no scope bleed
+2. C++ walker exists (needed to analyze the tool's own codebase with Determined)
+3. Bart explicitly opens a RM72 session
+
+**Note:** C++ walker development and RM72 are mutually motivating -- LearnWebGPU
+corpus validates the walker; the walker lets Determined analyze RM72's own code.
+
+---
+
 ## RM68 — Remove subrace concept from dj2 (DEFERRED)
 
 **Context:** The OG system rewrite replaced the original D&D data model with a more
