@@ -330,12 +330,71 @@ POSIX-only and over-engineered for snippet verification — build the shim inste
 - Cross-language graph edges (Python calling C via ctypes, Lua calling C via FFI) are
   not currently modeled; worth noting as a future graph layer, not blocking anything now
 
+## RM71 -- FSM ingestor: "data as code" pipeline (ACTIVE)
+
+**What:** Ingest FSM JSON files (e.g. `config/fsms/encounter.json`) as first-class symbols
+in the corpus DB. States, events, actions, and guards become rows in the `functions` table;
+transitions become `graph_edges`. FSM actions and guards are marked `is_stub=1` because
+their implementations live in Python -- enabling `classify_stub` to ask whether the
+implementation exists and `list_stubs` to surface them.
+
+**Why this matters:**
+- Proves the "data as code" pipeline: design intent captured in JSON becomes queryable
+  alongside the code that implements it.
+- Prerequisite for RM69 corpus aggregation: aggregation tools need FSM signals before
+  the picture of a corpus is complete. Without this, dj2 produces flat stub lists with
+  no connective tissue to the game loop.
+- Cross-validates action implementation: `start_combat` appears as both an FSM action
+  (is_stub=1) and a Python function. `blast_radius` and `list_callers` can surface both.
+
+**Tenets most live:**
+- **XIV (single source of truth):** The JSON is the authoritative FSM spec. Python
+  `start_combat` is the derived implementation. The ingestor makes this explicit by
+  storing FSM actions as stubs; implementation cross-links use the existing call graph.
+- **III (parse, don't validate):** JSON -> dataclass at ingest time. Malformed FSM
+  JSON (missing `states`, wrong type) is rejected at the door with a clear error.
+  No downstream tool receives an unvalidated FSM shape.
+- **XXI (simplicity):** Use the existing `functions` table (`is_stub` is there). No
+  new schema. No new tool. Existing tools work once symbols are in the DB. Target ~100 LOC.
+
+**Tension:** FSM actions name Python functions that may not exist yet. Resolution: store
+FSM actions with `is_stub=1` and let `classify_stub` do the cross-check naturally. The
+dynamic_edges pass already handles similar gaps for JS-to-Python links.
+
+**Schema: use `functions` table** (confirmed: `is_stub` is here, not in `symbols`).
+- FSM states   -> `is_stub=0`, `canonical_id='FsmName::state::statename'`
+- FSM events   -> `is_stub=0`, `canonical_id='FsmName::event::eventname'`
+- FSM actions  -> `is_stub=1`, `canonical_id='FsmName::action::actionname'`
+- FSM guards   -> `is_stub=1`, `canonical_id='FsmName::guard::guardname'`
+- Transitions  -> `graph_edges`: `source_id=event`, `target_id=state`, `edge_type='fsm_transition'`
+- `file_path` = the JSON file (makes `symbols_in_file` and `knowledge_for_file` work).
+
+**Implementation shape:**
+- `determined/ingestion/fsm_walker.py` -- new, ~100 LOC
+  - `ingest_fsm_file(path, conn, project_root) -> int`
+  - `ingest_fsm_pass(conn, root)` -- discovery + ingestion wrapper
+  - `discover_fsm_files(root)` -- `rglob("*.json")` filtered to paths containing `fsms/`
+- **Hook:** `run_engine.py` line 153, after `persist_all()`:
+  `from determined.ingestion.fsm_walker import ingest_fsm_pass; ingest_fsm_pass(connection, Path(corpus.root_path))`
+
+**What this unlocks (no new tools needed):**
+- `list_stubs` on dj2 returns FSM actions/guards alongside Python stubs
+- `classify_stub(start_combat)` can cross-check if Python implementation exists
+- `blast_radius(start_combat)` surfaces both the FSM node and Python callers
+- `symbols_in_file('encounter.json')` lists all states, events, actions, guards
+
+**Scope:** Phase 1: `encounter.json` only. `discover_fsm_files` applies corpus-wide.
+**Tests:** `tests/regression/test_fsm_walker.py` -- offline, in-memory SQLite.
+**Gate:** None. Ready to implement. All open questions resolved (2026-07-22, session 240).
+
+---
+
 **Implementation sequencing — GATED (2026-07-20):**
 New language parsers and corpus chain are blocked until:
-1. RM69 corpus aggregation ships (file shape, subsystem shape, prerequisite map) — makes
+1. RM69 corpus aggregation ships (file shape, subsystem shape, prerequisite map) -- makes
    individual stub judgments into a corpus-wide picture; without this, new corpora produce
    more flat stub lists with no connective tissue.
-2. RM71 FSM ingestor ships (at minimum, encounter.json) — proves the "data as code"
+2. RM71 FSM ingestor ships (at minimum, encounter.json) -- proves the "data as code"
    pipeline and gives aggregation a richer signal before investing in new parsers.
 Then:
 3. Ingestion parsers per language (C/Zig/Lua in priority order)
