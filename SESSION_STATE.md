@@ -1,90 +1,59 @@
-Written at commit: 4a83730
+Written at commit: 3204437
 
-# SESSION STATE — session 244
+# SESSION STATE — session 245
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Two commits landed:**
+**Four commits landed:**
 
-### Commit a349c06 — CUDA walker + Python ingestion + ctypes linker [V]
-- `language_walker.py`: CUDA walker (Phase 5) — `_cuda_symbols()`, `_cuda_fn_ranges()`,
-  `_cuda_callee_name()`, `_cuda_is_stub()`, `_cuda_qualifier()`, `_cuda_kernel_launches()`;
-  `detect_language()` extended for `.cu`/`.cuh`; `_TS_LANGUAGE_MAP` maps cuda→cpp for SgRoot;
-  `_CUDA_BUILTINS`; `__global__` kernels marked `is_tool=1` + `decorators_json`
-- `scan_project_files.py`: `.cu`/`.cuh` added to `_JS_TS_EXTENSIONS`
-- `ingest_lang_corpus.py`: detects Python files in corpus root, runs `scan_project_files`
-  pipeline on them, passes `file_analyses` to `persist_all` (mixed corpus support)
-- `ctypes_linker.py`: new — scans Python files for `ctypes.CDLL` loads, emits
-  `ctypes_call` edges for `lib.func()` call sites; wired as step 5e in `persistence_engine.py`
-- `test_language_walker.py`: 12 new CUDA tests (89 total, all pass) [V]
-- `test_language_walker_persist.py`: 6 new tests (CUDA persist + ctypes linker, 17 total, all pass) [V]
+### Commit 3a57b6b — G7 slowness fix [V]
+- `test_local_agent.py`: `test_answer_history_grows_across_questions` was taking
+  ~90s because "how does it connect?" matched a named pattern and routed to
+  `PatternExecutor.run()`, which has its own `_call_ollama` import not covered by
+  the local_agent patch. Added `patch("determined.agent.local_agent.detect_pattern",
+  return_value=(None, None))` to keep the test focused on history accumulation.
+- G7 group: 3:42 → 9s [V]
 
-**llm.c ingest result:** [V]
-- 729 symbols / 2960 edges (up from 155/397 C-only)
-- 148 `__global__` kernels, kernel launch edges wired
-- 14 Python files ingested (PyTorch implementations — no ctypes in llm.c)
-- ctypes_call edges: 0 (expected — llm.c Python is PyTorch, not ctypes)
+### Commit 2d38c0c — kernel_launch edge_type fix [V]
+- `language_walker.py`: `_cuda_kernel_launches()` was storing `edge_type="static"`
+  instead of `"kernel_launch"` — fixed to `"kernel_launch"`.
+- `persistence_engine.py`: cross-file resolution post-pass was gated to
+  `edge_type = 'static'` — changed to `IN ('static', 'kernel_launch')` so kernel
+  callee FQNs get upgraded alongside static edges.
+- `test_language_walker_persist.py`: test updated to query `kernel_launch` instead
+  of `static` for kernel launch edge assertion.
+- 106 walker tests pass [V]
 
-### Commit 4a83730 — Serial regression runner [V]
-- `tools/run_regression.py`: 10 serial groups (G1-G10, 8 files each). One pytest
-  process at a time. `--list`, `--group GN`, `--continue-on-fail` flags.
-- `CLAUDE.md`: hard rules — never full suite, never background pytest. Regression
-  = `run_regression.py` one group at a time. Rule for adding new test files.
+### Commit 0c457f1 — walk_call_chain bare-name fallback for C/CUDA [V]
+- `agent_tools.py`: `walk_call_chain` with bare name (e.g. "gpt2_forward") was
+  returning empty for C/CUDA corpora because the DB stores names as FQNs
+  (`train_gpt2::gpt2_forward`). Added `LIKE '%::' || ?` fallback after the
+  existing `.` suffix match for JS/TS. Bare names now resolve correctly. [V]
+- 79/80 agent_tools tests pass (pre-existing `test_tool_registry_covers_all_tools`
+  failure is unrelated to this change) [V]
 
----
+### Commit 3204437 — llm.c six-probe DONE [V]
 
-## Key findings from llm.c probe [V]
-
-- llm.c is NOT ctypes-linked: Python files are PyTorch side-by-side implementations,
-  not wrappers over the C code. ctypes linker works but produces 0 edges here.
-- CUDA walker: `cpp` grammar handles CUDA via tree-sitter; kernel launches
-  (`<<<...>>>`) need regex since not in C++ grammar — handled by `_cuda_kernel_launches()`.
-- G7 regression group takes ~3:42 (176 tests) — includes slow-unmarked tests in
-  `test_pattern_executor.py` etc. Acceptable since it's one sequential process.
-
----
-
-## NEXT SESSION — start here
-
-**First: fix G7 slowness in run_regression.py.**
-G7 takes 3:42 — all other groups combined are faster. The language walker tests
-are 0.51s so they're not the culprit. Find the slow file(s) in G7 by timing each
-individually, then either move them to a separate opt-in group or mark their slow
-tests properly. Do this before any other work so regression is usable.
-
-Files in G7 to time: test_intent_view_wiring.py, test_layer_rules.py,
-test_local_agent.py, test_oracle_cli_smoke.py, test_oracle_router_persistence_lock.py,
-test_pattern_executor.py (plus the language walker files which are already fast).
-
-Command to time one file:
-```
-Measure-Command { .venv\Scripts\pytest tests/regression/test_pattern_executor.py -q }
-```
-
-**Second: llm.c six-probe is incomplete.** The C-only six-probe was done in session 244's
-opening. After CUDA+Python support landed, re-ingest is at 729 symbols / 2960 edges
-but we haven't re-run the full six-probe against the new corpus. Options:
-
-1. **Re-run llm.c six-probe** — now with CUDA and Python symbols visible. Interesting
-   questions: what do the PyTorch entry points look like? Are kernel launches connecting
-   Python training loop → CUDA kernels? (Spoiler: no, they're separate implementations.)
-2. **Zig walker** — extend LanguageWalker to Zig, corpus: Mach Engine.
-3. **Update TRACKER.md** — RM67 still shows llm.c as next; update to reflect DONE for
-   CUDA+Python support, mark llm.c probe done once six-probe runs.
-
-To re-ingest llm.c (already done, DB exists at `C_Users_bartl_dev_corpora_llm_c.db`):
-```
-.venv\Scripts\python.exe tools/ingest_lang_corpus.py C:\Users\bartl\dev\corpora\llm.c
-```
-Expected: ~729 symbols, ~2960 edges.
-
-To run regression for changed files:
-```
-.venv\Scripts\pytest tests/regression/test_language_walker.py tests/regression/test_language_walker_persist.py -q
-```
-Expected: 106 passed.
+**llm.c six-probe findings:**
+- 72 files: 20 .c/.h, 38 .cu/.cuh, 14 .py
+- 729 symbols, 2960 edges, 148 `__global__` kernels (is_tool=1)
+- 151 kernel_launch edges (correct after fix; were 0 before)
+- 22 stubs: classification —
+  - 8 CUDA false-positives: `block_dim`, `grid_dim`, `blockDim`, `gridDim`
+    (dim3 variables captured as function stubs — known C walker limitation)
+  - 2 CUDA utility false-positives: `Packed128`, `cast_value` (template stubs)
+  - 2 external API stubs: `memcpy` (stdlib), `nvtxRangePush` (NVIDIA profiling)
+  - 4 cuDNN conditional-compile stubs: `cudnn_att::*` — only built with
+    `-DUSE_CUDNN`; acceptable known ceiling
+  - 2 device_file_io stubs: `cmp`, `random_data` — may be real gaps
+  - 4 `make_random_float` variants — test utility functions, acceptable
+- Python (14 files): separate PyTorch implementations of the C training loop.
+  NOT ctypes wrappers. 0 ctypes edges (correct). No cross-language connection.
+- Blast radius: `gpt2_build_from_checkpoint` → 131 extended symbols (correct)
+- Call chain: `gpt2_forward` traces to encoder→layernorm→matmul→attention→
+  residual→gelu→softmax→crossentropy (correct GPT-2 forward pass) [V]
 
 ---
 
@@ -93,15 +62,52 @@ Expected: 106 passed.
 **Pre-existing: knowledge_for_file missing from REGISTRY [V]** — `test_tool_registry_covers_all_tools`
 fails. Not caused by this session's changes. All other tests pass.
 
+**CUDA stubs: dim3 vars captured as stubs [V]** — `block_dim`, `grid_dim`, `blockDim`,
+`gridDim` appear as function stubs in CUDA files. Low-priority false-positive;
+acceptable known ceiling.
+
 **dead artifact LIKE over-match [V prior]:** documented in test, fix if noisy.
 
 **load_db auto-orient blocks screenshot [V prior]:** workaround: DOM reads via javascript_tool.
 
-**walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
-tool queries bare names. Workaround: use graph_path.
+**walk_call_chain broken for TS/JS corpora [?]:** The `.` suffix match handles some cases
+but may have edge cases. C/CUDA :: suffix match is now fixed. Workaround: use graph_path.
 
-**C walker: 9 unmatched header stubs in brogue-ce [V]** — platform-conditional or absent.
+**C walker: 9 unmatched header stubs in brogue-ce [V prior]** — platform-conditional.
 Acceptable ceiling.
 
-**CUDA: kernel launch edges use bare kernel name pre-resolution** — cross-file resolution
-post-pass upgrades to FQN within same file. Cross-file launches remain bare. Acceptable.
+---
+
+## NEXT SESSION — start here
+
+**Option 1: Zig walker (mach engine corpus)** [recommended]
+Next NOT YET INGESTED language in RM67 language scope table.
+Zig has ast-grep support. Same LanguageWalker extension pattern as Go/Rust.
+Find Zig corpus (Mach Engine: github.com/hexops/mach).
+Target file: `determined/ingestion/language_walker.py`.
+
+**Option 2: Lua walker (clx corpus)**
+Same pattern. `clx` is the Lua corpus in the language scope table.
+
+**Option 3: llm.c stub deeper triage**
+22 stubs identified; `device_file_io::cmp` and `device_file_io::random_data`
+may be real gaps worth classifying. Low priority.
+
+**Verify G7 is still fast (sanity check before any work):**
+```
+.venv\Scripts\python.exe tools/run_regression.py --group G7
+```
+Expected: < 15s.
+
+**Verify walk_call_chain fix works after re-ingest:**
+```
+.venv\Scripts\python.exe -c "
+import sys; sys.path.insert(0, '.')
+from determined.oracle.db_oracle import DBOracle
+from determined.agent.agent_tools import walk_call_chain
+oracle = DBOracle('C_Users_bartl_dev_corpora_llm_c.db')
+chain = walk_call_chain('gpt2_forward', oracle, max_depth=1)
+print(chain[0]['symbol'] if chain else 'BROKEN')
+"
+```
+Expected: `train_gpt2::gpt2_forward`
