@@ -1047,7 +1047,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | ruggrogue (Rust) | Probe-passes | 0 stubs; normalize_symbol :: strip known |
 | slater (Rust) | Probe-passes | probe DONE (2026-07-22) — 195 files, 0 stubs, 1985 inferred EPs (all tests/benchmarks, correct for library crate); walk_call_chain blind across async boundary (serve_with_listener = 0 nodes); blast_radius 593 for evict_to_budget (cache is foundational); 78 dup names = normal module aliasing |
 | brogue-ce (C) | Probe-passes | probe DONE (2026-07-23) — 977 symbols, 7233 edges; C walker built (session 243); 30 true stubs (9 unmatched header decls + 21 empty-body); header dedup post-pass ships 542 false-positive header stubs; cellHasTerrainFlag HOT (96 callers = terrain query in dungeon gen); initializeLevel chain 189 nodes; 0 explicit EPs (correct for C game), 127 inferred EPs |
-| llm.c (C+Python) | Probe-passes | NOT YET INGESTED — C walker + ctypes cross-language boundary |
+| llm.c (C+Python) | Probe-passes | ingested 2026-07-23 (729 symbols / 2960 edges); six-probe pending |
 | mach (Zig) | Probe-passes | NOT YET INGESTED — Zig walker not built |
 | clx (Lua) | Probe-passes | NOT YET INGESTED — Lua walker not built; first Lua ingest |
 

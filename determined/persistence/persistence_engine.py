@@ -1009,7 +1009,7 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
                   LIMIT 1
                 )
             WHERE caller_file IN ({placeholders})
-              AND edge_type = 'static'
+              AND edge_type IN ('static', 'kernel_launch')
               AND EXISTS (
                 SELECT 1 FROM functions f
                 WHERE f.file_path IN ({placeholders})

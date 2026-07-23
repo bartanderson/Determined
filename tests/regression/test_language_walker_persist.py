@@ -289,7 +289,7 @@ def test_cuda_global_marked_as_tool(db_with_cuda):
 
 def test_cuda_kernel_launch_edge_stored(db_with_cuda):
     rows = db_with_cuda.execute(
-        "SELECT caller, callee FROM graph_edges WHERE edge_type = 'static'"
+        "SELECT caller, callee FROM graph_edges WHERE edge_type = 'kernel_launch'"
     ).fetchall()
     pairs = {(r[0], r[1]) for r in rows}
     # Callee is upgraded to qualified FQN by the cross-file resolution post-pass

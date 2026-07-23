@@ -1369,7 +1369,7 @@ class LanguageWalker:
             caller = self._enclosing_fqdn_by_line(line, fn_ranges)
             if caller is None:
                 continue
-            results.append((caller, kernel_name, "static", False))
+            results.append((caller, kernel_name, "kernel_launch", False))
         return results
 
     def _enclosing_fqdn_by_line(self, line: int, fn_ranges: list[tuple]) -> str | None:
