@@ -158,6 +158,9 @@ class EngineRunner:
             project_root=repo_root,
         )
 
+        from determined.ingestion.fsm_walker import ingest_fsm_pass
+        ingest_fsm_pass(connection, Path(corpus.root_path))
+
         return ingest_stats
 
 

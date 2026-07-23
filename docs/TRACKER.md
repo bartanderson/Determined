@@ -330,7 +330,7 @@ POSIX-only and over-engineered for snippet verification — build the shim inste
 - Cross-language graph edges (Python calling C via ctypes, Lua calling C via FFI) are
   not currently modeled; worth noting as a future graph layer, not blocking anything now
 
-## RM71 -- FSM ingestor: "data as code" pipeline (ACTIVE)
+## RM71 -- FSM ingestor: "data as code" pipeline (DONE 2026-07-22)
 
 **What:** Ingest FSM JSON files (e.g. `config/fsms/encounter.json`) as first-class symbols
 in the corpus DB. States, events, actions, and guards become rows in the `functions` table;
@@ -385,7 +385,7 @@ dynamic_edges pass already handles similar gaps for JS-to-Python links.
 
 **Scope:** Phase 1: `encounter.json` only. `discover_fsm_files` applies corpus-wide.
 **Tests:** `tests/regression/test_fsm_walker.py` -- offline, in-memory SQLite.
-**Gate:** None. Ready to implement. All open questions resolved (2026-07-22, session 240).
+**Gate:** None. Implemented (2026-07-22, session 241). 16 tests pass. Hook wired in run_engine.py.
 
 ---
 
