@@ -3,7 +3,10 @@
 # Thin LLM backend shim. All inference calls go through here.
 # Backend: llama-server (llama.cpp built-in OpenAI-compatible server).
 #
-# Model: Qwen3-8B (Q4_K_M) on GPU, port 8081, launched on demand by ui_server.py.
+# Model: Qwen3-VL-8B-Thinking (Q4_K_M) on GPU, port 8081, launched on demand by ui_server.py.
+# Vision-capable (mmproj loaded). /no_think system prefix suppresses chain-of-thought for
+# text calls -- do NOT add --jinja to server args (triggers llama.cpp thinking-suppression
+# bug #20182 on the vision path). Vision inputs (images in chat messages) work normally.
 # No always-on service required. start_server() / stop_server() manage the subprocess.
 #
 # Public API:
@@ -25,17 +28,23 @@ import requests
 logger = logging.getLogger(__name__)
 
 LLM_BASE_URL     = "http://localhost:8081"
-LLM_DISPLAY_NAME = "Qwen3-8B"
+LLM_DISPLAY_NAME = "Qwen3-VL-8B"
 LLM_TIMEOUT      = 600
 LLM_COLD_TIMEOUT = 10
 LLM_MAX_TOKENS   = 400
 
 # Server launch config — used by start_server() / stop_server()
-LLM_SERVER_EXE  = r"C:\Users\bartl\models\llama-server\llama-server.exe"
-LLM_MODEL_PATH  = r"C:\Users\bartl\models\gguf\Qwen_Qwen3-8B-Q4_K_M.gguf"
-# ctx-size raised to 32768 (Qwen3-8B native max) for Discovery mode (session 123).
-# To revert: change 32768 back to 4096. Requires server restart to take effect.
-LLM_SERVER_ARGS = ["--port", "8081", "--host", "127.0.0.1", "--ctx-size", "32768", "-ngl", "99"]
+LLM_SERVER_EXE   = r"C:\Users\bartl\models\llama-server\llama-server.exe"
+_VL_SNAPSHOT     = r"C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Thinking-GGUF\snapshots\bca5838231f8cc1303cf8810afffcfbdc41bc75a"
+LLM_MODEL_PATH   = _VL_SNAPSHOT + r"\Qwen3VL-8B-Thinking-Q4_K_M.gguf"
+LLM_MMPROJ_PATH  = _VL_SNAPSHOT + r"\mmproj-Qwen3VL-8B-Thinking-Q8_0.gguf"
+# ctx-size 32768 = Qwen3-VL native max. --mmproj enables vision inputs.
+# Do NOT add --jinja: triggers llama.cpp #20182 thinking-suppression bug on vision path.
+LLM_SERVER_ARGS  = [
+    "--port", "8081", "--host", "127.0.0.1",
+    "--ctx-size", "32768", "-ngl", "99",
+    "--mmproj", LLM_MMPROJ_PATH,
+]
 
 _server_proc: subprocess.Popen | None = None
 

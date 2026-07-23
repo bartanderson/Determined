@@ -2,9 +2,13 @@
 #
 # Snapcompact-style context compression for long LLM call chains.
 # Renders accumulated text context to a pixel-font PNG and passes it to
-# Qwen3-VL-8B-Instruct on port 8082 for verbatim read-back.
-# NOTE: use the Instruct variant, NOT Thinking — thinking suppression is broken
-# in llama.cpp for vision models (issue #20182). Start server with --jinja flag.
+# the main Qwen3-VL model (port 8081) for verbatim read-back.
+# NOTE: do NOT add --jinja to the server — triggers llama.cpp #20182 thinking-
+# suppression bug on the vision path. The main server runs without --jinja.
+#
+# STATUS: not wired into any tool chain (2026-07-23). The preferred pattern for
+# long chains is stateless LLM calls with intermediate results stored to DB.
+# Compactor retained as a future-model technique; revisit with larger vision model.
 #
 # Why: prose summarizers destroy facts (SQuAD F1 ~0.00); PNG read-back
 # scores 0.88 vs 0.90 for raw text at ~1/3 the token cost.
@@ -28,7 +32,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
-VISION_BASE_URL    = "http://localhost:8082"
+VISION_BASE_URL    = "http://localhost:8081"  # main VL model (was 8082 separate server)
 VISION_TIMEOUT     = 180
 VISION_MAX_TOKENS  = 8192
 COMPRESS_THRESHOLD = 6000   # chars; below this, skip compression

@@ -8,6 +8,29 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-23 (s243): Retire Qwen3-8B (port 8081); Qwen3-VL-8B-Instruct is now the sole main
+model. Two models was wasteful and violated the original design intent. The compactor was
+built for a two-server architecture (text on 8081, vision on 8082) but the design always
+assumed one vision-capable main model. The gate in TRACKER Idea 7 was cleared against the
+wrong condition: "vision model available" != "main model is vision-capable." Correct fix:
+one model, vision-capable, handles both text and image inputs.
+
+2026-07-23 (s243): Context accumulation + image compression is the wrong layer to solve for
+long LLM chains. Stateless LLM calls + DB for intermediates is the right pattern. Each call
+gets a tight targeted context; intermediate results are stored to DB (workflow_items or a new
+intermediates table) and compounded through fresh calls. This is Determined's existing
+architecture applied to LLM chain management -- the DB was always the memory store. The
+compactor stays in the codebase as a future-model technique (requires larger/smarter vision
+model to resolve small fonts reliably; 8B is below the threshold). Do not wire it into any
+tool chain. Revisit when model capability improves.
+
+2026-07-23 (s243): mmproj size and font size are coupled for OCR quality. Smaller font ->
+more chars per image frame -> better compression ratio -> but requires higher-resolution
+mmproj to resolve glyphs reliably. The half-size mmproj assumption was fine for text
+(mmproj is irrelevant for text-only inputs) but limits vision OCR at small fonts. At 8B
+scale this ceiling is the model, not just the projector. Worth revisiting with 70B+ or
+purpose-trained OCR model.
+
 2026-07-22 (s238): context_compactor.py — use Instruct model, NOT Thinking, for vision OCR.
 llama.cpp has a known bug (issue #20182) where thinking-mode suppression is broken for
 vision models. Thinking model produces <think> blocks that swallow the transcript. Use
