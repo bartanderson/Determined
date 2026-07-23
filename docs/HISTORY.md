@@ -8,6 +8,20 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-22 (s238): context_compactor.py — use Instruct model, NOT Thinking, for vision OCR.
+llama.cpp has a known bug (issue #20182) where thinking-mode suppression is broken for
+vision models. Thinking model produces <think> blocks that swallow the transcript. Use
+Qwen3-VL-8B-Instruct-Q4_K_M.gguf, not Qwen3-VL-8B-Thinking-*. The mmproj file happens
+to live in the Thinking model's snapshot directory — that's fine, it's cross-model compatible.
+Server requires --jinja flag for <transcript> tag instruction following. Port 8082.
+Full server command in context_compactor.py file header.
+
+2026-07-22 (s238): context_compactor.py font size 14 optimal for underscore recognition.
+At size 10/12 underscores in identifiers like `_get_sibling_stubs` were read as periods
+(`_get_sibling.stubs`). Size 14 fixes `classify_stub` correctly; `_get_sibling_stubs`
+still drops 'l' at size 14 but that is an acceptable OCR miss (5/6 key terms pass).
+Do not decrease font size below 14.
+
 2026-07-21 (s233): dead artifact subject LIKE over-match -- known limitation, not fixed.
 `_get_artifact_signals` queries `WHERE kind='dead' AND subject LIKE '%{name}'`.
 This over-matches when `name` is a suffix of another symbol (e.g. "stub" matches "my_stub").

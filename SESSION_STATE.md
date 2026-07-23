@@ -1,80 +1,73 @@
-Written at commit: deefae9 (2026-07-22)
+Written at commit: 5bb65cf (no new commits this session)
 
-# SESSION STATE — session 237
+# SESSION STATE — session 238
 
-## Active branch: main [V]
+## Active branch: main
 
 ## What happened this session
 
-**Doc-only session. No code changed, no tests needed.** Three commits, all TRACKER/STATE docs.
+**Code-only session. Doc-only commits from prior session (237) are HEAD.**
 
-**Ideas 6, 7, 8 added to TRACKER knowledge layer section (5506a4e, eb7d28a) [V]:**
-- Idea 6 — token-budget-at-write-time: count tokens at `_store_knowledge_artifact`,
-  reject over threshold, emit workflow_item for summarization. Gate: RM69.
-  Cross-validated: omp ships this as 40-LOC Rust native module (pi-natives tokens crate).
-- Idea 7 — snapcompact-style PNG context compression: render accumulated LLM context to
-  pixel-font PNG (1568×1568 = ~40K chars = 3,279 image tokens vs ~10K text tokens).
-  F1 benchmark: 0.88 PNG vs 0.90 raw text vs ~0 prose summary. Gate: verify Qwen3-8B
-  vision support. Point of use shifted to front — applicable to any long LLM call chain now.
-- Idea 8 — mnemopi as RM69 prior art: omp's production knowledge layer (SQLite + embeddings
-  + graph). API: retain/recall/reflect/memory_edit. Scope: hierarchical (global/project/tagged).
-  Read source before designing RM69. Gate: RM71 active.
+**Idea 7 gate cleared [V]:**
+- Qwen3-VL-8B-Instruct-Q4_K_M.gguf confirmed on machine (5GB, 2026-07-22)
+- `determined/agent/context_compactor.py` written and manually tested
+- OCR quality: 5/6 key terms at font size 14; `<transcript>` extraction working
+- Vision server on port 8082; LLM server on 8081 (no conflict)
+- TRACKER Idea 7 gate updated to CLEARED [V]
+- HISTORY.md: two entries added (Instruct vs Thinking bug, font size rule) [V]
 
-**Slater ingested and probed (deefae9) [V]:**
-- DB: `C_Users_bartl_dev_corpora_slater.db` at `C:\Users\bartl\dev\Determined\` (12MB)
-- Source: `C:\Users\bartl\dev\corpora\slater`
-- 195 files, 121 hot, 0 stubs, 78 duplicate names
+**context_compactor.py state [V — file read this session]:**
+- File: `determined/agent/context_compactor.py` (untracked — not committed yet)
+- Public API: `compress_context(text, threshold=6000)`, `render_to_png()`, `is_available()`
+- Constants: CANVAS_W/H = 1568, FONT_SIZE = 14, COMPRESS_THRESHOLD = 6000, VISION_MAX_TOKENS = 8192
+- VISION_BASE_URL = "http://localhost:8082"
+- Uses `<transcript>...</transcript>` tag extraction; falls back to stripping `<think>` blocks
 
-Six-probe results:
-- list_entry_points: 1985 inferred, 0 explicit — all tests/benchmarks, correct for library crate
-- list_stubs: 0 — complete server software, as expected
-- list_features: `crates` (4627 syms, 87% doc) and `perf` (58 syms, 81% doc) at depth=1;
-  depth=2 needed to see subsystems (bolt, storage, vector, acl)
-- development_priorities: crates 87% done, perf 81%; 0 stubs both; 730 doc gaps in crates
-- walk_call_chain: **blind across async boundary** — serve_with_listener returns 0 nodes;
-  BoltClient::run_pull / run_stream are the reachable Bolt client symbols
-- blast_radius: ShardInner::evict_to_budget — 5 direct callers, 593 extended; WARM rating;
-  block cache is foundational to entire codebase
-
-Rust walker edge cases resolved:
-- #[cfg(test)] → no false stubs [V]
-- 78 dup names → normal module aliasing (blockcache:: vs decodedblockcache::) [V]
-- impl Trait for Type → BoltClient::* stored on concrete type, appears correct [V]
-- async boundary → walk_call_chain returns 0 nodes for async entry points [V NEW GAP]
+**Server start command (from file header) [V]:**
+```
+C:\Users\bartl\models\llama-server\llama-server.exe -m "C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Instruct-GGUF\snapshots\f982a07559d4a2f6c8744d840bf6fccab30eea96\Qwen3VL-8B-Instruct-Q4_K_M.gguf" --mmproj "C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Thinking-GGUF\snapshots\bca5838231f8cc1303cf8810afffcfbdc41bc75a\mmproj-Qwen3VL-8B-Thinking-Q8_0.gguf" --port 8082 --image-min-tokens 1024 --jinja
+```
+Note: mmproj lives in Thinking model dir -- cross-model compatible, this is correct.
 
 ---
 
-## NEXT SESSION — start here
+## NEXT SESSION -- start here
 
-**Design question: RM71 vs RM69.** Read both TRACKER sections before deciding.
-- RM71 (FSM ingestor) is the prerequisite for RM69
-- RM69 is the prerequisite for C/Zig/Lua walkers and the full corpus chain
-- No new corpus can be added until RM71 ships
+**First action: commit context_compactor.py and write its tests.**
 
-**Quick win available any session:** `knowledge_for_file(path)` (TRACKER Knowledge layer
-Idea 5) — ~30 lines SQL, no gate, no dependencies. Inverse of describe_file.
+1. `git add determined/agent/context_compactor.py` and commit
+2. Write `tests/regression/test_context_compactor.py` -- server-offline tests only:
+   - `render_to_png()` returns valid PNG bytes
+   - `is_available()` returns False when port 8082 not running
+   - `compress_context()` returns None when text under threshold
+   - `compress_context()` returns None when server unavailable
+   - `<transcript>` extraction regex on known response strings
+   - `<think>` block stripping fallback
+   No live-server tests in the regression suite.
+3. Add `context_compactor` to `docs/TEST_MAP.md`
+4. Run `tests/regression/test_context_compactor.py` alone, then confirm full suite
 
-**Qwen vision check:** verify whether a quantized Qwen2.5-VL (7B or 3B) fits on Bart's
-machine via Ollama. If yes, Idea 7 (snapcompact) moves from "verify first" to "build now."
-Run: `ollama list` and check `qwen2.5vl:7b` or `qwen2.5vl:3b` availability.
+**After tests pass:** decide whether to wire context_compactor into
+`development_priorities` or `walk_call_chain` as the first real use.
+
+**Design question: RM71 vs RM69.** Still the active arc question from s237.
+- RM71 (FSM ingestor) -> RM69 (corpus aggregation) -> C/Zig/Lua walkers
+- Quick win anytime: `knowledge_for_file(path)` (TRACKER Idea 5) -- ~30 lines SQL, no gate
 
 ---
 
 ## Known issues [V = verified, ? = carried]
 
 **dead artifact LIKE over-match [V prior]:** `WHERE kind='dead' AND subject LIKE '%{name}'`
-over-matches when name is a suffix of another symbol. Fix if noisy.
+over-matches when name is a suffix of another symbol. Fix if noisy in real corpora.
 
 **load_db auto-orient blocks screenshot [V prior]:** background LLM thread on corpus load
 causes screenshot tool to hang. Workaround: DOM reads via javascript_tool.
 
-**Corpus switch UI flow [V this session]:** emit `socket.emit("load_db", {path: <abs db path>})`
-to load directly. Double-emitting `ingest` causes "database is locked" — first ingest
-completes but second races it. Emit once, wait for response. "Switch corpus" button
-coordinates in browser may not register — use socket.emit directly.
+**Corpus switch UI flow [V prior]:** emit `socket.emit("load_db", {path: <abs db path>})`
+to load directly. Double-emitting `ingest` causes "database is locked."
 
-**walk_call_chain blind for async Rust [V this session]:** serve_with_listener and any
-tokio::spawn entry point returns 0 nodes. Walker does not trace async dispatch edges.
+**walk_call_chain blind for async Rust [V prior]:** tokio::spawn entry points return 0 nodes.
 Documented in RM67 slater row. No fix planned until Rust walker arc.
 
 **walk_call_chain broken for TS/JS corpora [?]:** graph_edges stores callers as FQNs;
@@ -82,6 +75,3 @@ tool queries bare names. Workaround: use graph_path.
 
 **Server start command [V prior]:** `.venv\Scripts\python.exe -m determined.ui.ui_server`
 from `C:\Users\bartl\dev\Determined`.
-
-**matmul C source URL [?]:** TRACKER notes "Google Translate mirror — verify original."
-Not re-verified. Check before cloning.

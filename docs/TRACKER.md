@@ -884,9 +884,12 @@ holds as a future-model target.
 - omp's snapcompact crate is 1,440 LOC Rust; a Python equivalent using PIL is viable
   if Rust is out of scope
 
-**Gate: verify Qwen3-8B vision support, then ungated.** This is applicable immediately
-once confirmed — no dependency on RM69 or any other arc. Priority: front of queue for
-any session that involves long LLM call chains.
+**Gate: CLEARED (2026-07-22, session 238).** Qwen3-VL-8B-Instruct confirmed on Bart's
+machine. `determined/agent/context_compactor.py` written and manually tested — OCR quality
+5/6 key terms at font size 14, `<transcript>` extraction working, max_tokens 8192.
+Server runs on port 8082. See HISTORY.md for llama.cpp Thinking-suppression workaround.
+Remaining: write `tests/regression/test_context_compactor.py` (server-offline tests only),
+then commit. No RM69 dependency — front of queue.
 
 ---
 
