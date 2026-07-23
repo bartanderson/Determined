@@ -130,11 +130,18 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
 - Before any multi-step sequence, state in one short line what is about to happen
   so Bart can abort. Skip this only for single-step actions.
 - **After a change**: run only the matching test file(s) from `docs/TEST_MAP.md`.
-  Never run the full suite — it takes 6 minutes and regressions are caught when they matter.
 - Run a single test file: `.venv\Scripts\pytest tests/regression/test_foo.py`
 - Run a single test: `.venv\Scripts\pytest tests/regression/test_foo.py::test_bar`
 - Look up related tests: `docs/TEST_MAP.md` — source module → test file mapping.
-- Matching tests must pass before commit. Full suite only if something looks broken.
+- Matching tests must pass before commit.
+- **NEVER run the full suite with `pytest tests/regression/`.** It overloads the system.
+- **NEVER launch pytest as a background task.** All test runs are foreground only.
+- **Regression (when explicitly requested)**: use `tools/run_regression.py` — runs
+  serial groups one at a time. One group at a time, foreground, wait for completion.
+  To run one group: `.venv\Scripts\python.exe tools/run_regression.py --group G1`
+  To list groups: `.venv\Scripts\python.exe tools/run_regression.py --list`
+- **Adding a new test file**: append it to the last group in `tools/run_regression.py`
+  GROUPS dict. Create a new group if the last one has 10+ files. Do not reorder.
 - Before ending any session that did substantive work, rewrite SESSION_STATE.md
   in full with current status and next steps. This is mandatory. Follow the
   SESSION END PROTOCOL below.
