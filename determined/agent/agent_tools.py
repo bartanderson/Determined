@@ -10535,23 +10535,17 @@ def rank_stubs(assessor: "Assessor", args: dict) -> str:
 TOOLS["rank_stubs"] = (rank_stubs, "assessor")
 
 
-def work_session_primer(assessor: "Assessor", args: dict) -> str:
+def _primer_items(oracle, top_n: int = 5) -> list[dict]:
     """
-    work_session_primer([top_n=5]) — top N actionable work items for this corpus.
-
-    Synthesizes rank_stubs + classify_stub + FSM stub detection into a ranked list.
-    Each item is a self-contained work card: name, file:line, why-now badge, purpose,
-    and first step. Deterministic — no LLM.
-
-    FSM action/guard stubs are surfaced as a distinct high-priority category because
-    they are spec-backed (FSM JSON is the design) and concrete regardless of caller count.
-    Dead code (concept-not-applicable) is suppressed.
+    Build the ranked work item list used by work_session_primer and the UI primer_load handler.
+    Returns a list of dicts (most actionable first), each with keys:
+      badge, name, file, file_path, line_no, purpose, is_fsm
+      For FSM: actions[], guards[], total_handlers
+      For Python: cls, confidence, callers, composite
     """
     from determined.agent.classify_stub import extract_signals, score_hypotheses
 
-    oracle = assessor.oracle
     conn = oracle.conn
-    top_n = int(args.get("top_n", 5))
 
     stubs = conn.execute(
         "SELECT name, file_path, docstring, line_number FROM functions "
@@ -10560,9 +10554,9 @@ def work_session_primer(assessor: "Assessor", args: dict) -> str:
     ).fetchall()
 
     if not stubs:
-        return "No stubs found in corpus."
+        return []
 
-    # Partition: FSM stubs (by name pattern) vs Python/other stubs
+    # Partition: FSM stubs vs Python stubs
     fsm_stubs: list[tuple] = []
     python_stubs: list[tuple] = []
     for name, file_path, docstring, line_no in stubs:
@@ -10580,14 +10574,15 @@ def work_session_primer(assessor: "Assessor", args: dict) -> str:
         fsm_name, kind, action_name = parts[0], parts[1], parts[2]
         if fsm_name not in fsm_groups:
             fsm_groups[fsm_name] = {
-                "file_path": file_path,
+                "file_path": file_path or "",
                 "actions": [],
                 "guards": [],
             }
-        entry = (action_name, (docstring or "").strip())
-        fsm_groups[fsm_name][kind + "s"].append(entry)
+        fsm_groups[fsm_name][kind + "s"].append(
+            {"name": action_name, "purpose": (docstring or "").strip()}
+        )
 
-    # Score Python stubs using existing rank_stubs signal chain
+    # Score Python stubs
     tail_set, middle_set, _ = _get_chain_positions(conn)
     outlier_stubs = _compute_outlier_stub_set(conn, "")
 
@@ -10612,72 +10607,97 @@ def work_session_primer(assessor: "Assessor", args: dict) -> str:
         composite = caller_count * top_score + chain_bonus + outlier_bonus
 
         scored_python.append({
+            "is_fsm": False,
+            "badge": {
+                "design-intent-stated":    "DESIGN-INTENT",
+                "blocked-on-prerequisite": "BLOCKED",
+                "genuinely-unknown":       "UNCERTAIN",
+            }.get(top_cls, top_cls.upper()),
             "name": name,
             "file": (file_path or "").replace("\\", "/").split("/")[-1],
             "file_path": file_path or "",
             "line_no": line_no or 0,
-            "docstring": (docstring or "").strip(),
+            "purpose": (docstring or "").strip().split("\n")[0][:120],
             "cls": top_cls,
-            "confidence": top_score,
+            "confidence": round(top_score, 2),
             "callers": caller_count,
-            "composite": composite,
+            "composite": round(composite, 1),
         })
 
     scored_python.sort(key=lambda s: -s["composite"])
 
-    BADGE = {
-        "design-intent-stated":   "DESIGN-INTENT",
-        "blocked-on-prerequisite": "BLOCKED",
-        "genuinely-unknown":       "UNCERTAIN",
-    }
+    items: list[dict] = []
 
-    cards: list[str] = []
-
-    # FSM groups first — ordered by total stub count (more stubs = more work, higher priority)
-    for fsm_name, grp in sorted(fsm_groups.items(), key=lambda kv: -(len(kv[1]["actions"]) + len(kv[1]["guards"]))):
+    # FSM groups first — more stubs = more concrete work = higher priority
+    for fsm_name, grp in sorted(
+        fsm_groups.items(), key=lambda kv: -(len(kv[1]["actions"]) + len(kv[1]["guards"]))
+    ):
         actions = grp["actions"]
-        guards = grp["guards"]
-        total = len(actions) + len(guards)
+        guards  = grp["guards"]
+        total   = len(actions) + len(guards)
         file_short = (grp["file_path"] or "").replace("\\", "/").split("/")[-1]
-        action_str = ", ".join(a for a, _ in actions) if actions else "(none)"
-        guard_str  = ", ".join(g for g, _ in guards)  if guards  else "(none)"
-        # First action's docstring as purpose hint
-        purposes = [d for _, d in actions + guards if d]
-        purpose_hint = purposes[0] if purposes else "FSM-defined transition logic"
+        purposes = [e["purpose"] for e in actions + guards if e["purpose"]]
+        items.append({
+            "is_fsm":         True,
+            "badge":          "FSM-SPEC",
+            "name":           fsm_name,
+            "file":           file_short,
+            "file_path":      grp["file_path"],
+            "line_no":        0,
+            "purpose":        purposes[0] if purposes else "FSM-defined transition logic",
+            "actions":        [e["name"] for e in actions],
+            "guards":         [e["name"] for e in guards],
+            "total_handlers": total,
+        })
 
-        cards.append(
-            f"[FSM-SPEC] {fsm_name} — {total} unimplemented handlers\n"
-            f"    File:     {file_short}\n"
-            f"    Actions:  {action_str}\n"
-            f"    Guards:   {guard_str}\n"
-            f"    Purpose:  {purpose_hint}\n"
-            f"    Why now:  Concrete spec-backed work; implement Python handlers for each FSM action/guard\n"
-            f"    First step: scaffold_from_pattern('{fsm_name.lower().replace('fsm', '')}_action') or read {file_short}"
-        )
+    items.extend(scored_python)
+    return items[:top_n]
 
-    # Python priority stubs
-    for s in scored_python:
-        badge = BADGE.get(s["cls"], s["cls"].upper())
-        purpose = s["docstring"].split("\n")[0][:100] if s["docstring"] else "(no docstring)"
-        line_ref = f":{s['line_no']}" if s["line_no"] else ""
-        cards.append(
-            f"[{badge}] {s['name']}\n"
-            f"    File:       {s['file']}{line_ref}\n"
-            f"    Purpose:    {purpose}\n"
-            f"    Callers:    {s['callers']}  conf={s['confidence']:.2f}\n"
-            f"    Why now:    {s['cls']} — composite score {s['composite']:.1f}\n"
-            f"    First step: classify_stub(symbol='{s['name']}')"
-        )
 
-    if not cards:
+def work_session_primer(assessor: "Assessor", args: dict) -> str:
+    """
+    work_session_primer([top_n=5]) — top N actionable work items for this corpus.
+
+    Synthesizes rank_stubs + classify_stub + FSM stub detection into a ranked list.
+    Each item is a self-contained work card: name, file:line, why-now badge, purpose,
+    and first step. Deterministic — no LLM.
+
+    FSM action/guard stubs are surfaced as a distinct high-priority category because
+    they are spec-backed (FSM JSON is the design) and concrete regardless of caller count.
+    Dead code (concept-not-applicable) is suppressed.
+    """
+    top_n = int(args.get("top_n", 5))
+    items = _primer_items(assessor.oracle, top_n)
+
+    if not items:
         return "No actionable stubs found."
 
-    top = cards[:top_n]
-    lines = [f"Work session primer — top {len(top)} of {len(cards)} actionable items:\n"]
+    lines = [f"Work session primer — top {len(items)} actionable items:\n"]
     sep = "─" * 52
-    for i, card in enumerate(top, 1):
+    for i, item in enumerate(items, 1):
         lines.append(sep)
-        lines.append(f"  {i}. {card}")
+        if item["is_fsm"]:
+            action_str = ", ".join(item["actions"]) if item["actions"] else "(none)"
+            guard_str  = ", ".join(item["guards"])  if item["guards"]  else "(none)"
+            lines.append(
+                f"  {i}. [FSM-SPEC] {item['name']} — {item['total_handlers']} unimplemented handlers\n"
+                f"    File:     {item['file']}\n"
+                f"    Actions:  {action_str}\n"
+                f"    Guards:   {guard_str}\n"
+                f"    Purpose:  {item['purpose']}\n"
+                f"    Why now:  Concrete spec-backed work; implement Python handlers for each FSM action/guard\n"
+                f"    First step: read {item['file']} for spec, then create Python handler module"
+            )
+        else:
+            line_ref = f":{item['line_no']}" if item["line_no"] else ""
+            lines.append(
+                f"  {i}. [{item['badge']}] {item['name']}\n"
+                f"    File:       {item['file']}{line_ref}\n"
+                f"    Purpose:    {item['purpose'] or '(no docstring)'}\n"
+                f"    Callers:    {item['callers']}  conf={item['confidence']:.2f}\n"
+                f"    Why now:    {item['cls']} — composite score {item['composite']:.1f}\n"
+                f"    First step: classify_stub(symbol='{item['name']}')"
+            )
     lines.append(sep)
     return "\n".join(lines)
 

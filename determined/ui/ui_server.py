@@ -1128,6 +1128,31 @@ def handle_stub_fusion_table(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("primer_load")
+def handle_primer_load(data):
+    """
+    Return top-N work items from work_session_primer as structured JSON for the UI.
+    Emits primer_result: { items: [...], total: N } or { error: str }
+    """
+    if _oracle is None:
+        emit("primer_result", {"error": "no corpus loaded"})
+        return
+    top_n = int((data or {}).get("top_n", 5))
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import _primer_items
+            from determined.assessor.assessor import Assessor
+            assessor = Assessor(_oracle)
+            items = _primer_items(_oracle, top_n)
+            socketio.emit("primer_result", {"items": items, "total": len(items)}, to=sid)
+        except Exception as exc:
+            socketio.emit("primer_result", {"error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @socketio.on("store_finding_inline")
 def handle_store_finding_inline(data):
     """Store a single finding (from an inline ⚑ chip) without going through chat."""

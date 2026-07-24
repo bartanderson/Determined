@@ -125,6 +125,21 @@
 .shape-nav-file:hover{text-decoration:underline}
 .shape-nav-sym:hover{text-decoration:underline}
 
+/* ── primer cards (WHERE TO START) ── */
+.primer-card{display:flex;align-items:baseline;gap:8px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;font-size:.8em;flex-wrap:wrap;min-width:0}
+.primer-rank{color:var(--text3);font-size:.85em;flex-shrink:0;min-width:1.2em;text-align:right}
+.primer-badge{font-size:.72em;font-weight:600;padding:1px 5px;border-radius:3px;flex-shrink:0;letter-spacing:.02em}
+.pb-fsm{background:#2a3a2a;color:#5cb85c;border:1px solid #3a5a3a}
+.pb-intent{background:#1a2a3a;color:#5b9bd5;border:1px solid #2a4a6a}
+.pb-blocked{background:#3a2a1a;color:var(--orange);border:1px solid #5a3a1a}
+.pb-uncertain{background:var(--bg2);color:var(--text3);border:1px solid var(--border)}
+.primer-name{font-weight:600;color:var(--text1);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+.primer-name:hover{text-decoration:underline dotted;text-underline-offset:2px}
+.primer-file{color:var(--text3);font-family:var(--font-mono);flex-shrink:0}
+.primer-purpose{color:var(--text2);font-style:italic;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.primer-actions{margin-left:auto;display:flex;gap:4px;flex-shrink:0}
+.primer-btn{font-size:.75em;padding:1px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--text2);white-space:nowrap}
+.primer-btn:hover{border-color:var(--accent);color:var(--accent)}
 /* ── shape tab (RM69) ── */
 .shape-card{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;min-height:0}
 .shape-card-hdr{font-size:.8em;font-weight:600;color:var(--text1);margin-bottom:4px;flex-shrink:0}
@@ -647,6 +662,16 @@
             <tbody id="fusion-table-body"></tbody>
           </table>
         </div>
+        <!-- ── WHERE TO START (primer) ── -->
+        <div id="primer-section" style="margin-bottom:12px;display:none">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-shrink:0">
+            <span style="font-size:.8em;font-weight:600;color:var(--text1);letter-spacing:.03em">WHERE TO START</span>
+            <span style="font-size:.75em;color:var(--text3)">top actionable items from work_session_primer</span>
+            <span id="primer-running" style="display:none;font-size:.75em;color:var(--accent)">Loading…</span>
+            <button id="primer-refresh-btn" class="send-btn" style="margin-left:auto;padding:1px 7px;font-size:.75em;background:var(--bg3);border:1px solid var(--border)" title="Refresh primer">↺</button>
+          </div>
+          <div id="primer-cards" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="shape-card" id="shape-file">
             <div class="shape-card-hdr">File shape <span class="shape-hint">stub density per file</span></div>
@@ -952,6 +977,7 @@ socket.on("corpus_ready", data => {
     if (data.top_entry) ctTrace(data.top_entry);
     fgLoad_();      // auto-load Frontier on corpus ready
     shapeRun();     // auto-run Shape home — the on-load headline (deterministic)
+    primerLoad();   // auto-load WHERE TO START primer cards
     if (data.design_doc_hint) {
       const h = data.design_doc_hint;
       const notice = document.getElementById("design-doc-notice");
@@ -4456,6 +4482,116 @@ document.getElementById("shape-grid").addEventListener("click", e => {
   const symEl = e.target.closest(".shape-nav-sym");
   if (symEl) { openSpotlight(symEl.dataset.sym); }
 });
+
+// ── WHERE TO START primer ──────────────────────────────────
+const primerSection    = document.getElementById("primer-section");
+const primerRunning    = document.getElementById("primer-running");
+const primerCardsEl    = document.getElementById("primer-cards");
+const primerRefreshBtn = document.getElementById("primer-refresh-btn");
+
+const _BADGE_CLS = {
+  "FSM-SPEC":      "pb-fsm",
+  "DESIGN-INTENT": "pb-intent",
+  "BLOCKED":       "pb-blocked",
+  "UNCERTAIN":     "pb-uncertain",
+};
+
+function _buildPrimerCard(item, rank) {
+  const card = document.createElement("div");
+  card.className = "primer-card";
+
+  // rank
+  const rankEl = document.createElement("span");
+  rankEl.className = "primer-rank";
+  rankEl.textContent = rank + ".";
+
+  // badge
+  const badge = document.createElement("span");
+  badge.className = "primer-badge " + (_BADGE_CLS[item.badge] || "pb-uncertain");
+  badge.textContent = item.badge;
+
+  // name (clickable)
+  const nameEl = document.createElement("span");
+  nameEl.className = "primer-name";
+  nameEl.textContent = item.is_fsm
+    ? item.name + " (" + item.total_handlers + " handlers)"
+    : item.name;
+  nameEl.title = item.is_fsm
+    ? "Actions: " + (item.actions || []).join(", ") + "\nGuards: " + (item.guards || []).join(", ")
+    : (item.cls || "") + " · " + item.callers + " caller(s)";
+  nameEl.addEventListener("click", () => {
+    if (item.file_path) edOpenFile(item.file_path, item.line_no || 0);
+  });
+
+  // file
+  const fileEl = document.createElement("span");
+  fileEl.className = "primer-file";
+  fileEl.textContent = item.line_no ? item.file + ":" + item.line_no : item.file;
+
+  // purpose
+  const purposeEl = document.createElement("span");
+  purposeEl.className = "primer-purpose";
+  purposeEl.textContent = item.purpose || "";
+
+  // action buttons
+  const actionsEl = document.createElement("div");
+  actionsEl.className = "primer-actions";
+
+  if (!item.is_fsm) {
+    // Classify button → opens spotlight with classify view
+    const clsBtn = document.createElement("button");
+    clsBtn.className = "primer-btn";
+    clsBtn.textContent = "Classify";
+    clsBtn.title = "classify_stub — show full signals for this stub";
+    clsBtn.addEventListener("click", () => openSpotlight(item.name));
+    actionsEl.appendChild(clsBtn);
+  }
+
+  if (item.is_fsm) {
+    // Open spec button → open FSM JSON file
+    const specBtn = document.createElement("button");
+    specBtn.className = "primer-btn";
+    specBtn.textContent = "Open spec";
+    specBtn.title = "Open FSM spec file in editor";
+    specBtn.addEventListener("click", () => {
+      if (item.file_path) edOpenFile(item.file_path, 0);
+    });
+    actionsEl.appendChild(specBtn);
+  }
+
+  card.appendChild(rankEl);
+  card.appendChild(badge);
+  card.appendChild(nameEl);
+  card.appendChild(fileEl);
+  card.appendChild(purposeEl);
+  card.appendChild(actionsEl);
+  return card;
+}
+
+function primerLoad() {
+  primerSection.style.display = "";
+  primerRunning.style.display = "";
+  primerCardsEl.innerHTML = '<div style="font-size:.78em;color:var(--text3);padding:4px 0">Loading…</div>';
+  socket.emit("primer_load", { top_n: 5 });
+}
+
+socket.on("primer_result", data => {
+  primerRunning.style.display = "none";
+  if (data.error) {
+    primerCardsEl.innerHTML = '<div style="font-size:.78em;color:var(--orange)">' + escHtml(data.error) + '</div>';
+    return;
+  }
+  if (!data.items || data.items.length === 0) {
+    primerSection.style.display = "none";
+    return;
+  }
+  primerCardsEl.innerHTML = "";
+  data.items.forEach((item, i) => {
+    primerCardsEl.appendChild(_buildPrimerCard(item, i + 1));
+  });
+});
+
+primerRefreshBtn.addEventListener("click", primerLoad);
 
 // ── Stub signal table ──────────────────────────────────────
 const _CLS_COLORS = {
