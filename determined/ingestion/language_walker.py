@@ -136,6 +136,27 @@ _LUA_BUILTINS = frozenset({
     "floor", "ceil", "abs", "max", "min", "sqrt", "huge", "pi",
 })
 
+# C++ standard library identifiers to filter from callees
+_CPP_BUILTINS = frozenset({
+    # std namespace — bare names that leak out of using-declarations
+    "make_shared", "make_unique", "make_pair", "make_tuple", "make_optional",
+    "move", "forward", "swap", "exchange", "declval",
+    "static_cast", "dynamic_cast", "reinterpret_cast", "const_cast",
+    "shared_ptr", "unique_ptr", "weak_ptr", "optional", "variant", "any",
+    "vector", "map", "unordered_map", "set", "unordered_set", "list",
+    "deque", "queue", "stack", "array", "string", "wstring",
+    "pair", "tuple", "function", "bind", "ref", "cref",
+    "cout", "cin", "cerr", "clog", "endl", "flush",
+    "sort", "find", "find_if", "count", "count_if", "transform",
+    "begin", "end", "rbegin", "rend", "size", "empty",
+    "push_back", "pop_back", "emplace_back", "emplace", "insert", "erase",
+    "reserve", "resize", "clear", "front", "back", "data",
+    "lock", "unlock", "try_lock", "notify_one", "notify_all", "wait",
+    "to_string", "stoi", "stof", "stod", "stol",
+    "min", "max", "abs", "clamp", "pow", "sqrt", "sin", "cos",
+    "assert", "static_assert", "throw", "new", "delete",
+})
+
 # Regex for CUDA kernel launches: name<<<grid, block>>>(args)
 _CUDA_KERNEL_LAUNCH_RE = re.compile(r'\b(\w+)\s*<<<[^>]*>>>\s*\(')
 
@@ -268,6 +289,8 @@ class LanguageWalker:
             return self._zig_symbols()
         if lang == "lua":
             return self._lua_symbols()
+        if lang == "cpp":
+            return self._cpp_symbols()
         return []
 
     def call_edges(self) -> list[tuple]:
@@ -280,7 +303,7 @@ class LanguageWalker:
             return self._zig_call_edges()
         if lang == "lua":
             return self._lua_call_edges()
-        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c", "cuda"):
+        if lang not in ("javascript", "typescript", "jsx", "tsx", "go", "rust", "c", "cuda", "cpp"):
             return []
         edges = self._shared_call_edges(self._lang_spec())
         if lang == "cuda":
@@ -320,6 +343,12 @@ class LanguageWalker:
                 callee_extractor=self._cuda_callee_name,
                 builtins=_CUDA_BUILTINS | _C_BUILTINS,
                 fn_ranges_builder=self._cuda_fn_ranges,
+            )
+        if lang == "cpp":
+            return LangSpec(
+                callee_extractor=self._cpp_callee_name,
+                builtins=_CPP_BUILTINS | _C_BUILTINS,
+                fn_ranges_builder=self._cpp_fn_ranges,
             )
         raise ValueError(f"No LangSpec for language: {lang}")
 
@@ -1465,6 +1494,143 @@ class LanguageWalker:
         return max(candidates, key=lambda x: x[0])[2]
 
     # ------------------------------------------------------------------
+    # C++: symbols, call edges, class hierarchy (Phase 6)
+    # ------------------------------------------------------------------
+
+    def _cpp_fn_declarator(self, node):
+        """Walk the declarator chain for C++ function definitions and declarations.
+
+        Handles beyond C:
+          qualified_identifier  -> Renderer::init, Renderer::~Renderer
+          destructor_name       -> ~Renderer (inline in class body)
+          operator_name         -> operator=, operator+
+
+        Returns (name: str, fn_decl_node) or (None, None) if not a function.
+        """
+        decl = node.field("declarator")
+        if decl is None:
+            return None, None
+        while decl is not None and decl.kind() in (
+            "pointer_declarator", "abstract_pointer_declarator",
+            "reference_declarator", "abstract_reference_declarator",
+        ):
+            decl = decl.field("declarator")
+        if decl is None or decl.kind() != "function_declarator":
+            return None, None
+        name_node = decl.field("declarator")
+        if name_node is None:
+            return None, None
+        kind = name_node.kind()
+        if kind in ("identifier", "field_identifier"):
+            return name_node.text(), decl
+        if kind in ("destructor_name", "operator_name"):
+            return name_node.text(), decl
+        if kind == "qualified_identifier":
+            scope = name_node.field("scope")
+            name = name_node.field("name")
+            if name is None:
+                return None, None
+            name_text = name.text()
+            if scope is not None:
+                return f"{scope.text()}::{name_text}", decl
+            return name_text, decl
+        return None, None
+
+    def _cpp_is_stub(self, node) -> bool:
+        body = node.field("body")
+        if body is None:
+            return True
+        text = body.text().strip()
+        if text in ("{}", "{ }"):
+            return True
+        inner = text.lstrip("{").rstrip("}").strip()
+        if not inner:
+            return True
+        if re.match(r'^return\s*(0+|NULL|nullptr|false)?\s*;$', inner):
+            return True
+        return False
+
+    def _cpp_symbols(self) -> list[dict]:
+        results = []
+        root = self._root.root()
+
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            name, _ = self._cpp_fn_declarator(node)
+            if name is None:
+                continue
+            fqdn = f"{self._basename}::{name}"
+            results.append(self._make_symbol(
+                fqdn, node,
+                is_stub=self._cpp_is_stub(node),
+                docstring=self._preceding_comment(node),
+            ))
+
+        # Top-level forward declarations (extern "C", non-member)
+        # Note: class member field_declarations are intentionally skipped here —
+        # they duplicate symbols from their out-of-class definitions. Pure virtual
+        # capture is deferred to RM73 (walker dispatch resolution).
+        for node in root.find_all({"rule": {"kind": "declaration"}}):
+            name, _ = self._cpp_fn_declarator(node)
+            if name is None:
+                continue
+            fqdn = f"{self._basename}::{name}"
+            results.append(self._make_symbol(fqdn, node, is_stub=True,
+                                             docstring=self._preceding_comment(node)))
+
+        return results
+
+    def _cpp_fn_ranges(self) -> list[tuple]:
+        ranges = []
+        root = self._root.root()
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            name, _ = self._cpp_fn_declarator(node)
+            if name:
+                r = node.range()
+                ranges.append((r.start.line, r.end.line, f"{self._basename}::{name}"))
+        ranges.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        return ranges
+
+    def _cpp_callee_name(self, func_node) -> str | None:
+        """Extract callee name from a C++ call_expression function field.
+
+        Extends _c_callee_name with:
+          qualified_identifier  -> scope::name (filters std:: namespace)
+        """
+        kind = func_node.kind()
+        if kind == "qualified_identifier":
+            scope = func_node.field("scope")
+            name = func_node.field("name")
+            if name is None:
+                return None
+            scope_text = scope.text() if scope else ""
+            if scope_text == "std":
+                return None
+            name_text = name.text()
+            if scope_text:
+                return f"{scope_text}::{name_text}"
+            return name_text
+        return self._c_callee_name(func_node)
+
+    def _cpp_class_hierarchy(self) -> dict[str, list[str]]:
+        """Return {ClassName: [BaseClass, ...]} from class_specifier inheritance clauses."""
+        result: dict[str, list[str]] = {}
+        root = self._root.root()
+        for cls in root.find_all({"rule": {"kind": "class_specifier"}}):
+            name_node = cls.field("name")
+            if name_node is None:
+                continue
+            class_name = name_node.text()
+            bases: list[str] = []
+            for child in cls.children():
+                if child.kind() == "base_class_clause":
+                    for grandchild in child.children():
+                        if grandchild.kind() == "type_identifier":
+                            bases.append(grandchild.text())
+            if bases:
+                result[class_name] = bases
+        return result
+
+    # ------------------------------------------------------------------
     # Go: interface types
     # ------------------------------------------------------------------
 
@@ -1485,6 +1651,12 @@ class LanguageWalker:
         if self._language != "rust":
             return {}
         return self._rust_impl_trait_map()
+
+    def class_hierarchy(self) -> dict[str, list[str]]:
+        """Return {ClassName: [BaseClass, ...]} for C++ files; empty for other languages."""
+        if self._language != "cpp":
+            return {}
+        return self._cpp_class_hierarchy()
 
     def _rust_trait_types(self) -> dict[str, list[str]]:
         """Extract Rust trait definitions: trait Foo { fn method1(...); fn method2(...) }"""
@@ -2183,6 +2355,11 @@ def detect_language(file_path: str) -> str | None:
         ".h": "c",
         ".cu": "cuda",
         ".cuh": "cuda",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".cxx": "cpp",
+        ".hpp": "cpp",
+        ".hxx": "cpp",
         ".zig": "zig",
         ".lua": "lua",
     }.get(ext)

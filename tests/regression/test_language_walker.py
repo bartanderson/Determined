@@ -1263,3 +1263,114 @@ def test_lua_builtin_filtered():
     callees = {e[1] for e in w.call_edges()}
     assert "print" not in callees
     assert "math.floor" not in callees
+
+
+# ---------------------------------------------------------------------------
+# C++ walker tests
+# ---------------------------------------------------------------------------
+
+def test_cpp_free_function_symbol():
+    src = "void setup() { do_work(); }\n"
+    w = LanguageWalker(src, "/fake/engine.cpp", "cpp")
+    names = {s["name"] for s in w.symbols()}
+    assert "engine::setup" in names
+
+
+def test_cpp_scoped_method_fqdn():
+    src = "void Renderer::init(int w, int h) { alloc(w); }\n"
+    w = LanguageWalker(src, "/fake/renderer.cpp", "cpp")
+    names = {s["name"] for s in w.symbols()}
+    assert "renderer::Renderer::init" in names
+
+
+def test_cpp_constructor_symbol():
+    src = "class Renderer {\npublic:\n    Renderer() {}\n};\n"
+    w = LanguageWalker(src, "/fake/r.cpp", "cpp")
+    names = {s["name"] for s in w.symbols()}
+    assert "r::Renderer" in names
+
+
+def test_cpp_destructor_symbol():
+    src = "class Renderer {\npublic:\n    ~Renderer() {}\n};\n"
+    w = LanguageWalker(src, "/fake/r.cpp", "cpp")
+    names = {s["name"] for s in w.symbols()}
+    assert "r::~Renderer" in names
+
+
+def test_cpp_inline_method_symbol():
+    src = "class Widget {\npublic:\n    void draw() override { paint(); }\n};\n"
+    w = LanguageWalker(src, "/fake/ui.cpp", "cpp")
+    names = {s["name"] for s in w.symbols()}
+    assert "ui::draw" in names
+
+
+def test_cpp_stub_empty_body():
+    src = "void Renderer::shutdown() {}\n"
+    w = LanguageWalker(src, "/fake/r.cpp", "cpp")
+    sym = next(s for s in w.symbols() if "shutdown" in s["name"])
+    assert sym["is_stub"] is True
+
+
+def test_cpp_non_stub_has_body():
+    src = "void Renderer::init(int w) { width_ = w; alloc(); }\n"
+    w = LanguageWalker(src, "/fake/r.cpp", "cpp")
+    sym = next(s for s in w.symbols() if "init" in s["name"])
+    assert sym["is_stub"] is False
+
+
+def test_cpp_call_edge_free_function():
+    src = "void setup() { load_config(); init_gl(); }\n"
+    w = LanguageWalker(src, "/fake/app.cpp", "cpp")
+    callees = {e[1] for e in w.call_edges()}
+    assert "load_config" in callees
+    assert "init_gl" in callees
+
+
+def test_cpp_call_edge_member_access():
+    src = "void App::run() { renderer_.draw(); window_.swap(); }\n"
+    w = LanguageWalker(src, "/fake/app.cpp", "cpp")
+    callees = {e[1] for e in w.call_edges()}
+    assert "renderer_.draw" in callees or "draw" in callees
+
+
+def test_cpp_call_edge_scoped_caller():
+    src = "void Engine::tick() { physics_.step(); audio_.update(); }\n"
+    w = LanguageWalker(src, "/fake/engine.cpp", "cpp")
+    callers = {e[0] for e in w.call_edges()}
+    assert "engine::Engine::tick" in callers
+
+
+def test_cpp_std_callee_filtered():
+    src = "void process() { std::sort(v.begin(), v.end()); }\n"
+    w = LanguageWalker(src, "/fake/proc.cpp", "cpp")
+    callees = {e[1] for e in w.call_edges()}
+    assert not any("std" in c for c in callees)
+
+
+def test_cpp_class_hierarchy_single():
+    src = "class Renderer : public Base {\npublic:\n    void draw() {}\n};\n"
+    w = LanguageWalker(src, "/fake/r.cpp", "cpp")
+    h = w.class_hierarchy()
+    assert h.get("Renderer") == ["Base"]
+
+
+def test_cpp_class_hierarchy_multiple_bases():
+    src = "class AdvRenderer : public Renderer, private Base {};\n"
+    w = LanguageWalker(src, "/fake/r.cpp", "cpp")
+    h = w.class_hierarchy()
+    assert "Renderer" in h["AdvRenderer"]
+    assert "Base" in h["AdvRenderer"]
+
+
+def test_cpp_class_hierarchy_empty_for_non_cpp():
+    src = "fn foo() {}\n"
+    w = LanguageWalker(src, "/fake/x.rs", "rust")
+    assert w.class_hierarchy() == {}
+
+
+def test_cpp_detect_language():
+    from determined.ingestion.language_walker import detect_language
+    assert detect_language("foo.cpp") == "cpp"
+    assert detect_language("foo.cc") == "cpp"
+    assert detect_language("foo.hpp") == "cpp"
+    assert detect_language("foo.cxx") == "cpp"

@@ -1018,6 +1018,62 @@ corpus validates the walker; the walker lets Determined analyze RM72's own code.
 
 ---
 
+## RM73 — Walker dispatch resolution: lift the per-language edge ceilings (FUTURE)
+
+**What:** Every walker has a class of call edges it cannot resolve today — not because
+resolution is impossible, but because it requires type inference or cross-file analysis
+that hasn't been built yet. These were logged as "accepted ceilings" during probe sessions.
+They are deferred, not closed.
+
+**Why:** The ceilings are real gaps in the call graph. A virtual method call, a trait
+object dispatch, or a function pointer call is a real edge — it just requires knowing
+the concrete type at the call site. Leaving these unresolved understates connectivity
+and makes hot-path and blast-radius analysis incomplete.
+
+**Per-language inventory:**
+
+- **Go**: Interface dispatch — `obj.Method()` where `obj` is an interface type. Which
+  concrete type fires is unknowable from the call site alone. Requires cross-file type
+  flow or explicit interface-to-implementor mapping. `interface_types()` already extracts
+  the interface shape; the gap is linking callers to concrete implementors.
+
+- **Rust**: `dyn Trait` dispatch — same class of problem. `trait_types()` and
+  `impl_trait_map()` already extract the trait/impl shape; the gap is resolving
+  `dyn Trait` call sites to concrete `impl` blocks.
+
+- **Zig**: Struct method calls on pointer receivers — `self.method()` where `self` is a
+  pointer to a struct. 14% edge resolution on mach corpus. No type inference available;
+  resolution requires knowing the concrete type of `self` at each call site.
+
+- **Lua**: Local stdlib aliases — `local sub = string.sub; sub(...)` resolves to a local
+  name, not the stdlib symbol. Requires tracking alias assignments across the function scope.
+
+- **C / CUDA**: Function pointer calls — `fn_ptr(args)` where `fn_ptr` is a variable.
+  The callee is unknowable without dataflow. Also: indirect dispatch through struct-of-
+  function-pointers (common in C plugin/driver patterns). These appear as unresolved edges
+  today.
+
+- **C++** (once the walker exists): Virtual method dispatch — `obj->render()` where
+  `render` is virtual. Which override fires is a runtime question. Resolution requires
+  class hierarchy + type flow. Also: `class_hierarchy()` method not yet implemented —
+  inheritance relationships are structural facts independent of dispatch and should be
+  captured even before full dispatch resolution is built.
+
+**Approach (when active):**
+Not a single pass — each language needs its own resolution strategy. Likely phases:
+1. Capture structural metadata that enables resolution (class hierarchy, interface-to-impl
+   maps, alias tracking) — some of this already exists for Go/Rust.
+2. Build a post-walk resolution pass that matches unresolved call edges against the
+   metadata to promote them to resolved.
+3. Add confidence scores or edge-type annotations to distinguish statically-resolved,
+   structurally-inferred, and still-unresolved edges.
+
+**Gate:** No single language blocks any other. Can be done incrementally — pick the
+language where the ceiling hurts most (Go interface resolution is probably the highest-
+value first target given Go corpus usage).
+
+---
+
 ## RM68 — Remove subrace concept from dj2 (DEFERRED)
 
 **Context:** The OG system rewrite replaced the original D&D data model with a more
