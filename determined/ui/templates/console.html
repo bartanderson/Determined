@@ -101,7 +101,7 @@
 
 /* ── guide card ── */
 #guide-card{display:none;padding:7px 14px 8px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:.8em;line-height:1.5}
-#guide-card.visible{display:block;border:1px solid var(--orange);border-left:3px solid var(--orange);margin:4px 2px 0}
+#guide-card.visible{display:block;border:1px solid var(--orange);margin:4px 2px 0}
 .gc-phase-row{display:flex;align-items:center;gap:5px;margin-bottom:5px}
 .gc-phase-label{color:var(--text3);font-size:.92em}
 .gc-phase-btn{font-size:.75em;padding:1px 8px;border:1px solid var(--border2);border-radius:10px;background:none;color:var(--text2);cursor:pointer}
@@ -111,6 +111,7 @@
 .gc-headline{font-weight:600;color:var(--text1);margin-bottom:2px}
 .gc-body{color:var(--text2)}
 .gc-notice{color:var(--text3);font-style:italic;margin-top:3px;font-size:.95em}
+#guide-card abbr{text-decoration:underline dotted var(--text3);cursor:help}
 
 /* ── lens / view selector bars (Phase B consolidation) ── */
 .lens-sel-bar{display:flex;gap:4px;padding:4px 8px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0}
@@ -5426,8 +5427,8 @@ const GUIDE_GENERAL = {
 
   "shape": {
     "headline": "Shape: home base — what this codebase is trying to become",
-    "body": "Determined read every file and built a call graph. The verdict strip (above) summarises what it found: stubs, ghost concepts, subsystem health. WHERE TO START (below the verdict) ranks the first things to implement, in order. This tab auto-runs on every corpus load — you don't need to click anything.",
-    "what_to_notice": "Start with WHERE TO START — it's already sorted by what's blocking the most. FSM cards have a Scaffold button that generates the Python handler stubs you need to write. When you're ready to dig into the full stub list, go to Frontier →"
+    "body": "Determined read every file and built a <abbr title='A map of which functions call which other functions — like a wiring diagram for the code'>call graph</abbr>. The verdict strip at the top of this tab summarises what it found: <abbr title='Functions that exist in name only — placeholder code that hasn't been written yet'>stubs</abbr>, <abbr title='Ideas the code refers to by name but that haven't been built yet'>ghost concepts</abbr>, and subsystem health. WHERE TO START, just below that, ranks the first things to implement, in order. This tab auto-runs on every corpus load — you don't need to click anything.",
+    "what_to_notice": "Start with WHERE TO START — it's already sorted by what's blocking the most. <abbr title='Finite State Machine — a design pattern where the system moves between named states (like idle → talking → done) based on events'>FSM</abbr> cards have a Scaffold button that generates the Python handler stubs you need to write. When you're ready to dig into the full stub list, go to Frontier →"
   },
   "frontier": {
     "headline": "Frontier: the detailed gap list — what's blocking and why",
@@ -5524,9 +5525,9 @@ function guideUpdateCard() {
       guideCard.classList.add("visible");
       return;
     }
-    gcHeadline.textContent = entry.headline;
-    gcBody.textContent = entry.body;
-    gcNotice.textContent = entry.what_to_notice ? ("Notice: " + entry.what_to_notice) : "";
+    gcHeadline.innerHTML = entry.headline;
+    gcBody.innerHTML = entry.body;
+    gcNotice.innerHTML = entry.what_to_notice ? ("Notice: " + entry.what_to_notice) : "";
     gcNotice.style.display = entry.what_to_notice ? "" : "none";
     guideCard.classList.add("visible");
     return;
@@ -5546,15 +5547,15 @@ function guideUpdateCard() {
                       : (_activeTabName + ":" + _activePhase);
   const entry = GUIDE_DATA[key];
   if (!entry) {
-    gcHeadline.textContent = "";
-    gcBody.textContent = "";
+    gcHeadline.innerHTML = "";
+    gcBody.innerHTML = "";
     gcNotice.style.display = "none";
     guideCard.classList.add("visible");
     return;
   }
-  gcHeadline.textContent = entry.headline;
-  gcBody.textContent = entry.body;
-  gcNotice.textContent = entry.what_to_notice ? ("Notice: " + entry.what_to_notice) : "";
+  gcHeadline.innerHTML = entry.headline;
+  gcBody.innerHTML = entry.body;
+  gcNotice.innerHTML = entry.what_to_notice ? ("Notice: " + entry.what_to_notice) : "";
   gcNotice.style.display = entry.what_to_notice ? "" : "none";
   guideCard.classList.add("visible");
 }
