@@ -1140,6 +1140,18 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Session start or when asking 'what should I work on next?' — gives a ranked, evidence-backed recommendation without requiring workflow items to be populated.",
         "category": "planning",
     },
+
+    # ── COMPLETION GATE: work session primer ─────────────────────────
+    "work_session_primer": {
+        "purpose": "Top N (default 5) actionable work items for this corpus. Synthesizes rank_stubs + classify_stub + FSM stub detection into a ranked list of self-contained work cards. FSM action/guard stubs are surfaced as a distinct high-priority category (spec-backed, concrete, independent of caller count). Dead code (concept-not-applicable) is suppressed. No LLM — fully deterministic.",
+        "args": {
+            "top_n": "(optional) number of items to return, default 5",
+        },
+        "output": "ranked work item cards, each with: badge (FSM-SPEC / DESIGN-INTENT / BLOCKED / UNCERTAIN), file:line, purpose, why-now, first step",
+        "feeds": ["classify_stub", "explore_stub", "scaffold_from_pattern", "feature_work_plan"],
+        "use_when": "Session start on any corpus — answers 'what should I work on first?' with a grounded, ranked list of concrete work items. Replaces the manual 4-tool synthesis of rank_stubs + stub_prerequisite_map + design_oracle + classify_stub.",
+        "category": "planning",
+    },
 }
 
 

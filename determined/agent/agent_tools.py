@@ -10535,6 +10535,156 @@ def rank_stubs(assessor: "Assessor", args: dict) -> str:
 TOOLS["rank_stubs"] = (rank_stubs, "assessor")
 
 
+def work_session_primer(assessor: "Assessor", args: dict) -> str:
+    """
+    work_session_primer([top_n=5]) — top N actionable work items for this corpus.
+
+    Synthesizes rank_stubs + classify_stub + FSM stub detection into a ranked list.
+    Each item is a self-contained work card: name, file:line, why-now badge, purpose,
+    and first step. Deterministic — no LLM.
+
+    FSM action/guard stubs are surfaced as a distinct high-priority category because
+    they are spec-backed (FSM JSON is the design) and concrete regardless of caller count.
+    Dead code (concept-not-applicable) is suppressed.
+    """
+    from determined.agent.classify_stub import extract_signals, score_hypotheses
+
+    oracle = assessor.oracle
+    conn = oracle.conn
+    top_n = int(args.get("top_n", 5))
+
+    stubs = conn.execute(
+        "SELECT name, file_path, docstring, line_number FROM functions "
+        "WHERE is_stub=1 "
+        "AND file_path NOT LIKE '%test_%' AND file_path NOT LIKE '%_test%'"
+    ).fetchall()
+
+    if not stubs:
+        return "No stubs found in corpus."
+
+    # Partition: FSM stubs (by name pattern) vs Python/other stubs
+    fsm_stubs: list[tuple] = []
+    python_stubs: list[tuple] = []
+    for name, file_path, docstring, line_no in stubs:
+        if "::action::" in name or "::guard::" in name:
+            fsm_stubs.append((name, file_path, docstring, line_no))
+        else:
+            python_stubs.append((name, file_path, docstring, line_no))
+
+    # Group FSM stubs by FSM name
+    fsm_groups: dict[str, dict] = {}
+    for name, file_path, docstring, line_no in fsm_stubs:
+        parts = name.split("::")
+        if len(parts) < 3:
+            continue
+        fsm_name, kind, action_name = parts[0], parts[1], parts[2]
+        if fsm_name not in fsm_groups:
+            fsm_groups[fsm_name] = {
+                "file_path": file_path,
+                "actions": [],
+                "guards": [],
+            }
+        entry = (action_name, (docstring or "").strip())
+        fsm_groups[fsm_name][kind + "s"].append(entry)
+
+    # Score Python stubs using existing rank_stubs signal chain
+    tail_set, middle_set, _ = _get_chain_positions(conn)
+    outlier_stubs = _compute_outlier_stub_set(conn, "")
+
+    scored_python: list[dict] = []
+    for name, file_path, docstring, line_no in python_stubs:
+        signals = extract_signals(oracle, name, file_path_hint=file_path)
+        if "error" in signals:
+            continue
+        hypotheses = score_hypotheses(signals)
+        if not hypotheses:
+            top_cls, top_score = "genuinely-unknown", 0.0
+        else:
+            top = hypotheses[0]
+            top_cls, top_score = top["classification"], top["score"]
+
+        if top_cls == "concept-not-applicable":
+            continue  # Dead code — suppress
+
+        caller_count = signals.get("caller_count", 0)
+        chain_bonus = 5 if name in tail_set else (2 if name in middle_set else 0)
+        outlier_bonus = 3 if name in outlier_stubs else 0
+        composite = caller_count * top_score + chain_bonus + outlier_bonus
+
+        scored_python.append({
+            "name": name,
+            "file": (file_path or "").replace("\\", "/").split("/")[-1],
+            "file_path": file_path or "",
+            "line_no": line_no or 0,
+            "docstring": (docstring or "").strip(),
+            "cls": top_cls,
+            "confidence": top_score,
+            "callers": caller_count,
+            "composite": composite,
+        })
+
+    scored_python.sort(key=lambda s: -s["composite"])
+
+    BADGE = {
+        "design-intent-stated":   "DESIGN-INTENT",
+        "blocked-on-prerequisite": "BLOCKED",
+        "genuinely-unknown":       "UNCERTAIN",
+    }
+
+    cards: list[str] = []
+
+    # FSM groups first — ordered by total stub count (more stubs = more work, higher priority)
+    for fsm_name, grp in sorted(fsm_groups.items(), key=lambda kv: -(len(kv[1]["actions"]) + len(kv[1]["guards"]))):
+        actions = grp["actions"]
+        guards = grp["guards"]
+        total = len(actions) + len(guards)
+        file_short = (grp["file_path"] or "").replace("\\", "/").split("/")[-1]
+        action_str = ", ".join(a for a, _ in actions) if actions else "(none)"
+        guard_str  = ", ".join(g for g, _ in guards)  if guards  else "(none)"
+        # First action's docstring as purpose hint
+        purposes = [d for _, d in actions + guards if d]
+        purpose_hint = purposes[0] if purposes else "FSM-defined transition logic"
+
+        cards.append(
+            f"[FSM-SPEC] {fsm_name} — {total} unimplemented handlers\n"
+            f"    File:     {file_short}\n"
+            f"    Actions:  {action_str}\n"
+            f"    Guards:   {guard_str}\n"
+            f"    Purpose:  {purpose_hint}\n"
+            f"    Why now:  Concrete spec-backed work; implement Python handlers for each FSM action/guard\n"
+            f"    First step: scaffold_from_pattern('{fsm_name.lower().replace('fsm', '')}_action') or read {file_short}"
+        )
+
+    # Python priority stubs
+    for s in scored_python:
+        badge = BADGE.get(s["cls"], s["cls"].upper())
+        purpose = s["docstring"].split("\n")[0][:100] if s["docstring"] else "(no docstring)"
+        line_ref = f":{s['line_no']}" if s["line_no"] else ""
+        cards.append(
+            f"[{badge}] {s['name']}\n"
+            f"    File:       {s['file']}{line_ref}\n"
+            f"    Purpose:    {purpose}\n"
+            f"    Callers:    {s['callers']}  conf={s['confidence']:.2f}\n"
+            f"    Why now:    {s['cls']} — composite score {s['composite']:.1f}\n"
+            f"    First step: classify_stub(symbol='{s['name']}')"
+        )
+
+    if not cards:
+        return "No actionable stubs found."
+
+    top = cards[:top_n]
+    lines = [f"Work session primer — top {len(top)} of {len(cards)} actionable items:\n"]
+    sep = "─" * 52
+    for i, card in enumerate(top, 1):
+        lines.append(sep)
+        lines.append(f"  {i}. {card}")
+    lines.append(sep)
+    return "\n".join(lines)
+
+
+TOOLS["work_session_primer"] = (work_session_primer, "assessor")
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.
