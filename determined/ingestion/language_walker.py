@@ -136,6 +136,12 @@ _LUA_BUILTINS = frozenset({
     "floor", "ceil", "abs", "max", "min", "sqrt", "huge", "pi",
 })
 
+# Declarator kinds that denote a real named parameter (vs. a cast-expression argument)
+_CPP_PARAM_NAME_DECL_KINDS = frozenset({
+    "identifier", "pointer_declarator", "reference_declarator",
+    "array_declarator", "rvalue_reference_declarator",
+})
+
 # C++ standard library identifiers to filter from callees
 _CPP_BUILTINS = frozenset({
     # std namespace — bare names that leak out of using-declarations
@@ -155,6 +161,16 @@ _CPP_BUILTINS = frozenset({
     "to_string", "stoi", "stof", "stod", "stol",
     "min", "max", "abs", "clamp", "pow", "sqrt", "sin", "cos",
     "assert", "static_assert", "throw", "new", "delete",
+    # smart pointer / RAII methods (appear bare when chained)
+    "get", "release", "reset", "owns",
+    # string methods (appear bare when called on complex receiver)
+    "c_str", "substr", "compare", "at", "str", "append", "replace",
+    # stream methods
+    "is_open", "eof", "good", "fail", "bad", "close", "getline",
+    "read", "write", "seekg", "seekp", "tellg", "tellp",
+    # container methods not already covered
+    "contains", "count", "lower_bound", "upper_bound",
+    "merge", "splice", "unique", "flatten",
 })
 
 # Regex for CUDA kernel launches: name<<<grid, block>>>(args)
@@ -1536,6 +1552,32 @@ class LanguageWalker:
             return name_text, decl
         return None, None
 
+    def _cpp_decl_is_fn_forward(self, fn_decl_node) -> bool:
+        """Return True if a function_declarator node looks like a real forward declaration.
+
+        Rejects C++ variable declarations that share the AST shape of forward
+        declarations due to the most-vexing-parse (e.g. `ifstream file(path)`).
+        Rule: param list must be empty OR contain at least one parameter_declaration
+        that has a declarator field (a named typed parameter like `int x`).
+        """
+        params = fn_decl_node.field("parameters")
+        if params is None:
+            return True
+        for child in params.children():
+            if child.kind() != "parameter_declaration":
+                continue
+            d = child.field("declarator")
+            # Named param with a real name node (not abstract_function_declarator from casts)
+            if d is not None and d.kind() in _CPP_PARAM_NAME_DECL_KINDS:
+                return True
+            # Unnamed param with primitive type → real forward decl (e.g. `void foo(int)`)
+            t = child.field("type")
+            if t is not None and t.kind() == "primitive_type":
+                return True
+        # No qualifying params — keep only if list is empty (e.g. `void foo()`)
+        has_params = any(c.kind() == "parameter_declaration" for c in params.children())
+        return not has_params
+
     def _cpp_is_stub(self, node) -> bool:
         body = node.field("body")
         if body is None:
@@ -1565,13 +1607,20 @@ class LanguageWalker:
                 docstring=self._preceding_comment(node),
             ))
 
-        # Top-level forward declarations (extern "C", non-member)
-        # Note: class member field_declarations are intentionally skipped here —
-        # they duplicate symbols from their out-of-class definitions. Pure virtual
-        # capture is deferred to RM73 (walker dispatch resolution).
+        # Top-level forward declarations (extern "C", non-member).
+        # Guard: require the parameter list to be empty or contain at least one
+        # parameter_declaration with a declarator field (a typed, named param like
+        # `int x`). This filters out C++ variable declarations that share the same
+        # AST shape due to the most-vexing-parse:
+        #   `std::ifstream file(path)`       → param has no declarator → skip
+        #   `std::unique_ptr<T> p(expr)`     → param has no declarator → skip
+        #   `void foo(int x)`                → param has declarator    → keep
+        #   `int bar()`                      → empty params            → keep
         for node in root.find_all({"rule": {"kind": "declaration"}}):
-            name, _ = self._cpp_fn_declarator(node)
+            name, fn_decl = self._cpp_fn_declarator(node)
             if name is None:
+                continue
+            if not self._cpp_decl_is_fn_forward(fn_decl):
                 continue
             fqdn = f"{self._basename}::{name}"
             results.append(self._make_symbol(fqdn, node, is_stub=True,
