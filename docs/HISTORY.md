@@ -8,6 +8,22 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-24 (s251): run_tests.py — targeted two-level test runner. FILE_MAP (source→test
+files) + function-level grep (changed def names → specific test::function targets). Default
+uses `git diff HEAD`; `--last-commit` for post-commit verify; `--list` to preview. This is
+now the ONLY valid way to run tests — never call pytest directly. Three llama-server.exe
+instances accumulated this session from orphaned UI server starts; mandatory pre-flight:
+`Get-Process llama-server | Stop-Process -Force` before every preview_start.
+
+2026-07-24 (s251): Completion gate closed (pending UI verify). Three fixes shipped:
+(1) scaffold filter in _primer_items() — empty_pass + no concept_presence + <=1 caller →
+skip, removes _register_world_tools false positive. (2) blocked_by annotation — Python stub
+cards get "↑ blocked by #N (FSMName)" when docstring names an FSM above them in the list.
+(3) fsm_scaffold tool — generates Python handler stub module for all FSM actions/guards;
+deterministic, no LLM; registered in TOOLS + REGISTRY; socket handler in ui_server;
+[Scaffold] button on FSM-SPEC cards renders code panel below primer section.
+UI verify incomplete — browser pane not displayed in this session; Bart to verify manually.
+
 2026-07-24 (s250): work_session_primer built and shipped. Key discovery during walkthrough:
 FSM action/guard stubs (12 of 22 dj2 stubs) are INVISIBLE in rank_stubs priority mode because
 they return UNCERTAIN (conf=0.00, caller_count=0 since FSM engine calls them, not Python code).
