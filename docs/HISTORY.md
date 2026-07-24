@@ -8,6 +8,15 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-24 (s249): Completion gate defined by Bart: "be able to determine the first 5
+things that we need to do in dj2 and be able to do them from the tool." Two parts:
+(1) Determination — tool produces a confident top-5 ranked work list from dj2 corpus;
+(2) Execution support — each item ships with enough context to act (file:line, why-now,
+what-it-takes, first-step). Missing piece is a compositor tool (rank_stubs +
+stub_prerequisite_map + classify_stub + design_oracle → single ranked list). All
+component tools exist; synthesis does not. UI redesign is "frosting" — this gate is
+the real completion criterion. Build compositor first, UI surface second.
+
 2026-07-23 (s248): C++ most-vexing-parse trap in tree-sitter-cpp. `T name(args)` is
 ambiguous between a function forward declaration and a variable constructor call at the
 AST level — both produce `declaration → function_declarator`. Discriminator: whether the

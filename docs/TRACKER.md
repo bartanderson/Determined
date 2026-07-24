@@ -1074,7 +1074,7 @@ value first target given Go corpus usage).
 
 ---
 
-## RM68 — Remove subrace concept from dj2 (DEFERRED)
+## RM68 — Remove subrace concept from dj2 [dj2 REPO ONLY — NOT A DETERMINED TASK — NEVER ACT ON THIS IN A DETERMINED SESSION]
 
 **Context:** The OG system rewrite replaced the original D&D data model with a more
 consistent system that has no subraces. The original D&D data had subraces; the OG
