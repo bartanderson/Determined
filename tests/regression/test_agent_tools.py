@@ -583,6 +583,7 @@ def test_dispatch_all_tools_registered():
         "design_oracle",
         # Completion gate: work session primer
         "work_session_primer",
+        "fsm_scaffold",
         # structural gap tools
         "find_isolated_modules",
         "find_orphaned_interfaces",

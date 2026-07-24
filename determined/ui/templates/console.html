@@ -671,6 +671,13 @@
             <button id="primer-refresh-btn" class="send-btn" style="margin-left:auto;padding:1px 7px;font-size:.75em;background:var(--bg3);border:1px solid var(--border)" title="Refresh primer">↺</button>
           </div>
           <div id="primer-cards" style="display:flex;flex-direction:column;gap:4px"></div>
+          <div id="primer-scaffold-out" style="display:none;margin-top:8px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span id="primer-scaffold-title" style="font-size:.75em;font-weight:600;color:var(--text2)"></span>
+              <button id="primer-scaffold-close" style="margin-left:auto;font-size:.72em;background:none;border:none;color:var(--text3);cursor:pointer" title="Close">✕</button>
+            </div>
+            <pre id="primer-scaffold-code" style="font-size:.72em;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px;overflow:auto;max-height:300px;white-space:pre;margin:0"></pre>
+          </div>
         </div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="shape-card" id="shape-file">
@@ -4533,6 +4540,21 @@ function _buildPrimerCard(item, rank) {
   purposeEl.className = "primer-purpose";
   purposeEl.textContent = item.purpose || "";
 
+  // blocked_by annotation (Python stubs only)
+  let blockedByEl = null;
+  if (!item.is_fsm && item.blocked_by) {
+    blockedByEl = document.createElement("span");
+    blockedByEl.className = "primer-blocked-by";
+    blockedByEl.textContent = "↑ blocked by #" + item.blocked_by.rank + " (" + item.blocked_by.name + ")";
+    blockedByEl.style.cssText = "font-size:.72em;color:var(--orange);cursor:pointer;";
+    blockedByEl.title = "Scroll to prerequisite card #" + item.blocked_by.rank;
+    blockedByEl.addEventListener("click", () => {
+      const cards = primerCardsEl.querySelectorAll(".primer-card");
+      const target = cards[item.blocked_by.rank - 1];
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
   // action buttons
   const actionsEl = document.createElement("div");
   actionsEl.className = "primer-actions";
@@ -4557,6 +4579,18 @@ function _buildPrimerCard(item, rank) {
       if (item.file_path) edOpenFile(item.file_path, 0);
     });
     actionsEl.appendChild(specBtn);
+
+    // Scaffold button → generate Python handler stubs
+    const scaffoldBtn = document.createElement("button");
+    scaffoldBtn.className = "primer-btn";
+    scaffoldBtn.textContent = "Scaffold";
+    scaffoldBtn.title = "Generate Python handler stubs for all " + item.name + " actions/guards";
+    scaffoldBtn.addEventListener("click", () => {
+      scaffoldBtn.disabled = true;
+      scaffoldBtn.textContent = "…";
+      socket.emit("fsm_scaffold", { fsm_name: item.name });
+    });
+    actionsEl.appendChild(scaffoldBtn);
   }
 
   card.appendChild(rankEl);
@@ -4564,6 +4598,7 @@ function _buildPrimerCard(item, rank) {
   card.appendChild(nameEl);
   card.appendChild(fileEl);
   card.appendChild(purposeEl);
+  if (blockedByEl) card.appendChild(blockedByEl);
   card.appendChild(actionsEl);
   return card;
 }
@@ -4592,6 +4627,35 @@ socket.on("primer_result", data => {
 });
 
 primerRefreshBtn.addEventListener("click", primerLoad);
+
+const primerScaffoldOut   = document.getElementById("primer-scaffold-out");
+const primerScaffoldTitle = document.getElementById("primer-scaffold-title");
+const primerScaffoldCode  = document.getElementById("primer-scaffold-code");
+const primerScaffoldClose = document.getElementById("primer-scaffold-close");
+
+primerScaffoldClose.addEventListener("click", () => {
+  primerScaffoldOut.style.display = "none";
+  // Re-enable any disabled scaffold buttons
+  primerCardsEl.querySelectorAll(".primer-btn").forEach(b => {
+    if (b.textContent === "…") { b.disabled = false; b.textContent = "Scaffold"; }
+  });
+});
+
+socket.on("fsm_scaffold_result", data => {
+  // Re-enable scaffold buttons
+  primerCardsEl.querySelectorAll(".primer-btn").forEach(b => {
+    if (b.textContent === "…") { b.disabled = false; b.textContent = "Scaffold"; }
+  });
+  if (data.error) {
+    primerScaffoldTitle.textContent = "Scaffold error";
+    primerScaffoldCode.textContent = data.error;
+  } else {
+    primerScaffoldTitle.textContent = "Scaffold — " + data.fsm_name;
+    primerScaffoldCode.textContent = data.code;
+  }
+  primerScaffoldOut.style.display = "";
+  primerScaffoldOut.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
 
 // ── Stub signal table ──────────────────────────────────────
 const _CLS_COLORS = {

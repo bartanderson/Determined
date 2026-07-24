@@ -1153,6 +1153,34 @@ def handle_primer_load(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("fsm_scaffold")
+def handle_fsm_scaffold(data):
+    """
+    Generate Python handler stubs for a named FSM.
+    Emits fsm_scaffold_result: { fsm_name, code } or { error }
+    """
+    if _oracle is None:
+        emit("fsm_scaffold_result", {"error": "no corpus loaded"})
+        return
+    fsm_name = (data or {}).get("fsm_name", "").strip()
+    if not fsm_name:
+        emit("fsm_scaffold_result", {"error": "fsm_name required"})
+        return
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import fsm_scaffold
+            from determined.assessor.assessor import Assessor
+            assessor = Assessor(_oracle)
+            code = fsm_scaffold(assessor, {"fsm_name": fsm_name})
+            socketio.emit("fsm_scaffold_result", {"fsm_name": fsm_name, "code": code}, to=sid)
+        except Exception as exc:
+            socketio.emit("fsm_scaffold_result", {"error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @socketio.on("store_finding_inline")
 def handle_store_finding_inline(data):
     """Store a single finding (from an inline ⚑ chip) without going through chat."""

@@ -1148,8 +1148,18 @@ REGISTRY: dict[str, dict] = {
             "top_n": "(optional) number of items to return, default 5",
         },
         "output": "ranked work item cards, each with: badge (FSM-SPEC / DESIGN-INTENT / BLOCKED / UNCERTAIN), file:line, purpose, why-now, first step",
-        "feeds": ["classify_stub", "explore_stub", "scaffold_from_pattern", "feature_work_plan"],
+        "feeds": ["classify_stub", "explore_stub", "fsm_scaffold", "feature_work_plan"],
         "use_when": "Session start on any corpus — answers 'what should I work on first?' with a grounded, ranked list of concrete work items. Replaces the manual 4-tool synthesis of rank_stubs + stub_prerequisite_map + design_oracle + classify_stub.",
+        "category": "planning",
+    },
+    "fsm_scaffold": {
+        "purpose": "Generate a Python handler stub module for all actions and guards in a named FSM. Reads FSM stubs from the DB and emits one def per handler with its docstring. Output is ready to paste into a new Python module. No LLM — fully deterministic.",
+        "args": {
+            "fsm_name": "exact FSM name (e.g. 'EncounterFSM')",
+        },
+        "output": "Python module text with stub defs for all FSM actions and guards",
+        "feeds": ["classify_stub", "explore_stub"],
+        "use_when": "After work_session_primer identifies an FSM-SPEC item — generate the handler skeleton before implementing.",
         "category": "planning",
     },
 }
