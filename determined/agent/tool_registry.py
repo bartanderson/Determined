@@ -624,6 +624,14 @@ REGISTRY: dict[str, dict] = {
         "use_when": "User wants brainstorming on what is missing or under-covered in an area. NOT automatic — user-initiated.",
         "category": "knowledge",
     },
+    "knowledge_for_file": {
+        "purpose": "Return everything the knowledge layer knows about a file: design notes, inline notes, semantic summaries, and active workflow items referencing it.",
+        "args": {"file_path": "bare filename or relative path"},
+        "output": "knowledge artifacts, semantic summaries, and workflow items grouped by type",
+        "feeds": ["describe_file", "risk_profile", "symbol_intent"],
+        "use_when": "Inspecting what is already known about a file before analysis; inverse of describe_file.",
+        "category": "knowledge",
+    },
     "missing_docstrings": {
         "purpose": "Find functions and classes with no docstring.",
         "args": {},
