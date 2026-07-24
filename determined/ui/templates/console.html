@@ -63,9 +63,9 @@
 
 /* ── training mode toggle ── */
 #guide-toggle-wrap{display:flex;align-items:center;gap:4px;margin-right:8px}
-#guide-toggle-btn{font-size:.73em;padding:3px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;color:var(--text2);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
-#guide-toggle-btn:hover{background:var(--bg3);color:var(--text1)}
-#guide-toggle-btn.guide-on{background:rgba(255,180,0,.18);border-color:var(--orange);color:var(--orange)}
+#guide-toggle-btn{font-size:.73em;padding:3px 9px;background:rgba(255,180,0,.18);border:1px solid var(--orange);border-radius:12px;color:var(--orange);cursor:pointer;white-space:nowrap;transition:background .12s,color .12s,border-color .12s}
+#guide-toggle-btn:hover{background:rgba(255,180,0,.28)}
+#guide-toggle-btn.guide-on{background:var(--surface2);border-color:var(--border2);color:var(--text2)}
 #guide-dismiss-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:.8em;padding:0 2px;line-height:1}
 #guide-dismiss-btn:hover{color:var(--text1)}
 #guide-footer{text-align:center;padding:6px 0 4px;font-size:.72em;color:var(--text3);border-top:1px solid var(--border);margin-top:4px}
@@ -101,7 +101,7 @@
 
 /* ── guide card ── */
 #guide-card{display:none;padding:7px 14px 8px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:.8em;line-height:1.5}
-#guide-card.visible{display:block}
+#guide-card.visible{display:block;border:1px solid var(--orange);border-left:3px solid var(--orange);margin:4px 2px 0}
 .gc-phase-row{display:flex;align-items:center;gap:5px;margin-bottom:5px}
 .gc-phase-label{color:var(--text3);font-size:.92em}
 .gc-phase-btn{font-size:.75em;padding:1px 8px;border:1px solid var(--border2);border-radius:10px;background:none;color:var(--text2);cursor:pointer}
@@ -125,7 +125,11 @@
 .shape-nav-file:hover{text-decoration:underline}
 .shape-nav-sym:hover{text-decoration:underline}
 
-/* ── primer cards (WHERE TO START) ── */
+/* ── busy overlay ── */
+#busy-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;align-items:center;justify-content:center}
+#busy-box{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:32px 48px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.5);min-width:220px}
+.busy-spinner{width:38px;height:38px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:busy-spin .75s linear infinite;margin:0 auto}
+@keyframes busy-spin{to{transform:rotate(360deg)}}
 .primer-card{display:flex;align-items:baseline;gap:8px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;font-size:.8em;flex-wrap:wrap;min-width:0}
 .primer-rank{color:var(--text3);font-size:.85em;flex-shrink:0;min-width:1.2em;text-align:right}
 .primer-badge{font-size:.72em;font-weight:600;padding:1px 5px;border-radius:3px;flex-shrink:0;letter-spacing:.02em}
@@ -133,7 +137,7 @@
 .pb-intent{background:#1a2a3a;color:#5b9bd5;border:1px solid #2a4a6a}
 .pb-blocked{background:#3a2a1a;color:var(--orange);border:1px solid #5a3a1a}
 .pb-uncertain{background:var(--bg2);color:var(--text3);border:1px solid var(--border)}
-.primer-name{font-weight:600;color:var(--text1);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+.primer-name{font-weight:600;color:var(--text1);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}
 .primer-name:hover{text-decoration:underline dotted;text-underline-offset:2px}
 .primer-file{color:var(--text3);font-family:var(--font-mono);flex-shrink:0}
 .primer-purpose{color:var(--text2);font-style:italic;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -631,6 +635,30 @@
 
       <!-- ── shape tab (RM69 corpus projections) ── -->
       <div class="tab-panel active" id="panel-shape" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
+        <!-- no-corpus welcome screen -->
+        <div id="shape-welcome" style="max-width:520px;margin:32px auto 0;padding:28px 32px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:1.05em;font-weight:700;color:var(--text1);margin-bottom:6px">Get started</div>
+          <div style="font-size:.83em;color:var(--text2);margin-bottom:20px;line-height:1.6">Determined reads your project's source code, builds a call graph, and tells you what's incomplete and where to start.</div>
+          <div style="display:flex;flex-direction:column;gap:12px;font-size:.82em">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span style="font-weight:700;color:var(--accent);flex-shrink:0;width:20px">1</span>
+              <div><span style="color:var(--text1);font-weight:600">Open ANALYZE</span> in the left sidebar — click the label to expand it.</div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span style="font-weight:700;color:var(--accent);flex-shrink:0;width:20px">2</span>
+              <div><span style="color:var(--text1);font-weight:600">Paste the full path</span> to your project folder (e.g. <code style="font-family:var(--font-mono);color:var(--text2)">C:\Users\you\dev\myproject</code>).</div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span style="font-weight:700;color:var(--accent);flex-shrink:0;width:20px">3</span>
+              <div><span style="color:var(--text1);font-weight:600">Click Analyze.</span> Determined scans the code — usually 10–60 seconds. A loading screen covers the UI while it runs.</div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <span style="font-weight:700;color:var(--accent);flex-shrink:0;width:20px">4</span>
+              <div>When done, this tab fills with the shape of your codebase and <span style="color:var(--text1);font-weight:600">WHERE TO START</span> shows the first things to implement.</div>
+            </div>
+          </div>
+          <div id="shape-welcome-error" style="display:none;margin-top:16px;padding:10px 12px;background:var(--bg2);border:1px solid var(--orange);border-radius:5px;font-size:.8em;color:var(--orange);line-height:1.5"></div>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
           <strong style="font-size:.95em">Corpus Shape</strong>
           <span style="font-size:.8em;color:var(--text3)">judgment-layer projections — file density, subsystem verdicts, prerequisites, concept ghosts</span>
@@ -859,6 +887,14 @@
   </div>
 </div>
 
+<!-- busy overlay — covers screen during any long operation -->
+<div id="busy-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;align-items:center;justify-content:center">
+  <div id="busy-box">
+    <div class="busy-spinner"></div>
+    <div id="busy-msg" style="margin-top:16px;font-size:.85em;color:var(--text2);letter-spacing:.02em">Working…</div>
+  </div>
+</div>
+
 <script>
 const socket    = io();
 const input     = document.getElementById("q-input");
@@ -982,6 +1018,7 @@ socket.on("corpus_ready", data => {
     _startupFiredFor = data.db_path;
     bagFetch();
     if (data.top_entry) ctTrace(data.top_entry);
+    busyShow("Analyzing corpus…", 2);  // waits for shape_result + primer_result
     fgLoad_();      // auto-load Frontier on corpus ready
     shapeRun();     // auto-run Shape home — the on-load headline (deterministic)
     primerLoad();   // auto-load WHERE TO START primer cards
@@ -1761,6 +1798,11 @@ function setCorpusLoaded(loaded, sourcePath) {
   if (sourcePath) _currentSourcePath = sourcePath;
   const hint = document.getElementById("ingest-hint");
   if (hint) hint.style.display = loaded ? "none" : "";
+  const welcome = document.getElementById("shape-welcome");
+  if (welcome) {
+    welcome.style.display = loaded ? "none" : "";
+    if (!loaded) document.getElementById("shape-welcome-error").style.display = "none";
+  }
 }
 
 resumeBtn.addEventListener("click", () => {
@@ -1949,9 +1991,14 @@ socket.on("ingest_done", data => {
 
 socket.on("ingest_error", data => {
   ingestBtn.disabled = false;
-
   clearStatusMsgs();
   addErrorBlock(data.message);
+  const welErr = document.getElementById("shape-welcome-error");
+  if (welErr) {
+    welErr.textContent = "Error: " + data.message;
+    welErr.style.display = "";
+    document.getElementById("shape-welcome").style.display = "";
+  }
 });
 
 // ── receive events ────────────────────────────────────────
@@ -4448,6 +4495,7 @@ function shapeRun() {
 }
 
 socket.on("shape_result", data => {
+  busyDone();
   shapeRunning.style.display = "none";
   shapeRunBtn.disabled = false;
   _shapeLoaded = true;
@@ -4489,6 +4537,24 @@ document.getElementById("shape-grid").addEventListener("click", e => {
   const symEl = e.target.closest(".shape-nav-sym");
   if (symEl) { openSpotlight(symEl.dataset.sym); }
 });
+
+// ── busy overlay ──────────────────────────────────────────
+const _busyModal = document.getElementById("busy-modal");
+const _busyMsg   = document.getElementById("busy-msg");
+let _busyPending = 0;
+function busyShow(msg, count) {
+  _busyPending = count || 1;
+  _busyMsg.textContent = msg || "Working…";
+  _busyModal.style.display = "flex";
+}
+function busyDone() {
+  _busyPending = Math.max(0, _busyPending - 1);
+  if (_busyPending === 0) _busyModal.style.display = "none";
+}
+function busyHide() {
+  _busyPending = 0;
+  _busyModal.style.display = "none";
+}
 
 // ── WHERE TO START primer ──────────────────────────────────
 const primerSection    = document.getElementById("primer-section");
@@ -4611,6 +4677,7 @@ function primerLoad() {
 }
 
 socket.on("primer_result", data => {
+  busyDone();
   primerRunning.style.display = "none";
   if (data.error) {
     primerCardsEl.innerHTML = '<div style="font-size:.78em;color:var(--orange)">' + escHtml(data.error) + '</div>';
@@ -5351,70 +5418,86 @@ const GUIDE_DATA = {
 
 // General guide — element-only keys, no corpus phase. Used for non-Commonplace corpora.
 const GUIDE_GENERAL = {
-  "chat": {
-    "headline": "Ask: natural language over your corpus",
-    "body": "Type any question about the codebase. Determined assembles relevant facts from the call graph, embeddings, and knowledge layer before answering. Works best on structural questions: who calls what, where does X live, what's hot, what depends on Y.",
-    "what_to_notice": "The answer comes from your DB, not from the model's training data. If the model hedges heavily, it means the corpus hasn't been explored yet — run discovery or describe a few key files first."
-  },
-  "call_tree": {
-    "headline": "Call tree: trace who calls what",
-    "body": "Enter a symbol name and trace upward (callers) or downward (callees). Callers show who depends on a symbol — changing it breaks those callers. Callees show what a symbol orchestrates.",
-    "what_to_notice": "Hot symbols (many callers) are change-risky. Symbols with no callers are either entry points (called externally) or orphaned implementations (written but not yet wired)."
-  },
-  "graph": {
-    "headline": "Graph: the call graph as a visual map",
-    "body": "Nodes are symbols, edges are calls. Hot symbols appear larger. Isolated clusters are code that isn't connected to the main graph — often orphaned implementations or test fixtures.",
-    "what_to_notice": "Look for clusters with no inbound edges. Those are the orphans Frontier mode surfaces. The main connected component is the live codebase."
-  },
-  "imports": {
-    "headline": "Imports: file-level dependency graph",
-    "body": "Shows which files import which other files. High in-degree files are shared utilities — changing them has wide impact. Circular imports appear as cycles.",
-    "what_to_notice": "Files with many importers are the hardest to safely refactor. Files that import widely but have few importers are orchestrators — good candidates for decomposition."
+  // ── THE FLOW ───────────────────────────────────────────────────────────────
+  // Load corpus → Shape (verdict + WHERE TO START) → Frontier (gaps) →
+  // Editor/Call tree (understand) → Scaffold (generate) → implement in your editor
+  // Ask bar runs any time. Workbench has every tool. Knowledge accumulates.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  "shape": {
+    "headline": "Shape: home base — what this codebase is trying to become",
+    "body": "Determined read every file and built a call graph. The verdict strip (above) summarises what it found: stubs, ghost concepts, subsystem health. WHERE TO START (below the verdict) ranks the first things to implement, in order. This tab auto-runs on every corpus load — you don't need to click anything.",
+    "what_to_notice": "Start with WHERE TO START — it's already sorted by what's blocking the most. FSM cards have a Scaffold button that generates the Python handler stubs you need to write. When you're ready to dig into the full stub list, go to Frontier →"
   },
   "frontier": {
-    "headline": "Frontier: find where the codebase is incomplete",
-    "body": "Three modes: Direct (callers of unimplemented stubs), Orphan (implemented but uncalled code), ABC (abstract methods with no concrete override). Pick the mode that matches what you're hunting.",
-    "what_to_notice": "Direct mode shows what's blocking. Orphan mode shows what's ready but not wired. ABC mode shows interface contracts that haven't been fulfilled."
+    "headline": "Frontier: the detailed gap list — what's blocking and why",
+    "body": "WHERE TO START on Shape gives you the first 5. Frontier gives you everything. Direct mode shows stubs that live code is actively trying to call — those are the highest-priority gaps. Orphan mode finds implemented functions that nothing calls yet. ABC mode finds abstract interface contracts with no concrete override.",
+    "what_to_notice": "Direct mode is where to start. Pick a stub, click its name to open it in the spotlight or Editor, then use Scaffold (on Shape) or Project (here) to generate a starting implementation. → Next: Editor or Call tree to understand context before implementing."
   },
   "frontier:direct": {
-    "headline": "Direct mode: find stubs that are called but unimplemented",
-    "body": "A stub is a function whose body is a placeholder — pass, raise NotImplementedError, or a single TODO comment. Direct mode shows callers of stubs: code that depends on something not yet built.",
-    "what_to_notice": "Stubs with many callers are blocking more of the codebase. Stubs in chain-tail position are the next thing to implement — no downstream dependencies to manage."
+    "headline": "Direct mode: stubs that live code is waiting on",
+    "body": "A stub is a function whose body is a placeholder — pass, raise NotImplementedError, or a single TODO. Direct mode shows callers of those stubs: code that is already written and calling something that doesn't exist yet. These are your highest-priority gaps.",
+    "what_to_notice": "Stubs with the most callers are blocking the most. Click a stub name to open it in spotlight and see its full signal (callers, imports, design notes, classification). Then go to your editor and implement it, or use Scaffold on the Shape tab to generate a starting skeleton."
   },
   "frontier:orphan": {
-    "headline": "Orphan mode: find code that's ready but not yet wired",
-    "body": "An orphaned implementation is a complete function with no callers. It's written and presumably tested — just not connected yet. 'Anticipatory' means it was built ahead of its callers.",
-    "what_to_notice": "Orphans are safe to examine and wire — they don't break anything if left alone. The question is: is this code latent (waiting to be used) or stranded (intended caller was deleted)?"
+    "headline": "Orphan mode: implemented code that isn't wired in yet",
+    "body": "An orphaned function is complete — it has a real body — but nothing calls it. It was either written ahead of its callers (anticipatory) or its intended caller was removed (stranded). Orphans aren't blocking anything, but they represent unfinished wiring.",
+    "what_to_notice": "Ask: was this written ahead of time, or left behind? If anticipatory, find where it should be called and wire it. If stranded, it may be dead code. Use Call tree to check whether callers were removed or never written."
   },
   "frontier:abc": {
-    "headline": "ABC mode: find abstract methods with no concrete override",
-    "body": "When a class inherits from ABC and defines abstract methods, every subclass must override them. ABC mode finds gaps — abstract methods that have no concrete implementation in any subclass.",
-    "what_to_notice": "ABC gaps are architectural contracts that haven't been fulfilled. If subclasses exist but don't override, that's a real gap. If there are no subclasses at all, the ABC itself may be speculative."
+    "headline": "ABC mode: interface contracts without implementations",
+    "body": "Abstract base class methods define what subclasses must provide. ABC mode finds the gaps — abstract methods with no concrete override in any subclass. These are architectural promises that haven't been kept.",
+    "what_to_notice": "If a subclass exists but doesn't override the method, that's a real gap. If no subclasses exist at all, the ABC itself may be speculative design. Check the Concept ghost map on Shape — ghost concepts often correlate with ABC gaps."
   },
-  "bag": {
-    "headline": "Bag: your session context",
-    "body": "The bag accumulates symbols and facts touched this session. It's context for the Ask bar — explored symbols improve answer quality. The more you trace and explore, the better the Ask bar knows what you're working on.",
-    "what_to_notice": "After tracing a call tree or running a frontier query, check the bag. Symbols with risk badges (HOT/WARM) mean those areas need care when changing."
+  "call_tree": {
+    "headline": "Call tree: trace who calls what, and who is called",
+    "body": "Enter a symbol name and trace upward (callers — who depends on this?) or downward (callees — what does this orchestrate?). Use this before changing anything important: the caller list is the blast radius.",
+    "what_to_notice": "Hot symbols (many callers) are change-risky — editing them breaks a lot of things. Symbols with no callers are either external entry points or orphans. → Use Editor to read the actual implementation once you know where to look."
+  },
+  "graph": {
+    "headline": "Map — Graph: the whole codebase as a call graph",
+    "body": "Nodes are symbols, edges are calls. Hot symbols appear larger. Isolated clusters are code not connected to the main graph — often orphaned implementations or test fixtures that haven't been wired in.",
+    "what_to_notice": "Look for clusters with no inbound edges — those are the orphans Frontier:Orphan surfaces. The main connected component is the live codebase. Use this to understand architectural shape, then drill into specifics with Call tree."
+  },
+  "imports": {
+    "headline": "Map — Imports: which files depend on which",
+    "body": "File-level dependency graph. High in-degree files (many importers) are shared utilities — changing them ripples widely. Files that import many others but have few importers are orchestrators.",
+    "what_to_notice": "Files with many importers are the hardest to safely refactor. Circular imports appear as cycles — usually a sign of tangled responsibilities. Compare with Call tree to see if the call graph and import graph tell the same story."
   },
   "editor": {
     "headline": "Editor: read any file in the corpus",
-    "body": "Click a symbol anywhere in the tool to open it here, or type a file path directly. The editor shows source with docstrings, risk annotations, and structural facts from the DB alongside the code.",
-    "what_to_notice": "Hot files (many call edges) show structural weight at a glance. The editor is read-only — make changes in your regular editor, then run reingest_file to update the DB."
-  },
-  "dochealth": {
-    "headline": "Doc health: find missing and stale docstrings",
-    "body": "Surfaces functions and classes with no docstring, and flags docstrings that have drifted from the distilled summary (staleness via cosine similarity). Can propose fills from distilled summaries.",
-    "what_to_notice": "Staleness detection needs distillation to have run first. On a fresh corpus, run describe_file or extract_design_facts before doc health proposals become useful."
+    "body": "Click any symbol name anywhere in the tool and it opens here. Or type a file path directly. The editor shows the source alongside structural facts from the DB: which functions are stubs, what's hot, what callers exist.",
+    "what_to_notice": "The editor is read-only — make changes in your regular editor, then click Re-analyze in the sidebar (or run reingest_file for a single file) to update Determined's model. → After reading, return to Frontier to pick your next gap."
   },
   "knowledge": {
-    "headline": "Knowledge: design facts, summaries, and findings",
-    "body": "Stores what Determined has learned beyond the call graph: distilled file summaries, design rules from docs, risk findings, and workflow proposals. Built incrementally by running analysis tools.",
-    "what_to_notice": "A fresh corpus has an empty knowledge layer. Run extract_design_facts for structural findings, ingest_design_docs for design constraints, and distill_corpus for compressed file summaries."
+    "headline": "Knowledge: what Determined has learned about this codebase",
+    "body": "Four lenses: Artifacts (named tool outputs), Pins (findings you've flagged), Bag (symbols touched this session), Doc health (missing and stale docstrings). The knowledge layer is built incrementally — it starts empty and grows as you run analysis tools.",
+    "what_to_notice": "A fresh corpus starts with an empty knowledge layer. The call graph and stub detection work immediately; everything else (summaries, design rules, doc proposals) is built by running tools in Workbench. Pins let you collect findings across a session and ask the Ask bar to reason across them."
+  },
+  "bag": {
+    "headline": "Bag: symbols and facts accumulated this session",
+    "body": "Every symbol you trace, every stub you inspect, and every tool result lands in the bag. The bag is context for the Ask bar — the more you explore, the better it can answer questions about what you're working on.",
+    "what_to_notice": "After tracing a call tree or running a frontier query, check the bag. Symbols with HOT/WARM badges are change-risky. Use 'Ask about these clues' to get Determined's reasoning across everything you've looked at this session."
+  },
+  "chat": {
+    "headline": "Ask: natural-language questions over your corpus",
+    "body": "Type any structural question. Determined assembles facts from the call graph, embeddings, and knowledge layer before answering — it's not guessing from training data, it's reading your DB. Best for: who calls what, where does X live, what depends on Y, what's hot, what's a stub.",
+    "what_to_notice": "If the model hedges heavily ('I'm not sure…'), the corpus knowledge layer is thin — run some tools first (describe_file, extract_design_facts) to give it more to work with. Pin interesting answers to accumulate a session context."
+  },
+  "workbench": {
+    "headline": "Workbench: every tool, every parameter",
+    "body": "Full form access to every Determined tool — classify_stub, blast_radius, walk_call_chain, feature_shape, implementation_order, and more. This is the full capability inventory. If you've seen a tool mentioned in the guide but can't find a button for it, it's here.",
+    "what_to_notice": "Results here are also stored as Artifacts in the Knowledge tab. The Workbench is where power users go; the Shape and Frontier tabs surface the most important outputs automatically. When a guide card says 'run X', this is where you do it."
   },
   "build_queue": {
-    "headline": "Build queue: where analysis becomes action",
-    "body": "When Determined proposes a fix, docstring fill, or gap closure, it lands here. The queue is the hand-off from 'what Determined found' to 'what you write next'. Accept to mark done; defer to dismiss.",
-    "what_to_notice": "Populate the queue by running gap_analysis, docstring_health with propose=true, or check_design_violations after ingesting design docs. An empty queue means no proposals yet."
+    "headline": "Build queue: proposals waiting for your decision",
+    "body": "When Determined generates a gap closure, docstring proposal, or implementation sketch, it lands here. The queue is the handoff from analysis to action — each item tells you what to write next and why.",
+    "what_to_notice": "Populate the queue from Frontier (Add all stubs to queue button) or by running gap_analysis in Workbench. An empty queue means no proposals yet — load a corpus and run shape analysis first."
+  },
+  "dochealth": {
+    "headline": "Doc health: missing and stale docstrings",
+    "body": "Surfaces functions with no docstring, and flags docstrings that have drifted from the distilled file summary (detected via cosine similarity). Can propose fills from summaries if distillation has run.",
+    "what_to_notice": "Staleness detection requires distillation to have run first (distill_corpus in Workbench). On a fresh corpus, start with extract_design_facts to build the knowledge layer, then come back here."
   }
 };
 
@@ -5571,6 +5654,7 @@ document.querySelectorAll(".rail-icon[data-section]").forEach(btn => {
     guideFooter.style.display = "";
   } else {
     guideFooter.style.display = "none";
+    guideSetOn(true);   // guide is ON by default for new users
   }
   // corpus is active by default on load — mark it visited
   guideMarkVisited("rail:corpus");

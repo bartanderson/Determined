@@ -5,7 +5,8 @@
       "name": "determined-ui",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "determined.ui.ui_server"],
-      "port": 5050
+      "port": 5050,
+      "autoPort": false
     }
   ]
 }
