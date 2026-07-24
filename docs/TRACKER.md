@@ -1142,6 +1142,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | llm.c (C+Python+CUDA) | Probe-passes | probe DONE (2026-07-23, session 245) — 729 symbols / 2960 edges; 148 CUDA kernels; 151 kernel_launch edges; 22 stubs (mostly false-positives); Python = parallel PyTorch impls, not ctypes |
 | mach (Zig) | Probe-passes | probe DONE (2026-07-23, session 247) — 3425 symbols / 9359 edges (132 .zig files); Zig walker built via tree-sitter-zig (ast-grep-py does not bundle Zig); 80 stubs: all correct (coreaudio_c/Darwin C-FFI extern decls + 34 ObjC @selector stubs); 14% edge resolution (method calls unresolvable without type inference, same ceiling as Rust/Go); 3079 inferred EPs (correct for framework library — every pub fn is API surface); dup names init/deinit normal Zig idiom; proc::getExtProcAddress HOT (598 edges, OpenGL extension loader) |
 | clx (Lua) | Probe-passes | probe DONE (2026-07-23, session 247) — 529 Lua symbols / 996 Lua edges (87 .lua files); Lua walker built via tree-sitter-lua (tree-sitter 0.25.0 needed for ABI 15); 2 Lua stubs (Object::new classic.lua + sax::nop, both correct); 46% Lua edge resolution (Table.fn() calls resolve by name -- better than Zig/Rust); 1579 total stubs nearly all sokol_gfx.h C header decls (correct); strsub/strfind local aliases unresolvable without type inference (accepted) |
+| LearnWebGPU (C++) | Probe-passes | probe DONE (2026-07-24, session 248-249) — 656 symbols / 1730 edges (7 C++ files); C++ walker built via ast-grep-py cpp backend; 3 true stubs (intentionally-empty setDefault bodies, correct); macro-hidden STRUCT(Type)/END class context bug fixed (session 249) — 71 false bare-declaration stubs eliminated; 44 non-stub setDefault out-of-class definitions correctly captured; stb_image_write.h / imgui header stubs = external API, correct |
 
 HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
 
@@ -1172,8 +1173,15 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 ### Convergence status
 
 - [x] Determined: probe DONE (2026-07-18, CLOSURE.md Phase 2); adversarial re-run DONE (2026-07-21, session 230) — 3 stubs clean, no false positives, 2 bugs fixed (blast_radius dedup, EP route path depth)
-- [x] dj2: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 5 RM68-remove stubs, 5 AI-layer gaps; judgment per RM69
-- [x] Commonplace: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 1 stub (suggest_tags), judgment per RM69
+- [x] dj2: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 5 RM68-remove stubs, 5 AI-layer gaps; classified 2026-07-24:
+  - `_register_world_tools` (ai_integration.py) — extension hook, not a gap; intentional pass with "add tools here" comment
+  - `_get_encounter_context` (context_builder.py) — blocked-on-prerequisite; waits for EncounterFSM Python actions
+  - `_get_combat_context` (context_builder.py) — blocked-on-prerequisite (deeper); CombatFSM not yet designed
+  - `on_arc_completed` (narrative_engine.py) — needs design; arc completion event model undefined
+  - `process_consequences` (ai_dungeon_master.py) — orphaned design intent; 0 callers, data source (unpaid_choices) doesn't exist
+  All 5 are game-dev-phase stubs — correctly detected, deferred until DJ2 active development phase.
+- [x] Commonplace: probe DONE (2026-07-18, CLOSURE.md Phase 2) — 1 stub (suggest_tags), classified 2026-07-24:
+  - `suggest_tags` (services/tagger.py) — explicit frontier stub; self-documented, waits for LLM_ENDPOINT decision (eager vs. lazy open question noted in source). Ready to implement when that design choice is made.
 - [x] rotjs: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] dungeoncrawler: probe DONE (2026-07-18, CLOSURE.md Phase 2)
 - [x] dnd-dungeon-gen: probe DONE (2026-07-18, CLOSURE.md Phase 2)
@@ -1183,6 +1191,7 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 - [x] llm.c (C+Python+CUDA): probe DONE (2026-07-23, session 245) — 729 symbols / 2960 edges (20 .c/.h + 38 .cu/.cuh + 14 .py); 148 __global__ kernels as is_tool=1; 151 kernel_launch edges (bug fixed this session: was stored as "static"); 22 stubs: 8 CUDA dim3/template false-positives (block_dim, grid_dim, Packed128 etc), 4 cudnn_att conditional-compile stubs (correct, require -DUSE_CUDNN), 2 external API stubs (memcpy, nvtxRangePush), 8 possible real stubs; walk_call_chain FQN fallback fixed; Python (14 files) = separate PyTorch impls, not ctypes wrappers, 0 ctypes edges (correct); blast_radius gpt2_build_from_checkpoint shows 131 extended symbols (correct, whole model struct is impacted)
 - [x] mach (Zig): probe DONE (2026-07-23, session 247) — 3425 symbols / 9359 edges; Zig walker built (tree-sitter-zig backend); 80 stubs all correct (C FFI extern decls + ObjC @selector stubs); 14% resolution (method calls = expected ceiling); 3079 inferred EPs (framework library, correct); init/deinit dups = Zig idiom
 - [x] clx (Lua): probe DONE (2026-07-23, session 247) — 529 Lua symbols / 996 Lua edges; Lua walker built (tree-sitter-lua ABI 15, needs tree-sitter 0.25.0); 2 Lua stubs both correct; 46% resolution (Table.fn calls resolve well); 1579 total stubs = C headers
+- [x] LearnWebGPU (C++): probe DONE (2026-07-24, session 248-249) — 656 symbols / 1730 edges; C++ walker built (ast-grep-py cpp backend); macro-hidden STRUCT/END class-context bug fixed (session 249); 3 true stubs (intentionally-empty bodies, correct); imgui/stb header stubs = external API
 
 ---
 

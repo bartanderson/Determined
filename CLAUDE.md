@@ -98,6 +98,11 @@ Common mistakes:
 - Docs: `docs/` -- TRACKER.md (open items), DESIGN.md (architecture), HISTORY.md (log)
 - Practices: `docs/PRACTICES.md` -- engineering standards, read before coding
 
+**Project directories (outside this repo):**
+- Active projects: `C:\Users\bartl\dev\dj2`
+- Commonplace corpus: `C:\Users\bartl\dev\Determined\examples\commonplace` (inside this repo)
+- External corpora: `C:\Users\bartl\dev\corpora\` (brogue-ce, slater, clx, end-of-eden, rotjs, dungeoncrawler, dnd-dungeon-gen, ruggrogue, llm.c, LearnWebGPU)
+
 ## DB management (standing rule)
 
 - `knowledge.db` was eliminated in session 33. All tables (knowledge_artifacts,

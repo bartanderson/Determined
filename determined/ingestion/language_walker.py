@@ -1592,10 +1592,79 @@ class LanguageWalker:
             return True
         return False
 
+    def _cpp_class_range_map(self, root) -> list[tuple[int, int, str]]:
+        """Return [(start_line, end_line, class_name), ...] for all class_specifier nodes.
+
+        Used to determine the enclosing class of an in-class declaration by line number.
+        Sorted by range size ascending so the innermost class is found first.
+        """
+        ranges = []
+        for cls_node in root.find_all({"rule": {"kind": "class_specifier"}}):
+            name_node = cls_node.field("name")
+            if name_node is None:
+                continue
+            r = cls_node.range()
+            ranges.append((r.start.line, r.end.line, name_node.text()))
+        ranges.sort(key=lambda t: t[1] - t[0])
+        return ranges
+
+    def _cpp_enclosing_class(self, node, class_ranges: list) -> str | None:
+        """Return the innermost class name containing node's start line, or None."""
+        line = node.range().start.line
+        for start, end, name in class_ranges:
+            if start < line <= end:
+                return name
+        return None
+
     def _cpp_symbols(self) -> list[dict]:
         results = []
         root = self._root.root()
+        class_ranges = self._cpp_class_range_map(root)
 
+        # Pre-scan: collect names (pre-basename) of all function definitions.
+        # Bare-name declarations that lack class context are skipped when a
+        # qualified definition already covers them — handles macro-hidden structs
+        # like STRUCT(Type) ... END where tree-sitter can't see the class scope.
+        defined_names: set[str] = set()
+        for node in root.find_all({"rule": {"kind": "function_definition"}}):
+            n, _ = self._cpp_fn_declarator(node)
+            if n is not None:
+                defined_names.add(n)
+
+        # Declarations first (is_stub=True placeholders).  Definitions come after
+        # and overwrite — so when both exist for the same name, the definition wins.
+        #
+        # Guard: require the parameter list to be empty or contain at least one
+        # parameter_declaration with a declarator field (a typed, named param like
+        # `int x`). This filters out C++ variable declarations that share the same
+        # AST shape due to the most-vexing-parse:
+        #   `std::ifstream file(path)`       → param has no declarator → skip
+        #   `std::unique_ptr<T> p(expr)`     → param has no declarator → skip
+        #   `void foo(int x)`                → param has declarator    → keep
+        #   `int bar()`                      → empty params            → keep
+        # In-class declarations get the class prefix so they match out-of-class
+        # definitions:  `void setDefault()` inside `struct Foo` → `Foo::setDefault`.
+        for node in root.find_all({"rule": {"kind": "declaration"}}):
+            name, fn_decl = self._cpp_fn_declarator(node)
+            if name is None:
+                continue
+            if not self._cpp_decl_is_fn_forward(fn_decl):
+                continue
+            # If the bare name has no qualifier and is inside a class, prefix it.
+            if "::" not in name:
+                cls = self._cpp_enclosing_class(node, class_ranges)
+                if cls:
+                    name = f"{cls}::{name}"
+                elif any(d.endswith(f"::{name}") for d in defined_names):
+                    # Macro-hidden: no class context visible to tree-sitter, but
+                    # a qualified definition (e.g. Foo::name) already exists.
+                    # The definition loop will add it with the correct qualifier.
+                    continue
+            fqdn = f"{self._basename}::{name}"
+            results.append(self._make_symbol(fqdn, node, is_stub=True,
+                                             docstring=self._preceding_comment(node)))
+
+        # Definitions second — overwrite any stub placeholder with the same fqdn.
         for node in root.find_all({"rule": {"kind": "function_definition"}}):
             name, _ = self._cpp_fn_declarator(node)
             if name is None:
@@ -1606,25 +1675,6 @@ class LanguageWalker:
                 is_stub=self._cpp_is_stub(node),
                 docstring=self._preceding_comment(node),
             ))
-
-        # Top-level forward declarations (extern "C", non-member).
-        # Guard: require the parameter list to be empty or contain at least one
-        # parameter_declaration with a declarator field (a typed, named param like
-        # `int x`). This filters out C++ variable declarations that share the same
-        # AST shape due to the most-vexing-parse:
-        #   `std::ifstream file(path)`       → param has no declarator → skip
-        #   `std::unique_ptr<T> p(expr)`     → param has no declarator → skip
-        #   `void foo(int x)`                → param has declarator    → keep
-        #   `int bar()`                      → empty params            → keep
-        for node in root.find_all({"rule": {"kind": "declaration"}}):
-            name, fn_decl = self._cpp_fn_declarator(node)
-            if name is None:
-                continue
-            if not self._cpp_decl_is_fn_forward(fn_decl):
-                continue
-            fqdn = f"{self._basename}::{name}"
-            results.append(self._make_symbol(fqdn, node, is_stub=True,
-                                             docstring=self._preceding_comment(node)))
 
         return results
 

@@ -1374,3 +1374,63 @@ def test_cpp_detect_language():
     assert detect_language("foo.cc") == "cpp"
     assert detect_language("foo.hpp") == "cpp"
     assert detect_language("foo.cxx") == "cpp"
+
+
+def test_cpp_in_class_declaration_gets_class_prefix():
+    # In-class method declarations must be stored as ClassName::method,
+    # not bare method, so they match their out-of-class definitions.
+    src = """\
+struct Foo {
+    void bar();
+    void baz(int x);
+};
+void Foo::bar() { doSomething(); }
+void Foo::baz(int x) { use(x); }
+"""
+    w = walker(src, "cpp", "myfile")
+    names = symbol_names(w)
+    # In-class declarations: should be myfile::Foo::bar, myfile::Foo::baz
+    assert "myfile::Foo::bar" in names, f"expected myfile::Foo::bar, got {names}"
+    assert "myfile::Foo::baz" in names, f"expected myfile::Foo::baz, got {names}"
+    # Should NOT produce bare myfile::bar or myfile::baz
+    assert "myfile::bar" not in names
+    assert "myfile::baz" not in names
+
+
+def test_cpp_in_class_declaration_inside_namespace():
+    # Namespace + class: in-class declaration should get class prefix.
+    src = """\
+namespace webgpu {
+struct Adapter {
+    void init();
+};
+void Adapter::init() { setup(); }
+}
+"""
+    w = walker(src, "cpp", "wgpu")
+    names = symbol_names(w)
+    # The declaration inside class should be wgpu::Adapter::init (not wgpu::init)
+    assert "wgpu::Adapter::init" in names, f"got {names}"
+    assert "wgpu::init" not in names
+
+
+def test_cpp_macro_hidden_struct_declaration_skipped():
+    # STRUCT(Type)/END macros expand to a struct body but tree-sitter sees the
+    # member declarations as bare top-level declarations with no class context.
+    # The qualified out-of-class definition should be kept; the bare declaration
+    # (wrong name, would create a false stub) should be suppressed.
+    src = """\
+#define STRUCT(Type) struct Type { public:
+#define END };
+namespace webgpu {
+STRUCT(ChainedStruct)
+    void setDefault();
+END
+void ChainedStruct::setDefault() { chain = nullptr; }
+}
+"""
+    w = walker(src, "cpp", "webgpu")
+    names = symbol_names(w)
+    # Qualified definition must be present; bare declaration must not appear.
+    assert "webgpu::ChainedStruct::setDefault" in names, f"got {names}"
+    assert "webgpu::setDefault" not in names, f"bare stub leaked: {names}"
