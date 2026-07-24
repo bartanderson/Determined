@@ -10643,7 +10643,10 @@ def _primer_items(oracle, top_n: int = 5) -> list[dict]:
         guards  = grp["guards"]
         total   = len(actions) + len(guards)
         file_short = (grp["file_path"] or "").replace("\\", "/").split("/")[-1]
-        purposes = [e["purpose"] for e in actions + guards if e["purpose"]]
+        _base = fsm_name[:-3] if fsm_name.endswith("FSM") else fsm_name
+        _act_str = f"{len(actions)} action{'s' if len(actions) != 1 else ''}"
+        _grd_str = f", {len(guards)} guard{'s' if len(guards) != 1 else ''}" if guards else ""
+        _fsm_purpose = f"Manages {_base.lower()} flow — {_act_str}{_grd_str} to implement"
         items.append({
             "is_fsm":         True,
             "badge":          "FSM-SPEC",
@@ -10651,7 +10654,7 @@ def _primer_items(oracle, top_n: int = 5) -> list[dict]:
             "file":           file_short,
             "file_path":      grp["file_path"],
             "line_no":        0,
-            "purpose":        purposes[0] if purposes else "FSM-defined transition logic",
+            "purpose":        _fsm_purpose,
             "actions":        [e["name"] for e in actions],
             "guards":         [e["name"] for e in guards],
             "total_handlers": total,

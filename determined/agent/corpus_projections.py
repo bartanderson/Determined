@@ -502,8 +502,18 @@ def stub_corpus_verdict(assessor: "Assessor", args: dict) -> str:
         dominant = _dominant(classifications)
         verdict = _subsystem_verdict(dominant, classifications)
         dom_count = classifications.count(dominant) if dominant != "mixed" else 0
-        detail = f" ({dom_count}/{len(stubs)} {dominant})" if dom_count else ""
-        sub_lines.append(f"  · {_rel_dir(directory)}/  {verdict}{detail}")
+        _DOM_PLAIN = {
+            "blocked-on-prerequisite": "need something built first",
+            "concept-not-applicable":  "look like placeholder code",
+            "genuinely-unknown":       "priority unclear",
+            "design-intent-stated":    "design is clear, ready to write",
+        }
+        dom_plain = _DOM_PLAIN.get(dominant, dominant)
+        if dom_count:
+            detail = f"  {dom_count} of {len(stubs)} stubs: {dom_plain}"
+        else:
+            detail = f"  {len(stubs)} stubs, mixed priority"
+        sub_lines.append(f"  · {_rel_dir(directory)}/{detail}")
 
     # Ghost concepts (same matching as stub_concept_ghost_map)
     from determined.agent.agent_tools import _extract_docstring_concepts
@@ -525,20 +535,22 @@ def stub_corpus_verdict(assessor: "Assessor", args: dict) -> str:
             prereq_counts[p] += 1
     top_prereq = max(prereq_counts.items(), key=lambda kv: kv[1], default=None)
 
-    lines = [
-        f"corpus_verdict{scoped}",
-        f"  · {len(stub_rows)} stub{'s' if len(stub_rows) != 1 else ''} "
-        f"in {len(by_dir)} subsystem{'s' if len(by_dir) != 1 else ''}"
-        f" · {len(actionable)} actionable (live callers)"
-        f" · {len(ghost_refs)} ghost concept{'s' if len(ghost_refs) != 1 else ''}",
-    ]
+    n_s = len(stub_rows)
+    n_a = len(actionable)
+    n_g = len(ghost_refs)
+    headline = (
+        f"  · {n_s} function{'s' if n_s != 1 else ''} not yet written"
+        f"  ·  {n_a} actively needed by running code"
+    )
+    if n_g:
+        headline += f"  ·  {n_g} concept{'s' if n_g != 1 else ''} referenced but missing"
+    lines = [headline]
     lines.extend(sub_lines)
     for concept, refs in ghosts:
-        lines.append(f"  · [GHOST] {concept} — {refs} stub reference{'s' if refs != 1 else ''}")
+        lines.append(f"  · [MISSING] {concept} — referenced in code but not built yet")
     if top_prereq and top_prereq[1] >= 2:
         pr_name, pr_count = top_prereq
-        tag = "HIGH" if pr_count >= 3 else "MED"
-        lines.append(f"  · [{tag}] {pr_name} — {pr_count} stubs blocked on it")
+        lines.append(f"  · [BLOCKS MOST] {pr_name} — {pr_count} functions are waiting on it")
 
     return "\n".join(lines)
 

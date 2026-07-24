@@ -4511,7 +4511,9 @@ socket.on("shape_result", data => {
   const verdictEl = document.getElementById("shape-verdict");
   if (r.verdict) {
     verdictEl.style.display = "";
-    verdictEl.innerHTML = _colorizeShape(r.verdict);
+    const _vlines = r.verdict.split("\n");
+    const _verdict = (_vlines[0] || "").startsWith("corpus_verdict") ? _vlines.slice(1).join("\n").trimStart() : r.verdict;
+    verdictEl.innerHTML = _colorizeShape(_verdict);
   } else {
     verdictEl.style.display = "none";
   }
