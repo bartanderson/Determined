@@ -1,46 +1,60 @@
-Written at commit: d7786c0
+Written at commit: f0aaf2f
 
-# SESSION STATE — session 246
+# SESSION STATE — session 248
 
 ## Active branch: main [V]
 
 ## What happened this session
 
-**Four commits landed (capn infrastructure only — no engine changes):**
+**Two commits landed (C++ walker):**
 
-### Commit 83d310b — capn auto-hook into PreToolUse/PostToolUse [V]
-- `scripts/capn_hook.py` (new): fires on Bash/PowerShell/Read tool calls.
-  PreToolUse: regex-matches command against 9 patterns (SQL, walk_call_chain,
-  reingest, key module names); runs `capn ask` and outputs hit into Claude's
-  context before the tool runs. On miss: writes `.capn/.hook_miss` flag.
-  PostToolUse: if miss flag exists and tool returned >100 chars of output,
-  emits one-line "consider charting" nudge.
-- `scripts/capn.py`: `_score()` updated to include file paths in haystack --
-  Read hooks on `db_oracle.py` now score 1.00 against entries that reference
-  that file (was 0.0 before, wrong query terms).
-- `.claude/settings.json`: added PreToolUse hooks for Bash/PowerShell and Read,
-  PostToolUse hook for all three. Existing validate_shell hook untouched.
-- Non-matching commands (git status, ls) exit in microseconds -- no noise.
+### Commit 907fe49 — C++ walker initial [V]
+- `determined/ingestion/language_walker.py`: C++ backend added via ast-grep-py cpp backend.
+  - `_CPP_BUILTINS` frozenset
+  - `_cpp_fn_declarator()`: traverses pointer/reference wrappers to reach function_declarator;
+    accepts `identifier`, `field_identifier` (inline class methods), `destructor_name`,
+    `operator_name`, `qualified_identifier`
+  - `_cpp_decl_is_fn_forward()`: disambiguates most-vexing-parse
+  - `_cpp_is_stub()`, `_cpp_symbols()`, `_cpp_fn_ranges()`, `_cpp_callee_name()`, `_cpp_class_hierarchy()`
+  - `class_hierarchy()` public method parallel to `interface_types()` / `impl_trait_map()`
+  - `detect_language()`: `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` → `"cpp"`
+- `scan_project_files.py`: C++ extensions added to `_JS_TS_EXTENSIONS`
+- `tests/regression/test_language_walker.py`: 15 new C++ tests (127 total in file, 214 in G7)
 
-### Commit 9b4f091 — capn context display [V]
-- `cmd_context()` restructured to 5-line status block:
-  cache size / hit rate / saved+wasted / stale note / last session summary.
-- Added `_last_session_summary()` helper that scans log for most recent session
-  with actual activity (hits + misses + charted > 0).
+**Key AST discoveries:**
+- `field_identifier` (not `identifier`) for inline class method names — charted to Cap'n Hook
+- `qualified_identifier` for out-of-class definitions (`Renderer::init`)
+- tree-sitter-cpp's `abstract_function_declarator` for cast-expression args (the MVP trap)
 
-### Commit 55db266 — capn savings command [V]
-- `capn savings` prints aggregated saved/wasted/net by day, week, month.
-- `capn savings --json` outputs structured JSON with cumulative fields per row
-  (for chart embedding when wanted).
-- Current data: 2/22 hits (9%), ~1K saved, ~13K wasted, net -11.5K.
-  All pre-hook; the saved line will grow from here.
+### Commit f0aaf2f — C++ walker three fixes [V]
+- **Bug 1 & 2 root**: C++ most-vexing-parse — `T name(args)` is ambiguous between forward decl
+  and variable constructor call. `std::unique_ptr<Lambda> lambda(reinterpret_cast<Lambda*>(x))`
+  produces `function_declarator` with param kind=`abstract_function_declarator`.
+- **Fix**: Added `_CPP_PARAM_NAME_DECL_KINDS` frozenset; `_cpp_decl_is_fn_forward()` now checks
+  `d.kind() in _CPP_PARAM_NAME_DECL_KINDS` instead of `d is not None`. Also adds
+  `primitive_type` escape hatch for unnamed real params (`void foo(int)`).
+- **Bug 3**: `_CPP_BUILTINS` undershooting on LearnWebGPU probe — expanded with stream,
+  string, container methods: `get`, `release`, `reset`, `is_open`, `eof`, `getline`, etc.
+- 214 G7 tests pass [V]
 
-### Commit d7786c0 — RM72 added to TRACKER [V]
-- `docs/TRACKER.md`: RM72 "Determined graph explorer (desktop, WebGPU/C++)"
-  added as FUTURE item. Gated behind UI redesign completion and C++ walker.
-  Scope: force-directed graph navigation only -- zoom/pan, click-to-expand,
-  call chain highlight, blast radius. Not a query interface. LearnWebGPU is
-  both the reference tutorial and the C++ walker validation corpus.
+**LearnWebGPU probe:**
+- Repo is docs (tutorial text in markdown) — C++ in 68 .md files as 588 code blocks
+- Extracted code from `writing-a-zero-overhead-cpp-wrapper.md`, probed walker
+- Found and fixed all three bugs via that extraction before committing
+
+---
+
+## RM67 Language Scope: COMPLETE [V]
+Python, JS/TS, Go, Rust, C, CUDA, Zig, Lua, C++ — all walking.
+
+## RM73 — Walker dispatch resolution (FUTURE) [V]
+All per-language dispatch gaps documented as deferred future work in TRACKER RM73:
+- Go: interface dispatch
+- Rust: dyn Trait dispatch
+- Zig: struct method calls (14% ceiling)
+- Lua: stdlib aliases
+- C/CUDA: function pointers
+- C++: virtual method dispatch; class_hierarchy() doesn't capture inline-only pure virtual
 
 ---
 
@@ -49,43 +63,38 @@ Written at commit: d7786c0
 **Pre-existing: knowledge_for_file missing from REGISTRY [?]** —
 `test_tool_registry_covers_all_tools` fails. Not caused by this session.
 
-**CUDA stubs: dim3 vars captured as stubs [?]** — `block_dim`, `grid_dim`,
-`blockDim`, `gridDim` appear as function stubs. Low-priority known ceiling.
+**CUDA stubs: dim3 vars captured as stubs [?]** — `block_dim`, `grid_dim` etc.
+appear as function stubs. Low-priority known ceiling.
 
-**capn: 3 stale entries need pruning [V]** — run `python scripts/capn.py prune`.
-Entries for pattern_executor._call_ollama patch, C walker _c_is_stub, and
-brogue-ce header stubs are stale (files changed). Safe to prune.
+**C++ pure virtual not captured [V]** — `virtual void draw() = 0` in class body
+produces a `field_declaration`, not `function_definition` or `declaration`. Walker
+currently skips these. Deferred to RM73.
 
-**capn hit rate: 9% [V]** — expected at this stage. Hooks just went live.
-Missed queries will surface chart candidates over the next few sessions.
-
-**walk_call_chain broken for TS/JS corpora [?]** — .suffix match handles
-some cases but may have edge cases. Workaround: use graph_path.
+**capn hit rate: 13% [V]** — 9/69 hits. Rolling window last session: 1/1 hit.
 
 ---
 
 ## NEXT SESSION — start here
 
-**Option 1: Zig walker (mach engine corpus)** [recommended from prior session]
-Next NOT YET INGESTED language in RM67 language scope table.
-Target file: `determined/ingestion/language_walker.py`.
-Corpus: Mach Engine (github.com/hexops/mach).
-
-**Option 2: Rust walker validation (slater corpus)**
-Six-probe loop on slater if not already done.
-
-**Option 3: prune capn stale entries then continue RM67 work**
-Quick housekeeping: `python scripts/capn.py prune` (removes 3 stale entries).
-Then pick Option 1 or 2.
-
-**Sanity check before any work:**
+**Sanity check:**
 ```
 .venv\Scripts\python.exe tools/run_regression.py --group G7
 ```
-Expected: < 15s.
 
-**capn is now auto-firing.** No need to call it manually before DB/symbol work --
-the PreToolUse hook does it. Chart discoveries with:
+**Option A: RM69 — AI-layer gap classification**
+Classify the 5 AI-layer stubs from dj2 and 1 from Commonplace (suggest_tags).
+TRACKER RM69 has design notes.
+
+**Option B: RM59 — Feature shape analysis**
+Three new tools: list_features, feature_shape, development_priorities.
+TRACKER RM59 has full design. Phase 1: list_features + feature_shape.
+
+**Option C: Ingest LearnWebGPU (real C++ corpus)**
+The docs repo is not suitable. A real C++ app (e.g. WebGPU-Samples or the
+actual C++ tutorial starter project) would give a better C++ corpus probe.
+Or probe the 7 real .cpp/.h files in the LearnWebGPU repo directly.
+
+**capn auto-fires.** Chart discoveries with:
 ```
 python scripts/capn.py chart "<what you found>" --files <file> [--details "..."]
 ```

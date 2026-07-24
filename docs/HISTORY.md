@@ -8,6 +8,25 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-23 (s248): C++ most-vexing-parse trap in tree-sitter-cpp. `T name(args)` is
+ambiguous between a function forward declaration and a variable constructor call at the
+AST level — both produce `declaration → function_declarator`. Discriminator: whether the
+parameter is a real named param (declarator kind: identifier/pointer_declarator/reference_declarator)
+vs. a cast-expression arg (kind: abstract_function_declarator) or a bare variable name (no
+declarator, type_identifier). Fix in `_cpp_decl_is_fn_forward()`: check `d.kind() in
+_CPP_PARAM_NAME_DECL_KINDS` instead of `d is not None`. Also: primitive_type unnamed params
+(`void foo(int)`) have no declarator but ARE real forward decls — check type.kind().
+
+2026-07-23 (s248): tree-sitter-cpp uses `field_identifier` (not `identifier`) for the
+name node of inline class method declarations. `void draw() override {}` inside a class
+body has `name_node.kind() == "field_identifier"`. Out-of-class definitions (`void Foo::draw()`)
+use `qualified_identifier`. `_cpp_fn_declarator()` must accept both.
+
+2026-07-23 (s248): LearnWebGPU (https://github.com/eliemichel/LearnWebGPU) is a DOCS
+repo, not a C++ application. C++ code lives in 68 Markdown files as 588 embedded code
+blocks. Walker probe should extract blocks from markdown and concatenate — not ingest .md
+files directly. The repo has only 7 actual .cpp/.h files (imgui adapter, stb_image, webgpu.h).
+
 2026-07-23 (s243): C header declarations cause massive stub inflation without a dedup pass.
 In brogue-ce, 542 of 551 stubs were Rogue.h declarations that have .c implementations. FQDN
 mismatch is the trap: header FQDN is `Rogue::fn`, implementation is `Architect::fn` — full-name
