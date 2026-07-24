@@ -8,14 +8,30 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-24 (s250): work_session_primer built and shipped. Key discovery during walkthrough:
+FSM action/guard stubs (12 of 22 dj2 stubs) are INVISIBLE in rank_stubs priority mode because
+they return UNCERTAIN (conf=0.00, caller_count=0 since FSM engine calls them, not Python code).
+They ARE the most actionable work — FSM JSON is the spec, handlers are concrete, well-scoped.
+Fix: _primer_items() detects FSM stubs by name pattern (::action:: or ::guard::), groups by
+FSM name, ranks by handler count, surfaces first regardless of caller signal.
+design_oracle CRITICAL flag is unreliable: marks _register_world_tools CRITICAL but it is an
+intentional scaffold (empty_pass + "# Add tools here" comment). Do NOT auto-elevate CRITICAL
+from design_oracle in future compositor work — verify against stub body shape first.
+stub_prerequisite_map only captured encounter→_get_encounter_context but missed that
+EncounterFSM ACTIONS must be implemented before _get_encounter_context can work (inverted prereq).
+
+2026-07-24 (s250): WHERE TO START primer UI added to Shape home. Sits above the 2x2 shape
+grid, auto-loads on corpus_ready alongside shapeRun(). socket event: primer_load → primer_result.
+Server handler: ui_server.py handle_primer_load (after handle_stub_fusion_table). Calls
+_primer_items() from agent_tools directly (not via dispatch). Cards: FSM stubs get [Open spec]
+button (edOpenFile to JSON); Python stubs get [Classify] button (openSpotlight). Refresh button ↺.
+
 2026-07-24 (s249): Completion gate defined by Bart: "be able to determine the first 5
 things that we need to do in dj2 and be able to do them from the tool." Two parts:
 (1) Determination — tool produces a confident top-5 ranked work list from dj2 corpus;
 (2) Execution support — each item ships with enough context to act (file:line, why-now,
-what-it-takes, first-step). Missing piece is a compositor tool (rank_stubs +
-stub_prerequisite_map + classify_stub + design_oracle → single ranked list). All
-component tools exist; synthesis does not. UI redesign is "frosting" — this gate is
-the real completion criterion. Build compositor first, UI surface second.
+what-it-takes, first-step). Missing piece was a compositor tool. Now shipped as
+work_session_primer. UI redesign is "frosting" — this gate is the real completion criterion.
 
 2026-07-23 (s248): C++ most-vexing-parse trap in tree-sitter-cpp. `T name(args)` is
 ambiguous between a function forward declaration and a variable constructor call at the

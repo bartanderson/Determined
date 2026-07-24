@@ -1,121 +1,148 @@
-Written at commit: a9dc933 (SESSION_STATE and TRACKER uncommitted)
+Written at commit: 28a5a3c
 
-# SESSION STATE — session 249 (end)
+# SESSION STATE — session 250 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `c8d9831` — fix(walker/cpp): macro-hidden STRUCT/END bare-declaration skip. 71 false
-  stubs eliminated from LearnWebGPU. 217/217 G7 pass.
-- `a9dc933` — fix(registry): knowledge_for_file added to REGISTRY. Pre-existing failing
-  test now passes.
-- RM68 header updated: `[dj2 REPO ONLY — NOT A DETERMINED TASK — NEVER ACT ON THIS IN A
-  DETERMINED SESSION]` — won't surface again in "what's next" scans.
-- HISTORY.md: completion gate decision logged.
+- `9718102` — feat(tools): add work_session_primer — completion gate compositor tool.
+  FSM stubs detected by name pattern (::action:: / ::guard::), grouped by FSM name,
+  ranked first (highest handler count wins). Python stubs ranked by existing composite
+  score; dead code (concept-not-applicable) suppressed. _primer_items() extracted as
+  shared helper. 63/63 test_agent_tools pass.
+
+- `28a5a3c` — feat(ui): WHERE TO START primer section on Shape home. Auto-loads on
+  corpus_ready (alongside shapeRun). 5 cards above the 2x2 shape grid. FSM cards have
+  [Open spec] → edOpenFile; Python cards have [Classify] → openSpotlight. ↺ refresh.
 
 ---
 
-## COMPLETION GATE — the north star [V]
+## COMPLETION GATE STATUS [V]
 
-Bart's words: **"be able to determine the first 5 things that we need to do in dj2
-and be able to do them from the tool."**
+Gate: "be able to determine the first 5 things to do in dj2 and be able to do them from the tool."
 
-Two parts:
-1. **Determination** — tool produces a confident, ranked top-5 work list from dj2
-2. **Execution support** — each item has: what it is (file:line), why now, what it
-   needs (prerequisites), first step (scaffold pointer)
+**Part 1 — Determination: DONE.**
+`work_session_primer()` returns a confident top-5 in one call. Verified on dj2:
+  1. [FSM-SPEC] EncounterFSM — 5 handlers (start_combat, resolve_flee, resolve_parley, flee_possible, parley_possible)
+  2. [FSM-SPEC] TradeFSM — 4 handlers
+  3. [FSM-SPEC] BarterFSM — 3 handlers
+  4. [DESIGN-INTENT] _get_encounter_context — context_builder.py:167
+  5. [BLOCKED] _get_combat_context or _register_world_tools (tie at 3.4 composite)
 
-UI redesign is "frosting." This gate is the real completion criterion.
+**Part 2 — Execution support: PARTIAL.**
+Cards show: name, file:line, badge, purpose, action button (Open spec / Classify).
+What's missing to fully close the gate:
 
----
+  A. FSM → Python prereq link not surfaced. Item #4 (_get_encounter_context) is
+     unblocked by item #1 (EncounterFSM actions), but the cards don't say so.
+     The card for #4 should read: "blocked by: EncounterFSM actions (#1 above)".
+     Implementation: after scoring, scan Python stub docstrings for FSM names
+     that appear in items 1-N; if found, add a `blocked_by` field to the card.
 
-## NEXT SESSION PLAN
+  B. _register_world_tools is a false positive at #5 (intentional scaffold, not a
+     gap). design_oracle marks it CRITICAL; classify_stub marks it blocked-on-prereq.
+     Real classification: SCAFFOLD (empty_pass body + "# Add tools here" comment).
+     Fix: add scaffold detection to classify_stub — body is empty_pass AND docstring/
+     body contains "add" / "register" / "here" pattern → classify as scaffold, skip
+     from primer. Or simply: filter stubs where body='empty_pass' AND caller_count=1
+     AND concept presence = {} from the Python priority list.
 
-### Step 1 — dj2 walkthrough: test the current "top 5" answer
+  C. No scaffold generation from the primer cards. [Open spec] shows the FSM JSON
+     (correct), but there's no "generate handler stub" button that produces the
+     Python skeleton. Next step: add [Scaffold] button that emits project_stub_request
+     for an FSM action name (e.g. EncounterFSM::action::start_combat) and renders
+     result in fgProjection or a new primer detail area.
 
-Load dj2 in the browser. Run the best current proxy for the completion gate:
-
-```
-rank_stubs           → what rises to the top?
-stub_prerequisite_map → which of those are actually unblocked?
-design_oracle         → any CRITICAL flags that override rank?
-classify_stub         → spot-check top 3 candidates
-```
-
-Synthesize manually: can you produce a confident top-5 from these four tools?
-Note every place the answer feels weak, ambiguous, or requires too many steps to assemble.
-
-### Step 2 — Gap assessment from walkthrough
-
-After the manual synthesis, answer:
-- Is the ranking confident, or does it require judgment calls that the tool should make?
-- Is the context sufficient to act (file:line, what it's supposed to do, what it needs)?
-- How many tool calls does it take to assemble one work item card?
-
-If 3+ tool calls are needed to understand a single item → compositor gap confirmed.
-
-### Step 3 — Build `work_session_primer`
-
-New tool in `determined/agent/agent_tools.py`:
-
-```python
-def work_session_primer(assessor, args):
-    """
-    work_session_primer() — top 5 actionable work items for this corpus.
-    Synthesizes rank_stubs + stub_prerequisite_map + classify_stub + design_oracle
-    into a ranked list. Each item: name, file:line, why-now, dependencies, first-step.
-    Deterministic (no LLM). Optional: top_n arg (default 5).
-    """
-```
-
-Implementation shape:
-1. Pull top-20 from `rank_stubs` (existing signal composite)
-2. Filter to unblocked via `stub_prerequisite_map` (no unresolved hard deps)
-3. Elevate any CRITICAL from `design_oracle` to position 1 regardless of rank
-4. For each of top-5: fetch file:line, callers, classify_stub result, prereqs
-5. Format as a self-contained work item card per entry
-
-Register in REGISTRY, add to TOOLS, add to `test_dispatch_all_tools_registered`.
-
-### Step 4 — UI surface (after tool works in CLI)
-
-Where it lives: **Shape home**, below the verdict strip — a "WHERE TO START" section
-that auto-populates alongside the four quadrants on corpus load.
-
-Each of the 5 items is a clickable card:
-- Stub name + file:line (click → opens editor at line)
-- Why-now badge (CRITICAL / HIGH-CALLERS / PREREQ-CLEARED / etc.)
-- One-line purpose (from docstring or classify_stub result)
-- [→ Scaffold] button → calls scaffold_from_pattern, result opens in editor
-
-This answers Q2 from the design conversation: clicking a verdict claim produces a
-filtered work-item view, not a raw tool output.
-
-### Step 5 — Trail bar (if time)
-
-The "WHERE TO START" cards need a drill-down that doesn't strand the user. Implement
-the trail bar from the UI_REDESIGN.md ASCII diagram:
-`corpus ▸ world/ ▸ _get_combat_context`
-Breadcrumb at top of main stage; each segment clickable back up the altitude chain.
-HTML/JS only — no backend changes.
+  D. "Do them from the tool" — after seeing the spec, user needs to write the Python
+     handlers. The natural next tool is scaffold_from_pattern or project_stub. The
+     primer should link to whichever the user chooses. Currently requires manual step.
 
 ---
 
-## Design questions to answer during the walkthrough (carry into next session)
+## WHAT TO DO NEXT SESSION (priority order)
 
-Q1: When you open Determined on dj2, what's the first thing you actually do?
-Q2: If the verdict strip shows "CombatFSM [GHOST]", clicking it should produce what?
-Q3: After drilling to file/line, what's the natural "go back" gesture?
-Q4: Stub in Frontier → want call graph: in-place Map switch, or manual open Map?
+### Step 1 — Fix false positive at #5 (_register_world_tools)
 
-These answer themselves during the Step 1 walkthrough. Don't pre-answer; observe.
+In `_primer_items()` (`agent_tools.py:10538`), after scoring Python stubs, add a
+scaffold detection filter. Check: does the DB docstring or the source body contain
+scaffold language ("add", "register", "hook") AND body = empty_pass AND 0 concept
+presence signals? If yes, skip from the list. This removes the false [BLOCKED] card.
+
+Alternatively: query `functions` table for stubs where `body` (if stored) is trivially
+empty AND name matches known hook patterns. Check how body_shape is stored — it may
+be in classify_stub signals, not in the DB.
+
+Quickest fix: in `_primer_items()`, add to the Python stub filter:
+  `if top_cls == "blocked-on-prerequisite" and caller_count == 1 and top_score <= 0.40:`
+  → check if the body is empty_pass via extract_signals; if yes and concept_presence
+  is empty, classify as scaffold and skip.
+
+### Step 2 — Add FSM → Python prereq link to cards
+
+In `_primer_items()`, after building all items, for each Python stub item:
+  - extract FSM name mentions from its `purpose` (docstring first line)
+  - scan the fsm_groups keys for a match (case-insensitive: "EncounterFSM" in purpose)
+  - if match found, add `"blocked_by": {"rank": N, "name": fsm_name}` to the item dict
+
+In `_buildPrimerCard()` (console.html ~line 4470), if `item.blocked_by` exists:
+  - render a small "↑ blocked by #N (FSMName)" line below the purpose
+  - make it a link that scrolls to card #N in the primer list
+
+### Step 3 — Add [Scaffold] button for FSM action stubs
+
+When user clicks [Scaffold] on an FSM-SPEC card:
+  - Emit `project_stub_request` with the first action name
+    (e.g. `EncounterFSM::action::start_combat`)
+  - OR: emit a new `fsm_scaffold` event that generates all handlers for the FSM
+    as a single Python module skeleton
+  - Render result in the fgProjection area or a new primer-detail div below the card
+
+The FSM JSON already has action names + docstrings, so a deterministic scaffold is
+possible: for each action, generate `def action_name(context): """docstring""" pass`.
+No LLM needed. Implement in agent_tools.py as `fsm_scaffold(assessor, args)`:
+  args: fsm_name (e.g. "EncounterFSM")
+  output: Python module text with stubs for all actions + guards
+
+### Step 4 — Trail bar (if time, low priority)
+
+The "WHERE TO START" cards need a drill-down breadcrumb. See UI_REDESIGN.md ASCII
+diagram: `corpus ▸ world/ ▸ _get_combat_context`. HTML/JS only, no backend.
+Low priority — the primer cards already give direction. Trail bar is polish.
+
+---
+
+## KEY DESIGN DISCOVERIES (carry into next session)
+
+**FSM stub signal gap**: FSM stubs have docstrings IN THE DB (from fsm_walker ingest)
+but classify_stub returns UNCERTAIN because it reads the source file (the JSON), not
+the DB row. The DB docstring IS the spec. classify_stub should fall back to the DB
+docstring for non-Python files. Fix location: `extract_signals()` in
+`determined/agent/classify_stub.py` — when file_path ends in `.json`, read docstring
+from the DB instead of parsing the file.
+
+**rank_stubs priority mode excludes FSM stubs entirely**: mode='priority' filters to
+`blocked-on-prerequisite` and `design-intent-stated` only. FSM stubs are UNCERTAIN
+(0.00 score) → excluded. mode='gap' shows them as genuinely-unknown. This is correct
+behavior for rank_stubs; _primer_items() is the right place to handle FSM stubs as
+a category.
+
+**design_oracle CRITICAL is not reliable**: marks `_register_world_tools` as CRITICAL
+(highest-fanout blocked stub) but it's an intentional scaffold. Do not auto-elevate
+CRITICAL from design_oracle in compositor work. The oracle is useful for OPPORTUNITY
+signals but its CRITICAL detection is too broad.
+
+**stub_prerequisite_map inverted prereq gap**: the map showed encounter→_get_encounter_context
+but didn't surface that EncounterFSM ACTIONS are prerequisites for _get_encounter_context
+to be implementable. This is a real gap in stub_prerequisite_map — it only tracks named
+prereqs (docstring-stated), not structural FSM→context_builder links.
 
 ---
 
 ## G7 status [V]
 
-217/217 pass (verified this session).
+217/217 pass (unchanged this session — no walker/ingestion changes).
+63/63 test_agent_tools.py pass (verified this session end).
 
 ---
 
@@ -124,3 +151,6 @@ These answer themselves during the Step 1 walkthrough. Don't pre-answer; observe
 - CUDA stubs: dim3 vars (block_dim, grid_dim) [?] — accepted ceiling
 - C++ pure virtual not captured [V] — deferred to RM73
 - Walker dispatch resolution (RM73) — FUTURE, Go interface dispatch highest-value first
+- _register_world_tools false positive in primer [V] — Step 1 fix above
+- FSM stub classify_stub returns UNCERTAIN despite DB having docstrings [V] — Step 1+
+  workaround exists in _primer_items(); deeper fix in classify_stub optional
