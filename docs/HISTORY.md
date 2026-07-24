@@ -8,6 +8,27 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-24 (s252): Two Python servers on port 5050 trap — when restarting the UI server,
+the old process may not die. Browser stays connected to the old one; new code never runs.
+Diagnosis: `netstat -ano | Select-String ":5050"` shows duplicate LISTENING entries.
+Fix: `Stop-Process -Id <old-pid> -Force`, then reload browser. Add to pre-flight:
+check for duplicate listeners before assuming a restart worked.
+
+2026-07-24 (s252): Guide text must use element names, not spatial directions. Guide card
+sits above the tab bar; "above" from the guide card's perspective is the Trail area, not
+the tab content. Rule: say "at the top of this tab" or name the element, never "(above)" or
+"(below)" — those are relative to the card, not the content the user is looking at.
+
+2026-07-24 (s252): FSM card purpose was first-action docstring, not FSM description.
+"Triggers combat system" (an EncounterFSM action's docstring) was shown as the description
+for the whole FSM — wrong and misleading. Fix: generate from FSM name + handler counts:
+"Manages encounter flow — 3 actions, 2 guards to implement". Generic enough for any corpus.
+
+2026-07-24 (s252): stub_corpus_verdict output was AI-readable, not human-readable.
+"actionable (live callers)", "genuinely-unknown", "concept-not-applicable", "[GHOST]" are
+all internal classification labels. Fixed to plain English in corpus_projections.py.
+Rule: any tool output that surfaces in the UI must be written for the human reading it.
+
 2026-07-24 (s251): run_tests.py — targeted two-level test runner. FILE_MAP (source→test
 files) + function-level grep (changed def names → specific test::function targets). Default
 uses `git diff HEAD`; `--last-commit` for post-commit verify; `--list` to preview. This is
