@@ -1,82 +1,92 @@
-Written at commit: 2ae4821
+Written at commit: b5fede5
 
-# SESSION STATE — session 254 (end)
+# SESSION STATE — session 255 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-4 commits this session:
+3 commits this session:
 
-- `9ccb46e` — fix(tests): 4 test assertions updated to match session 252 human-readable verdict strings [V]
-- `ab2c5f4` — docs: session 253 handoff (superseded by this file)
-- `00c0e8b` — feat(ui): file-scoped intent analysis + 8 UI language fixes [V]
-- `d162fe9` — fix(ui): shape card hints + frontier mode descriptions in plain English [V]
+- `236b682` — fix(ui): auto-resume last corpus on server startup [V]
+- `b5fede5` — fix(ui): Analyze intent — no label required, result stays in Editor [V]
 
-442 passed, 1 skipped — confirmed clean. [V]
+442 passed, 1 skipped — confirmed clean (11 targeted tests, same baseline). [V]
+
+---
+
+## COMPLETION GATE — CLOSED [V]
+
+Gate: "be able to determine the first 5 things to do in dj2 and be able to do them."
+
+Browser-verified this session against live dj2 corpus:
+
+**Determine:** WHERE TO START on Shape tab shows:
+1. FSM-SPEC EncounterFSM (5 handlers) — encounter.json
+2. FSM-SPEC TradeFSM (4 handlers) — trade.json
+3. FSM-SPEC BarterFSM (3 handlers) — barter.json
+4. DESIGN-INTENT _get_encounter_context — context_builder.py:167 (blocked by #1)
+5. DESIGN-INTENT _get_combat_context — context_builder.py:172
+
+**Do:** For each item:
+- FSM cards: [Open spec] → Editor, [Scaffold] → generates handler stubs, [Diagram] → SVG state diagram [V]
+- Stub cards: [Classify] → opens Spotlight with full signal breakdown [V]
+- Auto-load on startup: dj2 corpus loads without manual path entry [V]
+
+Gate is met. Bart has not explicitly said "closed" yet — let him confirm.
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-Full UI language pass — going through every surface asking "does this make sense
-to a human, does it drive toward an actionable answer?" Fixed 13 items total:
+### Bug fixes shipped
 
-**Language fixes (console.html):**
-- Corpus Shape subtitle: jargon -> plain English
-- "Signal table" -> "All stubs, ranked" with plain hint
-- WHERE TO START subtitle: removed internal tool name
-- Frontier tab: "Frontier" -> "Frontier — What to Build"
-- "Project" button -> "Generate"
-- Build queue subtitle: removed "next_up workflow items"
-- Bag (Knowledge tab): hover text added
-- Ask tab: "⌕" -> "⌕ Ask" with plain tooltip
-- File shape hint: "stub density" -> "unwritten functions per file"
-- Prerequisite map hint: plain English
-- Frontier direct hint: removed circular self-reference
-- Frontier orphan hint: fixed factual error (orphans are implemented, not stubs)
-- Workbench subtitle: removed "Discovery tool" jargon
+**Auto-resume on startup (236b682):**
+`run_server()` called `_load_session()` to validate but never called `init()` with
+the result. One `elif` branch added. Server now prints corpus stats on start and
+the browser gets `corpus_ready` immediately on connect.
 
-**New feature (intent_director.py + ui_server.py):**
-"Analyze intent" in Editor was doing a corpus-wide keyword search — wrong.
-Replaced with `analyze_file_intent`: takes the open file + a label you type,
-checks every function in that file (stub vs implemented, has callers vs orphaned),
-returns a structured summary. Falls back to old corpus search if no file open.
-Placeholder updated to "What is this file supposed to do?"
+**Analyze intent cleanup (b5fede5):**
+- Label input removed — it was cosmetic only, never affected the DB query
+- Guard `if not intent: return` removed — button works on open file with no input
+- Result moved from chat area into `#ed-intent-result` panel below the code view
+- Tab-switch to Knowledge/Bag on success removed — result stays in Editor
+- `ed-intent-input` JS reference cleaned up from all call sites
 
----
-
-## COMPLETION GATE STATUS [?]
-
-Gate: "be able to determine the first 5 things to do in dj2 and be able to do them."
-UI verify still PARTIAL — not browser-verified this session (server was stopped).
-Bart has not formally closed the gate. UI language pass is the current arc.
+### UI language pass — fully browser-verified [V]
+All session 254 language fixes confirmed live:
+- "Frontier — What to Build" tab ✓
+- "All stubs, ranked" with plain hint ✓
+- "unwritten functions per file" (not "stub density") ✓
+- WHERE TO START subtitle: "top actionable items, ranked by impact" ✓
+- "⌕ Ask" tab ✓
+- Corpus Shape subtitle in plain English ✓
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-### Step 1 — Browser verify
-Start server, load dj2 corpus, verify the UI language changes look right in context.
-Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force`
-Start: `.venv\Scripts\python determined/ui/ui_server.py`
-Check duplicate server: `netstat -ano | Select-String ":5050"`
+### Step 1 — Close the gate formally
+Ask Bart: "Gate met — do you want to formally close it and move on?"
+If yes, update TRACKER.md and CLOSURE.md.
 
-### Step 2 — Continue UI pass or close gate
-Bart may have more UI feedback after seeing the changes live. Once satisfied,
-formally close the completion gate.
+### Step 2 — Pick next arc
+Candidates from TRACKER.md:
+- Signal calibration (prerequisite for MCTS)
+- RM59 Feature shape analysis (list_features + feature_shape tools)
+- Further UI polish based on Bart's feedback
 
-### Step 3 — Test "Analyze intent" live
-Open a file in Editor, type an intent label, click Analyze intent. Verify the
-file-scoped output looks useful vs the old corpus search.
+### Step 3 — Check for new UI feedback
+Bart may have more observations after using the tool live.
 
 ---
 
 ## RESOURCE / PROCESS RULES [V]
 
-- Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force`
+- Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Stop -Force`
 - Duplicate server trap: `netstat -ano | Select-String ":5050"` — two LISTENING = old process alive
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
+- `.determined_session.json` stores last DB path — now auto-loaded on startup (working as intended)
 
 ---
 
@@ -86,4 +96,3 @@ file-scoped output looks useful vs the old corpus search.
 - C++ pure virtual not captured [?] — deferred to RM73
 - Walker dispatch resolution (RM73) [?] — FUTURE
 - Scaffold buttons clipped on right edge [?] — visible but "Sca..." truncated
-- UI changes not browser-verified this session (server stopped) [?]
