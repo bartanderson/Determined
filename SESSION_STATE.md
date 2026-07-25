@@ -1,81 +1,66 @@
-Written at commit: 330c3aa
+Written at commit: 6cca150
 
-# SESSION STATE — session 256 (end)
+# SESSION STATE — session 257 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `ca46909` — feat(tour): 3-corpus Commonplace journey + extended corpus [V]
-- `330c3aa` — refactor(tour): redesign for tool mastery across 3 corpus stages [V]
+- `c881362` — docs: prune TRACKER + establish docs taxonomy [V]
+- `6cca150` — docs: delete CLOSURE.md, extract live validation gap to HISTORY.md [V]
 
-Tests: 11 passed (targeted). [V]
+No code changed. No tests run.
 
 ---
 
 ## COMPLETION GATE — MET, NOT YET FORMALLY CLOSED [?]
 
 Gate: "be able to determine the first 5 things to do in dj2 and be able to do them."
-Status carried from session 255 — not re-verified this session.
+Status carried from session 255/256 — not re-verified this session.
+TRACKER.md no longer has a formal gate entry for this — needs to be addressed.
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**3-corpus Commonplace arc shipped:**
+**Docs reorganization — full pass:**
 
-Stage 3 extended corpus built at `examples/commonplace_extended/` — sibling to
-`examples/commonplace/`, NOT inside it (see HISTORY.md for why).
+TRACKER.md: 3,231 → 151 lines. All DONE items, Dashboard, Work queue, session
+log, UI redesign arc detail deleted. FUTURE blocks moved to their proper homes.
+Active items retained: RM67, RM68, RM72, RM73, RM21, RM-Perf, cross-language
+remaining tasks.
 
-Services implemented vs complete stage:
-- `services/tagger.py`: `suggest_tags` — real POST to llama-server `/completion`
-- `services/searcher.py`: `semantic_search` — embedding cosine ranking, text fallback
-- `services/linker.py`: `find_connections` — embedding cosine similarity, Jaccard fallback
-- `services/processor.py`: `EnrichmentProcessor` wired into `run_processors` default list
-- `config.py`: adds `EMBEDDING_ENDPOINT`
+New docs/README.md: map of the docs/ directory — what each file is for, what
+belongs there, change log at bottom. Prevents future accumulation in TRACKER.
 
-All 3 corpora re-ingested and verified [V]:
-- Seed: 17 files, 0 stubs, 2 orphans
-- Complete: 25 files, 1 stub (suggest_tags), 1 orphan (EnrichmentProcessor)
-- Extended: 25 files, 0 stubs, 0 orphans
+FUTURE blocks distributed: [V]
+- MCTS + domain adapters + Design Oracle + knowledge layer → DESIGN.md (secs 10-14)
+- Signal fusion paradigms → VISUAL_PROJECTION.md
+- Stub-targeted editing + sidebar collapse → UI_REDESIGN.md
+- Slater integration arc (Ideas 2-6) → new docs/SLATER.md
 
-Docstring fixes: `processor.py` in both seed and complete falsely claimed
-`EnrichmentProcessor` was an ABC gap. It has real method bodies. Fixed to describe
-what's actually true (concrete class, not in run_processors).
+docs/archive/ deleted — superseded docs, git has them. [V]
+docs/CLOSURE.md deleted — completed gate checklist, all phases done. [V]
+One live item extracted from CLOSURE.md before deletion: `_extract_body()` in
+`classify_stub.py` never validated against all dj2 files — logged in HISTORY.md.
 
-**Tour redesigned — 14 steps total:**
-
-12 numbered steps + 2 corpus-switch steps (tool: None, emits explanation directly).
-
-Seed (steps 1-4): clean results on all tools — teaches what each tool looks like
-when nothing is wrong. Instructions follow the action queue rather than issuing
-checklist commands.
-
-Complete (steps 5-9): problems visible. Step 7 prompts reasoning before running
-(why would a developer write a complete class and leave it out?). Causal chain
-stub → explains orphan named explicitly. `find_conditional_stubs` (step 8) and
-`docstring_health` (step 9) added to complete the tool set.
-
-Extended (steps 10-12): resolved. Step 11 asks user to predict before running.
-`gap_analysis` is the final step — framed as generative/exploratory, explicitly
-non-deterministic, transitions to "load your own project."
-
-UI changes for tour: [V]
-- `handle_tour_run_step`: null-tool steps emit explanation directly, skip dispatch
-- `get_tour_steps`: now emits `corpus` field per step
-- `console.html`: corpus hint does per-step match against `step.corpus`
+Taxonomy established: Release = git. Current = TRACKER.md. Future = design docs
+with explicit gates. README.md is the map that enforces this going forward.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Formally close the gate** — Bart deferred this in session 255. Gate criteria
-   were browser-verified then; just needs the formal close entry in TRACKER.md.
+1. **Formally close the completion gate** — carried from sessions 255/256. Gate
+   criteria were browser-verified in session 255; needs a formal close entry.
+   TRACKER.md was pruned this session so there is no gate entry there anymore —
+   decide where this closure note lands (HISTORY.md one-liner is probably right).
 
-2. **RM67 — Convergence protocol** — still ACTIVE per TRACKER.md. Pick up there.
+2. **RM67 — Convergence protocol** — still ACTIVE. Pick up the per-session probe
+   loop. Run before any other work.
 
-3. **Bart may want to walk the tour** — it's live at port 5050. Load seed corpus,
-   click through Tour tab. 12 steps, all tools, all 3 stages.
+3. **Walk the tour** — it's live at port 5050. Load seed corpus, click through
+   Tour tab. 12 steps, all tools, all 3 stages.
 
 ---
 
@@ -92,3 +77,6 @@ UI changes for tour: [V]
 - C++ pure virtual not captured [?] — deferred to RM73
 - Walker dispatch resolution (RM73) [?] — FUTURE
 - Scaffold buttons clipped on right edge [?] — "Sca..." truncated
+- `_extract_body()` not validated against all dj2 files [?] — body_shape signal
+  may be unreliable for unusual stub patterns; validate when classify_stub
+  calibration resumes (logged in HISTORY.md)
