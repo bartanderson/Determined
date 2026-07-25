@@ -1,32 +1,29 @@
-Written at commit: 985b964
+Written at commit: 9ccb46e
 
-# SESSION STATE — session 252 (end)
+# SESSION STATE — session 253 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-3 commits ahead of origin (not pushed):
+1 commit this session:
 
-- `eed53e3` — feat(ui): guide ON by default, busy overlay, shape welcome screen, guide rewrite
-  Guide toggle inverted: ON by default (orange = active). Busy overlay (#busy-modal) with
-  spinner shown during corpus load (busyShow count=2, busyDone on shape_result + primer_result).
-  Shape welcome screen for no-corpus state (4-step get-started, hides on corpus load, shows
-  ingest errors inline). GUIDE_GENERAL completely rewritten: flow-oriented content for all
-  tabs pointing Shape → Frontier → Editor → implement.
+- `9ccb46e` — fix(tests): update assertions to match human-readable verdict text
+  4 test assertions updated to match session 252's human-readable verdict text changes.
+  fsm_diagram added to TOOLS expected set. All 431 tests pass, 1 skipped. [V]
 
-- `541ade0` — fix(ui): guide border uniform, shape text directions fixed, abbr hover tooltips
-  border-left:3px override removed (all four sides uniform 1px orange). Guide text: removed
-  "(above)"/"below the verdict" spatial refs that pointed at Trail bar instead of tab content.
-  gcBody/gcHeadline/gcNotice switched to innerHTML. abbr title tooltips on call graph, stubs,
-  ghost concepts, FSM. CSS: dotted underline + help cursor on #guide-card abbr.
+---
 
-- `985b964` — fix(ui): human-readable verdict strip and FSM card descriptions
-  Verdict strip: "22 stubs" → "22 functions not yet written", "actionable (live callers)" →
-  "actively needed by running code", "[GHOST]" → "[MISSING] ... not built yet", subsystem
-  detail labels in plain English. corpus_verdict header line stripped before rendering.
-  FSM card purpose: was first-action's docstring (wrong + misleading). Now generated:
-  "Manages encounter flow — 3 actions, 2 guards to implement".
+## WHAT HAPPENED THIS SESSION
+
+Session 252 ended mid-compaction. The human-readable verdict text changes (session 252
+commits 985b964) broke 4 test assertions that still expected the old machine-readable
+strings. Fixed this session:
+
+- `test_dispatch_all_tools_registered`: `fsm_diagram` missing from expected set
+- `test_corpus_verdict_headline_counts`: `'3 stubs'` -> `'3 functions not yet written'`
+- `test_corpus_verdict_subsystem_breakdown`: subsystem list format changed to per-item lines
+- `test_corpus_verdict_prereq_line_needs_two`: `'2 stubs blocked on it'` -> `'2 functions are waiting on it'`
 
 ---
 
@@ -34,38 +31,35 @@ Written at commit: 985b964
 
 Gate: "be able to determine the first 5 things to do in dj2 and be able to do them."
 
-**Part 1 — Determination: DONE** (session 250) [?]
-**Part 2 — Execution support: DONE (code)** [?]
-**UI verify: PARTIAL** — WHERE TO START shows correct 5 items with new human-readable
+**Part 1 - Determination: DONE** (session 250) [?]
+**Part 2 - Execution support: DONE (code)** [?]
+**UI verify: PARTIAL** - WHERE TO START shows correct 5 items with human-readable
 descriptions. Scaffold buttons visible on FSM cards. Verdict strip in plain English.
-Bart has more feedback for next session on the verdict strip's interpretive value
-(counts without "what to do" guidance). Gate not formally closed yet.
+Bart had more UI feedback pending from session 252 (verdict strip interpretation -
+counts without "what to do" guidance). Gate not formally closed.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-### Step 1 — Verdict strip interpretation
-Bart's pending feedback: the strip shows counts but doesn't tell the user what to *do*
-with them. Next step is adding a one-sentence interpretation or "start here" pointer.
-Bart will describe what's needed.
+### Step 1 - Verdict strip interpretation (Bart's pending item)
+The strip shows counts but doesn't tell the user what to *do* with them.
+Bart was going to describe what's needed. Resume from there.
 
-### Step 2 — Continue UI feedback pass
-Session ended mid-feedback loop. Bart has more items. Resume from where this session left off.
+### Step 2 - Continue UI feedback pass
+Session 252 ended mid-feedback loop. Resume with Bart.
 
-### Step 3 — Gate close
-Once UI feedback pass is done, formally close the completion gate and plan next arc.
+### Step 3 - Gate close
+Once UI feedback pass is done, formally close the completion gate.
 
 ---
 
-## RESOURCE / PROCESS RULES (new this session) [V]
+## RESOURCE / PROCESS RULES [V]
 
-- **Duplicate server trap:** after any server restart, run:
+- **Duplicate server trap:** after any server restart:
   `netstat -ano | Select-String ":5050"`
   Two LISTENING entries = old process still alive. Kill old PID:
-  `Stop-Process -Id <old-pid> -Force`, then reload browser.
-  Browser stays connected to whichever process it first connected to — new code
-  never runs until the old process dies.
+  `Stop-Process -Id <old-pid> -Force`
 
 - **Pre-flight before every UI server start:**
   `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force`
@@ -74,17 +68,16 @@ Once UI feedback pass is done, formally close the completion gate and plan next 
 
 ---
 
-## Test status [?]
+## Test status [V]
 
-No Python logic changes this session (verdict text + FSM description only).
-run_tests.py not run — no source functions changed that have test coverage.
+431 passed, 1 skipped - confirmed clean this session.
 
 ---
 
 ## Known issues (carried)
 
-- CUDA stubs: dim3 vars [?] — accepted ceiling
-- C++ pure virtual not captured [?] — deferred to RM73
-- Walker dispatch resolution (RM73) [?] — FUTURE
-- Verdict strip interpretation [V] — Bart has feedback, next session
-- Scaffold buttons clipped on right edge [V] — visible but "Sca..." truncated
+- CUDA stubs: dim3 vars [?] - accepted ceiling
+- C++ pure virtual not captured [?] - deferred to RM73
+- Walker dispatch resolution (RM73) [?] - FUTURE
+- Verdict strip interpretation [?] - Bart has feedback, next session
+- Scaffold buttons clipped on right edge [?] - visible but "Sca..." truncated
