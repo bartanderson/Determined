@@ -1,4 +1,4 @@
-Written at commit: b5fede5
+Written at commit: 5a8f737
 
 # SESSION STATE — session 255 (end)
 
@@ -6,93 +6,83 @@ Written at commit: b5fede5
 
 ## This session (committed) [V]
 
-3 commits this session:
-
 - `236b682` — fix(ui): auto-resume last corpus on server startup [V]
 - `b5fede5` — fix(ui): Analyze intent — no label required, result stays in Editor [V]
+- `5a8f737` — docs: session 255 handoff [V]
 
-442 passed, 1 skipped — confirmed clean (11 targeted tests, same baseline). [V]
+Tests: 442 passed, 1 skipped (11 targeted). [V]
 
 ---
 
-## COMPLETION GATE — CLOSED [V]
+## COMPLETION GATE — MET, NOT YET FORMALLY CLOSED [V]
 
 Gate: "be able to determine the first 5 things to do in dj2 and be able to do them."
 
-Browser-verified this session against live dj2 corpus:
+Browser-verified against live dj2 corpus:
+1. FSM-SPEC EncounterFSM (5 handlers) — encounter.json → [Scaffold] works, [Diagram] works [V]
+2. FSM-SPEC TradeFSM (4 handlers) — trade.json [V]
+3. FSM-SPEC BarterFSM (3 handlers) — barter.json [V]
+4. DESIGN-INTENT _get_encounter_context — context_builder.py:167 → [Classify] works [V]
+5. DESIGN-INTENT _get_combat_context — context_builder.py:172 [V]
 
-**Determine:** WHERE TO START on Shape tab shows:
-1. FSM-SPEC EncounterFSM (5 handlers) — encounter.json
-2. FSM-SPEC TradeFSM (4 handlers) — trade.json
-3. FSM-SPEC BarterFSM (3 handlers) — barter.json
-4. DESIGN-INTENT _get_encounter_context — context_builder.py:167 (blocked by #1)
-5. DESIGN-INTENT _get_combat_context — context_builder.py:172
-
-**Do:** For each item:
-- FSM cards: [Open spec] → Editor, [Scaffold] → generates handler stubs, [Diagram] → SVG state diagram [V]
-- Stub cards: [Classify] → opens Spotlight with full signal breakdown [V]
-- Auto-load on startup: dj2 corpus loads without manual path entry [V]
-
-Gate is met. Bart has not explicitly said "closed" yet — let him confirm.
+Bart deferred formal close — more UI passes likely before final gate check.
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-### Bug fixes shipped
+**UI fixes shipped:**
+- Server auto-resumes last corpus on startup (`_load_session()` was never called in `run_server()`)
+- Analyze intent: label input removed (was cosmetic only), result now renders inline in Editor
+  panel below code view, no longer hijacks chat area or force-switches to Knowledge/Bag tab
 
-**Auto-resume on startup (236b682):**
-`run_server()` called `_load_session()` to validate but never called `init()` with
-the result. One `elif` branch added. Server now prints corpus stats on start and
-the browser gets `corpus_ready` immediately on connect.
+**UI language pass browser-verified:** All session 254 language fixes confirmed live on dj2.
 
-**Analyze intent cleanup (b5fede5):**
-- Label input removed — it was cosmetic only, never affected the DB query
-- Guard `if not intent: return` removed — button works on open file with no input
-- Result moved from chat area into `#ed-intent-result` panel below the code view
-- Tab-switch to Knowledge/Bag on success removed — result stays in Editor
-- `ed-intent-input` JS reference cleaned up from all call sites
+**Tour investigation:**
+Current tour (8 steps) is stale — written before the UI redesign, uses old tool names
+(`knowledge_status`, `frontier_coverage`), has hardcoded Commonplace-specific outputs.
+Entire tour is CLI-oriented; the UI now answers all those questions automatically on load.
 
-### UI language pass — fully browser-verified [V]
-All session 254 language fixes confirmed live:
-- "Frontier — What to Build" tab ✓
-- "All stubs, ranked" with plain hint ✓
-- "unwritten functions per file" (not "stub density") ✓
-- WHERE TO START subtitle: "top actionable items, ranked by impact" ✓
-- "⌕ Ask" tab ✓
-- Corpus Shape subtitle in plain English ✓
+**3-stage Commonplace arc understood:**
+- Stage 1 (seed): `examples_commonplace_seed.db` — 17 files, 0 stubs. Skeleton + routes.
+  Story: find orphaned code (`validate_entry`), wire it.
+- Stage 2 (complete): `C_Users_bartl_dev_Determined_examples_commonplace.db` — 25 files,
+  1 stub (`suggest_tags` LLM integration). Story: implement the incomplete service.
+- Stage 3 (extended): **DOES NOT EXIST YET.** Would have LLM tagger wired, semantic search
+  with embeddings, `find_connections` using real similarity. This is the missing piece.
+
+Tour redesign is BLOCKED on Stage 3 being built. All 3 corpora need to exist first.
+The tour walks forward (seed → complete → extended) and can decompose backwards.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-### Step 1 — Close the gate formally
-Ask Bart: "Gate met — do you want to formally close it and move on?"
-If yes, update TRACKER.md and CLOSURE.md.
+### Option A — Build Stage 3 Commonplace (unblocks tour)
+Write the Stage 3 source: implement `suggest_tags` against llama-server, replace
+`semantic_search` with embedding-based ranking, wire `find_connections` with real
+similarity. Ingest → create `C_Users_bartl_dev_Determined_examples_commonplace_extended.db`.
+Then redesign the tour around all 3 corpora.
 
-### Step 2 — Pick next arc
-Candidates from TRACKER.md:
-- Signal calibration (prerequisite for MCTS)
-- RM59 Feature shape analysis (list_features + feature_shape tools)
-- Further UI polish based on Bart's feedback
+### Option B — Other UI polish
+Bart may have more feedback after using the tool live. Tour redesign can wait.
 
-### Step 3 — Check for new UI feedback
-Bart may have more observations after using the tool live.
+### Option C — Close gate, pick next engineering arc
+Signal calibration or RM59 feature shape analysis per TRACKER.md.
 
 ---
 
 ## RESOURCE / PROCESS RULES [V]
 
-- Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Stop -Force`
+- Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force`
 - Duplicate server trap: `netstat -ano | Select-String ":5050"` — two LISTENING = old process alive
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
-- `.determined_session.json` stores last DB path — now auto-loaded on startup (working as intended)
-
----
+- `.determined_session.json` auto-loads on startup (fixed this session)
 
 ## Known issues (carried)
 
 - CUDA stubs: dim3 vars [?] — accepted ceiling
 - C++ pure virtual not captured [?] — deferred to RM73
 - Walker dispatch resolution (RM73) [?] — FUTURE
-- Scaffold buttons clipped on right edge [?] — visible but "Sca..." truncated
+- Scaffold buttons clipped on right edge [?] — "Sca..." truncated
+- Tour: stale, needs full redesign (blocked on Stage 3 corpus) [?]
