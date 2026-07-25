@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Capture — Commonplace{% endblock %}
+{% block content %}
+<h1>Capture</h1>
+<form method="post" action="{{ url_for('capture.capture') }}">
+  <div class="field">
+    <label>Type</label>
+    <select name="type" id="entry-type">
+      <option value="url">URL</option>
+      <option value="note">Note</option>
+      <option value="snippet">Snippet</option>
+      <option value="code">Code</option>
+    </select>
+  </div>
+
+  <div class="field" id="url-field">
+    <label>URL</label>
+    <input type="url" name="url" placeholder="https://...">
+  </div>
+
+  <div class="field">
+    <label>Title <span class="hint">(optional for URL — extracted automatically)</span></label>
+    <input type="text" name="title" placeholder="Title">
+  </div>
+
+  <div class="field">
+    <label>Content <span class="hint">(paste text, snippet, or notes)</span></label>
+    <textarea name="content" rows="8" placeholder="Paste content here..."></textarea>
+  </div>
+
+  <div class="field">
+    <label>Tags <span class="hint">(comma-separated)</span></label>
+    <input type="text" name="tags" placeholder="flask, python, architecture">
+  </div>
+
+  <button type="submit">Save</button>
+</form>
+
+<script>
+  const typeSelect = document.getElementById('entry-type');
+  const urlField = document.getElementById('url-field');
+  typeSelect.addEventListener('change', () => {
+    urlField.style.display = typeSelect.value === 'url' ? '' : 'none';
+  });
+  urlField.style.display = typeSelect.value === 'url' ? '' : 'none';
+</script>
+{% endblock %}

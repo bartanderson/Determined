@@ -2551,107 +2551,230 @@ def handle_get_waypoints(_data=None):
 
 
 _TOUR_STEPS = [
+    # ── STAGE 1: Seed corpus ──────────────────────────────────────────────────
+    # Load: examples_commonplace_seed.db (17 files, 0 stubs, 2 orphans)
     {
         "index": 0,
-        "title": "1. Orient — What is this codebase?",
-        "instruction": "Run knowledge_status to see the corpus overview: file count, entry points, hot files, stubs, and coverage gaps.",
-        "tool": "knowledge_status",
+        "corpus": "commonplace_seed",
+        "title": "1. Seed — Orient: shape at the start",
+        "instruction": (
+            "Load the Commonplace seed corpus (examples_commonplace_seed.db), "
+            "then run detect_topology to see the starting shape."
+        ),
+        "tool": "detect_topology",
         "tool_args": {},
         "explanation": (
-            "The knowledge layer starts from structural facts Determined extracts automatically at ingest time: "
-            "entry points (functions with many callers or at module root), hot files (high inbound edge count), "
-            "and stub files. The GAPS AT A GLANCE section shows docstring coverage, distillation coverage, "
-            "and design note count — the three dimensions of how well the codebase is understood."
+            "17 files, 0 stubs, 2 orphaned implementations. "
+            "The seed is a clean foundation: everything that exists is implemented, "
+            "but two functions are written and ready without anything calling them yet. "
+            "Determined shows the action queue: 'Write callers: orphaned-impl (2).' "
+            "This is a corpus you can run and extend immediately."
         ),
     },
     {
         "index": 1,
-        "title": "2. Frontier: Direct — Are there broken stubs?",
-        "instruction": "Run frontier_coverage to find functions that are called but not yet implemented.",
+        "corpus": "commonplace_seed",
+        "title": "2. Seed — Frontier: 0 stubs",
+        "instruction": "Run frontier_coverage to check for functions that are called but not implemented.",
         "tool": "frontier_coverage",
         "tool_args": {},
         "explanation": (
-            "Empty result is good news: the seed has 0 stubs. Nothing is definitively broken. "
-            "The codebase is fully implemented at this scale. On a real project, this view shows "
-            "exactly which stubs still need implementing and who is waiting on them."
+            "0 stubs: nothing is definitively broken. On a real project this view shows exactly "
+            "which stubs still need work and who is waiting on them. An empty result here is "
+            "meaningful — it tells you where NOT to start, which is often as useful as knowing "
+            "where to start."
         ),
     },
     {
         "index": 2,
-        "title": "3. Frontier: Orphan — Find unwired code",
+        "corpus": "commonplace_seed",
+        "title": "3. Seed — Orphans: validate_entry",
         "instruction": "Run find_orphaned_impls to find implemented functions that nothing calls yet.",
         "tool": "find_orphaned_impls",
         "tool_args": {},
         "explanation": (
-            "validate_entry is 'anticipatory': it's implemented and correct, but not yet wired "
-            "into any route. The action is clear: add a call from capture() or a route handler. "
-            "create_app is a known false positive — Flask factories are always invisible to static "
-            "call graphs because the WSGI server calls them, not your code."
+            "validate_entry is anticipatory: implemented, correct, imported in routes/capture.py, "
+            "but never called. The fix is one line in capture(): call validate_entry(entry) before "
+            "inserting. create_app is a known false positive — Flask factories are called by the "
+            "WSGI server, not your code, so they always appear orphaned to a static graph. "
+            "Recognizing false positives is part of reading Determined's output."
         ),
     },
     {
         "index": 3,
-        "title": "4. Frontier: ABC — Are all interfaces implemented?",
+        "corpus": "commonplace_seed",
+        "title": "4. Seed — ABC: interfaces complete",
         "instruction": "Run find_abc_gaps to check whether all abstract methods have concrete implementations.",
         "tool": "find_abc_gaps",
         "tool_args": {},
         "explanation": (
-            "EntryProcessor has 3 subclasses (CleanupProcessor, DeduplicateProcessor, "
-            "EnrichmentProcessor) all with overrides in place — no gaps. On a project with "
-            "unimplemented ABCs, this shows exactly which methods need implementing before the "
-            "class hierarchy is wired up."
+            "All three EntryProcessor subclasses (CleanupProcessor, DeduplicateProcessor, "
+            "EnrichmentProcessor) override process() and can_handle(). No abstract gaps. "
+            "The interesting observation is that EnrichmentProcessor is concrete but not "
+            "included in run_processors — it's an orphaned class, not an ABC gap. "
+            "Determined catches both shapes of 'exists but unused.'"
         ),
     },
+    # ── CORPUS SWITCH ─────────────────────────────────────────────────────────
     {
         "index": 4,
-        "title": "5. Topology — Full structural picture",
-        "instruction": "Run detect_topology to see the full shape of the codebase and its action queues.",
+        "corpus": "",
+        "title": "── Switch to Complete corpus ──",
+        "instruction": (
+            "Load the Commonplace complete corpus: "
+            "C_Users_bartl_dev_Determined_examples_commonplace.db. "
+            "The next steps show the same tools on a more evolved version of the app "
+            "(25 files, 1 stub to implement)."
+        ),
+        "tool": None,
+        "tool_args": {},
+        "action": "Corpus-switch step. Load the complete corpus, then advance to the next step.",
+        "explanation": (
+            "The complete corpus is the seed with more services, models, and routes added. "
+            "The app grew from 17 to 25 files. One new stub appeared: suggest_tags() in the "
+            "tagger service returns [] unconditionally. That is the guided frontier for this stage."
+        ),
+    },
+    # ── STAGE 2: Complete corpus ──────────────────────────────────────────────
+    # Load: C_Users_bartl_dev_Determined_examples_commonplace.db (25 files, 1 stub)
+    {
+        "index": 5,
+        "corpus": "examples_commonplace",
+        "title": "5. Complete — Orient: one stub appeared",
+        "instruction": "Run detect_topology to see how the shape changed from seed to complete.",
         "tool": "detect_topology",
         "tool_args": {},
         "explanation": (
-            "The topology summarizes the whole corpus in one view. 0 stubs means nothing is broken. "
-            "2 orphaned-impl means code is ready but not yet called. The 'Action queues' section "
-            "translates the structural picture into concrete next steps: 'Write callers: "
-            "orphaned-impl (2)' is the only thing the corpus is asking for."
-        ),
-    },
-    {
-        "index": 5,
-        "title": "6. Tools — Conditional stubs",
-        "instruction": "Run find_conditional_stubs to check for hidden runtime gaps behind conditionals.",
-        "tool": "find_conditional_stubs",
-        "tool_args": {},
-        "explanation": (
-            "No conditional stubs found means no hidden runtime gaps. A conditional stub raises "
-            "NotImplementedError only on certain code paths — harder to spot than a pure stub "
-            "and easier to miss in testing. Clean here means the seed is production-safe."
+            "25 files, 1 stub (suggest_tags), 1 orphaned class (EnrichmentProcessor). "
+            "The topology grew: a models layer was added, an API route blueprint appeared, "
+            "and the capture pipeline is now aware of LLM endpoints. "
+            "The action queue is now: 'Implement stubs: 1, Write callers: orphaned-impl 1.'"
         ),
     },
     {
         "index": 6,
-        "title": "7. Tools — Docstring health",
-        "instruction": "Run docstring_health to see which functions lack documentation.",
-        "tool": "docstring_health",
+        "corpus": "examples_commonplace",
+        "title": "6. Complete — Frontier: the LLM stub",
+        "instruction": "Run frontier_coverage to see the one stub blocking full functionality.",
+        "tool": "frontier_coverage",
         "tool_args": {},
         "explanation": (
-            "9 of 31 functions are missing docstrings. Determined flags these so you can document "
-            "before the codebase grows too large to remember from context. The staleness check "
-            "compares existing docstrings against the distilled code summary — divergence flags "
-            "that the docstring no longer describes what the function actually does."
+            "suggest_tags() returns [] unconditionally — the LLM integration is not wired. "
+            "Determined shows you the implementation point and every caller waiting on it. "
+            "The scaffold button gives you a starting function body with the right signature "
+            "and an HTTP call to the endpoint. But here is what the tool cannot do: "
+            "test whether the LLM is running, whether the prompt produces useful tags, "
+            "or whether the response format matches. Determined gets you to the call site "
+            "with the right shape. You supply the domain knowledge to make it work."
         ),
     },
     {
         "index": 7,
-        "title": "8. Knowledge — What gaps remain?",
-        "instruction": "Run gap_analysis to brainstorm what is missing, incomplete, or could bridge existing pieces.",
+        "corpus": "examples_commonplace",
+        "title": "7. Complete — Orphans: fix order matters",
+        "instruction": "Run find_orphaned_impls to see what is wired but never called.",
+        "tool": "find_orphaned_impls",
+        "tool_args": {},
+        "explanation": (
+            "EnrichmentProcessor is concrete (both methods implemented) but run_processors "
+            "does not include it. This is intentional sequencing: wiring the processor before "
+            "suggest_tags is implemented would call it silently and produce empty tags with no "
+            "error. Determined surfaces the class as an orphan, which prompts the right question: "
+            "why isn't this in the pipeline? The answer is in the tagger stub. Fix order: "
+            "implement suggest_tags first, then wire EnrichmentProcessor."
+        ),
+    },
+    {
+        "index": 8,
+        "corpus": "examples_commonplace",
+        "title": "8. Complete — Design tensions",
+        "instruction": "Run gap_analysis to see the design questions the corpus raises.",
         "tool": "gap_analysis",
         "tool_args": {},
         "explanation": (
-            "gap_analysis is generative: it uses the LLM to brainstorm typed fills (extend, bridge, mirror, "
-            "consolidate) for the highest-signal area it finds. Results are explicitly framed as possibilities, "
-            "not prescriptions. The proposals are stored in the build queue for you to accept or dismiss. "
-            "Next steps: run extract_design_facts, then ingest_design_docs pointing at "
-            "examples/commonplace/docs/DESIGN.md to populate the design-rule layer."
+            "Determined finds design tensions embedded in the source comments: eager vs lazy "
+            "tagging (should suggest_tags block capture or run async?), two URL validation "
+            "sites (utils/url.py and the capture route), and search calling storage directly "
+            "instead of going through the service layer. These are not bugs — they are open "
+            "design decisions. Determined names them so you can reason about them intentionally "
+            "rather than discovering them when they cause friction. Not every tension needs "
+            "resolving; some are acceptable tradeoffs. The tool starts the conversation."
+        ),
+    },
+    # ── CORPUS SWITCH ─────────────────────────────────────────────────────────
+    {
+        "index": 9,
+        "corpus": "",
+        "title": "── Switch to Extended corpus ──",
+        "instruction": (
+            "Load the Commonplace extended corpus: "
+            "C_Users_bartl_dev_Determined_examples_commonplace_extended.db. "
+            "This is the app after the stubs are filled, embeddings are wired, "
+            "and EnrichmentProcessor is included in the default pipeline."
+        ),
+        "tool": None,
+        "tool_args": {},
+        "action": "Corpus-switch step. Load the extended corpus, then advance to the next step.",
+        "explanation": (
+            "The extended corpus implements suggest_tags with a real llama-server call, "
+            "replaces semantic_search's text fallback with embedding-based cosine ranking, "
+            "upgrades find_connections from Jaccard overlap to cosine similarity, and wires "
+            "EnrichmentProcessor into the default run_processors list. Same 25 files — "
+            "the shape is identical to complete, but every call chain reaches an implementation."
+        ),
+    },
+    # ── STAGE 3: Extended corpus ──────────────────────────────────────────────
+    # Load: C_Users_bartl_dev_Determined_examples_commonplace_extended.db (25 files, 0 stubs)
+    {
+        "index": 10,
+        "corpus": "examples_commonplace_extended",
+        "title": "9. Extended — Frontier: nothing blocking",
+        "instruction": "Run frontier_coverage to confirm all stubs are filled.",
+        "tool": "frontier_coverage",
+        "tool_args": {},
+        "explanation": (
+            "0 stubs. LLM tagging, embedding search, and cosine connection-finding are all wired. "
+            "This is what 'structurally complete' looks like to Determined. "
+            "Note the boundary: Determined confirms there are no empty stubs, not that the "
+            "implementations produce correct output. Whether the embeddings rank entries usefully, "
+            "whether the LLM prompt returns sensible tags, whether cosine similarity is a good "
+            "proxy for 'related' in your domain — those require real data and real testing. "
+            "Determined gets you to the implementation; you validate it."
+        ),
+    },
+    {
+        "index": 11,
+        "corpus": "examples_commonplace_extended",
+        "title": "10. Extended — Orient: same shape, full chains",
+        "instruction": "Run detect_topology to see the extended corpus's topology.",
+        "tool": "detect_topology",
+        "tool_args": {},
+        "explanation": (
+            "25 files, 0 stubs, 0 orphans. Every class is instantiated, every function has callers, "
+            "every stub has an implementation. The topology action queue is empty: nothing urgent. "
+            "This is the correct time to ask 'what next?' — not by looking at gaps, "
+            "but by looking at design. Expand the capture pipeline? Add a deduplication check "
+            "before insert? Expose the connection graph in the API? Determined can help you "
+            "reason about any of those, or you can pivot to analyzing a different corpus entirely."
+        ),
+    },
+    {
+        "index": 12,
+        "corpus": "examples_commonplace_extended",
+        "title": "11. Extended — Pivot: what else can you do?",
+        "instruction": "Run gap_analysis on the extended corpus to see what design questions remain.",
+        "tool": "gap_analysis",
+        "tool_args": {},
+        "explanation": (
+            "Even with all stubs filled, design tensions survive. The eager vs lazy tagging "
+            "decision is still unresolved — tagging now blocks capture, adding latency. "
+            "The URL validation still has two sites. These are not Determined's to fix; "
+            "they require your domain knowledge. "
+            "The deeper point: Determined's value is not just finding stubs. "
+            "It is a lens you can turn on any corpus — your own game codebase, an open-source "
+            "library, a legacy service. Load a different project, run the same tools, and "
+            "get the same structured view: topology, frontiers, orphans, design tensions. "
+            "The Commonplace journey is the tutorial; your project is the real destination."
         ),
     },
 ]
@@ -2662,7 +2785,8 @@ def handle_get_tour_steps(_data=None):
     """Return tour step metadata (titles, instructions, explanations — no execution)."""
     steps = [
         {"index": s["index"], "title": s["title"],
-         "instruction": s["instruction"], "explanation": s["explanation"]}
+         "instruction": s["instruction"], "explanation": s["explanation"],
+         "corpus": s.get("corpus", ""), "tool": s.get("tool", "")}
         for s in _TOUR_STEPS
     ]
     emit("tour_steps", {"steps": steps, "count": len(steps)})
@@ -2671,14 +2795,24 @@ def handle_get_tour_steps(_data=None):
 @socketio.on("tour_run_step")
 def handle_tour_run_step(data):
     """Run the tool for tour step N and emit tour_step_result."""
-    if _oracle is None:
-        emit("tour_step_result", {"error": "No corpus loaded. Load the Commonplace seed corpus first."})
-        return
     step_index = (data or {}).get("step", 0)
     if step_index < 0 or step_index >= len(_TOUR_STEPS):
         emit("tour_step_result", {"error": f"Invalid step index {step_index}."})
         return
     step = _TOUR_STEPS[step_index]
+
+    # Corpus-switch steps have no tool — emit the instruction directly.
+    if not step.get("tool"):
+        emit("tour_step_result", {
+            "step": step_index,
+            "result": step.get("action", "Switch corpus as instructed above, then continue."),
+            "explanation": step["explanation"],
+        })
+        return
+
+    if _oracle is None:
+        emit("tour_step_result", {"error": "No corpus loaded. Load the appropriate Commonplace corpus first."})
+        return
     sid = request.sid
 
     def _run():

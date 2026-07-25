@@ -1,9 +1,11 @@
 """
 Post-processing pipeline for captured entries.
 
-Defines the abstract EntryProcessor interface and two concrete processors.
-EnrichmentProcessor is intentionally left as an ABC gap: process() and
-can_handle() have no override -- Determined detects this via find_abc_gaps().
+Defines the abstract EntryProcessor interface and three concrete processors.
+EnrichmentProcessor is fully implemented but not included in the default
+run_processors list -- it requires an LLM endpoint and all_entries context
+that the default runner doesn't supply. Determined surfaces this via
+find_orphaned_impls: the class exists and is concrete, but nothing instantiates it.
 """
 from abc import ABC, abstractmethod
 
@@ -50,10 +52,7 @@ class EnrichmentProcessor(EntryProcessor):
     """
     LLM enrichment pass: attaches suggested tags and related entry connections.
     Requires llm_endpoint and all_entries to be set before use.
-
-    STUB: process() and can_handle() are not yet overridden.
-    Determined detects this via find_abc_gaps() -- this is the ABC gap the
-    guided journey is designed to surface.
+    Not included in run_processors default list -- call explicitly with context.
     """
 
     def __init__(self, llm_endpoint=None, all_entries=None):

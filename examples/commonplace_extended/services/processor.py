@@ -1,11 +1,13 @@
 """
 Post-processing pipeline for captured entries.
 
-Defines the abstract EntryProcessor interface and three concrete processors.
-EnrichmentProcessor is fully implemented but excluded from run_processors by default:
-it calls suggest_tags (a stub) so including it silently produces no tags.
-Determined surfaces this asymmetry: class exists, is concrete, but has no callers.
-The natural next step is to implement suggest_tags and wire EnrichmentProcessor in.
+Three concrete processors run in order: cleanup, deduplication, enrichment.
+EnrichmentProcessor calls suggest_tags with the LLM endpoint from config;
+it is included in the default processor list now that suggest_tags is wired.
+
+DESIGN TENSION: EnrichmentProcessor adds latency to every capture. If LLM
+calls are slow, the capture route blocks until tagging completes. An async
+queue (celery, rq) would decouple enrichment from the HTTP response cycle.
 """
 from abc import ABC, abstractmethod
 
@@ -49,22 +51,36 @@ class DeduplicateProcessor(EntryProcessor):
 
 
 class EnrichmentProcessor(EntryProcessor):
-    """LLM-powered enrichment pass: attaches suggested tags to entry."""
+    """
+    LLM-powered enrichment: attaches suggested tags to entry.
+    Reads LLM_ENDPOINT from Flask config when available.
+    Falls back to no-op if endpoint is not configured or call fails.
+    """
+
+    def __init__(self, llm_endpoint=None):
+        self.llm_endpoint = llm_endpoint
 
     def process(self, entry: dict) -> dict:
         from services.tagger import suggest_tags
         entry = dict(entry)
-        entry["tags"] = suggest_tags(entry.get("content", ""))
+        entry["tags"] = suggest_tags(entry.get("content", ""), endpoint=self.llm_endpoint)
         return entry
 
     def can_handle(self, entry: dict) -> bool:
         return bool(entry.get("content"))
 
 
-def run_processors(entry: dict, processors=None) -> dict:
-    """Run entry through all applicable processors in order."""
+def run_processors(entry: dict, processors=None, llm_endpoint=None) -> dict:
+    """
+    Run entry through all applicable processors in order.
+    Pass llm_endpoint to enable LLM enrichment in EnrichmentProcessor.
+    """
     if processors is None:
-        processors = [CleanupProcessor(), DeduplicateProcessor()]
+        processors = [
+            CleanupProcessor(),
+            DeduplicateProcessor(),
+            EnrichmentProcessor(llm_endpoint=llm_endpoint),
+        ]
     for proc in processors:
         if proc.can_handle(entry):
             entry = proc.process(entry)

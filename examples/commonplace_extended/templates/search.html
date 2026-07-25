@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Search — Commonplace{% endblock %}
+{% block content %}
+<h1>Search</h1>
+<form method="get" action="{{ url_for('search.search') }}">
+  <div class="field search-field">
+    <input type="text" name="q" value="{{ query }}" placeholder="Search entries..." autofocus>
+    <button type="submit">Search</button>
+  </div>
+</form>
+
+{% if query %}
+  <p class="result-count">{{ results|length }} result{{ 's' if results|length != 1 else '' }} for <strong>{{ query }}</strong></p>
+  {% if results %}
+    <ul class="entry-list">
+      {% for e in results %}
+      <li class="entry-card">
+        <span class="entry-type">{{ e['type'] }}</span>
+        <a href="{{ url_for('browse.entry_detail', entry_id=e['id']) }}">
+          {{ e['title'] or e['content'][:80] }}
+        </a>
+        <span class="entry-date">{{ e['created_at'][:10] }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">No results found.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Commonplace — Architecture & Determined Surface Map</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; padding: 20px; font-size: 13px; }
+h2 { color: #7dd3fc; font-size: 15px; margin-bottom: 12px; letter-spacing: 0.05em; }
+h3 { color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.panel { background: #1e2433; border: 1px solid #2d3748; border-radius: 8px; padding: 14px; }
+.panel.accent { border-color: #3b82f6; }
+.module { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; padding: 6px 8px; border-radius: 4px; background: #252d3d; }
+.module-name { font-family: monospace; font-size: 12px; color: #7dd3fc; min-width: 140px; }
+.module-desc { color: #94a3b8; font-size: 11px; line-height: 1.4; }
+.stub { background: #2d1f1f; border-left: 3px solid #f87171; }
+.stub .module-name { color: #fca5a5; }
+.badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; margin-left: 4px; }
+.b-frontier { background: #7c3aed; color: #e9d5ff; }
+.b-reason { background: #0369a1; color: #bae6fd; }
+.b-project { background: #065f46; color: #a7f3d0; }
+.b-callgraph { background: #92400e; color: #fde68a; }
+.flow { display: flex; align-items: center; gap: 0; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.flow-step { background: #252d3d; border: 1px solid #3b82f6; border-radius: 6px; padding: 8px 12px; font-size: 11px; text-align: center; white-space: nowrap; min-width: 100px; }
+.flow-step .num { color: #7dd3fc; font-weight: 700; font-size: 13px; display: block; }
+.flow-step .label { color: #e2e8f0; }
+.flow-step .surface { color: #94a3b8; font-size: 10px; display: block; margin-top: 2px; }
+.arrow { color: #4b5563; font-size: 16px; padding: 0 4px; }
+.tension-list { list-style: none; }
+.tension-list li { padding: 5px 8px; border-left: 2px solid #4ade80; margin-bottom: 6px; background: #1a2820; border-radius: 0 4px 4px 0; color: #cbd5e1; font-size: 11px; line-height: 1.4; }
+.tension-list li strong { color: #86efac; display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.ui-issue { background: #2d1a1a; border: 1px solid #7c3aed; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.ui-issue .title { color: #c4b5fd; font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.ui-issue .body { color: #94a3b8; font-size: 11px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<h2>Commonplace — Architecture &amp; Determined Surface Map</h2>
+<p style="color:#64748b; font-size:11px; margin-bottom:16px">Living design document. Update as the app and the tool evolve. Located at Determined/examples/commonplace/docs/design.html</p>
+
+<div class="grid">
+  <div class="panel accent">
+    <h3>App Modules</h3>
+
+    <div class="module"><span class="module-name">app.py</span><span class="module-desc">Flask factory. Config wiring. Blueprint registration.</span></div>
+    <div class="module"><span class="module-name">config.py</span><span class="module-desc">DB path, LLM endpoint, feature flags (tagging on/off)</span></div>
+
+    <div style="margin: 8px 0 4px; color: #64748b; font-size: 10px; text-transform: uppercase;">models/</div>
+    <div class="module"><span class="module-name">entry.py</span><span class="module-desc">Entry: type (url/snippet/note/code), content, metadata, tags, created_at</span></div>
+    <div class="module"><span class="module-name">tag.py</span><span class="module-desc">Tag: name, source (manual | llm). Many-to-many with Entry.</span></div>
+    <div class="module"><span class="module-name">connection.py</span><span class="module-desc">Directed link between two entries. Type: related/contradicts/extends.</span></div>
+
+    <div style="margin: 8px 0 4px; color: #64748b; font-size: 10px; text-transform: uppercase;">routes/</div>
+    <div class="module"><span class="module-name">capture.py</span><span class="module-desc">POST /capture. Calls extractor, tagger, stores entry. <span class="badge b-callgraph">call graph</span></span></div>
+    <div class="module"><span class="module-name">browse.py</span><span class="module-desc">GET / and /entry/&lt;id&gt;. Renders entry + connections.</span></div>
+    <div class="module"><span class="module-name">search.py</span><span class="module-desc">GET /search. Delegates to searcher service. <span class="badge b-reason">reason</span></span></div>
+    <div class="module"><span class="module-name">api.py</span><span class="module-desc">JSON API -- future JS frontend hook.</span></div>
+
+    <div style="margin: 8px 0 4px; color: #64748b; font-size: 10px; text-transform: uppercase;">services/</div>
+    <div class="module stub"><span class="module-name">extractor.py</span><span class="module-desc">Fetch URL, parse title/meta, extract content. Doing too much. <span class="badge b-frontier">frontier</span> <span class="badge b-reason">reason</span></span></div>
+    <div class="module stub"><span class="module-name">tagger.py</span><span class="module-desc">suggest_tags(content) returns []. LLM stub. Call-on-write vs lazy is open. <span class="badge b-frontier">frontier</span></span></div>
+    <div class="module stub"><span class="module-name">linker.py</span><span class="module-desc">find_connections(entry_id) returns []. Inference stub. <span class="badge b-frontier">frontier</span></span></div>
+    <div class="module"><span class="module-name">searcher.py</span><span class="module-desc">Text search now, semantic later. Calls both models/ and storage/. <span class="badge b-reason">reason</span></span></div>
+
+    <div style="margin: 8px 0 4px; color: #64748b; font-size: 10px; text-transform: uppercase;">storage/</div>
+    <div class="module"><span class="module-name">db.py</span><span class="module-desc">SQLite connect, schema init, migrations.</span></div>
+    <div class="module"><span class="module-name">queries.py</span><span class="module-desc">Query helpers. Also called by searcher -- mixed abstraction level.</span></div>
+
+    <div style="margin: 8px 0 4px; color: #64748b; font-size: 10px; text-transform: uppercase;">utils/</div>
+    <div class="module"><span class="module-name">url.py</span><span class="module-desc">Normalize, validate URL. Also called from capture route -- duplication.</span></div>
+    <div class="module"><span class="module-name">text.py</span><span class="module-desc">Truncation, cleaning, excerpt generation.</span></div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px;">
+    <div class="panel">
+      <h3>Planted Design Tensions -- Reason targets</h3>
+      <ul class="tension-list">
+        <li><strong>Extractor does too much</strong>fetch + parse + metadata extraction in one module. Split or not?</li>
+        <li><strong>URL validation duplication</strong>url.py (utils) AND capture.py both validate. Who owns it?</li>
+        <li><strong>Tagger: eager vs lazy</strong>call on write (slow capture) or on demand (stale tags)? Open.</li>
+        <li><strong>Connection directionality</strong>connection.py model does not enforce bidirectional consistency.</li>
+        <li><strong>Searcher abstraction leak</strong>calls models/ and storage/ -- bypasses its own layer boundary.</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>Determined Surfaces Exercised</h3>
+      <div class="module" style="margin-bottom:5px"><span class="module-name"><span class="badge b-frontier" style="margin-left:0;margin-right:6px">Frontier</span></span><span class="module-desc">3 real stubs (tagger, linker, extractor full-content). Frontier tab immediately useful.</span></div>
+      <div class="module" style="margin-bottom:5px"><span class="module-name"><span class="badge b-callgraph" style="margin-left:0;margin-right:6px">Call Graph</span></span><span class="module-desc">capture route to extractor to db to entry. Real multi-hop chain to trace.</span></div>
+      <div class="module" style="margin-bottom:5px"><span class="module-name"><span class="badge b-reason" style="margin-left:0;margin-right:6px">Reason</span></span><span class="module-desc">5 planted tensions, each a real Reason question. Not contrived.</span></div>
+      <div class="module" style="margin-bottom:5px"><span class="module-name"><span class="badge b-project" style="margin-left:0;margin-right:6px">Project</span></span><span class="module-desc">extractor.py and tagger.py are obvious Project candidates.</span></div>
+    </div>
+
+    <div class="panel" style="border-color:#7c3aed">
+      <h3>UI Issues Commonplace Will Force</h3>
+      <div class="ui-issue">
+        <div class="title">Panel size -- Navigate opens file into tiny right panel</div>
+        <div class="body">12+ files across subdirs. You will hit this on day one of loading the corpus. Forces the holistic UI redesign to have a concrete driver.</div>
+      </div>
+      <div class="ui-issue">
+        <div class="title">Context switching -- 6 tab hops for one analysis</div>
+        <div class="body">Frontier to Editor to call graph to Reason to back. Editor needs to be the hub with contextual overlays, not a secondary panel.</div>
+      </div>
+      <div class="ui-issue">
+        <div class="title">Navigation breadcrumbs</div>
+        <div class="body">Clicking a caller in the call tree should navigate the editor, not open a second panel. Where-did-I-come-from gets lost fast in a 15-file project.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:14px">
+  <h3>The Ideal Analysis Flow (one continuous thread, no tab gymnastics)</h3>
+  <div class="flow">
+    <div class="flow-step"><span class="num">1</span><span class="label">Load corpus</span><span class="surface">Frontier tab</span></div>
+    <span class="arrow">-&gt;</span>
+    <div class="flow-step"><span class="num">2</span><span class="label">Click tagger stub</span><span class="surface">Editor opens</span></div>
+    <span class="arrow">-&gt;</span>
+    <div class="flow-step"><span class="num">3</span><span class="label">"Who calls this?"</span><span class="surface">Call graph inline</span></div>
+    <span class="arrow">-&gt;</span>
+    <div class="flow-step"><span class="num">4</span><span class="label">Click Reason</span><span class="surface">Panel alongside editor</span></div>
+    <span class="arrow">-&gt;</span>
+    <div class="flow-step"><span class="num">5</span><span class="label">Click Project</span><span class="surface">Projection overlay</span></div>
+    <span class="arrow">-&gt;</span>
+    <div class="flow-step"><span class="num">6</span><span class="label">Click caller</span><span class="surface">Editor navigates, breadcrumb back</span></div>
+  </div>
+  <div style="margin-top:10px; color:#64748b; font-size:11px;">Current UI breaks at step 3 (tiny panel) and step 6 (no breadcrumb). Commonplace makes this viscerally obvious on first use.</div>
+</div>
+
+<div class="panel">
+  <h3>Growth Path</h3>
+  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top:4px">
+    <div style="background:#1a2020; border-radius:6px; padding:10px; border-top: 2px solid #4ade80">
+      <div style="color:#86efac; font-weight:600; font-size:11px; margin-bottom:6px">Phase 1 -- now</div>
+      <div style="color:#94a3b8; font-size:11px; line-height:1.5">Load corpus. Find 3 stubs. Use Frontier + Reason on extractor. Use Project on tagger. Basic call graph walkthrough.</div>
+    </div>
+    <div style="background:#1a1a2a; border-radius:6px; padding:10px; border-top: 2px solid #3b82f6">
+      <div style="color:#7dd3fc; font-weight:600; font-size:11px; margin-bottom:6px">Phase 2 -- after UI redesign</div>
+      <div style="color:#94a3b8; font-size:11px; line-height:1.5">Editor-as-hub flow. Navigate call tree without tab switching. Implement tagger stub using Determined's projection as the spec.</div>
+    </div>
+    <div style="background:#2a1a2a; border-radius:6px; padding:10px; border-top: 2px solid #a855f7">
+      <div style="color:#d8b4fe; font-weight:600; font-size:11px; margin-bottom:6px">Phase 3 -- doc extraction + frame comparison</div>
+      <div style="color:#94a3b8; font-size:11px; line-height:1.5">Extract Commonplace's own design doc. Frame-compare against actual code. Gap = tutorial chapter on what the code thinks it is vs what it is.</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
