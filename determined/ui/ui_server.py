@@ -3167,9 +3167,11 @@ def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 
     import atexit
     from determined.agent.llm_client import stop_server
 
-    # Load explicit db_path if provided; otherwise start with no corpus
+    # Load explicit db_path if provided; otherwise resume last session
     if db_path:
         init(db_path)
+    elif saved := _load_session():
+        init(saved)
 
     atexit.register(stop_server)
 
