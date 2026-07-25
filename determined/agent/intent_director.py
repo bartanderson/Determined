@@ -203,7 +203,7 @@ def summary_text(result: dict) -> str:
     return "\n".join(lines)
 
 
-def analyze_file_intent(oracle: "DBOracle", file_path: str, intent_label: str) -> dict:
+def analyze_file_intent(oracle: "DBOracle", file_path: str, intent_label: str = "") -> dict:
     """
     Analyze a specific file against a stated intent label.
 
@@ -262,8 +262,10 @@ def format_file_intent(result: dict) -> str:
     if "error" in result:
         return f"Intent analysis failed: {result['error']}"
 
-    lines = [
-        f"Intent: {result['intent']}",
+    lines = []
+    if result.get("intent"):
+        lines.append(f"Intent: {result['intent']}")
+    lines += [
         f"File: {result['file']}  ({result['total']} functions)",
         "",
     ]

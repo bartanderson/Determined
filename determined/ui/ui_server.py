@@ -2386,8 +2386,8 @@ def handle_direct_intent(data):
     """Analyze a file against a stated intent label, or fall back to corpus search."""
     intent = (data.get("intent") or "").strip()
     file_path = (data.get("file_path") or "").strip()
-    if not intent or _oracle is None:
-        emit("intent_result", {"error": "no corpus or empty intent"}); return
+    if _oracle is None:
+        emit("intent_result", {"error": "no corpus loaded"}); return
     try:
         if file_path:
             from determined.agent.intent_director import analyze_file_intent, format_file_intent

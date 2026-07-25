@@ -539,8 +539,7 @@
           <input id="ed-path-input" class="path-input" placeholder="File path (relative or absolute)…" style="flex:1;font-size:.82em">
           <button class="send-btn" id="ed-open-btn" style="padding:3px 8px;font-size:.82em">Open ↵</button>
           <span style="color:var(--border)">|</span>
-          <input id="ed-intent-input" class="path-input" placeholder="What is this file supposed to do? (e.g. handles combat resolution)" style="flex:1;font-size:.82em">
-          <button class="send-btn" id="ed-intent-run" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Check whether this file's functions actually deliver on the stated intent — shows what's implemented, what's missing, what's wired in">Analyze intent</button>
+          <button class="send-btn" id="ed-intent-run" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Show which functions are implemented, which are stubs, and what has callers">Analyze intent</button>
           <button class="send-btn" id="ed-capture-btn" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Add current file to system bag">+ Bag</button>
           <span style="color:var(--border)">|</span>
           <button class="send-btn" id="ed-edit-btn"   style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Edit file in place">Edit</button>
@@ -580,6 +579,8 @@
               style="display:none;position:absolute;inset:0;width:100%;height:100%;box-sizing:border-box;background:var(--bg);color:var(--text1);font-family:var(--font-mono);font-size:.82em;line-height:1.5;border:none;outline:none;resize:none;padding:8px 12px;tab-size:4"></textarea>
           </div>
         </div>
+        <!-- intent analysis result — shown below code, hidden until populated -->
+        <div id="ed-intent-result" style="display:none;padding:10px 14px;font-size:.82em;font-family:var(--font-mono);white-space:pre-wrap;border-top:1px solid var(--border);background:var(--bg2);color:var(--text1);overflow-y:auto;max-height:220px"></div>
 
       </div>
 
@@ -3599,7 +3600,6 @@ const edTabbar    = document.getElementById("ed-tabbar");
 const edNoFile    = document.getElementById("ed-no-file");
 const edPathInput = document.getElementById("ed-path-input");
 const edOpenBtn   = document.getElementById("ed-open-btn");
-const edIntentInput = document.getElementById("ed-intent-input");
 const edIntentRun = document.getElementById("ed-intent-run");
 const edCaptureBtn = document.getElementById("ed-capture-btn");
 const edPopoutBtn = document.getElementById("ed-popout-btn");
@@ -3773,6 +3773,7 @@ function edRenderCode(lines, symbols) {
   });
   edCodeBody.innerHTML = "";
   edCodeBody.appendChild(frag);
+  const _ir = document.getElementById("ed-intent-result"); if (_ir) { _ir.style.display = "none"; _ir.textContent = ""; }
 }
 
 // delegated click: sym-link spans in code view scroll to definition and open spotlight
@@ -3831,36 +3832,31 @@ socket.on("bag_add_result", data => {
 edCaptureBtn.addEventListener("click", () => {
   if (_edActive < 0 || !_edFiles[_edActive]) return;
   const f = _edFiles[_edActive];
-  const intent = edIntentInput.value.trim() || undefined;
-  socket.emit("bag_add", { type: "file", value: f.rel_path, note: intent });
+  socket.emit("bag_add", { type: "file", value: f.rel_path });
 });
 
 // intent-directed pass
 edIntentRun.addEventListener("click", () => {
-  const intent = edIntentInput.value.trim();
-  if (!intent) return;
   edIntentRun.disabled = true;
   edIntentRun.textContent = "…";
   const activeFile = (_edFiles[_edActive] || {}).path || "";
-  socket.emit("direct_intent", { intent, file_path: activeFile });
+  socket.emit("direct_intent", { intent: "", file_path: activeFile });
 });
 
 socket.on("intent_result", data => {
   edIntentRun.disabled = false;
   edIntentRun.textContent = "Analyze intent";
-  // append to chat results
-  const block = document.createElement("div");
-  block.className = "result-block";
+  const el = document.getElementById("ed-intent-result");
+  if (!el) return;
   if (data.error) {
-    block.innerHTML = `<div class="result-body"><div class="answer-text" style="color:var(--red)">${escHtml(data.error)}</div></div>`;
+    el.style.display = "block";
+    el.style.color = "var(--red)";
+    el.textContent = data.error;
   } else {
-    block.innerHTML = `<div class="result-header"><span class="kind-tag" style="background:var(--surface2)">intent</span></div>`
-      + `<div class="result-body"><div class="answer-text">${colorize(data.summary)}</div></div>`;
+    el.style.display = "block";
+    el.style.color = "var(--text1)";
+    el.textContent = data.summary;
   }
-  results.appendChild(block);
-  results.scrollTop = results.scrollHeight;
-  // switch to bag tab so user sees what was collected
-  if (!data.error) { activateTab("knowledge"); _knLens = "bag"; document.querySelectorAll(".lens-sel-btn[data-kl]").forEach(b => b.classList.toggle("active", b.dataset.kl === "bag")); document.getElementById("kn-view-artifacts").style.display="none"; document.getElementById("kn-view-pins").style.display="none"; document.getElementById("kn-view-bag").style.display="flex"; document.getElementById("kn-view-dochealth").style.display="none"; bagFetch(); }
 });
 
 // pop-out / restore
