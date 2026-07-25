@@ -120,7 +120,7 @@ body {
 .sb-section {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 0 0 auto;
   overflow-y: auto;
   min-height: 0;
 }

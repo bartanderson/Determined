@@ -2564,11 +2564,12 @@ _TOUR_STEPS = [
         "tool": "detect_topology",
         "tool_args": {},
         "explanation": (
-            "Read the output in two passes. First, the counts: 17 files, 0 stubs, 2 orphaned "
-            "implementations. Second, the action queue at the bottom — it tells you what to do "
-            "next: 'Write callers: orphaned-impl (2).' Nothing is broken; two things are written "
-            "and ready but nothing calls them yet. This queue format is the same on every corpus "
-            "you load. Learn to read it here, on a small project, before you need it on a large one."
+            "Read the output in two passes. First, the shape table — each row is a different "
+            "category of incompleteness. Second, the action queue at the bottom, which translates "
+            "shape counts into three prioritized lists: Implement now, Write callers, Decide. "
+            "An empty Implement queue means no broken call chains. Entries in Write callers mean "
+            "working code with no caller yet. This queue format is the same on every corpus you "
+            "load. Learn to read it here, on a small project, before you need it on a large one."
         ),
     },
     {
@@ -2576,20 +2577,20 @@ _TOUR_STEPS = [
         "corpus": "commonplace_seed",
         "title": "2. Seed — Orphans: follow the action queue",
         "instruction": (
-            "The action queue flagged 2 orphaned implementations — functions that exist and work "
+            "The action queue flagged orphaned implementations — functions that exist and work "
             "but nothing calls. Run find_orphaned_impls to see what they are."
         ),
         "tool": "find_orphaned_impls",
         "tool_args": {},
         "explanation": (
-            "Two findings. validate_entry is imported in routes/capture.py but never called — "
-            "anticipatory code, written ahead of its caller. The fix is one line: call "
-            "validate_entry(entry) before the insert in capture(). "
-            "create_app is a false positive: Flask factories are called by the WSGI server, "
-            "not by your code, so they are always invisible to static call graphs. "
-            "Learning to recognize false positives is part of working with any static analysis tool. "
-            "Determined will always surface create_app as an orphan on Flask projects; "
-            "you can safely ignore it."
+            "Each finding is classified: anticipatory (written ahead of its caller — needs a "
+            "caller written), ready-but-blocked (same file has stubs — wire the stub first), "
+            "or possibly-stranded (only stub callers — verify it's still needed). "
+            "The tool gives you the category; you decide the fix. "
+            "Look for structural false positives: a Flask factory like create_app will always "
+            "appear here — the WSGI server calls it, not your code, so static graphs can never "
+            "see it. Learning to recognize framework-called functions as expected orphans is part "
+            "of reading any static analysis output."
         ),
     },
     {
@@ -2663,12 +2664,14 @@ _TOUR_STEPS = [
         "tool": "detect_topology",
         "tool_args": {},
         "explanation": (
-            "25 files, up from 17. The action queue now reads: implement stubs: 1, "
-            "write callers: orphaned-impl 1. Two items where the seed had one. "
-            "The format is identical; the state is different. "
-            "This is the shape of a project mid-development: the skeleton exists, "
-            "one call chain does not reach an implementation, one complete class sits unused. "
-            "The topology told you both facts before you ran any other tool."
+            "Files grew from the seed. The topology shows one stub — disconnected, "
+            "meaning nothing calls it and it calls nothing. That is suggest_tags: "
+            "the LLM integration point, not yet wired into the pipeline. "
+            "The orphaned-impl count also grew — more code was written, "
+            "and like the seed, much of it is framework-called or not yet connected to callers. "
+            "Two queues to act on: Implement now (the disconnected stub) and Write callers "
+            "(orphaned implementations to wire). The next steps run each tool that surfaces "
+            "those findings separately."
         ),
     },
     {
@@ -2728,14 +2731,17 @@ _TOUR_STEPS = [
         "tool": "find_conditional_stubs",
         "tool_args": {},
         "explanation": (
-            "Clean — no conditional stubs in this corpus. "
-            "A conditional stub looks like: if mode == 'advanced': raise NotImplementedError. "
-            "It passes every test that does not hit that branch, then fails in production "
-            "when the condition triggers. These are harder to spot than a bare return [] "
-            "and easier to miss in a code review. "
-            "frontier_coverage and find_conditional_stubs together give you the full frontier picture: "
-            "one catches explicit placeholders, the other catches hidden runtime gaps. "
-            "Run both on any corpus you are assessing before you start working in it."
+            "One found: validate_entry in validator.py. The basic validation — title, source_url, "
+            "URL format — always runs. The strict content validation path raises NotImplementedError. "
+            "That branch never triggers in the current codebase: strict=False is the default, "
+            "and no caller passes strict=True. So this passed frontier_coverage and would pass "
+            "every test that does not exercise strict mode. find_conditional_stubs surfaced it anyway. "
+            "The question to answer: is strict mode a planned feature or a forgotten placeholder? "
+            "If planned, leave it and document the intent. If forgotten, remove the branch. "
+            "The tool tells you the gap exists; you decide whether it is technical debt or "
+            "intentional deferral. frontier_coverage and find_conditional_stubs together give you "
+            "the full frontier picture: one catches explicit placeholders, the other catches "
+            "hidden runtime gaps. Run both on any corpus you are assessing."
         ),
     },
     {
@@ -2794,12 +2800,14 @@ _TOUR_STEPS = [
         "tool": "detect_topology",
         "tool_args": {},
         "explanation": (
-            "25 files, 0 stubs, 0 orphans. Action queue: empty. "
-            "Compare this to the complete (implement stubs: 1, write callers: 1) "
-            "and the seed (write callers: 2). Same format, three different states of the same project. "
-            "An empty action queue is what structural completion looks like to Determined — "
-            "not that the code works correctly at runtime, but that every defined contract "
-            "has an implementation and every implementation has a caller. "
+            "0 stubs — the Implement queue is empty. Orphaned-impl is not zero: "
+            "in a web app, routes are called by the WSGI server, models are instantiated "
+            "by application logic, and both appear orphaned to a static graph. "
+            "That count reflects the shape of the framework, not incompleteness in the app. "
+            "The signal that matters is the Implement queue: empty means every defined contract "
+            "has a body. Compare across the three stages — seed, complete, extended: "
+            "the orphan count grew as the app did; the stub count returned to zero. "
+            "That return to zero is what structural resolution looks like. "
             "Runtime correctness is a different question, answered by running the code."
         ),
     },
