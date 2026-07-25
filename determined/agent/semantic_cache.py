@@ -22,15 +22,7 @@ logger = logging.getLogger(__name__)
 _EMBED_DIM = 384  # all-MiniLM-L6-v2 output dimension
 CACHE_THRESHOLD = 0.92
 
-_embed_model = None
-
-
-def _get_embed_model():
-    global _embed_model
-    if _embed_model is None:
-        from sentence_transformers import SentenceTransformer
-        _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embed_model
+from determined.oracle.embedding_model import get_model as _get_embed_model
 
 
 def _embed(text: str) -> np.ndarray:

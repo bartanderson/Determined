@@ -16,15 +16,17 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Optional
 
 MODEL_DIR = Path(r"C:\Users\bartl\models\setfit\stub_classifier")
 
-_st_model  = None    # SentenceTransformer (fine-tuned body)
-_head      = None    # sklearn classifier head
-_labels    = None    # {int: str} from label_map.json
-_available = None    # tri-state: None=not-checked, True=ok, False=missing
+_st_model   = None    # SentenceTransformer (fine-tuned body)
+_head       = None    # sklearn classifier head
+_labels     = None    # {int: str} from label_map.json
+_available  = None    # tri-state: None=not-checked, True=ok, False=missing
+_load_lock  = threading.Lock()
 
 CLASS_NAMES = {
     0: "genuinely-unknown",
@@ -80,21 +82,24 @@ def _load() -> bool:
     global _st_model, _head, _labels, _available
     if _available is not None:
         return _available
-    if not MODEL_DIR.exists():
-        _available = False
-        return False
-    try:
-        import pickle, json
-        from sentence_transformers import SentenceTransformer
-        _st_model = SentenceTransformer(str(MODEL_DIR))
-        with open(MODEL_DIR / "model_head.pkl", "rb") as f:
-            _head = pickle.load(f)
-        with open(MODEL_DIR / "label_map.json") as f:
-            raw = json.load(f)
-            _labels = {int(k): v for k, v in raw.items()}
-        _available = True
-    except Exception:
-        _available = False
+    with _load_lock:
+        if _available is not None:
+            return _available
+        if not MODEL_DIR.exists():
+            _available = False
+            return False
+        try:
+            import pickle, json
+            from sentence_transformers import SentenceTransformer
+            _st_model = SentenceTransformer(str(MODEL_DIR))
+            with open(MODEL_DIR / "model_head.pkl", "rb") as f:
+                _head = pickle.load(f)
+            with open(MODEL_DIR / "label_map.json") as f:
+                raw = json.load(f)
+                _labels = {int(k): v for k, v in raw.items()}
+            _available = True
+        except Exception:
+            _available = False
     return _available
 
 

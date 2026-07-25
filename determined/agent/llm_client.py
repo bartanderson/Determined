@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -47,6 +48,8 @@ LLM_SERVER_ARGS  = [
 ]
 
 _server_proc: subprocess.Popen | None = None
+_server_lock = threading.Lock()
+_server_starting = False
 
 # SearXNG web search config (RM12)
 # Set SEARXNG_URL to the base URL of a running SearXNG instance.
@@ -148,30 +151,66 @@ def warmup(wait_seconds: int = 30, probe_timeout: int = LLM_COLD_TIMEOUT) -> boo
     return False
 
 
+def _kill_orphaned_servers() -> None:
+    """Kill any llama-server.exe processes not started by this session."""
+    import platform
+    if platform.system() != "Windows":
+        return
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq llama-server.exe", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True,
+        )
+        for line in result.stdout.splitlines():
+            if "llama-server.exe" not in line:
+                continue
+            parts = line.strip('"').split('","')
+            if len(parts) < 2:
+                continue
+            pid = int(parts[1])
+            if _server_proc and _server_proc.pid == pid:
+                continue  # ours — leave it
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                           capture_output=True)
+            logger.info("llm_client: killed orphaned llama-server pid %d", pid)
+    except Exception as exc:
+        logger.warning("llm_client._kill_orphaned_servers: %s", exc)
+
+
 def start_server(wait_seconds: int = 90) -> bool:
     """Launch llama-server as a subprocess if not already running.
 
     Returns True when the server is ready to accept requests.
-    No-op (returns True) if the server is already reachable.
+    Serialized: concurrent callers block until the first launch completes.
     Returns False if the exe is missing or the server fails to start.
     """
-    global _server_proc
+    global _server_proc, _server_starting
     if is_available():
         return True
-    if not Path(LLM_SERVER_EXE).exists():
-        logger.warning("llm_client.start_server: exe not found at %s", LLM_SERVER_EXE)
-        return False
-    if not Path(LLM_MODEL_PATH).exists():
-        logger.warning("llm_client.start_server: model not found at %s", LLM_MODEL_PATH)
-        return False
-    _server_proc = subprocess.Popen(
-        [LLM_SERVER_EXE, "-m", LLM_MODEL_PATH] + LLM_SERVER_ARGS,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    logger.info("llm_client.start_server: launched pid %d", _server_proc.pid)
-    return warmup(wait_seconds=wait_seconds)
+    with _server_lock:
+        if is_available():
+            return True
+        if _server_starting:
+            return False  # another thread is mid-launch; don't stack another
+        _server_starting = True
+    _kill_orphaned_servers()
+    try:
+        if not Path(LLM_SERVER_EXE).exists():
+            logger.warning("llm_client.start_server: exe not found at %s", LLM_SERVER_EXE)
+            return False
+        if not Path(LLM_MODEL_PATH).exists():
+            logger.warning("llm_client.start_server: model not found at %s", LLM_MODEL_PATH)
+            return False
+        _server_proc = subprocess.Popen(
+            [LLM_SERVER_EXE, "-m", LLM_MODEL_PATH] + LLM_SERVER_ARGS,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        logger.info("llm_client.start_server: launched pid %d", _server_proc.pid)
+        return warmup(wait_seconds=wait_seconds)
+    finally:
+        _server_starting = False
 
 
 def stop_server() -> None:

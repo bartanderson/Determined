@@ -18,14 +18,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-_embed_model = None
-
-def _get_embed_model():
-    global _embed_model
-    if _embed_model is None:
-        from sentence_transformers import SentenceTransformer
-        _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embed_model
+from determined.oracle.embedding_model import get_model as _get_embed_model
 
 from determined.agent.edge_tools import (
     edges_of,
@@ -10791,6 +10784,59 @@ def fsm_scaffold(assessor: "Assessor", args: dict) -> str:
 
 
 TOOLS["fsm_scaffold"] = (fsm_scaffold, "assessor")
+
+
+def fsm_diagram(assessor: "Assessor", args: dict) -> str:
+    """
+    fsm_diagram(file_path) — generate Mermaid stateDiagram-v2 for a named FSM.
+
+    Reads the FSM JSON spec file and returns Mermaid syntax showing states,
+    transitions, guards, and actions.  Deterministic — no LLM.
+
+    Args:
+      file_path  — path to the FSM JSON spec file (e.g. config/fsms/encounter.json)
+    """
+    import json as _json
+
+    file_path = args.get("file_path", "").strip()
+    if not file_path:
+        return "Error: file_path is required."
+
+    try:
+        with open(file_path, encoding="utf-8") as fh:
+            spec = _json.load(fh)
+    except Exception as exc:
+        return f"Error reading spec: {exc}"
+
+    states = spec.get("states", [])
+    events = spec.get("events", {})
+
+    lines = ["stateDiagram-v2"]
+
+    for s in states:
+        if s.get("initial"):
+            lines.append(f'    [*] --> {s["name"]}')
+            break
+
+    for event_name, event_data in events.items():
+        for t in event_data.get("transitions", []):
+            frm = t["from"]
+            to  = t["to"]
+            parts = [event_name]
+            if t.get("cond"):
+                parts.append(f'[{t["cond"]}]')
+            if t.get("actions"):
+                parts.append("/ " + ", ".join(t["actions"]))
+            lines.append(f'    {frm} --> {to} : {" ".join(parts)}')
+
+    for s in states:
+        if s.get("final"):
+            lines.append(f'    {s["name"]} --> [*]')
+
+    return "\n".join(lines)
+
+
+TOOLS["fsm_diagram"] = (fsm_diagram, "assessor")
 
 
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
