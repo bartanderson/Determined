@@ -8,6 +8,18 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-25 (s258): Tour corpus-hint timing bug — `tourRender()` fires on `tour_step_result`
+before `corpus_ready` updates `status-db-name` after a corpus switch. Result: stale warning
+flash ("This step expects a different corpus") even when the right corpus is loaded.
+Fix: call `tourRender()` inside `corpus_ready` handler when the tour panel is active.
+Not yet implemented; workaround is calling `tourRender()` manually in the console.
+
+2026-07-25 (s258): Tour step texts must match corpus state. When Commonplace corpora grow,
+explanations citing specific counts (orphans, stubs, files) become stale immediately.
+Lesson: tour explanations should describe format and concept, not snapshot numbers.
+Fixed this session: steps 1, 2, 5, 9, 11. Pattern for future: after any corpus change,
+re-walk the tour and check every step explanation against actual tool output.
+
 2026-07-25: `_extract_body()` in `classify_stub.py` was never validated against all dj2 files -- body_shape signal may be unreliable for dj2 stubs with unusual body patterns. Validate when classify_stub calibration work resumes.
 
 2026-07-25 (s256): Extended corpus lives at `examples/commonplace_extended/` (sibling to

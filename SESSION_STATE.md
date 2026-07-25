@@ -1,66 +1,57 @@
-Written at commit: 6cca150
+Written at commit: 2259e7a
 
-# SESSION STATE — session 257 (end)
+# SESSION STATE — session 258 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `c881362` — docs: prune TRACKER + establish docs taxonomy [V]
-- `6cca150` — docs: delete CLOSURE.md, extract live validation gap to HISTORY.md [V]
-
-No code changed. No tests run.
-
----
-
-## COMPLETION GATE — MET, NOT YET FORMALLY CLOSED [?]
-
-Gate: "be able to determine the first 5 things to do in dj2 and be able to do them."
-Status carried from session 255/256 — not re-verified this session.
-TRACKER.md no longer has a formal gate entry for this — needs to be addressed.
+- `2259e7a` — fix(ui): sidebar sections shrink to content + tour step explanations match corpus [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**Docs reorganization — full pass:**
+**Tour walk — completed all 14 steps across 3 corpus stages** [V]
 
-TRACKER.md: 3,231 → 151 lines. All DONE items, Dashboard, Work queue, session
-log, UI redesign arc detail deleted. FUTURE blocks moved to their proper homes.
-Active items retained: RM67, RM68, RM72, RM73, RM21, RM-Perf, cross-language
-remaining tasks.
+Walked seed → complete → extended. All tools ran, all results coherent.
+Cross-corpus contrast is pedagogically solid.
 
-New docs/README.md: map of the docs/ directory — what each file is for, what
-belongs there, change log at bottom. Prevents future accumulation in TRACKER.
+**Issues found and fixed (in `2259e7a`):**
 
-FUTURE blocks distributed: [V]
-- MCTS + domain adapters + Design Oracle + knowledge layer → DESIGN.md (secs 10-14)
-- Signal fusion paradigms → VISUAL_PROJECTION.md
-- Stub-targeted editing + sidebar collapse → UI_REDESIGN.md
-- Slater integration arc (Ideas 2-6) → new docs/SLATER.md
+1. `style.css`: `.sb-section flex: 1` → `flex: 0 0 auto` — collapsed sidebar sections
+   no longer claim equal vertical space. Verified: 358/78/32px (content-proportional). [V]
 
-docs/archive/ deleted — superseded docs, git has them. [V]
-docs/CLOSURE.md deleted — completed gate checklist, all phases done. [V]
-One live item extracted from CLOSURE.md before deletion: `_extract_body()` in
-`classify_stub.py` never validated against all dj2 files — logged in HISTORY.md.
+2. Tour step explanations — five steps updated to match actual tool output:
+   - Step 1 (seed orient): removed stale "2 orphaned" count [V]
+   - Step 2 (seed orphans): removed count from instruction; explanation rewritten around
+     classification categories (anticipatory/ready-but-blocked), not specific functions [V]
+   - Step 5 (complete orient): removed wrong "write callers: orphaned-impl 1" claim [V]
+   - Step 9 (conditional stubs): rewritten to describe actual validate_entry finding [V]
+   - Step 11 (extended orient): acknowledge orphan-impl exists; clarify empty Implement
+     queue is the signal, not zero orphans [V]
 
-Taxonomy established: Release = git. Current = TRACKER.md. Future = design docs
-with explicit gates. README.md is the map that enforces this going forward.
+**Known issue found, not fixed:**
+- Tour corpus-hint timing bug: `tourRender()` fires before `corpus_ready` updates
+  `status-db-name` after a corpus switch → stale warning flash on switch steps.
+  Fix: call `tourRender()` inside `corpus_ready` when tour panel is active.
+  Logged in HISTORY.md.
+
+**Not done this session:** RM67 probe loop (was item 2 in the queue).
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Formally close the completion gate** — carried from sessions 255/256. Gate
-   criteria were browser-verified in session 255; needs a formal close entry.
-   TRACKER.md was pruned this session so there is no gate entry there anymore —
-   decide where this closure note lands (HISTORY.md one-liner is probably right).
+1. **Formally close the completion gate** — carried from sessions 255/256/258.
+   Gate criteria browser-verified in session 255. Write a one-liner to HISTORY.md.
 
-2. **RM67 — Convergence protocol** — still ACTIVE. Pick up the per-session probe
-   loop. Run before any other work.
+2. **RM67 — Convergence protocol probe loop** — run before any other work.
+   Stub sweep, unresolved edge ratio, ABC gaps, EP inferred count, docstring health.
+   See TRACKER.md RM67 for the 5-step loop.
 
-3. **Walk the tour** — it's live at port 5050. Load seed corpus, click through
-   Tour tab. 12 steps, all tools, all 3 stages.
+3. **Fix tour corpus-hint timing bug** — one-line fix in `corpus_ready` handler
+   in `console.html`: add `if (tourPanelActive()) tourRender();` after status-db-name update.
 
 ---
 
@@ -69,6 +60,7 @@ with explicit gates. README.md is the map that enforces this going forward.
 - Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force`
 - Duplicate server trap: `netstat -ano | Select-String ":5050"` — two LISTENING = old process alive
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
+- Tour tab is under ⚙ Utilities dropdown — not directly visible in tab bar.
 - Extended corpus DB: `C_Users_bartl_dev_Determined_examples_commonplace_extended.db`
 
 ## Known issues (carried)
@@ -78,5 +70,6 @@ with explicit gates. README.md is the map that enforces this going forward.
 - Walker dispatch resolution (RM73) [?] — FUTURE
 - Scaffold buttons clipped on right edge [?] — "Sca..." truncated
 - `_extract_body()` not validated against all dj2 files [?] — body_shape signal
-  may be unreliable for unusual stub patterns; validate when classify_stub
-  calibration resumes (logged in HISTORY.md)
+  may be unreliable for unusual stub patterns (logged in HISTORY.md)
+- Tour corpus-hint timing bug [?] — stale warning flash after corpus switch;
+  fix location: `corpus_ready` handler in console.html (logged in HISTORY.md)
