@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import os
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
 import json
 import sqlite3
 import threading
@@ -1181,6 +1184,35 @@ def handle_fsm_scaffold(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("fsm_diagram")
+def handle_fsm_diagram(data):
+    """
+    Generate Mermaid stateDiagram-v2 for a named FSM.
+    Emits fsm_diagram_result: { fsm_name, mermaid } or { error }
+    """
+    if _oracle is None:
+        emit("fsm_diagram_result", {"error": "no corpus loaded"})
+        return
+    file_path = (data or {}).get("file_path", "").strip()
+    fsm_name  = (data or {}).get("fsm_name", "").strip()
+    if not file_path:
+        emit("fsm_diagram_result", {"error": "file_path required"})
+        return
+    sid = request.sid
+
+    def _run():
+        try:
+            from determined.agent.agent_tools import fsm_diagram
+            from determined.assessor.assessor import Assessor
+            assessor = Assessor(_oracle)
+            mermaid = fsm_diagram(assessor, {"file_path": file_path})
+            socketio.emit("fsm_diagram_result", {"fsm_name": fsm_name, "mermaid": mermaid}, to=sid)
+        except Exception as exc:
+            socketio.emit("fsm_diagram_result", {"error": str(exc)}, to=sid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @socketio.on("store_finding_inline")
 def handle_store_finding_inline(data):
     """Store a single finding (from an inline ⚑ chip) without going through chat."""
@@ -2351,15 +2383,21 @@ def handle_bag_add(data):
 
 @socketio.on("direct_intent")
 def handle_direct_intent(data):
-    """Run intent-directed analysis pass, fill system bag, return chat summary."""
+    """Analyze a file against a stated intent label, or fall back to corpus search."""
     intent = (data.get("intent") or "").strip()
+    file_path = (data.get("file_path") or "").strip()
     if not intent or _oracle is None:
         emit("intent_result", {"error": "no corpus or empty intent"}); return
     try:
-        from determined.agent.intent_director import direct_from_intent, summary_text
-        bags = _assessor.bags if _assessor else None
-        result = direct_from_intent(_oracle, bags, intent)
-        emit("intent_result", {"summary": summary_text(result), "result": result})
+        if file_path:
+            from determined.agent.intent_director import analyze_file_intent, format_file_intent
+            result = analyze_file_intent(_oracle, file_path, intent)
+            emit("intent_result", {"summary": format_file_intent(result), "result": result})
+        else:
+            from determined.agent.intent_director import direct_from_intent, summary_text
+            bags = _assessor.bags if _assessor else None
+            result = direct_from_intent(_oracle, bags, intent)
+            emit("intent_result", {"summary": summary_text(result), "result": result})
     except Exception as exc:
         emit("intent_result", {"error": str(exc)})
 

@@ -201,3 +201,96 @@ def summary_text(result: dict) -> str:
             lines.append(f"  ... +{len(r['symbols_found'])-10} more")
     lines += ["", "Open the Bag tab to see everything collected."]
     return "\n".join(lines)
+
+
+def analyze_file_intent(oracle: "DBOracle", file_path: str, intent_label: str) -> dict:
+    """
+    Analyze a specific file against a stated intent label.
+
+    Looks at the file's functions: which are implemented vs stubs, which have
+    external callers vs orphaned. Returns a structured dict for display.
+    """
+    from determined.identity.symbol_identity import normalize_symbol
+
+    conn = oracle.conn
+
+    # Resolve to canonical file_path in DB
+    norm = file_path.replace("\\", "/").lstrip("/")
+    rows = conn.execute(
+        "SELECT file_path FROM files WHERE replace(file_path,'\\','/') LIKE ?",
+        (f"%{norm}",)
+    ).fetchall()
+    if not rows:
+        return {"error": f"File not found in corpus: {file_path}"}
+    canonical = min(rows, key=lambda r: len(r[0]))[0]
+    rel = _rel(oracle, canonical)
+
+    funcs = conn.execute(
+        "SELECT name, is_stub, docstring FROM functions WHERE file_path = ? ORDER BY name",
+        (canonical,)
+    ).fetchall()
+    if not funcs:
+        return {"error": f"No functions found in {rel}", "file": rel, "intent": intent_label}
+
+    results = []
+    for name, is_stub, docstring in funcs:
+        norm_name = normalize_symbol(name)
+        caller_count = conn.execute(
+            "SELECT COUNT(*) FROM graph_edges WHERE target_id = ? AND caller_file != ?",
+            (norm_name, canonical)
+        ).fetchone()[0]
+        results.append({
+            "name": name,
+            "is_stub": bool(is_stub),
+            "caller_count": caller_count,
+            "docstring": (docstring or "").strip()[:80],
+        })
+
+    return {
+        "intent": intent_label,
+        "file": rel,
+        "total": len(results),
+        "stubs_with_callers": [r for r in results if r["is_stub"] and r["caller_count"] > 0],
+        "stubs_no_callers":   [r for r in results if r["is_stub"] and r["caller_count"] == 0],
+        "live_with_callers":  [r for r in results if not r["is_stub"] and r["caller_count"] > 0],
+        "orphans":            [r for r in results if not r["is_stub"] and r["caller_count"] == 0],
+    }
+
+
+def format_file_intent(result: dict) -> str:
+    """Format analyze_file_intent result as a human-readable summary."""
+    if "error" in result:
+        return f"Intent analysis failed: {result['error']}"
+
+    lines = [
+        f"Intent: {result['intent']}",
+        f"File: {result['file']}  ({result['total']} functions)",
+        "",
+    ]
+
+    def _entry(r):
+        callers = f"← called by {r['caller_count']} function{'s' if r['caller_count'] != 1 else ''}" if r["caller_count"] else ""
+        doc = f" — {r['docstring']}" if r["docstring"] else ""
+        return f"  {r['name']}{doc}  {callers}".rstrip()
+
+    if result["stubs_with_callers"]:
+        lines.append(f"✗ Not yet written — live code is waiting ({len(result['stubs_with_callers'])})")
+        lines += [_entry(r) for r in result["stubs_with_callers"]]
+        lines.append("")
+
+    if result["live_with_callers"]:
+        lines.append(f"✓ Implemented and in use ({len(result['live_with_callers'])})")
+        lines += [_entry(r) for r in result["live_with_callers"]]
+        lines.append("")
+
+    if result["stubs_no_callers"]:
+        lines.append(f"○ Not yet written — nothing calls it yet ({len(result['stubs_no_callers'])})")
+        lines += [_entry(r) for r in result["stubs_no_callers"]]
+        lines.append("")
+
+    if result["orphans"]:
+        lines.append(f"◌ Implemented but nothing calls it yet ({len(result['orphans'])})")
+        lines += [_entry(r) for r in result["orphans"]]
+        lines.append("")
+
+    return "\n".join(lines).rstrip()

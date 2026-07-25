@@ -163,6 +163,7 @@
 </style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
+<script src="/static/mermaid.min.js"></script>
 </head>
 <body>
 
@@ -365,13 +366,13 @@
     <!-- tab bar -->
     <div class="tab-bar" id="tab-bar">
       <button class="tab tab-nodot tab-primary active" data-tab="shape" title="Corpus shape — judgment projections">Shape</button>
-      <button class="tab tab-nodot tab-primary" data-tab="frontier">Frontier<span id="frontier-tab-badge" style="display:none;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--bg3);border:1px solid var(--border2);font-size:.78em;color:var(--orange)"></span></button>
+      <button class="tab tab-nodot tab-primary" data-tab="frontier">Frontier — What to Build<span id="frontier-tab-badge" style="display:none;margin-left:5px;padding:0 5px;border-radius:8px;background:var(--bg3);border:1px solid var(--border2);font-size:.78em;color:var(--orange)"></span></button>
       <button class="tab tab-nodot tab-primary" data-tab="map" title="Call graph, import graph, topology">Map</button>
       <button class="tab tab-nodot tab-primary" data-tab="call_tree">Call tree</button>
       <button class="tab tab-nodot tab-primary" data-tab="editor">Editor</button>
       <button class="tab tab-nodot tab-primary" data-tab="knowledge">Knowledge</button>
       <button class="tab tab-nodot tab-primary" data-tab="workbench" title="Run any tool ad hoc with full parameter forms">Workbench</button>
-      <button class="tab tab-nodot tab-primary" data-tab="chat" title="Ask">⌕</button>
+      <button class="tab tab-nodot tab-primary" data-tab="chat" title="Ask questions — AI narrates answers drawn from your code's actual structure, not guesswork">⌕ Ask</button>
       <!-- ⚙ utility menu -->
       <div class="more-wrap" id="util-wrap">
         <button class="tab tab-nodot" id="util-btn" title="Utilities">⚙</button>
@@ -466,7 +467,7 @@
               <option value="orphan">Orphan (disconnected)</option>
             </select>
             <button class="send-btn" id="fg-load">Load ↵</button>
-            <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Project ↵</button>
+            <button class="send-btn" id="fg-project" style="background:var(--bg3);display:none" title="Generate implementation sketch for selected stub">Generate ↵</button>
             <button class="send-btn" id="fg-reason" style="background:var(--bg3);display:none" title="AI architectural reasoning for selected stub (uses 8B model, ~60s)">Reason ↵</button>
             <button class="send-btn" id="fg-to-queue" style="background:var(--bg3);margin-left:auto" title="Add all stubs to build queue ranked by caller count">→ Queue</button>
           </div>
@@ -485,7 +486,7 @@
         <div id="fl-queue" style="display:none;flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0">
             <strong style="font-size:.95em">Build queue</strong>
-            <span style="font-size:.8em;color:var(--text3)">next_up workflow items ranked by caller count</span>
+            <span style="font-size:.8em;color:var(--text3)">ranked by caller count</span>
             <button id="bq-refresh" class="send-btn" style="margin-left:auto;padding:3px 10px;font-size:.78em">Refresh</button>
             <span id="bq-status" style="font-size:.78em;color:var(--text3)"></span>
           </div>
@@ -538,8 +539,8 @@
           <input id="ed-path-input" class="path-input" placeholder="File path (relative or absolute)…" style="flex:1;font-size:.82em">
           <button class="send-btn" id="ed-open-btn" style="padding:3px 8px;font-size:.82em">Open ↵</button>
           <span style="color:var(--border)">|</span>
-          <input id="ed-intent-input" class="path-input" placeholder="Intent label for this file…" style="flex:1;font-size:.82em">
-          <button class="send-btn" id="ed-intent-run" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Run intent-directed pass and fill system bag">Analyze intent</button>
+          <input id="ed-intent-input" class="path-input" placeholder="What is this file supposed to do? (e.g. handles combat resolution)" style="flex:1;font-size:.82em">
+          <button class="send-btn" id="ed-intent-run" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Check whether this file's functions actually deliver on the stated intent — shows what's implemented, what's missing, what's wired in">Analyze intent</button>
           <button class="send-btn" id="ed-capture-btn" style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Add current file to system bag">+ Bag</button>
           <span style="color:var(--border)">|</span>
           <button class="send-btn" id="ed-edit-btn"   style="padding:3px 8px;font-size:.82em;background:var(--surface2)" title="Edit file in place">Edit</button>
@@ -587,7 +588,7 @@
         <div class="lens-sel-bar">
           <button class="lens-sel-btn active" data-kl="artifacts">Artifacts</button>
           <button class="lens-sel-btn" data-kl="pins">Pins</button>
-          <button class="lens-sel-btn" data-kl="bag">Bag</button>
+          <button class="lens-sel-btn" data-kl="bag" title="Symbols and files you've touched this session — used as context when you ask questions">Bag</button>
           <button class="lens-sel-btn" data-kl="dochealth">Doc health</button>
           <button id="knowledge-popout-btn" class="send-btn" style="margin-left:auto;padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
@@ -662,19 +663,22 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0;flex-wrap:wrap">
           <strong style="font-size:.95em">Corpus Shape</strong>
-          <span style="font-size:.8em;color:var(--text3)">judgment-layer projections — file density, subsystem verdicts, prerequisites, concept ghosts</span>
+          <span style="font-size:.8em;color:var(--text3)">how complete is this codebase — what's written, what's missing, and where gaps are blocking progress</span>
           <input id="shape-scope" class="path-input" placeholder="scope (e.g. world/)" style="width:140px;font-size:.82em;flex-shrink:0">
           <button id="shape-run-btn" class="send-btn" style="padding:3px 10px;font-size:.82em">Run ↵</button>
           <span id="shape-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
           <span id="shape-status" style="font-size:.78em;color:var(--text3);margin-left:auto"></span>
           <button id="shape-popout-btn" class="send-btn" style="padding:2px 7px;font-size:.78em;background:var(--bg3);border:1px solid var(--border)" title="Pop out to full viewport">⤢</button>
         </div>
-        <div id="shape-verdict" style="display:none;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;font-family:var(--font-mono);font-size:.85em;line-height:1.7;white-space:pre-wrap"></div>
+        <div id="shape-verdict-wrap" style="display:none;margin-bottom:10px">
+          <div style="font-size:.75em;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Project health <span style="font-weight:400;text-transform:none;letter-spacing:0">— for your work queue, see WHERE TO START below</span></div>
+          <div id="shape-verdict" style="padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;font-family:var(--font-mono);font-size:.85em;line-height:1.7;white-space:pre-wrap"></div>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0">
-          <button id="fusion-table-btn" class="send-btn" style="padding:3px 10px;font-size:.82em">Signal table ↵</button>
+          <button id="fusion-table-btn" class="send-btn" style="padding:3px 10px;font-size:.82em" title="Shows every unwritten function scored by how much evidence points to it needing implementation — highest score means most signals agree this is urgent">All stubs, ranked ↵</button>
           <span id="fusion-table-running" style="font-size:.78em;color:var(--accent);display:none">Running…</span>
           <span id="fusion-family-clear" style="display:none;cursor:pointer;color:var(--text3);font-size:.82em"></span>
-          <span style="font-size:.78em;color:var(--text3)">all stubs ranked by signal convergence — click any row to open spotlight</span>
+          <span style="font-size:.78em;color:var(--text3)">every unwritten function scored by how urgently it needs to be built — click any row to open details</span>
         </div>
         <div id="fusion-convergence" style="display:none;font-size:.82em;color:var(--text2);margin-bottom:6px;line-height:1.6"></div>
         <div id="fusion-table-wrap" style="display:none;margin-bottom:12px;overflow-x:auto">
@@ -695,7 +699,7 @@
         <div id="primer-section" style="margin-bottom:12px;display:none">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-shrink:0">
             <span style="font-size:.8em;font-weight:600;color:var(--text1);letter-spacing:.03em">WHERE TO START</span>
-            <span style="font-size:.75em;color:var(--text3)">top actionable items from work_session_primer</span>
+            <span style="font-size:.75em;color:var(--text3)">top actionable items, ranked by impact</span>
             <span id="primer-running" style="display:none;font-size:.75em;color:var(--accent)">Loading…</span>
             <button id="primer-refresh-btn" class="send-btn" style="margin-left:auto;padding:1px 7px;font-size:.75em;background:var(--bg3);border:1px solid var(--border)" title="Refresh primer">↺</button>
           </div>
@@ -706,6 +710,13 @@
               <button id="primer-scaffold-close" style="margin-left:auto;font-size:.72em;background:none;border:none;color:var(--text3);cursor:pointer" title="Close">✕</button>
             </div>
             <pre id="primer-scaffold-code" style="font-size:.72em;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px;overflow:auto;max-height:300px;white-space:pre;margin:0"></pre>
+          </div>
+          <div id="primer-diagram-out" style="display:none;margin-top:8px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span id="primer-diagram-title" style="font-size:.75em;font-weight:600;color:var(--text2)"></span>
+              <button id="primer-diagram-close" style="margin-left:auto;font-size:.72em;background:none;border:none;color:var(--text3);cursor:pointer" title="Close">✕</button>
+            </div>
+            <div id="primer-diagram-svg" style="overflow:auto;background:#fff;border:1px solid var(--border);border-radius:4px;padding:12px;min-height:120px"></div>
           </div>
         </div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -3830,7 +3841,8 @@ edIntentRun.addEventListener("click", () => {
   if (!intent) return;
   edIntentRun.disabled = true;
   edIntentRun.textContent = "…";
-  socket.emit("direct_intent", { intent });
+  const activeFile = (_edFiles[_edActive] || {}).path || "";
+  socket.emit("direct_intent", { intent, file_path: activeFile });
 });
 
 socket.on("intent_result", data => {
@@ -3925,8 +3937,8 @@ document.querySelectorAll(".tab[data-tab='editor']").forEach(t => {
 // also load on corpus_ready (handled below via edLoadFileTree flag)
 socket.on("corpus_ready", () => { socket.emit("get_file_tree", {}); }, { once: false });
 
-// ── verdict strip drill-down ───────────────────────────────
-// After the verdict strip renders, linkify file paths so clicking opens editor.
+// ── project health drill-down ──────────────────────────────
+// After the project health section renders, linkify file paths so clicking opens editor.
 const shapeVerdict = document.getElementById("shape-verdict");
 
 function verdictLinkify() {
@@ -4489,7 +4501,8 @@ function shapeRun() {
   shapeRunBtn.disabled = true;
   shapeStatus.textContent = "";
   const verdictEl = document.getElementById("shape-verdict");
-  verdictEl.style.display = "";
+  const verdictWrap = document.getElementById("shape-verdict-wrap");
+  verdictWrap.style.display = "";
   verdictEl.textContent = "Running…";
   Object.values(_shapePres).forEach(p => { p.textContent = "Running…"; });
   socket.emit("shape_run", { scope: shapeScopeIn.value.trim() });
@@ -4502,20 +4515,21 @@ socket.on("shape_result", data => {
   _shapeLoaded = true;
   if (data.error) {
     shapeStatus.textContent = data.error;
-    document.getElementById("shape-verdict").style.display = "none";
+    document.getElementById("shape-verdict-wrap").style.display = "none";
     Object.values(_shapePres).forEach(p => { p.textContent = ""; });
     return;
   }
   _shapeIndex = data.index || { files: {}, symbols: [] };
   const r = data.results || {};
   const verdictEl = document.getElementById("shape-verdict");
+  const verdictWrap = document.getElementById("shape-verdict-wrap");
   if (r.verdict) {
-    verdictEl.style.display = "";
+    verdictWrap.style.display = "";
     const _vlines = r.verdict.split("\n");
     const _verdict = (_vlines[0] || "").startsWith("corpus_verdict") ? _vlines.slice(1).join("\n").trimStart() : r.verdict;
     verdictEl.innerHTML = _colorizeShape(_verdict);
   } else {
-    verdictEl.style.display = "none";
+    verdictWrap.style.display = "none";
   }
   _shapePres.file_shape.innerHTML      = _colorizeShape(r.file_shape      || "no data");
   _shapePres.subsystem_shape.innerHTML = _colorizeShape(r.subsystem_shape || "no data");
@@ -4660,6 +4674,18 @@ function _buildPrimerCard(item, rank) {
       socket.emit("fsm_scaffold", { fsm_name: item.name });
     });
     actionsEl.appendChild(scaffoldBtn);
+
+    // Diagram button → render Mermaid state diagram
+    const diagramBtn = document.createElement("button");
+    diagramBtn.className = "primer-btn";
+    diagramBtn.textContent = "Diagram";
+    diagramBtn.title = "Show state transition diagram for " + item.name;
+    diagramBtn.addEventListener("click", () => {
+      diagramBtn.disabled = true;
+      diagramBtn.textContent = "…";
+      socket.emit("fsm_diagram", { fsm_name: item.name, file_path: item.file_path });
+    });
+    actionsEl.appendChild(diagramBtn);
   }
 
   card.appendChild(rankEl);
@@ -4725,6 +4751,43 @@ socket.on("fsm_scaffold_result", data => {
   }
   primerScaffoldOut.style.display = "";
   primerScaffoldOut.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+
+// ── FSM diagram ────────────────────────────────────────────
+mermaid.initialize({ startOnLoad: false, theme: "default" });
+
+const primerDiagramOut   = document.getElementById("primer-diagram-out");
+const primerDiagramTitle = document.getElementById("primer-diagram-title");
+const primerDiagramSvg   = document.getElementById("primer-diagram-svg");
+const primerDiagramClose = document.getElementById("primer-diagram-close");
+
+primerDiagramClose.addEventListener("click", () => {
+  primerDiagramOut.style.display = "none";
+  primerCardsEl.querySelectorAll(".primer-btn").forEach(b => {
+    if (b.textContent === "…") { b.disabled = false; b.textContent = "Diagram"; }
+  });
+});
+
+socket.on("fsm_diagram_result", data => {
+  primerCardsEl.querySelectorAll(".primer-btn").forEach(b => {
+    if (b.textContent === "…") { b.disabled = false; b.textContent = "Diagram"; }
+  });
+  if (data.error) {
+    primerDiagramTitle.textContent = "Diagram error";
+    primerDiagramSvg.textContent = data.error;
+    primerDiagramOut.style.display = "";
+    return;
+  }
+  primerDiagramTitle.textContent = "State diagram — " + data.fsm_name;
+  primerDiagramSvg.innerHTML = "";
+  mermaid.render("fsm-diagram-svg-" + Date.now(), data.mermaid).then(({ svg }) => {
+    primerDiagramSvg.innerHTML = svg;
+    primerDiagramOut.style.display = "";
+    primerDiagramOut.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }).catch(err => {
+    primerDiagramSvg.textContent = "Render error: " + err;
+    primerDiagramOut.style.display = "";
+  });
 });
 
 // ── Stub signal table ──────────────────────────────────────
@@ -5429,7 +5492,7 @@ const GUIDE_GENERAL = {
 
   "shape": {
     "headline": "Shape: home base — what this codebase is trying to become",
-    "body": "Determined read every file and built a <abbr title='A map of which functions call which other functions — like a wiring diagram for the code'>call graph</abbr>. The verdict strip at the top of this tab summarises what it found: <abbr title='Functions that exist in name only — placeholder code that hasn't been written yet'>stubs</abbr>, <abbr title='Ideas the code refers to by name but that haven't been built yet'>ghost concepts</abbr>, and subsystem health. WHERE TO START, just below that, ranks the first things to implement, in order. This tab auto-runs on every corpus load — you don't need to click anything.",
+    "body": "Determined read every file and built a <abbr title='A map of which functions call which other functions — like a wiring diagram for the code'>call graph</abbr>. The <strong>Project health</strong> section at the top of this tab summarises what it found: <abbr title='Functions that exist in name only — placeholder code that hasn't been written yet'>stubs</abbr>, <abbr title='Ideas the code refers to by name but that haven't been built yet'>ghost concepts</abbr>, and subsystem health — it tells you how complete the codebase is. For your work queue, go to <strong>WHERE TO START</strong> just below it — that's where the ranked next actions are. This tab auto-runs on every corpus load — you don't need to click anything.",
     "what_to_notice": "Start with WHERE TO START — it's already sorted by what's blocking the most. <abbr title='Finite State Machine — a design pattern where the system moves between named states (like idle → talking → done) based on events'>FSM</abbr> cards have a Scaffold button that generates the Python handler stubs you need to write. When you're ready to dig into the full stub list, go to Frontier →"
   },
   "frontier": {
