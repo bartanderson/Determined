@@ -721,7 +721,7 @@
         </div>
         <div id="shape-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="shape-card" id="shape-file">
-            <div class="shape-card-hdr">File shape <span class="shape-hint">stub density per file</span></div>
+            <div class="shape-card-hdr">File shape <span class="shape-hint">unwritten functions per file</span></div>
             <pre class="shape-pre" id="shape-file-pre">—</pre>
           </div>
           <div class="shape-card" id="shape-subsystem">
@@ -729,7 +729,7 @@
             <pre class="shape-pre" id="shape-subsystem-pre">—</pre>
           </div>
           <div class="shape-card" id="shape-prereq">
-            <div class="shape-card-hdr">Prerequisite map <span class="shape-hint">what blocks the most stubs</span></div>
+            <div class="shape-card-hdr">Prerequisite map <span class="shape-hint">what's blocking the most unwritten functions</span></div>
             <pre class="shape-pre" id="shape-prereq-pre">—</pre>
           </div>
           <div class="shape-card" id="shape-ghost">
@@ -823,7 +823,7 @@
       <div class="tab-panel" id="panel-workbench" style="flex-direction:column;min-height:0;overflow-y:auto;padding:10px 14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-shrink:0">
           <strong style="font-size:.95em">Workbench</strong>
-          <span style="font-size:.8em;color:var(--text3)">run any Discovery tool ad hoc — results stored as artifacts</span>
+          <span style="font-size:.8em;color:var(--text3)">run any tool directly — results saved as artifacts</span>
         </div>
 
         <!-- tool palette -->
@@ -3471,11 +3471,11 @@ socket.on("frontier_to_queue_result", data => {
 });
 
 const FG_MODE_HINTS = {
-  direct: "Direct: shows stubs that are called by real code — the most actionable frontier. Start here.",
-  chain:  "Chain: stubs that call other stubs — scaffolding chains not yet anchored to real code.",
+  direct: "Direct: unwritten functions that live code is already trying to call — the highest-priority gaps. Start here.",
+  chain:  "Chain: unwritten functions that call other unwritten functions — gaps chained together, none anchored to real code yet.",
   all:    "All: every unimplemented function in the corpus, regardless of call graph position.",
   abc:    "ABC: abstract methods on base classes with no concrete override anywhere in the project.",
-  orphan: "Orphan: stubs with no callers and no callees — disconnected from the rest of the code.",
+  orphan: "Orphan: implemented functions that nothing calls yet — written but not wired in.",
 };
 const fgModeHint = document.getElementById("fg-mode-hint");
 function fgUpdateHint() { if (fgModeHint) fgModeHint.textContent = FG_MODE_HINTS[fgMode.value] || ""; }
