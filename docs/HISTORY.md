@@ -8,6 +8,23 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-25 (s256): Extended corpus lives at `examples/commonplace_extended/` (sibling to
+`examples/commonplace/`), NOT inside it. Reason: `examples/commonplace/.determinedignore`
+excludes `seed/` to keep the complete corpus clean; putting extended inside would require
+adding it to that ignore list too. Sibling placement avoids that coupling entirely.
+DB name: `C_Users_bartl_dev_Determined_examples_commonplace_extended.db`.
+
+2026-07-25 (s256): Tour corpus-switch steps use `tool: None`. `handle_tour_run_step` detects
+this, emits the explanation directly without calling dispatch, re-enables the Run button.
+The step is informational — user reads the instruction, switches corpus, clicks Next.
+Do not add a `tool` to these steps; the null pattern is intentional.
+
+2026-07-25 (s256): Tour design principle settled: show every tool on all 3 corpora even when
+the result is "clean." A zero-stub result from frontier_coverage is instructive — it calibrates
+what good looks like so the non-zero result in the complete corpus lands with contrast.
+Argument "this step is redundant" is wrong: redundancy is how tool familiarity builds.
+The 12-numbered-step structure reflects this: each tool appears at least twice across the arc.
+
 2026-07-24 (s252): Two Python servers on port 5050 trap — when restarting the UI server,
 the old process may not die. Browser stays connected to the old one; new code never runs.
 Diagnosis: `netstat -ano | Select-String ":5050"` shows duplicate LISTENING entries.
