@@ -8,6 +8,8 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-25: `_extract_body()` in `classify_stub.py` was never validated against all dj2 files -- body_shape signal may be unreliable for dj2 stubs with unusual body patterns. Validate when classify_stub calibration work resumes.
+
 2026-07-25 (s256): Extended corpus lives at `examples/commonplace_extended/` (sibling to
 `examples/commonplace/`), NOT inside it. Reason: `examples/commonplace/.determinedignore`
 excludes `seed/` to keep the complete corpus clean; putting extended inside would require
