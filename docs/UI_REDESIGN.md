@@ -186,6 +186,43 @@ applied to UI state).
   Artifacts/Pins/Bag/Doc health); deleted modes; moved Tour/Discovery/Logs
   behind ⚙ utility menu. Design Oracle stays in structure column (Run +
   cached result). Quick-actions block kept in sidebar (deferred).
+
+---
+
+## Future: stub-targeted editing
+
+When classify_stub or a solution-generator produces a candidate implementation,
+the natural next step is to place it in source without leaving Determined. Not a
+general code editor — editing surfaced *at the stub*, as part of the stub resolution
+workflow.
+
+**Shape:** projection panel shows the candidate implementation; user accepts/edits
+inline; Determined writes the file back and re-ingests the symbol. Monaco (single JS
+bundle, all languages) is the right embed — read-only by default, write mode activated
+from the stub projection result. Mode switch is stub-scoped, not corpus-wide. No
+general node-graph editing until this narrower use case proves the pattern.
+
+**Gate:** not actionable until classify_stub produces solution candidates
+(post-MCTS or post-calibration). Design the write-back + re-ingest path when
+that lands.
+
+---
+
+## Future: sidebar panel collapse
+
+Left sidebar sections hide content but leave wasted space because `.sb-section`
+uses `flex: 1`, claiming equal flex share regardless of content visibility.
+
+**Fix:** change `.sb-section` to `flex: 0 0 auto` so sections shrink to content.
+Add collapse-to-label-bar toggle: clicking the section label shows/hides the body;
+collapsed state = 26px label bar only, no gap. Stable spatial order (nothing reorders).
+Model: VS Code sidebar section collapse behavior.
+
+**Files:** `determined/ui/static/style.css` (.sb-section rule),
+`determined/ui/templates/console.html` (click handler on `.sidebar-label` elements,
+toggle a `.collapsed` class).
+
+**Deferred:** do in next UI rework pass, not as a standalone fix.
 - **Phase C — Editor self-presentation + gear polish. (DONE 2026-07-19)**
   File tree in editor sidebar (queries `files` table, filter + click to open);
   verdict strip file paths linkified → opens editor; ⤢ popout added to

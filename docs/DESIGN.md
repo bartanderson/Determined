@@ -257,6 +257,193 @@ passes over any markdown doc:
 
 Both store as `kind=design_note` in knowledge_artifacts. Semantic dedup
 at store time (embed candidate, cosine-compare existing notes, skip if ≥ 0.85
+
+---
+
+## 10. Future architecture: MCTS reasoning engine
+
+Determined is already an oracle (symbols, call graph, imports, FSM artifacts, dead
+concepts). The next destination: use Claude to design the system once, then let the
+system generate training data forever.
+
+### Architecture
+
+```
+Determined (oracle over real corpora)
+    -> classify_stub UNCERTAIN  <-- MCTS root node
+    -> MCTS explores signal space    <- actions = evidence-gathering queries
+    -> score_hypotheses(accumulated) <- evaluate() / rollout
+    -> resolution path               <- one training sample
+    -> run over N repos              <- generator that never stops
+    -> small stub-classification model <- trained on resolution paths, not answers
+```
+
+**MCTS as evidence-gathering search:** instead of pre-computing all signals,
+MCTS gathers evidence on-demand when flat signals don't converge. Actions = signal
+queries. Evaluate = score_hypotheses. When a path lifts confidence past threshold,
+that path is a resolution. The search trace is a training sample — not "here is
+the answer" but "here is the sequence of evidence-gathering that resolves this."
+
+**Lazy evidence gathering:** imports, callee-chain, dead artifacts, design notes are
+expensive to check for every stub. In MCTS they're gathered only when cheap signals
+leave confidence below threshold. Better architecture than current front-loading.
+
+**Corpus as generator:** high-confidence MCTS resolutions from real repos are ground
+truth. Run over 10,000 repos = millions of labeled resolution paths. Claude designs
+the system once; Determined generates the data forever.
+
+**Curriculum:** ask Claude once what evidence an expert would check, in what order,
+to determine why a function is unimplemented. That answer is the MCTS action space.
+
+### Prerequisites
+
+1. Signal weight calibration against dj2 known-answer stubs
+2. UNCERTAIN resolution paths documented (what evidence resolves each case)
+3. evaluate() stable enough to use as MCTS rollout function
+
+### Gate
+
+Don't build MCTS until the flat kernel (classify_stub) proves insufficient on real
+corpora. If calibrated signals resolve 90%+ of stubs without LLM escalation, MCTS
+is the path for the remaining 10%.
+
+---
+
+## 11. Future architecture: domain expert adapters
+
+Once Determined can describe a corpus as a whole (post-aggregation), that description
+is training signal for a domain adapter:
+
+```
+corpus -> classify_stub -> aggregation -> prerequisite map
+  -> corpus summary as training signal
+  -> fine-tuned adapter for that domain
+```
+
+Candidate adapters:
+- Architecture Adapter — from design-intent stubs + prerequisite maps
+- Reasoning Adapter — from reasoning traces across sessions
+- Coding Adapter — from dj2 / Determined corpus shape
+- DJ2 Expert — from full dj2 ingest once aggregation is sharp
+
+**Gate:** corpus aggregation must ship first. Not actionable until Determined can
+describe a corpus as a whole. The matmul C corpus is the first non-behavioral target —
+performance structure rather than design intent, natural first extraction candidate.
+
+---
+
+## 12. Future architecture: cross-language understanding
+
+### The unified idea
+
+Determined should understand code shape across language boundaries — ingesting
+corpora in any language, classifying stubs, and projecting solutions into the right
+target language for the job.
+
+**Status:** walkers done for Python, C, C++, Zig, Lua, Rust.
+
+**Remaining work** (tracked in TRACKER.md):
+- `target_lang` param in `project_stub` — multi-language emission routing
+- `runtime_locator.py` shim — snippet compilation/verification for Zig/Lua/C
+- Corpus chain UI — shape comparison across the language family
+
+### Multi-language emission routing
+
+| Stub role | Target |
+|---|---|
+| Pure computation, no I/O, hot path | Zig |
+| Game logic, scriptable, LuaJIT host | Lua |
+| Interop with existing C libs | C |
+| Object-heavy, existing C++ codebase | C++ |
+| Glue, analysis, default | Python |
+
+`target_lang` should be an explicit user-overridable param — don't hardcode
+the routing table; classification drives a default, user can override.
+
+### Cross-language graph edges
+
+Python-to-C via ctypes, Lua-to-C via FFI — not currently modeled. Worth noting
+as a future graph layer. llm.c is the primary test case (Python side + C kernels).
+
+---
+
+## 13. Future: Design Oracle
+
+A tool that reads across the ingested corpus and surfaces three signals at the
+right moment — not a new data pipeline, a new query over what already exists.
+
+**The three signals:**
+- **CRITICAL** — "X is blocking Q, R, S, T downstream. It overrides everything else."
+  Driven by: stub classified as blocked-on-prerequisite + high downstream dependency count.
+- **OPPORTUNITY** — "While you're in this area, Y is adjacent, cheap, and unblocks Z."
+  Triggered by: current working context + graph adjacency + readiness.
+- **FOREWARNING** — "You'll need W before you can do V. V is coming up."
+  Forward-looking, derived from the dependency chain ahead of current work.
+
+**What it composes (all already exist):** knowledge_artifacts, workflow_items
+(kind=backlog), classify_stub, graph edges, _get_design_frame.
+
+**When it runs:** session start (broad read) and on-demand. Not automatic mid-session.
+
+**Note:** design_oracle CRITICAL flag can be unreliable — verify against stub body
+shape before auto-elevating. `_register_world_tools` was flagged CRITICAL but is an
+intentional scaffold (empty_pass + "# Add tools here" comment).
+
+---
+
+## 14. Future: knowledge layer improvements
+
+### Transcript -> knowledge_artifacts
+
+Session decisions live in SESSION_STATE.md for one handoff then vanish from the
+knowledge layer. Fix: after a session, scan Claude Code session transcripts
+(`%APPDATA%\Claude\projects\<project-id>\*.jsonl`) for extractable decisions, store
+as `knowledge_artifacts` with `kind='design_note'` and `provenance='session_transcript'`.
+
+Gate: implement after RM69 corpus aggregation exists.
+
+### Garden pass
+
+`garden_corpus` tool runs docstring_health + detect_doc_drift + gap_analysis in
+sequence, deduplicates findings against existing workflow_items, queues new ones.
+Run manually first before considering scheduling.
+
+### CodeAlmanac as upstream knowledge source
+
+If a repo has an `almanac/` folder (agent-maintained architecture/decisions/guides
+in markdown), point `ingest_design_docs` at it. Already works — same pattern as SOTS.
+
+### Citation gate on LLM-generated knowledge
+
+Require every LLM-generated knowledge_artifact to cite at least one source (file path,
+line number, or commit SHA) before storage. Apply at `ingest_design_docs` and
+`annotate_function`. `gap_analysis` outputs tag as `confidence='unverified'`.
+
+Gate: RM69 design phase — bake in at design time.
+
+### `knowledge_for_file(path)` tool
+
+Query across all knowledge_artifact kinds WHERE content or provenance references
+the path, plus semantic_summaries and workflow_items. ~30 lines of SQL.
+Natural two-step orient: `describe_file` for structure, `knowledge_for_file` for
+what's known about it. Gate: none.
+
+### Token-budget-at-write-time
+
+Count tokens at `_store_knowledge_artifact` time (tiktoken). Reject if over threshold
+(proposed: 500 tokens for design_note, 200 for inline_note, 1000 for doc_section).
+If over: emit workflow_item `kind='backlog'` with subject "summarize-before-store".
+
+Gate: RM69 design phase — bake in alongside citation gate.
+
+### mnemopi as RM69 prior art
+
+omp harness (https://omp.sh, MIT) ships `mnemopi` — production knowledge layer with
+local SQLite, vector embeddings, retain/recall/reflect/memory_edit API, and
+hierarchical scope inheritance. Read its source before writing the first line of
+RM69 schema. Specifically: scope inheritance, reflect implementation, memory_edit vs
+update-by-subject.
+
 similarity) prevents LLM paraphrases from duplicating deterministic extracts.
 
 Layer rules (`kind=layer_rule`) are extracted separately and checked by

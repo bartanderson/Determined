@@ -282,6 +282,49 @@ Call `_updateFamilyClear()` after every change to `_activeFamily`.
 
 ---
 
+## Future: signal fusion and multi-modal projection
+
+### The problem
+
+Every tool produces a single-lens view. The interesting findings emerge where multiple
+lenses converge on the same concept — a stub that is an outlier in a naming family AND
+has no callers AND is referenced by an FSM action AND has no knowledge artifact is a
+much stronger finding than any signal alone. No place in the current architecture
+combines signals across tools for a single concept.
+
+### The design
+
+Build a per-concept signal aggregation layer: given a concept, collect all signals
+that touch it (naming family membership/outlier status, call graph centrality, config
+FSM references, knowledge artifact presence, classify_stub confidence, rank_stubs
+priority), weight them, produce a combined picture. This is signal fusion — a compositor
+that reads what existing tools already produce, not a new tool.
+
+### Visual projection paradigms to design for
+
+- **Venn / overlap diagrams** — concepts appearing in multiple signal domains simultaneously
+- **Layered tables with drill-through** — top-level table of concepts; selecting one pulls
+  all signals touching it; selecting a signal row pulls the supporting corpus evidence
+- **Color encoding** — signal agreement depth as saturation; classification confidence as
+  hue; outlier status as contrast. Consistent palette across views.
+- **Thread-pulling in a large visual area** — multiple tables/graphs open simultaneously;
+  selections in one propagate to others
+- **Adjacency / convergence maps** — which concepts share the most signal co-occurrences?
+  That map shows the architectural seams.
+- **Time-axis projection** — how do signals change as stubs are resolved? An accelerating
+  naming family (4→12 members across ingestion runs) signals active convention-building —
+  stronger stub-prioritization signal than raw size alone.
+
+### Gate
+
+Not actionable until:
+1. classify_stub signal calibration is stable
+2. detect_conventions sort (emerging/established) is shipped
+3. At least one more tool produces per-concept output that could be fused
+
+Design sequence: fusion layer shape first, then visual projection surface, then wire.
+GOT model (navigation-first, surfaces connect naturally) is the guiding principle.
+
 ## Phase 3 — Signal convergence summary
 
 **Goal**: a one-line summary above the signal table showing which signals fire most often
