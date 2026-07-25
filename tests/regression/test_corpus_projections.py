@@ -457,8 +457,9 @@ def test_corpus_verdict_headline_counts():
         {"name": "s3", "file_path": "engine/c.py"},
     ])
     result = stub_corpus_verdict(_FakeAssessor(conn), {})
-    assert "3 stubs" in result
-    assert "2 subsystems" in result
+    assert "3 functions not yet written" in result
+    assert "world/" in result
+    assert "engine/" in result
 
 
 def test_corpus_verdict_actionable_count():
@@ -477,7 +478,7 @@ def test_corpus_verdict_actionable_count():
     )
     conn.commit()
     result = stub_corpus_verdict(_FakeAssessor(conn), {})
-    assert "1 actionable" in result
+    assert "1 actively needed by running code" in result
 
 
 def test_corpus_verdict_ghost_line():
@@ -487,7 +488,7 @@ def test_corpus_verdict_ghost_line():
          "docstring": "Query CombatFSM for combat state."},
     ])
     result = stub_corpus_verdict(_FakeAssessor(conn), {})
-    assert "[GHOST] CombatFSM" in result
+    assert "[MISSING] CombatFSM" in result
 
 
 def test_corpus_verdict_prereq_line_needs_two():
@@ -508,7 +509,7 @@ def test_corpus_verdict_prereq_line_needs_two():
     ])
     result_two = stub_corpus_verdict(_FakeAssessor(two), {})
     assert "ActionQueue" in result_two
-    assert "2 stubs blocked on it" in result_two
+    assert "2 functions are waiting on it" in result_two
 
 
 def test_corpus_verdict_relative_dir_display():

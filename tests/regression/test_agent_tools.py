@@ -584,6 +584,7 @@ def test_dispatch_all_tools_registered():
         # Completion gate: work session primer
         "work_session_primer",
         "fsm_scaffold",
+        "fsm_diagram",
         # structural gap tools
         "find_isolated_modules",
         "find_orphaned_interfaces",
