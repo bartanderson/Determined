@@ -23,8 +23,10 @@ MISS_FLAG = Path(".capn/.hook_miss")
 
 # Bash/PowerShell command patterns that indicate capn-relevant work.
 # Order matters: first match wins for query derivation.
+# NOTE: git commands are excluded before these patterns run (see _bash_query).
 BASH_TRIGGERS = [
-    r'\bSELECT\b.{0,80}\bFROM\b',                           # SQL queries
+    # SQL with real logic (JOIN/WHERE/GROUP); bare SELECT COUNT skipped — not trap-worthy.
+    r'\bSELECT\b.{0,80}\b(JOIN|WHERE|GROUP BY)\b',
     r'\b(walk_call_chain|list_entry_points|trace_data_flow|find_symbol|classify_stub)\b',
     r'\b(reingest|re_ingest)\b',
     r'\b(db_oracle|agent_tools|language_walker|persistence_engine)\b',
@@ -66,6 +68,9 @@ def _run_capn_ask(query: str) -> tuple[bool, str]:
 def _bash_query(command: str) -> str | None:
     """Derive a capn query from a bash command, or None if not relevant."""
     cmd = command[:600]
+    # git operations (add/commit/diff/log/push) are never trap-relevant.
+    if re.match(r'\s*git\s+', cmd, re.IGNORECASE):
+        return None
     for pat in BASH_TRIGGERS:
         if re.search(pat, cmd, re.IGNORECASE):
             q = re.sub(r'[^\w .:/_-]', ' ', cmd)
@@ -142,8 +147,9 @@ def cmd_post():
         content = str(resp)
 
     if len(content.strip()) > 100:
-        print(f"[CAPN] No cache entry existed for this area. If you found something non-obvious:")
-        print(f"  python scripts/capn.py chart '<what you found>' --files <file> [--details '<specifics>']")
+        print(f"[CAPN] MISS — no cached knowledge for: {missed_query[:80]!r}")
+        print(f"[CAPN] Do NOT proceed on memory. Verify from source, then chart before continuing:")
+        print(f"  python scripts/capn.py chart '<verified fact>' --files <file> [--details '<specifics>']")
 
     sys.exit(0)
 
