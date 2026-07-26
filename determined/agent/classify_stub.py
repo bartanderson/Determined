@@ -96,6 +96,15 @@ def _is_lifecycle_method(name: str, file_path: str | None) -> bool:
     return name.startswith("__") and name.endswith("__") and len(name) > 4
 
 
+def _is_test_file(file_path: str | None) -> bool:
+    """True if the file is a test file (path contains /test or name starts with test_)."""
+    if not file_path:
+        return False
+    norm = file_path.replace("\\", "/").lower()
+    basename = norm.rsplit("/", 1)[-1]
+    return "/test" in norm or basename.startswith("test_")
+
+
 def _check_init_self_assigns(file_path: str, line_number: int | None) -> bool:
     """
     Return True if the __init__ body at line_number assigns at least one
@@ -421,6 +430,8 @@ def extract_signals(
         # Config-layer FSM signals
         "config_fsm_present":       config_fsm_present,
         "config_fsm_referenced":    config_fsm_referenced,
+        # Test file flag
+        "is_test_file": _is_test_file(file_path),
     }
 
 
@@ -430,12 +441,20 @@ def _extract_body(file_path: str | None, line_number: int | None) -> tuple[str, 
     Returns (body_shape, inline_comment_text).
 
     body_shape values:
+      config_declared  — stub declared in a config file (JSON/YAML/TOML); no source body
       empty_pass       — only `pass` (Python) or empty braces / {} (JS/TS/Go/Rust)
       trivial_return   — returns a zero/empty value ([], {}, None, 0, False, "")
       raise_not_impl   — raises NotImplementedError / todo!() / throw new Error
       has_content      — something real is there (not a stub by body alone)
     """
-    if not file_path or not line_number:
+    if not file_path:
+        return "unknown", ""
+
+    ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+    if ext in ("json", "yaml", "yml", "toml"):
+        return "config_declared", ""
+
+    if not line_number:
         return "unknown", ""
 
     try:
@@ -561,6 +580,7 @@ def score_hypotheses(signals: dict) -> list[dict]:
     class_siblings        = signals.get("class_sibling_stubs", 0)
     vars_assigned         = signals.get("instance_vars_assigned", True)
     impl_sibling_count    = signals.get("implemented_sibling_count", 0)
+    is_test_file          = signals.get("is_test_file", False)
 
     # ── Signal: removal/obsolescence language ────────────────────────────
     # Strongest positive signal for concept-not-applicable.  Takes priority
@@ -616,6 +636,11 @@ def score_hypotheses(signals: dict) -> list[dict]:
         scores["genuinely-unknown"] += 0.4
         scores["concept-not-applicable"] += 0.2
         evidence["genuinely-unknown"].append("no callers — may be dead code or early placeholder")
+    elif is_test_file:
+        # Callers in a test file are other test functions — not evidence of production intent.
+        # Score as genuinely-unknown (test scaffolding).
+        scores["genuinely-unknown"] += 0.5
+        evidence["genuinely-unknown"].append(f"test file — stub is test scaffolding ({caller_count} caller(s) are test functions)")
     else:
         # Has callers: something is waiting on this; intent is alive
         scores["design-intent-stated"] += 0.3 * min(caller_count, 3)
@@ -623,14 +648,33 @@ def score_hypotheses(signals: dict) -> list[dict]:
         evidence["design-intent-stated"].append(f"{caller_count} caller(s) — slot is live")
 
         # Compound: called + no behavioral intent + empty body → slot wired up, nothing filled in
-        # "placeholder" doc (label only, no behavioral language) is the same as no doc here.
-        # The function exists in the call graph but carries no actionable content.
-        # Strongest structural indicator of blocked-on-prerequisite.
-        if doc_quality in ("none", "placeholder") and body == "empty_pass" and not has_intent:
+        # Suppressed for test files — test stubs are scaffolding, not production gaps.
+        if (not is_test_file
+                and doc_quality in ("none", "placeholder")
+                and body == "empty_pass"
+                and not has_intent):
             scores["blocked-on-prerequisite"] += 1.0
             evidence["blocked-on-prerequisite"].append(
                 "called but no behavioral intent + empty body — slot wired up, implementation missing"
             )
+
+    # ── Signal: config-declared body (FSM actions/guards in JSON/YAML) ──
+    # The FSM config file declares the action or guard; the Python implementation
+    # is missing.  This is the strongest possible design-intent signal: the
+    # config is the spec, the code is the gap.
+    if body == "config_declared":
+        scores["design-intent-stated"] += 1.8
+        scores["blocked-on-prerequisite"] += 0.6
+        evidence["design-intent-stated"].append(
+            "stub declared in config layer (FSM action/guard) — Python implementation missing"
+        )
+        result = [
+            {"classification": cls, "score": round(min(s / _MAX_RAW, 1.0), 2), "evidence": evidence[cls]}
+            for cls, s in scores.items()
+            if min(s / _MAX_RAW, 1.0) >= 0.2
+        ]
+        result.sort(key=lambda r: r["score"], reverse=True)
+        return result
 
     # ── Signal: body shape ───────────────────────────────────────────────
     if body == "empty_pass":
