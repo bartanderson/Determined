@@ -129,11 +129,13 @@ body {
 .sidebar-label {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text3);
+  color: var(--text2);
   letter-spacing: .06em;
   text-transform: uppercase;
   padding: 4px 12px 2px;
+  transition: color .12s;
 }
+.sidebar-label:hover { color: var(--text); }
 .sidebar-item {
   display: flex;
   align-items: center;

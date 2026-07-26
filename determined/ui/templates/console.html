@@ -361,6 +361,9 @@
       <div class="gc-headline" id="gc-headline"></div>
       <div class="gc-body" id="gc-body"></div>
       <div class="gc-notice" id="gc-notice"></div>
+      <div id="gc-completion-footer" style="display:none;margin-top:6px">
+        <button id="gc-done-btn" style="font-size:.78em;padding:2px 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--text2)">Dismiss guide</button>
+      </div>
     </div>
 
     <!-- tab bar -->
@@ -4034,7 +4037,7 @@ function sbMakeCollapsible(labelId, bodyId, storageKey, defaultOpen) {
   if (!label || !body) return;
 
   const chevron = document.createElement("span");
-  chevron.style.cssText = "margin-left:auto;font-size:.8em;opacity:.5;transition:transform .15s;flex-shrink:0";
+  chevron.style.cssText = "margin-left:auto;font-size:.8em;opacity:.7;transition:transform .15s;flex-shrink:0";
   label.style.cursor = "pointer";
   label.style.userSelect = "none";
   // ensure label is flex so chevron sits at the right
@@ -5682,20 +5685,16 @@ function guideAllGreen() {
   return COLORABLE_KEYS.every(k => guideIsVisited(k));
 }
 
-let _completionScheduled = false;
 function guideCheckCompletion() {
   if (!_guideOn || !guideAllGreen()) return false;
-  // Show completion card idempotently — every guideUpdateCard() call while all-green
   const phaseRow = document.getElementById("gc-phase-row");
   if (phaseRow) phaseRow.style.display = "none";
   gcHeadline.textContent = "You’ve explored everything.";
-  gcBody.textContent = "The guide will step back.";
+  gcBody.textContent = "Toggle the Guide button off when you no longer need it, or dismiss it permanently below.";
   gcNotice.style.display = "none";
+  const footer = document.getElementById("gc-completion-footer");
+  if (footer) footer.style.display = "";
   guideCard.classList.add("visible");
-  if (!_completionScheduled) {
-    _completionScheduled = true;
-    setTimeout(guidePermanentDismiss, 4000);
-  }
   return true;
 }
 
@@ -5734,6 +5733,8 @@ document.querySelectorAll(".gc-phase-btn").forEach(btn => {
   });
 });
 guideDismissBtn.addEventListener("click", guidePermanentDismiss);
+const gcDoneBtn = document.getElementById("gc-done-btn");
+if (gcDoneBtn) gcDoneBtn.addEventListener("click", guidePermanentDismiss);
 guideRestoreLink.addEventListener("click", guideRestore);
 
 // Hook rail section opens → mark visited (second listener fires after existing one)
