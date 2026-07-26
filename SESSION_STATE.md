@@ -1,57 +1,58 @@
-Written at commit: 2259e7a
+Written at commit: c5c81ec
 
-# SESSION STATE — session 258 (end)
+# SESSION STATE — session 259 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `2259e7a` — fix(ui): sidebar sections shrink to content + tour step explanations match corpus [V]
+- `89ee4bb` — fix(capn): filter git cmds, narrow SQL trigger, harden miss message [V]
+- `e60b412` — fix(tour): re-render on corpus_ready when tour tab is active + gate closed in HISTORY.md [V]
+- `b43dd78` — chore(rm67): probe loop 2026-07-25 — dj2 status updated [V]
+- `c5c81ec` — chore(rm67): correct phases.py characterization — unwired not dead [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**Tour walk — completed all 14 steps across 3 corpus stages** [V]
+**Cap'n Hook tightened** [V]
+- git commands now filtered from bash trigger (false positives from `git add agent_tools.py` etc.)
+- SQL trigger narrowed: requires JOIN/WHERE/GROUP BY — bare SELECT COUNT no longer fires
+- Post-miss message hardened: "Do NOT proceed on memory. Verify from source, then chart."
+- Pruned stale `134bed6a` entry (db_oracle/agent_tools schema); re-charted verified against live DB
+- Charted `persistence_engine` location/shape (3-session miss blind spot)
 
-Walked seed → complete → extended. All tools ran, all results coherent.
-Cross-corpus contrast is pedagogically solid.
+**Tour corpus-hint timing bug fixed** [V]
+One line in first `corpus_ready` handler in `console.html`:
+`if (_activeTabName === "tour" && _tourSteps.length) tourRender();`
+Stale warning flash after corpus switch is gone.
 
-**Issues found and fixed (in `2259e7a`):**
+**Completion gate formally closed** [V]
+One-liner added to HISTORY.md. Gate criteria browser-verified session 255.
 
-1. `style.css`: `.sb-section flex: 1` → `flex: 0 0 auto` — collapsed sidebar sections
-   no longer claim equal vertical space. Verified: 358/78/32px (content-proportional). [V]
+**RM67 probe loop run — dj2** [V]
+- 25 stubs: 12 FSM (real work queue), 5 subrace (delete when dj2 coding starts), 3 test mocks, 5 real gaps
+- `engine/phases.py`: 39 abstract methods — real ABC, unwired not abandoned; future implementation target
+- world/ 100% unresolved edges: accepted ceiling
+- 248 inferred EPs (down from 331 — good movement from RM62 callee resolution)
+- Docstring health: 1% missing, essentially clean
 
-2. Tour step explanations — five steps updated to match actual tool output:
-   - Step 1 (seed orient): removed stale "2 orphaned" count [V]
-   - Step 2 (seed orphans): removed count from instruction; explanation rewritten around
-     classification categories (anticipatory/ready-but-blocked), not specific functions [V]
-   - Step 5 (complete orient): removed wrong "write callers: orphaned-impl 1" claim [V]
-   - Step 9 (conditional stubs): rewritten to describe actual validate_entry finding [V]
-   - Step 11 (extended orient): acknowledge orphan-impl exists; clarify empty Implement
-     queue is the signal, not zero orphans [V]
-
-**Known issue found, not fixed:**
-- Tour corpus-hint timing bug: `tourRender()` fires before `corpus_ready` updates
-  `status-db-name` after a corpus switch → stale warning flash on switch steps.
-  Fix: call `tourRender()` inside `corpus_ready` when tour panel is active.
-  Logged in HISTORY.md.
-
-**Not done this session:** RM67 probe loop (was item 2 in the queue).
+**Next question deferred to next session:** pullable Determined work with no pipeline dependency.
+Candidates surfaced: scaffold button clipping, Workbench parity audit, quick-actions relocation,
+CLAUDE.md RM59 stale reference, UI_REDESIGN.md Phase C inconsistency.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Formally close the completion gate** — carried from sessions 255/256/258.
-   Gate criteria browser-verified in session 255. Write a one-liner to HISTORY.md.
+1. **Pick from pullable work candidates** — answer the deferred question:
+   - Scaffold button truncation ("Sca...") — CSS fix
+   - Workbench parity audit — check every registered tool has a form; plug gaps (HTML/JS only)
+   - Quick-actions sidebar block — 5 items marked "deferred" from Phase B redesign
+   - CLAUDE.md RM59 reference — stale one-liner, says active but it's done
+   - UI_REDESIGN.md Phase C note says "not yet shipped" but Phase C is marked DONE — verify and clean
 
-2. **RM67 — Convergence protocol probe loop** — run before any other work.
-   Stub sweep, unresolved edge ratio, ABC gaps, EP inferred count, docstring health.
-   See TRACKER.md RM67 for the 5-step loop.
-
-3. **Fix tour corpus-hint timing bug** — one-line fix in `corpus_ready` handler
-   in `console.html`: add `if (tourPanelActive()) tourRender();` after status-db-name update.
+2. **RM67 probe** — run at session start per standing protocol (standing rule).
 
 ---
 
@@ -68,8 +69,6 @@ Cross-corpus contrast is pedagogically solid.
 - CUDA stubs: dim3 vars [?] — accepted ceiling
 - C++ pure virtual not captured [?] — deferred to RM73
 - Walker dispatch resolution (RM73) [?] — FUTURE
-- Scaffold buttons clipped on right edge [?] — "Sca..." truncated
+- Scaffold buttons clipped on right edge [?] — "Sca..." truncated (pullable fix)
 - `_extract_body()` not validated against all dj2 files [?] — body_shape signal
   may be unreliable for unusual stub patterns (logged in HISTORY.md)
-- Tour corpus-hint timing bug [?] — stale warning flash after corpus switch;
-  fix location: `corpus_ready` handler in console.html (logged in HISTORY.md)
