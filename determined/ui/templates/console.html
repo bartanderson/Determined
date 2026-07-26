@@ -974,6 +974,7 @@ let _corpusDesignNoteCount = 0;
 socket.on("corpus_ready", data => {
   document.getElementById("db-badge").textContent = data.db_name;
   document.getElementById("status-db-name").textContent = data.db_name;
+  if (_activeTabName === "tour" && _tourSteps.length) tourRender();
   _corpusDesignNoteCount = (data.gap_summary && data.gap_summary.design_note_count) || 0;
   // Clear stale graphs — nodes belong to the old corpus and must not carry over
   if (_cy)    { _cy.destroy();    _cy    = null; }

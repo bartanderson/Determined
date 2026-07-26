@@ -8,11 +8,9 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
-2026-07-25 (s258): Tour corpus-hint timing bug — `tourRender()` fires on `tour_step_result`
-before `corpus_ready` updates `status-db-name` after a corpus switch. Result: stale warning
-flash ("This step expects a different corpus") even when the right corpus is loaded.
-Fix: call `tourRender()` inside `corpus_ready` handler when the tour panel is active.
-Not yet implemented; workaround is calling `tourRender()` manually in the console.
+2026-07-25 (s259): Tour corpus-hint timing bug fixed — `tourRender()` now called inside
+`corpus_ready` handler (console.html, first corpus_ready block) when `_activeTabName === "tour"`.
+Stale warning flash after corpus switch is gone.
 
 2026-07-25 (s258): Tour step texts must match corpus state. When Commonplace corpora grow,
 explanations citing specific counts (orphans, stubs, files) become stale immediately.
@@ -75,6 +73,8 @@ cards get "↑ blocked by #N (FSMName)" when docstring names an FSM above them i
 deterministic, no LLM; registered in TOOLS + REGISTRY; socket handler in ui_server;
 [Scaffold] button on FSM-SPEC cards renders code panel below primer section.
 UI verify incomplete — browser pane not displayed in this session; Bart to verify manually.
+
+2026-07-25 (s259): Completion gate formally closed. Gate criteria (top-5 ranked work list + execution context per item) browser-verified in session 255. work_session_primer is the shipped artifact.
 
 2026-07-24 (s250): work_session_primer built and shipped. Key discovery during walkthrough:
 FSM action/guard stubs (12 of 22 dj2 stubs) are INVISIBLE in rank_stubs priority mode because
