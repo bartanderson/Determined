@@ -153,7 +153,7 @@ sidebar items); the plan to move them into owning surfaces was deferred.
    the four results (no LLM).
 3. Frontier tab shows its count badge (stubs actionable) without being
    opened.
-4. Editor preloads the file tree (DB `files` table — no scan). _(Phase C — not yet shipped)_
+4. Editor preloads the file tree (DB `files` table — no scan).
 
 There is exactly one layout state on load. The corpus-map regression class
 of bug — "rendered but hidden by a sibling state machine" — becomes

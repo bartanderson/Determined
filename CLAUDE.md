@@ -256,15 +256,11 @@ How to use it:
 Do not score designs numerically. The tension sections exist because the
 interesting decisions are not binary.
 
-## Active work arc: RM59
+## Active work arc: RM67
 
-All prior numbered items (6, 20, 1, etc.) are done. See TRACKER.md for the full
-history. Current active item:
-
-**RM59 -- Feature shape analysis (ACTIVE)**
-Three new tools: list_features (directory scan), feature_shape (path tracing),
-development_priorities (completeness ranking). Corpus-agnostic, directory-first.
-See TRACKER.md RM59 for full design. Phase 1 first: list_features + feature_shape.
+All prior numbered items (6, 20, 1, 59, etc.) are done. See TRACKER.md for the full
+history. Current active item: **RM67 -- Convergence protocol** (standing probe loop;
+see TRACKER.md RM67 for acceptance criteria and per-corpus status).
 
 ## Coding guidelines
 

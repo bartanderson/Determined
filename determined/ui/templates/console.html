@@ -142,7 +142,7 @@
 .primer-name:hover{text-decoration:underline dotted;text-underline-offset:2px}
 .primer-file{color:var(--text3);font-family:var(--font-mono);flex-shrink:0}
 .primer-purpose{color:var(--text2);font-style:italic;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.primer-actions{margin-left:auto;display:flex;gap:4px;flex-shrink:0}
+.primer-actions{margin-left:auto;display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
 .primer-btn{font-size:.75em;padding:1px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--text2);white-space:nowrap}
 .primer-btn:hover{border-color:var(--accent);color:var(--accent)}
 /* ── shape tab (RM69) ── */
@@ -239,19 +239,19 @@
       <div class="sidebar-section" id="nav-generic-actions">
         <div class="sidebar-label" id="sb-quickactions-label">Quick actions</div>
         <div id="sb-quickactions-body">
-        <div class="sidebar-item" data-submit="what should I work on">
+        <div class="sidebar-item" data-qa="frontier-queue">
           <span class="icon">☑</span>work queue
         </div>
-        <div class="sidebar-item" data-submit="find dead code">
+        <div class="sidebar-item" data-qa="tool:find_concept_ghosts">
           <span class="icon">∅</span>dead code
         </div>
-        <div class="sidebar-item" data-submit="what haven't you explored">
+        <div class="sidebar-item" data-qa="tool:graph_entry_points">
           <span class="icon">○</span>unexplored
         </div>
-        <div class="sidebar-item" data-submit="what functions are missing docstrings">
+        <div class="sidebar-item" data-qa="knowledge-dochealth">
           <span class="icon">⚠</span>docstrings
         </div>
-        <div class="sidebar-item" data-submit="find todos">
+        <div class="sidebar-item" data-qa="tool:find_todos">
           <span class="icon">✓</span>todos
         </div>
         </div><!-- /sb-quickactions-body -->
@@ -1262,6 +1262,39 @@ document.querySelectorAll(".sidebar-item[data-submit]").forEach(el => {
     sendBtn.disabled = false;
     activateTab("chat");
     sendQuery();
+  });
+});
+
+// data-qa: quick actions wired to owning surfaces
+const _QA_TOOL_LABELS = {
+  "find_concept_ghosts": "Ghost concepts",
+  "graph_entry_points":  "Entry points",
+  "find_todos":          "TODOs",
+};
+document.querySelectorAll(".sidebar-item[data-qa]").forEach(el => {
+  el.addEventListener("click", () => {
+    const qa = el.dataset.qa;
+    if (qa === "frontier-queue") {
+      activateTab("frontier");
+      _flLens = "queue";
+      document.querySelectorAll(".lens-sel-btn[data-fl]").forEach(b => b.classList.toggle("active", b.dataset.fl === "queue"));
+      document.getElementById("fl-stubs").style.display = "none";
+      document.getElementById("fl-queue").style.display = "flex";
+      bqLoad(); arLoad();
+    } else if (qa === "knowledge-dochealth") {
+      activateTab("knowledge");
+      _knLens = "dochealth";
+      document.querySelectorAll(".lens-sel-btn[data-kl]").forEach(b => b.classList.toggle("active", b.dataset.kl === "dochealth"));
+      document.getElementById("kn-view-artifacts").style.display = "none";
+      document.getElementById("kn-view-pins").style.display      = "none";
+      document.getElementById("kn-view-bag").style.display       = "none";
+      document.getElementById("kn-view-dochealth").style.display = "flex";
+      dhLoad();
+    } else if (qa.startsWith("tool:")) {
+      const toolId = qa.slice(5);
+      activateTab("workbench");
+      wbRunTool(toolId, _QA_TOOL_LABELS[toolId] || toolId, {});
+    }
   });
 });
 
