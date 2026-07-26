@@ -63,7 +63,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | Corpus | Target | Status |
 |--------|--------|--------|
 | Determined (Python) | Full convergence | probe DONE (2026-07-21); adversarial re-run DONE — 3 stubs clean, 0 false positives |
-| dj2 (Python+JS) | Full convergence | 331 inferred EPs (accepted ceiling); 5 RM68-remove stubs; 5 AI-layer stubs classified (2026-07-24) |
+| dj2 (Python+JS) | Full convergence | probe 2026-07-25: 248 inferred EPs (down from 331, good movement); 12 FSM stubs (real work queue); 5 subrace stubs (delete when dj2 coding starts); 3 test mocks (accepted); 5 real gaps; phases.py 39 abstract methods = dead design artifact, not a gap; world/ 100% unresolved (accepted ceiling) |
 | Commonplace (Python) | Full convergence | 1 stub (suggest_tags); classified: frontier stub, waits for LLM_ENDPOINT design decision |
 | rotjs (TS) | Probe-passes | 6 stubs; lib/src dual-rep known |
 | dungeoncrawler (TS) | Probe-passes | 0 stubs; clean |
