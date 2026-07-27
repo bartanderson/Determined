@@ -18,6 +18,14 @@ verbose reasoning from Qwen3-VL-8B even with /no_think. Completion mode (generat
 ending at the def line) produces tighter output. Pattern: style siblings shown
 before the target def; model fills the body by mirroring.
 
+2026-07-27 (s263): RM70 Step 3 — pattern sibling search. _normalize_name() strips
+verb prefixes (_get_, _build_, etc.) before difflib comparison. Dunder methods need
+special-case: lstrip("_") on "__init__" gives "init__" — fixed by detecting __ prefix
+before stripping. _PATTERN_FLOOR=0.4 calibrated by inspection; below this, normalized
+names share too little structure to be useful. is_stub=0 filter is the key invariant —
+stubs have nothing to show. Fallback to file-scoped _style_siblings() when nothing
+exceeds floor. Tests verify mechanism, not specific match outcomes.
+
 2026-07-27 (s263): RM70 Step 2 — caller body reader. High-variance finding: single-sample
 LLM runs too noisy to measure fine-grained improvement across 11 stubs. Two bugs found
 and fixed: (1) showing caller bodies as `def` blocks causes completion model to fill the
