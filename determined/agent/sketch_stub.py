@@ -79,10 +79,13 @@ def _build_signature(name: str, param_types_json: str | None, return_type: str |
     return f"def {name}({param_str}){ret}:"
 
 
+_CALLER_BODY_CAP = 20  # lines of caller body to include in prompt
+
+
 def _caller_context(conn, name: str, file_path: str, limit: int = 3) -> list[dict]:
-    """Return up to limit callers with their docstrings."""
+    """Return up to limit callers with their full source bodies."""
     rows = conn.execute(
-        "SELECT DISTINCT e.caller, f.file_path, f.line_number, f.docstring "
+        "SELECT DISTINCT e.caller, f.file_path, f.line_number "
         "FROM graph_edges e "
         "LEFT JOIN functions f ON f.name = e.caller "
         "WHERE e.callee = ? OR e.callee LIKE ? "
@@ -90,11 +93,12 @@ def _caller_context(conn, name: str, file_path: str, limit: int = 3) -> list[dic
         (name, f"%.{name}", limit),
     ).fetchall()
     result = []
-    for caller, fp, ln, doc in rows:
+    for caller, fp, ln in rows:
+        body = _read_function_body(fp, ln, cap=_CALLER_BODY_CAP) if fp and ln else ""
         result.append({
             "name": caller,
             "file": (fp or "").replace("\\", "/").rsplit("/", 1)[-1],
-            "docstring": (doc or "").strip()[:200] or None,
+            "body": body or None,
         })
     return result
 
@@ -289,6 +293,15 @@ def _build_prompt(brief: dict) -> str:
             for line in body.splitlines()[:8]:
                 parts.append(line)
         parts.append("")
+
+    # Caller bodies as comments — shows how return value is used without
+    # creating a completable def that the model would fill instead of the target
+    for c in brief.get("callers", []):
+        if c.get("body"):
+            parts.append(f"# usage in {c['name']} ({c['file']}):")
+            for line in c["body"].splitlines()[:_CALLER_BODY_CAP]:
+                parts.append(f"#   {line}")
+            parts.append("")
 
     # Separator
     if parts:

@@ -18,6 +18,14 @@ verbose reasoning from Qwen3-VL-8B even with /no_think. Completion mode (generat
 ending at the def line) produces tighter output. Pattern: style siblings shown
 before the target def; model fills the body by mirroring.
 
+2026-07-27 (s263): RM70 Step 2 — caller body reader. High-variance finding: single-sample
+LLM runs too noisy to measure fine-grained improvement across 11 stubs. Two bugs found
+and fixed: (1) showing caller bodies as `def` blocks causes completion model to fill the
+CALLER instead of the target stub — fix: show as commented lines. (2) FSM stubs have no
+Python callers so caller body section adds nothing for them; their variance is pure LLM
+noise. `_register_world_tools` improved (V1-FAIL → V1-PASS). Structural change kept;
+measurement requires multi-sample averaging to beat noise floor.
+
 2026-07-27 (s263): RM70 Step 1 — V1+V2 baseline established. 11 stubs scored against dj2.
 V1 pass: 4/11 (36%). Avg V2: 0.36. Dominant failure is V1 (syntax errors), not V2.
 The 4 V1-pass stubs score 1.00 on V2 because they contain no checkable corpus calls
