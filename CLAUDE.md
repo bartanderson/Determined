@@ -148,6 +148,8 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
   take longer than that, something is wrong — stop and investigate.
 - **Adding a new source or test file**: add the mapping to `FILE_MAP` in
   `tools/run_tests.py` AND update `docs/TEST_MAP.md`. Both must stay in sync.
+  This applies when adding tests to an existing test file too — if a new source
+  module is now covered, add it. Do this before committing, not after.
 - **Regression (when explicitly requested by Bart)**: use `tools/run_regression.py`
   — runs serial groups one at a time, foreground only.
   To run one group: `.venv\Scripts\python.exe tools/run_regression.py --group G1`
