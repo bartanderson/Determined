@@ -1,69 +1,83 @@
-Written at commit: a83ab9e
+Written at commit: 7954807
 
-# SESSION STATE — session 260 (end)
+# SESSION STATE — session 262 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `a83ab9e` — fix(ui): scaffold wrap, quick-actions to owning surfaces, workbench parity [V]
+- `7954807` — docs: tiered reasoning ladder + RM71 export_context [V]
+
+(Session 261 commits carried forward for reference:)
+- `bf907be` — docs: RM70 design + session 261 handoff prep
+- `2f25408` — feat(sketch_stub): solution candidate generator for classified stubs
+- `b2159b6` — fix(classify_stub): config-layer stubs and test file calibration
+- `61d9c44` — fix(ui): guide completion stuck + sidebar label affordance
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**RM67 probe — dj2 (2026-07-26)** [V]
-- 25 stubs: same count as last session (stable)
-  - 12 FSM stubs (barter/encounter/trade — real work queue)
-  - 5 subrace stubs (dnd_data.py — delete when dj2 coding starts)
-  - 3 test mocks (accepted)
-  - 5 real gaps (world/ — ai_dungeon_master, ai_integration, context_builder, narrative_engine, narrative_engine.on_arc_completed)
-- Inferred EPs: 1131 (methodological difference from session 259 — now using `resolved=0` column, previous used callee match)
-- Docstring health: 56% missing across dj2 (broader than session 259's "1%" which was Determined itself)
-- Unresolved edges: world/ cluster still 100% — accepted ceiling
+**RM70 architectural reframe — tiered reasoning ladder** [V]
 
-**Doc cleanups** [V]
-- CLAUDE.md: active arc updated RM59→RM67 (stale reference)
-- UI_REDESIGN.md: removed stale "_(Phase C — not yet shipped)_" note on on-load contract item 4
+Core insight (Bart's): the local LLM was never the point. Determined is the
+corpus intelligence layer. A capable external LLM is the reasoning layer. The
+missing piece was the bridge — and the complexity gate that decides when to
+use it.
 
-**Scaffold button CSS fix** [V]
-`.primer-actions` in console.html inline style: added `flex-wrap:wrap;justify-content:flex-end`.
-FSM cards (3 buttons: Open spec / Scaffold / Diagram) no longer clip on narrow viewports.
+Three tiers:
+1. Local LLM (Qwen3-8B) — always tried first. Most stubs, most questions.
+2. Web LLM (Deepseek, ChatGPT) — when complexity signal exceeds local ceiling.
+   Context packet + tool manifest; interactive not one-shot.
+3. Claude — architectural arbitration; packet includes prior reasoning chain.
 
-**Quick-actions wired to owning surfaces** [V]
-Replaced `data-submit` NL queries with `data-qa` handlers:
-- "work queue" → `activateTab("frontier")` + Build queue lens
-- "docstrings" → `activateTab("knowledge")` + Doc health lens
-- "dead code" → Workbench + `find_concept_ghosts`
-- "unexplored" → Workbench + `graph_entry_points`
-- "todos" → Workbench + `find_todos`
-Works when LLM is stopped (tool runs are deterministic, no LLM needed).
-Handler block at console.html after the `data-submit` block (~line 1267).
+Complexity signal computed from corpus facts before invoking any LLM:
+caller body size, referenced type count, pattern sibling availability,
+classify_stub confidence, unresolved edge ratio. Composite → threshold.
 
-**Workbench parity — 14 tools added** [V]
-`_WORKBENCH_TOOLS` in ui_server.py, before closing `]` (~line 3059).
-Added: project_status, frontier_priority, implementation_order, find_concept_ghosts,
-find_missing_bridges, find_primitive_gaps, graph_entry_points, development_priorities,
-feature_work_plan, risk_profile, explore_stub, design_gaps, find_todos.
-Browser-verified: all 14 appear in Workbench palette after wbLoad().
+**RM71 — export_context (new, DESIGN DONE)** [V]
 
-**Tests** [V]
-11/11 pass (test_ui_surfaces.py — the targeted suite for UI changes).
+The escalation mechanism. Clipboard-ready packet:
+- Section 1: function + corpus signals + classify_stub verdict
+- Section 2: neighbor context (caller bodies, callees, siblings)
+- Section 3: complexity score + which signals drove escalation
+- Section 4: tool API manifest (what Determined can answer if asked)
+
+Also useful standalone — human reviewer paste-in even when local LLM succeeds.
+
+Connection to RM21 Technique 6 (large-model fallback, tools.old/bridge/):
+that was always the placeholder for this. Complexity gate is the missing spec.
+
+Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
+TRACKER: RM71 block added between RM70 and RM72.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **RM67 probe** — run at session start per standing protocol (standing rule).
+1. **RM67 probe** — run at session start (standing rule).
 
-2. **Sidebar collapse polish** — documented in UI_REDESIGN.md "Future: sidebar panel collapse":
-   - Change `.sb-section` from `flex: 1` to `flex: 0 0 auto` so collapsed sections shrink to content
-   - Add collapse chevron to each section label row; default: Corpus map expanded, rest collapsed
-   - Files: `determined/ui/static/style.css` (.sb-section), `determined/ui/templates/console.html`
-   - Still marked "Deferred: do in next UI rework pass" — ask Bart if ready to tackle
+2. **RM70 Step 1 — V1+V2 verification baseline**
+   Add `_verify_candidate(code, oracle)` to `determined/agent/sketch_stub.py`:
+   - V1: `ast.parse(code)` — hard gate
+   - V2: walk AST for `Name`/`Attribute` nodes, query `functions` table;
+     return fraction that resolve
+   Run against all 25 dj2 stubs. Record baseline V2 scores.
+   This is the yardstick for all RM70 retrieval improvements.
 
-3. **New workbench tools — smoke test** — click through a few of the 14 new tools against a real
-   corpus (dj2 or Commonplace) to confirm output. No regressions expected but unverified.
+3. **RM70 Step 2 — Caller body reader**
+   In `_caller_context()`: replace docstring pull with `_read_function_body()`.
+   Re-run V2 scores; measure improvement.
+
+4. **RM70 Step 3 — Pattern sibling search (corpus-scoped)**
+   Replace `_style_siblings()` (file-scoped) with `_pattern_siblings()`:
+   - Strip common prefixes, Levenshtein on remainder, corpus-wide query
+   - Verify: `_get_encounter_context` → `_get_combat_context` as top match
+
+5. **RM71 build** (after RM70 Step 1 baseline exists)
+   `export_context(symbol)` tool in `determined/agent/export_context.py`.
+   Complexity signal calibration requires real V2 scores to set threshold.
+   Register in TOOLS, workbench, tool_registry, FILE_MAP.
 
 ---
 
@@ -80,5 +94,6 @@ Browser-verified: all 14 appear in Workbench palette after wbLoad().
 - CUDA stubs: dim3 vars [?] — accepted ceiling
 - C++ pure virtual not captured [?] — deferred to RM73
 - Walker dispatch resolution (RM73) [?] — FUTURE
-- `_extract_body()` not validated against all dj2 files [?] — body_shape signal
-  may be unreliable for unusual stub patterns (logged in HISTORY.md)
+- `_extract_body()` unusual body patterns (nested defs, decorators) not validated [?]
+- sketch_stub LLM quality: current brief → placeholder-level code; RM70 retrieval is the fix
+- RM71 complexity threshold: uncalibrated until V2 baseline scores exist [?]
