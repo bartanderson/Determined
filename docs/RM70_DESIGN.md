@@ -35,6 +35,61 @@ feedback if the first attempt fails.
 
 ---
 
+## Tiered reasoning ladder
+
+The local LLM is the default, not a fallback. Most stubs, most design questions,
+most generation tasks are handled locally. The external path is the overflow — only
+taken when the local model is judged insufficient before it is asked.
+
+Determined routes by complexity, not by preference:
+
+**Tier 1 — Local LLM (Qwen3-8B)**
+All requests start here. If the complexity signal is below threshold, the local
+model handles it. The four-stage pipeline (retrieve → generate → verify → refine)
+runs entirely locally.
+
+**Tier 2 — Web LLM (Deepseek, ChatGPT, or equivalent free model)**
+When complexity exceeds the local ceiling: assemble an `export_context` packet
+(see Stage 0 below) and surface it to the user for paste into the designated web
+LLM. The packet includes the corpus context + tool API manifest. The web LLM can
+request additional Determined tool runs via the manifest; the user relays results
+back. Interactive, not one-shot.
+
+**Tier 3 — Claude (final arbitration)**
+Architectural decisions, contested designs, questions that tier 2 could not
+resolve clearly. The packet at this tier includes the corpus context, the tool
+manifest, AND the prior reasoning chain — what lower tiers said and why it was
+insufficient. Claude is the ceiling, not the default.
+
+**Complexity signal — how Determined decides which tier:**
+
+Computed from corpus facts before calling any LLM. Inputs:
+
+| Signal | Weight | Source |
+|--------|--------|--------|
+| Caller body complexity (avg lines) | high | `_read_function_body` |
+| Referenced type count | medium | signature + docstring parse |
+| Pattern sibling availability | medium | `_pattern_siblings` result |
+| classify_stub top-hypothesis confidence | high | classify_stub output |
+| Unresolved edge ratio (neighborhood) | medium | `graph_edges` |
+
+Composite score → threshold (calibrated against real examples across corpora).
+Below threshold: tier 1. Above: tier 2. Tier 3 is explicitly user-invoked or
+triggered when tier 2 output is fed back and still unresolved.
+
+**`export_context` tool (new, see RM71)**
+
+The escalation mechanism. Assembles a clipboard-ready plain-text packet:
+- Section 1: Function under analysis + corpus signals + classify_stub verdict
+- Section 2: Full neighbor context (callers with bodies, callees, siblings)
+- Section 3: Complexity score + which signals drove escalation
+- Section 4: Tool API manifest — what Determined can answer if asked
+
+`export_context` is also useful standalone: even when the local LLM succeeds,
+a human reviewing the output may want the packet to verify or extend the result.
+
+---
+
 ## SOTS grounding
 
 - **I Locality of reasoning** — the retrieval layer assembles everything the

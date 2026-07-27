@@ -18,6 +18,14 @@ verbose reasoning from Qwen3-VL-8B even with /no_think. Completion mode (generat
 ending at the def line) produces tighter output. Pattern: style siblings shown
 before the target def; model fills the body by mirroring.
 
+2026-07-26 (s261/s262): RM70 architectural reframe — tiered reasoning ladder. Local
+LLM is default, not fallback. Complexity signal (from corpus facts: caller body size,
+type count, sibling availability, classify confidence, unresolved edge ratio) decides
+whether to stay local or escalate. Tier 2: web LLM (Deepseek/ChatGPT) via export_context
+packet + tool manifest. Tier 3: Claude for architectural arbitration. export_context
+is RM71. This was always the intended architecture; complexity gate was the missing spec.
+RM21 Technique 6 (large-model fallback via bridge/) was the earlier placeholder for this.
+
 2026-07-26 (s261): RM70 adversarial review produced two substantive amendments:
 (1) build order reversed — verification (V1+V2) ships first to establish a
 measurable baseline before retrieval changes; (2) V4 pattern similarity is a

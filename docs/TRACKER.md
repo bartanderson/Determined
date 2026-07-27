@@ -118,10 +118,16 @@ Enhance `sketch_stub` from typed-placeholder generator to corpus-grounded
 solution candidate generator. Full design: `docs/RM70_DESIGN.md`.
 
 **Problem:** current brief gives the LLM caller names + docstrings. Not enough
-for anything beyond `return {}`. The model's capacity exceeds what the brief
-lets it reach.
+for anything beyond `return {}`. When the local model is insufficient, there is
+no assembled context to hand to something more capable — leaving the user stuck.
 
-**Solution:** four-stage pipeline — retrieve → generate → verify → refine.
+**Architecture:** tiered reasoning ladder — local LLM first (always), escalate
+by complexity to web LLM (tier 2) or Claude (tier 3). Determined computes a
+complexity signal from corpus facts before invoking any LLM and routes accordingly.
+`export_context` (RM71) is the escalation mechanism: clipboard-ready packet with
+corpus context + tool API manifest + reasoning chain.
+
+**Local pipeline:** four-stage — retrieve → generate → verify → refine.
 
 **Stage 1 — Retrieval (deterministic):**
 - Full caller bodies (not docstrings) — shows how return value is used
@@ -152,6 +158,33 @@ Visible in output if ceiling hit. Not MCTS — honest name: feedback-guided retr
 7. Multi-sample + feedback loop
 
 **Gate:** start with step 1 next session. Each step measured against baseline.
+
+---
+
+## RM71 — export_context: context packet for external LLM escalation (DESIGN DONE)
+
+New tool. Assembles a clipboard-ready plain-text packet for a function when
+the complexity signal exceeds the local LLM ceiling (or on explicit user request).
+
+**Output sections:**
+1. Function under analysis + corpus signals + classify_stub verdict
+2. Neighbor context (caller bodies, callees, name-similar siblings)
+3. Complexity score + which signals drove escalation (visible reasoning)
+4. Tool API manifest — what Determined can answer if the external LLM asks
+
+**Escalation ladder (three tiers):**
+- Tier 1: local LLM (always tried first)
+- Tier 2: web LLM (Deepseek, ChatGPT) — paste packet, interactive via tool manifest
+- Tier 3: Claude — architectural arbitration; packet includes prior reasoning chain
+
+**Complexity signal inputs:** caller body avg lines, referenced type count, pattern
+sibling availability, classify_stub confidence, unresolved edge ratio (neighborhood).
+Threshold calibrated against real examples; above threshold → escalate.
+
+**Gate:** build after RM70 Step 1 (V1+V2 baseline) so complexity signal can be
+validated against real generation quality data.
+
+Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
 
 ---
 
