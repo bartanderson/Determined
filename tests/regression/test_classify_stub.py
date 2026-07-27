@@ -583,3 +583,95 @@ def test_score_hypotheses_no_instance_vars_signals_blocked():
     hyps = score_hypotheses(signals)
     labels = [h["classification"] for h in hyps]
     assert "blocked-on-prerequisite" in labels
+
+
+# ---------------------------------------------------------------------------
+# _infer_return_shape — RM70 Step 4
+# ---------------------------------------------------------------------------
+
+def test_infer_return_shape_none_when_no_callers():
+    from determined.agent.sketch_stub import _infer_return_shape
+    result = _infer_return_shape([])
+    assert result["confidence"] == "NONE"
+    assert result["hints"] == []
+
+
+def test_infer_return_shape_none_when_no_body():
+    from determined.agent.sketch_stub import _infer_return_shape
+    result = _infer_return_shape([{"name": "caller", "body": None}])
+    assert result["confidence"] == "NONE"
+
+
+def test_infer_return_shape_strong_subscript():
+    from determined.agent.sketch_stub import _infer_return_shape
+    body = (
+        "def caller():\n"
+        "    data = get_thing()\n"
+        '    return data["name"]\n'
+    )
+    result = _infer_return_shape([{"name": "caller", "body": body}])
+    assert result["confidence"] == "STRONG"
+    assert '["name"]' in result["hints"]
+
+
+def test_infer_return_shape_strong_attribute():
+    from determined.agent.sketch_stub import _infer_return_shape
+    body = (
+        "def caller():\n"
+        "    ctx = build_context()\n"
+        "    return ctx.state\n"
+    )
+    result = _infer_return_shape([{"name": "caller", "body": body}])
+    assert result["confidence"] == "STRONG"
+    assert ".state" in result["hints"]
+
+
+def test_infer_return_shape_weak_passed_as_arg():
+    from determined.agent.sketch_stub import _infer_return_shape
+    body = (
+        "def caller():\n"
+        "    result = fetch_data()\n"
+        "    process(result)\n"
+    )
+    result = _infer_return_shape([{"name": "caller", "body": body}])
+    assert result["confidence"] == "WEAK"
+    assert any("passed" in h for h in result["hints"])
+
+
+def test_infer_return_shape_strong_overrides_weak():
+    from determined.agent.sketch_stub import _infer_return_shape
+    body = (
+        "def caller():\n"
+        "    r = get_stuff()\n"
+        "    process(r)\n"
+        '    return r["id"]\n'
+    )
+    result = _infer_return_shape([{"name": "caller", "body": body}])
+    assert result["confidence"] == "STRONG"
+
+
+def test_infer_return_shape_deduplicates_hints():
+    from determined.agent.sketch_stub import _infer_return_shape
+    body = (
+        "def caller():\n"
+        "    r = get_stuff()\n"
+        '    x = r["id"]\n'
+        '    y = r["id"]\n'
+    )
+    result = _infer_return_shape([{"name": "caller", "body": body}])
+    assert result["hints"].count('["id"]') == 1
+
+
+def test_infer_return_shape_caps_at_five_hints():
+    from determined.agent.sketch_stub import _infer_return_shape
+    keys = ["a", "b", "c", "d", "e", "f"]
+    lines = "\n".join(f'    _ = r["{k}"]' for k in keys)
+    body = f"def caller():\n    r = get_stuff()\n{lines}\n"
+    result = _infer_return_shape([{"name": "caller", "body": body}])
+    assert len(result["hints"]) <= 5
+
+
+def test_infer_return_shape_syntax_error_body_skipped():
+    from determined.agent.sketch_stub import _infer_return_shape
+    result = _infer_return_shape([{"name": "caller", "body": "def ( broken"}])
+    assert result["confidence"] == "NONE"

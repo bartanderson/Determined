@@ -198,6 +198,88 @@ def _pattern_siblings(conn, file_path: str, stub_name: str,
 
 
 # ---------------------------------------------------------------------------
+# Return-shape inference (Step 4)
+# ---------------------------------------------------------------------------
+
+def _infer_return_shape(callers: list[dict]) -> dict:
+    """
+    AST-walk caller bodies to infer what shape the stub must return.
+
+    Confidence levels:
+      STRONG — direct subscript ("result['key']") or attribute ("result.state")
+               access on the call result found in caller body.
+      WEAK   — result passed as argument to another function (keys unknown).
+      NONE   — pattern not parseable or callers absent.
+
+    Returns {"confidence": "STRONG"|"WEAK"|"NONE", "hints": [str, ...]}.
+    Hints are de-duplicated and capped at 5. NONE returns empty hints.
+    """
+    hints: list[str] = []
+    confidence = "NONE"
+
+    for caller in callers:
+        body = caller.get("body")
+        if not body:
+            continue
+        try:
+            tree = ast.parse(body)
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            # Look for: var = <call>; then var["key"] or var.attr
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            # Identify the assigned target name
+            if isinstance(node, ast.Assign) and node.targets:
+                target = node.targets[0]
+            elif isinstance(node, ast.AnnAssign):
+                target = node.target
+            else:
+                continue
+            if not isinstance(target, ast.Name):
+                continue
+            var_name = target.id
+
+            # Walk entire tree for uses of this variable
+            for use in ast.walk(tree):
+                # Subscript access: var["key"] or var[0]
+                if (isinstance(use, ast.Subscript)
+                        and isinstance(use.value, ast.Name)
+                        and use.value.id == var_name):
+                    # Extract key if it's a string constant
+                    slice_node = use.slice
+                    if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
+                        hint = f'["{slice_node.value}"]'
+                    elif isinstance(slice_node, ast.Constant):
+                        hint = f"[{slice_node.value!r}]"
+                    else:
+                        hint = "[...]"
+                    if hint not in hints:
+                        hints.append(hint)
+                    confidence = "STRONG"
+
+                # Attribute access: var.attr
+                elif (isinstance(use, ast.Attribute)
+                      and isinstance(use.value, ast.Name)
+                      and use.value.id == var_name):
+                    hint = f".{use.attr}"
+                    if hint not in hints:
+                        hints.append(hint)
+                    confidence = "STRONG"
+
+                # Passed as arg to another call — WEAK unless already STRONG
+                elif isinstance(use, ast.Call):
+                    for arg in use.args:
+                        if isinstance(arg, ast.Name) and arg.id == var_name:
+                            if confidence == "NONE":
+                                confidence = "WEAK"
+                                hints.append("(passed to another function)")
+
+    return {"confidence": confidence, "hints": hints[:5]}
+
+
+# ---------------------------------------------------------------------------
 # Verification (V1 + V2)
 # ---------------------------------------------------------------------------
 
@@ -325,6 +407,7 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
     signature = _build_signature(symbol, ptj, return_type)
     callers = _caller_context(conn, symbol, file_path)
     siblings = _pattern_siblings(conn, file_path, symbol)
+    return_shape = _infer_return_shape(callers)
     short_path = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
 
     return {
@@ -342,6 +425,7 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
         "siblings":       siblings,
         "concepts":       signals.get("concept_presence", {}),
         "return_type":    return_type,
+        "return_shape":   return_shape,
     }
 
 
@@ -391,6 +475,15 @@ def _build_prompt(brief: dict) -> str:
         parts.append(f"# Called by: {caller_names}")
     if brief.get("body_shape") == "config_declared":
         parts.append("# FSM handler — implement the action/guard logic below")
+
+    # Return-shape hint (STRONG or WEAK only; NONE omitted)
+    rs = brief.get("return_shape", {})
+    if rs.get("confidence") in ("STRONG", "WEAK") and rs.get("hints"):
+        hint_str = ", ".join(rs["hints"])
+        if rs["confidence"] == "STRONG":
+            parts.append(f"# returns: {hint_str}")
+        else:
+            parts.append(f"# returns: {hint_str}  (uncertain)")
 
     # The def line — model completes the body
     parts.append(brief["signature"])
