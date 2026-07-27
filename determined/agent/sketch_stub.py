@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ast
 import builtins as _builtins_module
+import difflib
 import json
 import re
 from typing import TYPE_CHECKING
@@ -104,20 +105,94 @@ def _caller_context(conn, name: str, file_path: str, limit: int = 3) -> list[dic
 
 
 def _style_siblings(conn, file_path: str, stub_name: str) -> list[dict]:
-    """Return implemented sibling functions from the same file for style context."""
+    """Return implemented sibling functions from the same file (fallback for pattern search)."""
     rows = conn.execute(
-        "SELECT name, line_number, docstring FROM functions "
+        "SELECT name, line_number FROM functions "
         "WHERE file_path = ? AND is_stub = 0 AND name != ? "
         "ORDER BY line_number LIMIT ?",
         (file_path, stub_name, _SIBLING_CAP),
     ).fetchall()
     result = []
-    for sib_name, ln, doc in rows:
+    for sib_name, ln in rows:
         body = _read_function_body(file_path, ln) if ln else ""
         result.append({
             "name": sib_name,
-            "docstring": (doc or "").strip()[:150] or None,
+            "file": file_path.replace("\\", "/").rsplit("/", 1)[-1],
             "body_preview": body[:400] if body else None,
+        })
+    return result
+
+
+# Common verb prefixes stripped before name similarity comparison.
+# Order matters: longer prefixes first to avoid partial matches.
+_STRIP_PREFIXES = (
+    "_get_", "_build_", "_compute_", "_create_", "_make_",
+    "_fetch_", "_load_", "_run_", "_handle_", "_process_",
+    "get_", "build_", "compute_", "create_", "make_",
+    "fetch_", "load_", "run_", "handle_", "process_",
+)
+
+# Minimum similarity ratio to count as a real pattern match.
+# Below this the normalized names share too little structure to be useful.
+_PATTERN_FLOOR = 0.4
+
+
+def _normalize_name(name: str) -> str:
+    """Strip a leading underscore and common verb prefixes for name comparison.
+    Dunder methods (__ prefix + suffix) are left as-is — they are protocol
+    names, not verb-prefixed domain names."""
+    if name.startswith("__") and name.endswith("__"):
+        return name.lower()
+    n = name.lstrip("_")
+    for prefix in _STRIP_PREFIXES:
+        if n.startswith(prefix):
+            n = n[len(prefix):]
+            break
+    return n.lower()
+
+
+def _pattern_siblings(conn, file_path: str, stub_name: str,
+                      limit: int = _SIBLING_CAP) -> list[dict]:
+    """
+    Find implemented functions with similar name patterns, corpus-wide.
+
+    Scores by difflib ratio on normalized names (verb-prefix stripped).
+    Only considers is_stub=0 functions — stubs have nothing to show.
+    Falls back to file-scoped _style_siblings() when no corpus match
+    exceeds _PATTERN_FLOOR, so the prompt always has something to work from.
+    """
+    normalized_stub = _normalize_name(stub_name)
+
+    # Load all implemented function names — names only, bodies fetched for top matches only
+    rows = conn.execute(
+        "SELECT name, file_path, line_number FROM functions "
+        "WHERE is_stub = 0 AND name != ?",
+        (stub_name,),
+    ).fetchall()
+
+    scored = []
+    for name, fp, ln in rows:
+        norm = _normalize_name(name)
+        if not norm:
+            continue
+        ratio = difflib.SequenceMatcher(None, normalized_stub, norm).ratio()
+        if ratio >= _PATTERN_FLOOR:
+            scored.append((ratio, name, fp, ln))
+
+    scored.sort(reverse=True)
+    top = scored[:limit]
+
+    if not top:
+        return _style_siblings(conn, file_path, stub_name)
+
+    result = []
+    for ratio, name, fp, ln in top:
+        body = _read_function_body(fp, ln) if fp and ln else ""
+        result.append({
+            "name": name,
+            "file": (fp or "").replace("\\", "/").rsplit("/", 1)[-1],
+            "body_preview": body[:400] if body else None,
+            "similarity": round(ratio, 2),
         })
     return result
 
@@ -249,7 +324,7 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
 
     signature = _build_signature(symbol, ptj, return_type)
     callers = _caller_context(conn, symbol, file_path)
-    siblings = _style_siblings(conn, file_path, symbol)
+    siblings = _pattern_siblings(conn, file_path, symbol)
     short_path = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
 
     return {
