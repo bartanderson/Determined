@@ -8,6 +8,22 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-26 (s261): classify_stub body_shape fix — JSON/YAML/TOML files must be
+checked for extension BEFORE the `line_number` guard, because config stubs have
+no line numbers. Original early-return caught them first and returned "unknown".
+Fix: split the early-return into two: file_path check → ext check → line_number check.
+
+2026-07-26 (s261): sketch_stub LLM prompt — chat mode with system prompt produces
+verbose reasoning from Qwen3-VL-8B even with /no_think. Completion mode (generate,
+ending at the def line) produces tighter output. Pattern: style siblings shown
+before the target def; model fills the body by mirroring.
+
+2026-07-26 (s261): RM70 adversarial review produced two substantive amendments:
+(1) build order reversed — verification (V1+V2) ships first to establish a
+measurable baseline before retrieval changes; (2) V4 pattern similarity is a
+tiebreaker only, never a rejection criterion — penalizing novel-but-correct
+implementations is a real failure mode.
+
 2026-07-25 (s259): Tour corpus-hint timing bug fixed — `tourRender()` now called inside
 `corpus_ready` handler (console.html, first corpus_ready block) when `_activeTabName === "tour"`.
 Stale warning flash after corpus switch is gone.

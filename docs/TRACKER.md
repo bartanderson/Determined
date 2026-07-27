@@ -112,6 +112,49 @@ world/authority_system.py.
 
 ---
 
+## RM70 — Stub solution synthesis (ACTIVE DESIGN)
+
+Enhance `sketch_stub` from typed-placeholder generator to corpus-grounded
+solution candidate generator. Full design: `docs/RM70_DESIGN.md`.
+
+**Problem:** current brief gives the LLM caller names + docstrings. Not enough
+for anything beyond `return {}`. The model's capacity exceeds what the brief
+lets it reach.
+
+**Solution:** four-stage pipeline — retrieve → generate → verify → refine.
+
+**Stage 1 — Retrieval (deterministic):**
+- Full caller bodies (not docstrings) — shows how return value is used
+- Return-shape inference via AST walk — STRONG/WEAK/NONE confidence; WEAK shown as "(uncertain)"
+- Pattern sibling search: name-normalized Levenshtein corpus-wide (primary) + SetFit tiebreaker (secondary only)
+- Referenced type definitions: named classes → their public methods (what the body may call)
+
+**Stage 2 — Generation:** completion-mode prompt with full retrieval context.
+Default: 1 sample (quick, interactive). `mode=thorough`: K=3 samples, ranked.
+
+**Stage 3 — Verification (deterministic scoring):**
+- V1: `ast.parse()` — hard gate
+- V2: corpus call check — fraction of called names in DB; primary quality signal (weight 0.6)
+- V3: return type compatibility — AST walk; soft signal (weight 0.2)
+- V4: pattern similarity to best sibling — tiebreaker only, never a rejection criterion (weight 0.2)
+
+**Stage 4 — Iterative refinement:** lowest-scoring V2 signal → specific constraint
+("you called X — not in corpus; available: Y, Z") → retry. 3-iteration ceiling.
+Visible in output if ceiling hit. Not MCTS — honest name: feedback-guided retry.
+
+**Build order** (each step shippable independently):
+1. V1+V2 baseline (measure current sketch_stub quality first)
+2. Caller body reader
+3. Pattern sibling search (corpus-scoped)
+4. Return-shape inference
+5. Type definition pull
+6. V3+V4 scoring
+7. Multi-sample + feedback loop
+
+**Gate:** start with step 1 next session. Each step measured against baseline.
+
+---
+
 ## RM72 — Determined graph explorer (desktop, WebGPU/C++) (FUTURE)
 
 Standalone native desktop tool for visually navigating corpus call graphs. Reads
