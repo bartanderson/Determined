@@ -955,8 +955,30 @@ REGISTRY: dict[str, dict] = {
             "symbol": "stub function name to classify (required)",
         },
         "output": "ranked competing hypotheses with confidence scores and supporting evidence signals",
-        "feeds": ["explore_stub", "find_missing_bridges", "find_concept_ghosts", "feature_work_plan"],
+        "feeds": ["sketch_stub", "explore_stub", "find_missing_bridges", "find_concept_ghosts", "feature_work_plan"],
         "use_when": "After stub sweep identifies real stubs -- run to understand WHY each stub exists before deciding how to handle it. Distinguishes dead code from design skeletons from genuine gaps.",
+        "category": "planning",
+    },
+
+    "sketch_stub": {
+        "purpose": "Generate a candidate implementation for a classified stub. Runs classify_stub first; only generates candidates for design-intent-stated and blocked-on-prerequisite stubs. Builds a deterministic brief (signature, intent, caller context, style-matching siblings) and — when llama-server is available — generates a candidate function body via LLM completion.",
+        "args": {
+            "symbol": "stub function name (required)",
+        },
+        "output": "classification verdict, context brief, function signature, and candidate body (LLM or deterministic)",
+        "feeds": ["explore_stub"],
+        "use_when": "After classify_stub returns design-intent-stated or blocked-on-prerequisite — to get a starting implementation sketch. Review the candidate against callers and project conventions before applying.",
+        "category": "planning",
+    },
+
+    "fsm_diagram": {
+        "purpose": "Generate a Mermaid stateDiagram-v2 for a named FSM from its JSON spec file. Deterministic — no LLM. Shows states, transitions, guards, and actions.",
+        "args": {
+            "file_path": "path to the FSM JSON spec file (e.g. config/fsms/encounter.json)",
+        },
+        "output": "Mermaid stateDiagram-v2 markup renderable in the UI",
+        "feeds": ["classify_stub", "sketch_stub"],
+        "use_when": "When reviewing or planning implementation of an FSM — shows the full state machine structure before writing Python handlers.",
         "category": "planning",
     },
 

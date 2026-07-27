@@ -2965,6 +2965,24 @@ _WORKBENCH_TOOLS = [
         "category": "Frontier",
         "args": {},
     },
+    {
+        "id": "classify_stub",
+        "label": "Classify stub",
+        "tool": "classify_stub",
+        "description": "Why does this stub exist? Ranked hypotheses with evidence",
+        "category": "Frontier",
+        "args": {},
+        "param": {"name": "symbol", "placeholder": "stub function name"},
+    },
+    {
+        "id": "sketch_stub",
+        "label": "Sketch stub",
+        "tool": "sketch_stub",
+        "description": "Generate a candidate implementation for a classified stub",
+        "category": "Frontier",
+        "args": {},
+        "param": {"name": "symbol", "placeholder": "stub function name"},
+    },
     # ── Symbol ───────────────────────────────────────────────
     {
         "id": "symbol_context",

@@ -8700,6 +8700,9 @@ TOOLS["find_concept_ghosts"] = (find_concept_ghosts, "assessor")
 from determined.agent.classify_stub import classify_stub  # noqa: E402
 TOOLS["classify_stub"] = (classify_stub, "assessor")
 
+from determined.agent.sketch_stub import sketch_stub  # noqa: E402
+TOOLS["sketch_stub"] = (sketch_stub, "assessor")
+
 from determined.agent.corpus_projections import (  # noqa: E402
     stub_file_shape,
     stub_subsystem_shape,

@@ -567,6 +567,7 @@ def test_dispatch_all_tools_registered():
         "find_concept_ghosts",
         # RM69: judgment layer + corpus projections
         "classify_stub",
+        "sketch_stub",
         "stub_file_shape",
         "stub_subsystem_shape",
         "stub_prerequisite_map",

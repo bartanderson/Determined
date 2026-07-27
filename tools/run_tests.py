@@ -67,6 +67,9 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_claim_verifier.py"],
     "determined/agent/classify_stub.py": [
         "tests/regression/test_classify_stub.py"],
+    "determined/agent/sketch_stub.py": [
+        "tests/regression/test_classify_stub.py",
+        "tests/regression/test_agent_tools.py"],
     "determined/agent/corpus_projections.py": [
         "tests/regression/test_corpus_projections.py"],
     "determined/agent/doc_extractor.py": [
