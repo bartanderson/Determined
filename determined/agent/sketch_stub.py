@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import ast
+import builtins as _builtins_module
 import json
 import re
 from typing import TYPE_CHECKING
@@ -32,6 +34,8 @@ if TYPE_CHECKING:
 
 _BODY_CAP = 30   # max lines to read from each sibling body
 _SIBLING_CAP = 3  # max siblings to include
+
+_PYTHON_BUILTINS = frozenset(dir(_builtins_module))
 
 
 def _read_function_body(file_path: str, line_number: int, cap: int = _BODY_CAP) -> str:
@@ -112,6 +116,85 @@ def _style_siblings(conn, file_path: str, stub_name: str) -> list[dict]:
             "body_preview": body[:400] if body else None,
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Verification (V1 + V2)
+# ---------------------------------------------------------------------------
+
+def _verify_candidate(code: str, oracle: "DBOracle") -> dict:
+    """
+    Score a generated candidate on two signals.
+
+    V1 — syntactic validity: ast.parse(). Hard gate.
+    V2 — corpus call validity: fraction of called names that exist in the
+         corpus functions table. Primary quality signal.
+
+    Returns:
+        v1_pass:      bool
+        v1_error:     str | None
+        v2_score:     float  0.0–1.0
+        v2_calls:     list[str]  — checkable names found in candidate
+        v2_unresolved: list[str] — names not in corpus
+        composite:    float  = V2 * 0.6  (V3/V4 weights added in later steps)
+    """
+    # V1
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return {
+            "v1_pass": False,
+            "v1_error": str(e),
+            "v2_score": 0.0,
+            "v2_calls": [],
+            "v2_unresolved": [],
+            "composite": 0.0,
+        }
+
+    # V2 — collect all called names from Call nodes
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                called.add(func.id)
+            elif isinstance(func, ast.Attribute):
+                called.add(func.attr)
+
+    # Strip Python builtins and dunder methods — these are never in the corpus
+    checkable = [
+        n for n in called
+        if n not in _PYTHON_BUILTINS and not (n.startswith("__") and n.endswith("__"))
+    ]
+
+    if not checkable:
+        # No corpus-checkable calls — valid but uninformative; score 1.0 by convention
+        return {
+            "v1_pass": True,
+            "v1_error": None,
+            "v2_score": 1.0,
+            "v2_calls": [],
+            "v2_unresolved": [],
+            "composite": 0.6,
+        }
+
+    conn = oracle.conn
+    resolved, unresolved = [], []
+    for name in checkable:
+        row = conn.execute(
+            "SELECT 1 FROM functions WHERE name = ? LIMIT 1", (name,)
+        ).fetchone()
+        (resolved if row else unresolved).append(name)
+
+    score = len(resolved) / len(checkable)
+    return {
+        "v1_pass": True,
+        "v1_error": None,
+        "v2_score": round(score, 3),
+        "v2_calls": sorted(checkable),
+        "v2_unresolved": sorted(unresolved),
+        "composite": round(score * 0.6, 3),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +412,23 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
         for line in candidate.splitlines():
             out.append(f"  {line}")
         out.append("  # --- end ---")
+        out.append("")
+
+        # ── Verification ────────────────────────────────────────────────
+        vr = _verify_candidate(candidate, oracle)
+        out.append("VERIFICATION")
+        v1 = "PASS" if vr["v1_pass"] else f"FAIL ({vr['v1_error']})"
+        out.append(f"  V1 syntax:        {v1}")
+        if vr["v1_pass"]:
+            n_calls = len(vr["v2_calls"])
+            n_ok = n_calls - len(vr["v2_unresolved"])
+            if n_calls == 0:
+                out.append("  V2 corpus calls:  n/a (no checkable calls)")
+            else:
+                out.append(f"  V2 corpus calls:  {vr['v2_score']:.2f}  ({n_ok}/{n_calls} resolved)")
+            if vr["v2_unresolved"]:
+                out.append(f"  V2 unresolved:    {', '.join(vr['v2_unresolved'])}")
+            out.append(f"  composite score:  {vr['composite']:.2f}  (V2×0.6; V3/V4 pending)")
         out.append("")
         out.append("NOTE: Review against callers and project conventions before applying.")
         out.append("      classify_stub evidence is the ground truth; this sketch interprets it.")

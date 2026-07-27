@@ -18,6 +18,13 @@ verbose reasoning from Qwen3-VL-8B even with /no_think. Completion mode (generat
 ending at the def line) produces tighter output. Pattern: style siblings shown
 before the target def; model fills the body by mirroring.
 
+2026-07-27 (s263): RM70 Step 1 — V1+V2 baseline established. 11 stubs scored against dj2.
+V1 pass: 4/11 (36%). Avg V2: 0.36. Dominant failure is V1 (syntax errors), not V2.
+The 4 V1-pass stubs score 1.00 on V2 because they contain no checkable corpus calls
+(builtins/pass bodies). All 5 real world/ gaps either V1-fail or produce no candidate.
+This is the yardstick for RM70 retrieval improvements. _verify_candidate() added to
+sketch_stub.py — V1 via ast.parse, V2 via corpus functions table query (builtins excluded).
+
 2026-07-26 (s261/s262): RM70 architectural reframe — tiered reasoning ladder. Local
 LLM is default, not fallback. Complexity signal (from corpus facts: caller body size,
 type count, sibling availability, classify confidence, unresolved edge ratio) decides
