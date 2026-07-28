@@ -8,6 +8,16 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-28 (s265): RM70 Step 6 — ast.parse() rejects indented body fragments (e.g.
+"    return {}") without a wrapping def. Fix: _wrap_body() prepends "def _f():\n" before
+every parse call (V1, V3, _ast_node_sequence). Symptom: V1 falsely reported FAIL on
+syntactically valid bodies. Applies anywhere sketch_stub candidates are parsed standalone.
+
+2026-07-28 (s265): RM70 Step 7 — _run_quick ceiling semantics. Ceiling (3 iterations) is
+only hit when feedback CHANGES each round. If the same candidate repeats, the same
+constraint repeats, and _run_quick exits early (iteration 2) rather than burning the
+ceiling. This is correct — no new info to give. Tests must distinguish these two paths.
+
 2026-07-26 (s261): classify_stub body_shape fix — JSON/YAML/TOML files must be
 checked for extension BEFORE the `line_number` guard, because config stubs have
 no line numbers. Original early-return caught them first and returned "unknown".

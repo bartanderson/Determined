@@ -1,31 +1,53 @@
-Written at commit: fc48592
+Written at commit: 7456c6e
 
-# SESSION STATE — session 264 (end)
+# SESSION STATE — session 265 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `6a9856e` — feat(sketch_stub): return-shape inference (RM70 Step 4) [V]
-- `2eb3733` — docs(test_map): add sketch_stub.py entry [V]
-- `fc48592` — docs(claude): clarify TEST_MAP update rule applies to existing test files too [V]
+- `9da149b` — feat(sketch_stub): type definition pull (RM70 Step 5) [V]
+- `65bc777` — feat(sketch_stub): V3+V4 scoring (RM70 Step 6) [V]
+- `09813a7` — feat(sketch_stub): multi-sample + feedback loop (RM70 Step 7) [V]
+- `7456c6e` — feat(export_context): context packet for external LLM escalation (RM71) [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**RM70 Step 4 — Return-shape inference** [V]
-Added `_infer_return_shape(callers)` to `determined/agent/sketch_stub.py`.
-- AST-walks caller bodies for subscript (`result["key"]`) and attribute (`result.state`) access
-- Three confidence levels: STRONG / WEAK (passed as arg) / NONE
-- Wired into `build_brief()` as `"return_shape"` key
-- Wired into `_build_prompt()` as `# returns: ...` comment before the def line (NONE = silent)
-- 9 new mechanism tests in `test_classify_stub.py` — all pass (73 total in that file)
+**RM70 Steps 5-7 — sketch_stub pipeline complete** [V]
 
-**TEST_MAP housekeeping** [V]
-- `sketch_stub.py` was missing from `docs/TEST_MAP.md` — added.
-- CLAUDE.md rule clarified: TEST_MAP update applies to existing test files too, not just new files.
-  Do it before committing.
+Step 5 — Type definition pull:
+- `_extract_type_names()`: regex for CamelCase names in sig/docstring, skips builtins
+- `_pull_type_defs()`: classes table → file_path join → functions, capped 3 classes / 8 methods
+- Wired into `build_brief()` as `"type_defs"`, surfaced in `_build_prompt()` as `# ClassName: method(sig)` comments
+- 9 tests
+
+Step 6 — V3+V4 scoring:
+- `_wrap_body()`: body fragments need wrapping in `def _f():` before `ast.parse()` — critical fix
+- `_v3_return_type_score()`: dict return compatibility check (0.0 or 1.0)
+- `_v4_pattern_similarity()`: difflib ratio on AST statement-node sequences; 0.5 neutral when no sibling
+- Composite = V2×0.6 + V3×0.2 + V4×0.2 (V1 hard gate)
+- 12 tests
+
+Step 7 — Multi-sample + feedback loop:
+- `_feedback_constraint()`: V1 error or V2 unresolved → specific corpus-grounded message
+- `_run_quick()`: 1 sample, retry with feedback up to 3× ceiling; exits early if constraint repeats
+- `_run_thorough()`: K=3 independent samples, all verified, sorted by composite
+- `mode=quick` (default) or `mode=thorough` arg in `sketch_stub()`
+- `_format_vr()` helper extracted (shared output path)
+- 13 tests
+
+**RM71 — export_context** [V]
+New tool in `determined/agent/export_context.py`:
+- Five-signal complexity score (caller_complexity, low_confidence, unresolved_ratio,
+  type_missing, sibling_missing) — threshold 0.5 provisional
+- Four-section clipboard packet: function analysis, neighbor context, complexity score, tool API manifest
+- Tier label: TIER 1 (local LLM) or TIER 2 (web LLM paste)
+- Registered in TOOLS, tool_registry, workbench Frontier category, FILE_MAP, TEST_MAP
+- 13 tests; 353 pass on `--last-commit` run [V]
+
+Test count in test_classify_stub.py: 108 total [V]
 
 ---
 
@@ -33,15 +55,18 @@ Added `_infer_return_shape(callers)` to `determined/agent/sketch_stub.py`.
 
 1. **RM67 probe** — run at session start (standing rule).
 
-2. **RM70 Step 5 — Type definition pull**
-   For named classes in signature/docstring that resolve in DB:
-   pull `__init__` signature + public non-stub methods as available APIs.
-   File: `determined/agent/sketch_stub.py`, new helper + wire into `build_brief()`.
+2. **Calibrate RM71 complexity threshold**
+   Current threshold 0.5 is provisional. Run `export_context` on the dj2 stubs
+   that had low V2 scores in the RM70 Step 1 baseline (from scratchpad/run_baseline.py)
+   and check whether the tier recommendation matches the actual generation quality.
+   File: `determined/agent/export_context.py`, `_COMPLEXITY_THRESHOLD` constant.
 
-3. **RM71 — export_context tool**
-   `determined/agent/export_context.py` — clipboard-ready context packet.
-   Complexity signal calibration: use V2 baseline scores to set threshold.
-   Register in TOOLS, workbench, tool_registry, FILE_MAP.
+3. **RM70 Step 7 — live smoke test** (optional but useful)
+   Start llama-server, run `sketch_stub(symbol=X, mode=thorough)` on a dj2 stub,
+   verify V3/V4 scores appear in output and that the feedback loop fires on a
+   low-V2 candidate.
+
+4. **RM72 or next open item** — check TRACKER.md.
 
 ---
 
@@ -60,4 +85,4 @@ Added `_infer_return_shape(callers)` to `determined/agent/sketch_stub.py`.
 - C++ pure virtual not captured [?] — deferred to RM73
 - Walker dispatch resolution (RM73) [?] — FUTURE
 - LLM sweep variance: single-sample per stub too noisy; multi-sample needed for fine measurement [?]
-- RM71 complexity threshold: uncalibrated [?]
+- RM71 complexity threshold: uncalibrated [?] — threshold 0.5 provisional, calibrate against dj2 baseline
