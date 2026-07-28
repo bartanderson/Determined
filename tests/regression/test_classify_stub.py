@@ -763,3 +763,107 @@ def test_pull_type_defs_caps_at_three_classes():
     )
     result = _pull_type_defs(conn, [f"Class{i}" for i in range(4)])
     assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# _verify_candidate — V1/V2/V3/V4 scoring
+# ---------------------------------------------------------------------------
+
+def test_verify_candidate_v1_fail_on_syntax_error():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate("def ( broken", oracle)
+    assert result["v1_pass"] is False
+    assert result["composite"] == 0.0
+
+
+def test_verify_candidate_v2_full_score_no_checkable_calls():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate("    return {}", oracle)
+    assert result["v1_pass"] is True
+    assert result["v2_score"] == 1.0
+    assert result["v2_calls"] == []
+
+
+def test_verify_candidate_v2_resolves_corpus_calls():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db(non_stubs=[{"name": "get_state"}, {"name": "build_context"}])
+    oracle = _FakeOracle(conn)
+    code = "    result = get_state()\n    ctx = build_context()\n    return ctx"
+    result = _verify_candidate(code, oracle)
+    assert result["v1_pass"] is True
+    assert result["v2_score"] == 1.0
+    assert "get_state" in result["v2_calls"]
+    assert result["v2_unresolved"] == []
+
+
+def test_verify_candidate_v2_flags_unresolved():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db(non_stubs=[{"name": "real_fn"}])
+    oracle = _FakeOracle(conn)
+    code = "    real_fn()\n    phantom_fn()\n    return None"
+    result = _verify_candidate(code, oracle)
+    assert "phantom_fn" in result["v2_unresolved"]
+    assert result["v2_score"] < 1.0
+
+
+def test_verify_candidate_v3_pass_when_no_return_type():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate("    return None", oracle, declared_return_type=None)
+    assert result["v3_score"] == 1.0
+
+
+def test_verify_candidate_v3_pass_when_dict_returned():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate('    return {"key": "val"}', oracle, declared_return_type="dict")
+    assert result["v3_score"] == 1.0
+
+
+def test_verify_candidate_v3_fail_when_dict_expected_none_returned():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate("    return None", oracle, declared_return_type="dict")
+    assert result["v3_score"] == 0.0
+
+
+def test_verify_candidate_v3_pass_for_non_dict_return_type():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate("    return None", oracle, declared_return_type="str")
+    assert result["v3_score"] == 1.0
+
+
+def test_verify_candidate_v4_neutral_when_no_sibling():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    result = _verify_candidate("    return {}", oracle, best_sibling_body=None)
+    assert result["v4_score"] == 0.5
+
+
+def test_verify_candidate_v4_high_for_identical_sibling():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    code = "    x = 1\n    return x"
+    result = _verify_candidate(code, oracle, best_sibling_body=code)
+    assert result["v4_score"] > 0.9
+
+
+def test_verify_candidate_composite_formula():
+    from determined.agent.sketch_stub import _verify_candidate
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    # No checkable calls: v2=1.0, no return type: v3=1.0, no sibling: v4=0.5
+    result = _verify_candidate("    return {}", oracle)
+    expected = round(1.0 * 0.6 + 1.0 * 0.2 + 0.5 * 0.2, 3)
+    assert result["composite"] == expected

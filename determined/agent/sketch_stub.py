@@ -384,28 +384,86 @@ def _pull_type_defs(conn, type_names: list[str]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Verification (V1 + V2)
+# Verification (V1 + V2 + V3 + V4)
 # ---------------------------------------------------------------------------
 
-def _verify_candidate(code: str, oracle: "DBOracle") -> dict:
+def _wrap_body(code: str) -> str:
+    """Wrap a function body fragment in a dummy def so ast.parse() accepts it."""
+    return "def _f():\n" + "\n".join("    " + line for line in code.splitlines())
+
+
+def _ast_node_sequence(code: str) -> list[str]:
     """
-    Score a generated candidate on two signals.
+    Flatten an AST into a sequence of statement-node type names.
+    Used by V4 to compare structural shape between candidate and sibling.
+    Returns empty list on parse error.
+    """
+    try:
+        tree = ast.parse(_wrap_body(code))
+    except SyntaxError:
+        return []
+    return [type(n).__name__ for n in ast.walk(tree) if isinstance(n, ast.stmt)]
+
+
+def _v3_return_type_score(tree: ast.AST, declared_return_type: str | None) -> float:
+    """
+    V3 — return type compatibility.
+
+    If the declared return type is 'dict' (or starts with 'dict'), check that
+    at least one return statement returns a dict literal ({...}) or a Name
+    (variable — assumed compatible). If 'None' or absent, passes trivially.
+    Returns 0.0 or 1.0 — no partial credit.
+    """
+    if not declared_return_type:
+        return 1.0
+    rtype = declared_return_type.strip().lower()
+    if rtype in ("none", ""):
+        return 1.0
+    if not rtype.startswith("dict"):
+        # For non-dict types we don't have enough signal — pass trivially
+        return 1.0
+
+    # Check for at least one return statement returning a dict or variable
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Return) and node.value is not None:
+            if isinstance(node.value, ast.Dict):
+                return 1.0
+            if isinstance(node.value, ast.Name):
+                return 1.0  # variable — plausibly correct
+    return 0.0
+
+
+def _v4_pattern_similarity(candidate_seq: list[str], sibling_body: str | None) -> float:
+    """
+    V4 — pattern similarity to best sibling.
+
+    Computes difflib ratio on AST node-type sequences (statement types only).
+    Returns 0.5 when no sibling is available — neutral, not penalizing.
+    """
+    if not sibling_body or not candidate_seq:
+        return 0.5
+    sibling_seq = _ast_node_sequence(sibling_body)
+    if not sibling_seq:
+        return 0.5
+    return difflib.SequenceMatcher(None, candidate_seq, sibling_seq).ratio()
+
+
+def _verify_candidate(code: str, oracle: "DBOracle",
+                      declared_return_type: str | None = None,
+                      best_sibling_body: str | None = None) -> dict:
+    """
+    Score a generated candidate on four signals.
 
     V1 — syntactic validity: ast.parse(). Hard gate.
-    V2 — corpus call validity: fraction of called names that exist in the
-         corpus functions table. Primary quality signal.
+    V2 — corpus call validity: fraction of called names in DB. Weight 0.6.
+    V3 — return type compatibility: dict return check. Weight 0.2.
+    V4 — pattern similarity to best sibling (AST seq). Weight 0.2. Tiebreaker only.
 
-    Returns:
-        v1_pass:      bool
-        v1_error:     str | None
-        v2_score:     float  0.0–1.0
-        v2_calls:     list[str]  — checkable names found in candidate
-        v2_unresolved: list[str] — names not in corpus
-        composite:    float  = V2 * 0.6  (V3/V4 weights added in later steps)
+    composite = V2*0.6 + V3*0.2 + V4*0.2  (V1 is hard gate, not weighted)
     """
-    # V1
+    # V1 — wrap body fragment in a dummy def for parsing
     try:
-        tree = ast.parse(code)
+        tree = ast.parse(_wrap_body(code))
     except SyntaxError as e:
         return {
             "v1_pass": False,
@@ -413,6 +471,8 @@ def _verify_candidate(code: str, oracle: "DBOracle") -> dict:
             "v2_score": 0.0,
             "v2_calls": [],
             "v2_unresolved": [],
+            "v3_score": 0.0,
+            "v4_score": 0.0,
             "composite": 0.0,
         }
 
@@ -433,32 +493,34 @@ def _verify_candidate(code: str, oracle: "DBOracle") -> dict:
     ]
 
     if not checkable:
-        # No corpus-checkable calls — valid but uninformative; score 1.0 by convention
-        return {
-            "v1_pass": True,
-            "v1_error": None,
-            "v2_score": 1.0,
-            "v2_calls": [],
-            "v2_unresolved": [],
-            "composite": 0.6,
-        }
+        v2_score = 1.0
+        resolved, unresolved = [], []
+    else:
+        conn = oracle.conn
+        resolved, unresolved = [], []
+        for name in checkable:
+            row = conn.execute(
+                "SELECT 1 FROM functions WHERE name = ? LIMIT 1", (name,)
+            ).fetchone()
+            (resolved if row else unresolved).append(name)
+        v2_score = len(resolved) / len(checkable)
 
-    conn = oracle.conn
-    resolved, unresolved = [], []
-    for name in checkable:
-        row = conn.execute(
-            "SELECT 1 FROM functions WHERE name = ? LIMIT 1", (name,)
-        ).fetchone()
-        (resolved if row else unresolved).append(name)
+    # V3 and V4
+    v3 = _v3_return_type_score(tree, declared_return_type)
+    candidate_seq = _ast_node_sequence(code)
+    v4 = _v4_pattern_similarity(candidate_seq, best_sibling_body)
 
-    score = len(resolved) / len(checkable)
+    composite = v2_score * 0.6 + v3 * 0.2 + v4 * 0.2
+
     return {
         "v1_pass": True,
         "v1_error": None,
-        "v2_score": round(score, 3),
+        "v2_score": round(v2_score, 3),
         "v2_calls": sorted(checkable),
         "v2_unresolved": sorted(unresolved),
-        "composite": round(score * 0.6, 3),
+        "v3_score": round(v3, 3),
+        "v4_score": round(v4, 3),
+        "composite": round(composite, 3),
     }
 
 
@@ -717,7 +779,14 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
         out.append("")
 
         # ── Verification ────────────────────────────────────────────────
-        vr = _verify_candidate(candidate, oracle)
+        best_sibling_body = None
+        if brief.get("siblings"):
+            best_sibling_body = brief["siblings"][0].get("body_preview")
+        vr = _verify_candidate(
+            candidate, oracle,
+            declared_return_type=brief.get("return_type"),
+            best_sibling_body=best_sibling_body,
+        )
         out.append("VERIFICATION")
         v1 = "PASS" if vr["v1_pass"] else f"FAIL ({vr['v1_error']})"
         out.append(f"  V1 syntax:        {v1}")
@@ -730,7 +799,9 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
                 out.append(f"  V2 corpus calls:  {vr['v2_score']:.2f}  ({n_ok}/{n_calls} resolved)")
             if vr["v2_unresolved"]:
                 out.append(f"  V2 unresolved:    {', '.join(vr['v2_unresolved'])}")
-            out.append(f"  composite score:  {vr['composite']:.2f}  (V2×0.6; V3/V4 pending)")
+            out.append(f"  V3 return type:   {vr['v3_score']:.2f}")
+            out.append(f"  V4 pattern sim:   {vr['v4_score']:.2f}")
+            out.append(f"  composite score:  {vr['composite']:.2f}  (V2×0.6 + V3×0.2 + V4×0.2)")
         out.append("")
         out.append("NOTE: Review against callers and project conventions before applying.")
         out.append("      classify_stub evidence is the ground truth; this sketch interprets it.")
