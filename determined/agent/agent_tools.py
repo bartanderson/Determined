@@ -8703,6 +8703,9 @@ TOOLS["classify_stub"] = (classify_stub, "assessor")
 from determined.agent.sketch_stub import sketch_stub  # noqa: E402
 TOOLS["sketch_stub"] = (sketch_stub, "assessor")
 
+from determined.agent.export_context import export_context  # noqa: E402
+TOOLS["export_context"] = (export_context, "assessor")
+
 from determined.agent.corpus_projections import (  # noqa: E402
     stub_file_shape,
     stub_subsystem_shape,

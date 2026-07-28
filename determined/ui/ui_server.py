@@ -2983,6 +2983,15 @@ _WORKBENCH_TOOLS = [
         "args": {},
         "param": {"name": "symbol", "placeholder": "stub function name"},
     },
+    {
+        "id": "export_context",
+        "label": "Export context",
+        "tool": "export_context",
+        "description": "Clipboard-ready context packet for web LLM or Claude escalation",
+        "category": "Frontier",
+        "args": {},
+        "param": {"name": "symbol", "placeholder": "stub function name"},
+    },
     # ── Symbol ───────────────────────────────────────────────
     {
         "id": "symbol_context",

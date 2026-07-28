@@ -964,10 +964,22 @@ REGISTRY: dict[str, dict] = {
         "purpose": "Generate a candidate implementation for a classified stub. Runs classify_stub first; only generates candidates for design-intent-stated and blocked-on-prerequisite stubs. Builds a deterministic brief (signature, intent, caller context, style-matching siblings) and — when llama-server is available — generates a candidate function body via LLM completion.",
         "args": {
             "symbol": "stub function name (required)",
+            "mode":   "\"quick\" (default, 1 sample with feedback retry) or \"thorough\" (K=3 samples ranked by composite score)",
         },
-        "output": "classification verdict, context brief, function signature, and candidate body (LLM or deterministic)",
-        "feeds": ["explore_stub"],
+        "output": "classification verdict, context brief, function signature, candidate body, and four-signal verification score (V1 syntax, V2 corpus calls, V3 return type, V4 pattern similarity)",
+        "feeds": ["explore_stub", "export_context"],
         "use_when": "After classify_stub returns design-intent-stated or blocked-on-prerequisite — to get a starting implementation sketch. Review the candidate against callers and project conventions before applying.",
+        "category": "planning",
+    },
+
+    "export_context": {
+        "purpose": "Assemble a clipboard-ready context packet for external LLM escalation. Computes a complexity score from corpus facts (caller complexity, classify confidence, unresolved edge ratio, type resolution, sibling availability) and advises Tier 1 (local LLM) or Tier 2 (web LLM paste). The packet contains: function signature + classification, full caller bodies and pattern siblings, complexity score with driving signals, and a tool API manifest for interactive follow-up.",
+        "args": {
+            "symbol": "stub function name (required)",
+        },
+        "output": "four-section clipboard packet: function analysis, neighbor context, complexity score, tool API manifest",
+        "feeds": ["sketch_stub"],
+        "use_when": "When sketch_stub produces low-quality output (V2 score < 0.5) or when the stub is complex enough to warrant a web LLM or Claude review. Also useful standalone when a human wants full corpus context assembled in one place.",
         "category": "planning",
     },
 

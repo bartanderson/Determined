@@ -586,6 +586,7 @@ def test_dispatch_all_tools_registered():
         "work_session_primer",
         "fsm_scaffold",
         "fsm_diagram",
+        "export_context",
         # structural gap tools
         "find_isolated_modules",
         "find_orphaned_interfaces",

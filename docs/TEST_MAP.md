@@ -24,6 +24,7 @@ pytest tests/regression/<file>  [<file2> ...]
 | evaluator.py | test_evaluator.py |
 | pattern_executor.py | test_pattern_executor.py test_technique3.py |
 | sketch_stub.py | test_classify_stub.py test_agent_tools.py |
+| export_context.py | test_export_context.py test_agent_tools.py |
 | stub_classifier.py | test_classify_stub.py test_corpus_projections.py |
 | stub_projector.py | test_scaffold_from_pattern.py |
 
