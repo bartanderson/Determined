@@ -76,6 +76,10 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | mach (Zig) | Probe-passes | 3425 symbols / 9359 edges; 80 stubs all correct (C FFI + ObjC); 14% resolution (expected ceiling) |
 | clx (Lua) | Probe-passes | 529 symbols / 996 edges; 2 Lua stubs correct; 46% resolution |
 | LearnWebGPU (C++) | Probe-passes | 656 symbols / 1730 edges; 3 true stubs; macro-hidden STRUCT/END bug fixed |
+| raylib (C++) | Probe-passes | 13280 symbols / 59435 edges; 3485 stubs = header-only libs (raygui.h) + GPU API bindings (gl.h, vulkan.h) — accepted ceiling; no dedup applicable |
+| zig-gamedev (Zig) | Probe-passes | 4999 symbols / 20682 edges; 668 stubs after dedup (was 1787); remaining = C FFI to Dear ImGui — accepted ceiling |
+| ebiten (Go) | Probe-passes | 6367 symbols / 45073 edges; 50 stubs = proprietary platform SDK stubs (Nintendo/PS5) — correctly unimplementable; 82% unresolved = Go interface dispatch ceiling (RM73) |
+| batteries (Lua) | Probe-passes | 451 symbols / 706 edges; 0 stubs; clean; 79% unresolved = Lua stdlib alias ceiling (RM73) |
 
 HTML: best-effort. Capture js_event_binding edges; don't model HTML structure.
 
@@ -188,7 +192,7 @@ Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
 
 ---
 
-## RM72 — Determined graph explorer (desktop, WebGPU/C++) (FUTURE)
+## RM72 — Determined graph explorer (desktop, WebGPU/C++) (ACTIVE)
 
 Standalone native desktop tool for visually navigating corpus call graphs. Reads
 directly from corpus SQLite DB. Not a UI replacement — a large-graph companion.
@@ -200,9 +204,43 @@ open any corpus .db file directly.
 **Tech:** C++ desktop app, WebGPU via Dawn. LearnWebGPU is the reference tutorial
 and also a natural C++ walker validation corpus for Determined once RM72 is active.
 
-**Gate:** UI redesign (UI_REDESIGN.md) complete; C++ walker exists (done); Bart
-explicitly opens a RM72 session. C++ walker and RM72 are mutually motivating —
-LearnWebGPU validates the walker; the walker lets Determined analyze RM72's own code.
+**Opened:** 2026-07-28. All gates cleared. Design session next.
+
+---
+
+## RM74 — Visual signal projection: Phases 1 & 2 (ACTIVE)
+
+Design fully spec'd in `docs/VISUAL_PROJECTION.md`. All gates cleared. Frontend-only —
+no backend or socket changes needed.
+
+**Phase 1 — Table→graph selection propagation** (~10 lines JS, `console.html`):
+- Signal table row click → also fires `gxMap(sym)` and fills `#gx-input`.
+- Map tab pre-loads the subgraph in the background; no forced tab switch.
+
+**Phase 2 — Naming family grouping in the signal table** (~50 lines JS):
+- `_fusionRows` + `_activeFamily` state vars; `fusionTableRender()` extracted.
+- Family header rows group stubs by `convention_family`; click to filter + graph first member.
+- `#fusion-family-clear` button clears filter.
+
+**Next:** implement Phase 1 first (small, self-contained), verify, then Phase 2.
+Phase 3 (signal fusion compositor + multi-modal projection) is FUTURE — gate:
+classify_stub calibration stable + detect_conventions sort shipped.
+
+---
+
+## RM75 — Corpus expansion: new language corpora (ACTIVE)
+
+Add representative corpora for under-represented languages. Clone into `C:\Users\bartl\dev\corpora\`,
+ingest with `tools/ingest_lang_corpus.py`, run RM67 probe after each.
+
+| Corpus | Language | Source | Status |
+|---|---|---|---|
+| raylib | C++ | github.com/raylib-org/raylib | [x] clone [x] ingest [x] probe — 13280 sym / 59435 edges; 3485 stubs = header-only libs + GPU API bindings, accepted ceiling |
+| zig-gamedev | Zig | github.com/zig-gamedev/zig-gamedev | [x] clone [x] ingest [x] probe — 4999 sym / 20682 edges; 668 stubs after dedup (was 1787); remaining = C FFI to Dear ImGui, accepted ceiling |
+| ebiten | Go | github.com/hajimehoshi/ebiten | [x] clone [x] ingest [x] probe — 6367 sym / 45073 edges; 50 stubs = proprietary platform SDK stubs (Nintendo/PS5), correctly unimplementable |
+| batteries | Lua | github.com/1bardesign/batteries | [x] clone [x] ingest [x] probe — 451 sym / 706 edges; 0 stubs; clean |
+
+**Status: all four ingested and probed 2026-07-28. Update RM67 probe table next session.**
 
 ---
 
