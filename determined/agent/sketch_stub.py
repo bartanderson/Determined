@@ -671,16 +671,19 @@ def _build_prompt(brief: dict) -> str:
     return "\n".join(parts)
 
 
-def _llm_candidate(brief: dict) -> str | None:
+def _llm_candidate(brief: dict, extra_constraint: str | None = None) -> str | None:
     """
     Generate a candidate body via llama-server using completion mode.
     The prompt ends at the def line so the model fills in the body.
+    extra_constraint is appended as a comment after the def line to guide retry.
     Returns None on failure or if the result looks like prose.
     """
     from determined.agent.llm_client import generate, is_available
     if not is_available(timeout=3):
         return None
     prompt = _build_prompt(brief)
+    if extra_constraint:
+        prompt = prompt.rstrip() + f"\n    # CONSTRAINT: {extra_constraint}\n    "
     result = generate(prompt, max_tokens=200)
     if not result:
         return None
@@ -704,9 +707,121 @@ def _llm_candidate(brief: dict) -> str | None:
     return candidate if candidate and has_code else None
 
 
+_REFINE_CEILING = 3  # max feedback iterations before giving up
+
+
+def _feedback_constraint(vr: dict, brief: dict) -> str | None:
+    """
+    Build a specific constraint string from verification results.
+    Returns None when there is no actionable feedback.
+
+    Priority: V1 (syntax error) > V2 (unresolved calls).
+    V3/V4 are soft signals — not fed back as constraints.
+    """
+    if not vr["v1_pass"]:
+        return f"syntax error in previous attempt: {vr['v1_error']}. Write valid Python only."
+
+    if vr["v2_unresolved"]:
+        bad = ", ".join(f"`{n}`" for n in vr["v2_unresolved"][:3])
+        # Collect available alternatives from type_defs
+        available: list[str] = []
+        for td in brief.get("type_defs", []):
+            cls = td["class_name"]
+            for m in td.get("methods", []):
+                available.append(f"{cls}.{m['name']}")
+        if available:
+            avail_str = ", ".join(available[:6])
+            return f"{bad} not in codebase. Available: {avail_str}."
+        return f"{bad} not in codebase. Use only names from the context above."
+
+    return None
+
+
+def _run_quick(brief: dict, oracle: "DBOracle",
+               best_sibling_body: str | None) -> tuple[str | None, dict | None, int, bool]:
+    """
+    Quick mode: 1 sample; retry with feedback on V1/V2 failure up to ceiling.
+
+    Returns (best_candidate, best_vr, iterations_used, ceiling_hit).
+    best_candidate/best_vr are None if LLM is unavailable.
+    """
+    constraint: str | None = None
+    best_candidate: str | None = None
+    best_vr: dict | None = None
+
+    for iteration in range(1, _REFINE_CEILING + 1):
+        candidate = _llm_candidate(brief, extra_constraint=constraint)
+        if candidate is None:
+            return None, None, iteration, False
+
+        vr = _verify_candidate(
+            candidate, oracle,
+            declared_return_type=brief.get("return_type"),
+            best_sibling_body=best_sibling_body,
+        )
+
+        # Keep the best composite seen
+        if best_vr is None or vr["composite"] > best_vr["composite"]:
+            best_candidate, best_vr = candidate, vr
+
+        # Stop if passing
+        if vr["v1_pass"] and vr["v2_score"] >= 0.8:
+            return best_candidate, best_vr, iteration, False
+
+        # Build feedback for next round
+        new_constraint = _feedback_constraint(vr, brief)
+        if new_constraint is None or new_constraint == constraint:
+            # No new feedback to give — stop early
+            return best_candidate, best_vr, iteration, False
+        constraint = new_constraint
+
+    return best_candidate, best_vr, _REFINE_CEILING, True
+
+
+def _run_thorough(brief: dict, oracle: "DBOracle",
+                  best_sibling_body: str | None,
+                  k: int = 3) -> list[tuple[str, dict]]:
+    """
+    Thorough mode: generate k independent samples, verify all, return sorted by composite.
+    Each sample is generated without feedback — independent draws for diversity.
+    Returns list of (candidate, vr) sorted best-first. Empty if LLM unavailable.
+    """
+    results = []
+    for _ in range(k):
+        candidate = _llm_candidate(brief)
+        if candidate is None:
+            break
+        vr = _verify_candidate(
+            candidate, oracle,
+            declared_return_type=brief.get("return_type"),
+            best_sibling_body=best_sibling_body,
+        )
+        results.append((candidate, vr))
+    results.sort(key=lambda t: t[1]["composite"], reverse=True)
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Tool entry point
 # ---------------------------------------------------------------------------
+
+def _format_vr(vr: dict, out: list[str]) -> None:
+    """Append verification lines to out list."""
+    v1 = "PASS" if vr["v1_pass"] else f"FAIL ({vr['v1_error']})"
+    out.append(f"  V1 syntax:        {v1}")
+    if vr["v1_pass"]:
+        n_calls = len(vr["v2_calls"])
+        n_ok = n_calls - len(vr["v2_unresolved"])
+        if n_calls == 0:
+            out.append("  V2 corpus calls:  n/a (no checkable calls)")
+        else:
+            out.append(f"  V2 corpus calls:  {vr['v2_score']:.2f}  ({n_ok}/{n_calls} resolved)")
+        if vr["v2_unresolved"]:
+            out.append(f"  V2 unresolved:    {', '.join(vr['v2_unresolved'])}")
+        out.append(f"  V3 return type:   {vr['v3_score']:.2f}")
+        out.append(f"  V4 pattern sim:   {vr['v4_score']:.2f}")
+        out.append(f"  composite score:  {vr['composite']:.2f}  (V2×0.6 + V3×0.2 + V4×0.2)")
+
 
 def sketch_stub(assessor: "Assessor", args: dict) -> str:
     """
@@ -720,6 +835,7 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
         symbol:     stub function name (required)
         class_name: disambiguate lifecycle methods (optional)
         file_path:  disambiguate when name appears in multiple files (optional)
+        mode:       "quick" (default) or "thorough" (K=3 samples, ranked)
     """
     oracle = assessor.oracle
     symbol = args.get("symbol", "").strip()
@@ -727,6 +843,9 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
         return "ERROR: symbol argument required"
     class_name = args.get("class_name", "").strip() or None
     file_path  = args.get("file_path", "").strip() or None
+    mode       = args.get("mode", "quick").strip().lower()
+    if mode not in ("quick", "thorough"):
+        mode = "quick"
 
     brief = build_brief(oracle, symbol, class_name=class_name, file_path_hint=file_path)
     if "error" in brief:
@@ -769,48 +888,60 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
     out += ["", "SIGNATURE", f"  {brief['signature']}", ""]
 
     # ── LLM candidate ───────────────────────────────────────────────────
-    candidate = _llm_candidate(brief)
-    if candidate:
-        out.append("CANDIDATE (LLM)")
+    best_sibling_body = brief["siblings"][0].get("body_preview") if brief.get("siblings") else None
+
+    if mode == "thorough":
+        ranked = _run_thorough(brief, oracle, best_sibling_body)
+        if not ranked:
+            out.append("CANDIDATE")
+            out.append("  (LLM not available — start with the signature above and intent text)")
+            return "\n".join(out)
+
+        best_cand, best_vr = ranked[0]
+        out.append(f"CANDIDATE (LLM — thorough, {len(ranked)} sample(s))")
         out.append("  # --- begin ---")
-        for line in candidate.splitlines():
+        for line in best_cand.splitlines():
             out.append(f"  {line}")
         out.append("  # --- end ---")
         out.append("")
+        out.append("VERIFICATION (best of batch)")
+        _format_vr(best_vr, out)
+        if len(ranked) > 1:
+            out.append("")
+            out.append("ALTERNATES")
+            for i, (alt_cand, alt_vr) in enumerate(ranked[1:], start=2):
+                out.append(f"  #{i} composite={alt_vr['composite']:.2f}:")
+                for line in alt_cand.splitlines()[:4]:
+                    out.append(f"    {line}")
+                if len(alt_cand.splitlines()) > 4:
+                    out.append("    ...")
 
-        # ── Verification ────────────────────────────────────────────────
-        best_sibling_body = None
-        if brief.get("siblings"):
-            best_sibling_body = brief["siblings"][0].get("body_preview")
-        vr = _verify_candidate(
-            candidate, oracle,
-            declared_return_type=brief.get("return_type"),
-            best_sibling_body=best_sibling_body,
-        )
-        out.append("VERIFICATION")
-        v1 = "PASS" if vr["v1_pass"] else f"FAIL ({vr['v1_error']})"
-        out.append(f"  V1 syntax:        {v1}")
-        if vr["v1_pass"]:
-            n_calls = len(vr["v2_calls"])
-            n_ok = n_calls - len(vr["v2_unresolved"])
-            if n_calls == 0:
-                out.append("  V2 corpus calls:  n/a (no checkable calls)")
-            else:
-                out.append(f"  V2 corpus calls:  {vr['v2_score']:.2f}  ({n_ok}/{n_calls} resolved)")
-            if vr["v2_unresolved"]:
-                out.append(f"  V2 unresolved:    {', '.join(vr['v2_unresolved'])}")
-            out.append(f"  V3 return type:   {vr['v3_score']:.2f}")
-            out.append(f"  V4 pattern sim:   {vr['v4_score']:.2f}")
-            out.append(f"  composite score:  {vr['composite']:.2f}  (V2×0.6 + V3×0.2 + V4×0.2)")
-        out.append("")
-        out.append("NOTE: Review against callers and project conventions before applying.")
-        out.append("      classify_stub evidence is the ground truth; this sketch interprets it.")
     else:
-        out.append("CANDIDATE")
-        out.append("  (LLM not available — start with the signature above and intent text)")
-        if brief.get("siblings"):
-            out.append("  Style reference: see implemented siblings in same file:")
-            for s in brief["siblings"]:
-                out.append(f"    {s['name']}")
+        # Quick mode — 1 sample with feedback-guided retry
+        best_cand, best_vr, iterations, ceiling_hit = _run_quick(brief, oracle, best_sibling_body)
+        if best_cand is None:
+            out.append("CANDIDATE")
+            out.append("  (LLM not available — start with the signature above and intent text)")
+            if brief.get("siblings"):
+                out.append("  Style reference: see implemented siblings in same file:")
+                for s in brief["siblings"]:
+                    out.append(f"    {s['name']}")
+            return "\n".join(out)
 
+        label = "CANDIDATE (LLM)"
+        if iterations > 1:
+            label += f"  [{iterations} iteration(s)"
+            label += ", ceiling hit — best attempt shown]" if ceiling_hit else "]"
+        out.append(label)
+        out.append("  # --- begin ---")
+        for line in best_cand.splitlines():
+            out.append(f"  {line}")
+        out.append("  # --- end ---")
+        out.append("")
+        out.append("VERIFICATION")
+        _format_vr(best_vr, out)
+
+    out.append("")
+    out.append("NOTE: Review against callers and project conventions before applying.")
+    out.append("      classify_stub evidence is the ground truth; this sketch interprets it.")
     return "\n".join(out)

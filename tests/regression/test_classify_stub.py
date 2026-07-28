@@ -867,3 +867,134 @@ def test_verify_candidate_composite_formula():
     result = _verify_candidate("    return {}", oracle)
     expected = round(1.0 * 0.6 + 1.0 * 0.2 + 0.5 * 0.2, 3)
     assert result["composite"] == expected
+
+
+# ---------------------------------------------------------------------------
+# _feedback_constraint — constraint message builder
+# ---------------------------------------------------------------------------
+
+def test_feedback_constraint_v1_failure():
+    from determined.agent.sketch_stub import _feedback_constraint
+    vr = {"v1_pass": False, "v1_error": "invalid syntax", "v2_unresolved": []}
+    result = _feedback_constraint(vr, {})
+    assert result is not None
+    assert "syntax error" in result
+
+
+def test_feedback_constraint_v2_failure_no_type_defs():
+    from determined.agent.sketch_stub import _feedback_constraint
+    vr = {"v1_pass": True, "v2_unresolved": ["ghost_fn"]}
+    result = _feedback_constraint(vr, {"type_defs": []})
+    assert result is not None
+    assert "ghost_fn" in result
+    assert "not in codebase" in result
+
+
+def test_feedback_constraint_v2_failure_with_type_defs():
+    from determined.agent.sketch_stub import _feedback_constraint
+    vr = {"v1_pass": True, "v2_unresolved": ["made_up"]}
+    brief = {"type_defs": [{"class_name": "FSM", "methods": [{"name": "get_state"}]}]}
+    result = _feedback_constraint(vr, brief)
+    assert "FSM.get_state" in result
+
+
+def test_feedback_constraint_none_when_passing():
+    from determined.agent.sketch_stub import _feedback_constraint
+    vr = {"v1_pass": True, "v2_unresolved": []}
+    result = _feedback_constraint(vr, {})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _run_quick — single-sample feedback loop
+# ---------------------------------------------------------------------------
+
+def test_run_quick_returns_none_when_llm_unavailable():
+    from unittest.mock import patch
+    from determined.agent.sketch_stub import _run_quick
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    with patch("determined.agent.sketch_stub._llm_candidate", return_value=None):
+        candidate, vr, iters, ceiling = _run_quick({}, oracle, None)
+    assert candidate is None
+    assert vr is None
+
+
+def test_run_quick_single_pass_on_good_candidate():
+    from unittest.mock import patch
+    from determined.agent.sketch_stub import _run_quick
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    good = "    return {}"
+    with patch("determined.agent.sketch_stub._llm_candidate", return_value=good):
+        candidate, vr, iters, ceiling = _run_quick({"type_defs": []}, oracle, None)
+    assert candidate == good
+    assert vr is not None
+    assert iters == 1
+    assert ceiling is False
+
+
+def test_run_quick_retries_on_v2_failure():
+    from unittest.mock import patch, call
+    from determined.agent.sketch_stub import _run_quick
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    # First call returns bad code (calls phantom_fn), second returns clean code
+    call_results = iter(["    phantom_fn()", "    return {}"])
+    with patch("determined.agent.sketch_stub._llm_candidate", side_effect=lambda b, **kw: next(call_results)):
+        candidate, vr, iters, ceiling = _run_quick({"type_defs": []}, oracle, None)
+    assert iters == 2
+
+
+def test_run_quick_stops_early_on_repeated_constraint():
+    from unittest.mock import patch
+    from determined.agent.sketch_stub import _run_quick
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    # Same bad candidate every time → same constraint repeats → early stop at iter 2
+    with patch("determined.agent.sketch_stub._llm_candidate", return_value="    phantom_fn()"):
+        candidate, vr, iters, ceiling = _run_quick({"type_defs": []}, oracle, None)
+    assert iters == 2        # stopped after constraint repeated, not at ceiling
+    assert ceiling is False  # ceiling was not hit — early stop
+
+
+def test_run_quick_ceiling_hit_when_feedback_keeps_changing():
+    from unittest.mock import patch
+    from determined.agent.sketch_stub import _run_quick, _REFINE_CEILING
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    # Each sample calls a different phantom — constraint changes each round, ceiling hit
+    phantoms = iter(["    aa()", "    bb()", "    cc()"])
+    with patch("determined.agent.sketch_stub._llm_candidate", side_effect=lambda b, **kw: next(phantoms)):
+        candidate, vr, iters, ceiling = _run_quick({"type_defs": []}, oracle, None)
+    assert iters == _REFINE_CEILING
+    assert ceiling is True
+
+
+# ---------------------------------------------------------------------------
+# _run_thorough — multi-sample ranked batch
+# ---------------------------------------------------------------------------
+
+def test_run_thorough_returns_empty_when_llm_unavailable():
+    from unittest.mock import patch
+    from determined.agent.sketch_stub import _run_thorough
+    conn = _make_db()
+    oracle = _FakeOracle(conn)
+    with patch("determined.agent.sketch_stub._llm_candidate", return_value=None):
+        results = _run_thorough({}, oracle, None)
+    assert results == []
+
+
+def test_run_thorough_returns_k_samples_sorted():
+    from unittest.mock import patch
+    from determined.agent.sketch_stub import _run_thorough
+    conn = _make_db(non_stubs=[{"name": "real_fn"}])
+    oracle = _FakeOracle(conn)
+    samples = ["    real_fn()", "    phantom_fn()", "    return {}"]
+    call_iter = iter(samples)
+    with patch("determined.agent.sketch_stub._llm_candidate", side_effect=lambda b, **kw: next(call_iter)):
+        results = _run_thorough({}, oracle, None, k=3)
+    assert len(results) == 3
+    # Sorted best composite first
+    composites = [vr["composite"] for _, vr in results]
+    assert composites == sorted(composites, reverse=True)
