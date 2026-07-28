@@ -675,3 +675,91 @@ def test_infer_return_shape_syntax_error_body_skipped():
     from determined.agent.sketch_stub import _infer_return_shape
     result = _infer_return_shape([{"name": "caller", "body": "def ( broken"}])
     assert result["confidence"] == "NONE"
+
+
+# ---------------------------------------------------------------------------
+# _extract_type_names — CamelCase extraction
+# ---------------------------------------------------------------------------
+
+def test_extract_type_names_from_signature():
+    from determined.agent.sketch_stub import _extract_type_names
+    names = _extract_type_names("def foo(x: EncounterFSM) -> CombatResult:", None)
+    assert "EncounterFSM" in names
+    assert "CombatResult" in names
+
+
+def test_extract_type_names_from_docstring():
+    from determined.agent.sketch_stub import _extract_type_names
+    names = _extract_type_names("def foo():", "Returns a WorldState object.")
+    assert "WorldState" in names
+
+
+def test_extract_type_names_skips_builtins():
+    from determined.agent.sketch_stub import _extract_type_names
+    names = _extract_type_names("def foo() -> Optional[List[Dict]]:", None)
+    assert "Optional" not in names
+    assert "List" not in names
+    assert "Dict" not in names
+
+
+def test_extract_type_names_deduplicates():
+    from determined.agent.sketch_stub import _extract_type_names
+    names = _extract_type_names("def foo(a: FooBar, b: FooBar):", None)
+    assert names.count("FooBar") == 1
+
+
+# ---------------------------------------------------------------------------
+# _pull_type_defs — class method lookup
+# ---------------------------------------------------------------------------
+
+def test_pull_type_defs_resolves_class():
+    from determined.agent.sketch_stub import _pull_type_defs
+    conn = _make_db(
+        non_stubs=[
+            {"name": "__init__", "file_path": "world/encounter.py",
+             "params": {"self": None, "fsm_id": "str"}},
+            {"name": "get_state", "file_path": "world/encounter.py",
+             "params": {"self": None}},
+        ],
+        classes=[{"name": "EncounterFSM", "file_path": "world/encounter.py",
+                  "methods": ["__init__", "get_state"]}],
+    )
+    result = _pull_type_defs(conn, ["EncounterFSM"])
+    assert len(result) == 1
+    td = result[0]
+    assert td["class_name"] == "EncounterFSM"
+    assert td["init_sig"] is not None
+    method_names = [m["name"] for m in td["methods"]]
+    assert "get_state" in method_names
+
+
+def test_pull_type_defs_unknown_class_returns_empty():
+    from determined.agent.sketch_stub import _pull_type_defs
+    conn = _make_db()
+    result = _pull_type_defs(conn, ["NonExistent"])
+    assert result == []
+
+
+def test_pull_type_defs_skips_stub_methods():
+    from determined.agent.sketch_stub import _pull_type_defs
+    conn = _make_db(
+        stubs=[{"name": "unimplemented", "file_path": "world/fsm.py"}],
+        non_stubs=[{"name": "__init__", "file_path": "world/fsm.py"}],
+        classes=[{"name": "MyFSM", "file_path": "world/fsm.py",
+                  "methods": ["__init__", "unimplemented"]}],
+    )
+    result = _pull_type_defs(conn, ["MyFSM"])
+    assert len(result) == 1
+    method_names = [m["name"] for m in result[0]["methods"]]
+    assert "unimplemented" not in method_names
+
+
+def test_pull_type_defs_caps_at_three_classes():
+    from determined.agent.sketch_stub import _pull_type_defs
+    conn = _make_db(
+        non_stubs=[{"name": "__init__", "file_path": f"world/c{i}.py"} for i in range(4)],
+        classes=[{"name": f"Class{i}", "file_path": f"world/c{i}.py",
+                  "methods": ["__init__"]} for i in range(4)],
+    )
+    result = _pull_type_defs(conn, [f"Class{i}" for i in range(4)])
+    assert len(result) == 3

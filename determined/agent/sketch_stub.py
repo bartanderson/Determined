@@ -280,6 +280,110 @@ def _infer_return_shape(callers: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Type definition pull (Step 5)
+# ---------------------------------------------------------------------------
+
+# Regex for CamelCase identifiers (potential class names) in text.
+_CAMEL_RE = re.compile(r"\b([A-Z][a-zA-Z0-9]{2,})\b")
+
+# Python built-in exception / type names to skip — not corpus classes.
+_BUILTIN_TYPES = frozenset({
+    "None", "True", "False", "Optional", "List", "Dict", "Tuple", "Set",
+    "Any", "Union", "Type", "Callable", "Iterator", "Generator", "Sequence",
+    "Mapping", "Iterable", "ClassVar", "Final", "Literal", "TypeVar",
+    "Protocol", "NotImplemented", "Exception", "ValueError", "TypeError",
+    "KeyError", "AttributeError", "RuntimeError", "StopIteration",
+    "NameError", "IndexError", "OSError", "IOError", "FileNotFoundError",
+})
+
+
+def _extract_type_names(signature: str, docstring: str | None) -> list[str]:
+    """Extract candidate class names from a stub's signature and docstring."""
+    text = (signature or "") + " " + (docstring or "")
+    names = _CAMEL_RE.findall(text)
+    seen: set[str] = set()
+    result = []
+    for n in names:
+        if n not in _BUILTIN_TYPES and n not in seen:
+            seen.add(n)
+            result.append(n)
+    return result
+
+
+def _pull_type_defs(conn, type_names: list[str]) -> list[dict]:
+    """
+    For each name that resolves to a class in the DB, return its
+    __init__ signature and public non-stub methods with their signatures.
+
+    Returns a list of dicts: {class_name, file, init_sig, methods: [{name, sig}]}.
+    Caps at 3 classes and 8 methods per class to keep prompts bounded.
+    """
+    results = []
+    seen_classes: set[str] = set()
+    for name in type_names:
+        if name in seen_classes or len(results) >= 3:
+            break
+        row = conn.execute(
+            "SELECT file_path, methods_json FROM classes WHERE name = ? LIMIT 1",
+            (name,),
+        ).fetchone()
+        if not row:
+            continue
+        file_path, methods_json = row
+        try:
+            method_names = json.loads(methods_json or "[]")
+        except (ValueError, TypeError):
+            method_names = []
+
+        short_file = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+        # Fetch __init__ and public non-stub methods (no leading underscore except __init__)
+        public = ["__init__"] + [
+            m for m in method_names
+            if not m.startswith("_") and m != "__init__"
+        ]
+        public = public[:9]  # __init__ + up to 8 public methods
+
+        if not public:
+            continue
+
+        placeholders = ",".join("?" * len(public))
+        rows = conn.execute(
+            f"SELECT name, param_types_json, return_type, is_stub "
+            f"FROM functions WHERE file_path = ? AND name IN ({placeholders})",
+            [file_path] + public,
+        ).fetchall()
+
+        methods_out = []
+        init_sig = None
+        for mname, ptj, rtype, is_stub in rows:
+            if is_stub:
+                continue
+            try:
+                params = json.loads(ptj or "[]")
+            except (ValueError, TypeError):
+                params = []
+            param_str = ", ".join(params) if params else ""
+            ret = f" -> {rtype}" if rtype else ""
+            sig = f"{mname}({param_str}){ret}"
+            if mname == "__init__":
+                init_sig = sig
+            else:
+                methods_out.append({"name": mname, "sig": sig})
+
+        if init_sig or methods_out:
+            results.append({
+                "class_name": name,
+                "file": short_file,
+                "init_sig": init_sig,
+                "methods": methods_out[:8],
+            })
+            seen_classes.add(name)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Verification (V1 + V2)
 # ---------------------------------------------------------------------------
 
@@ -410,6 +514,10 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
     return_shape = _infer_return_shape(callers)
     short_path = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
 
+    docstring = signals.get("docstring") or ""
+    type_names = _extract_type_names(signature, docstring)
+    type_defs = _pull_type_defs(conn, type_names)
+
     return {
         "symbol":         symbol,
         "actionable":     True,
@@ -426,6 +534,7 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
         "concepts":       signals.get("concept_presence", {}),
         "return_type":    return_type,
         "return_shape":   return_shape,
+        "type_defs":      type_defs,
     }
 
 
@@ -484,6 +593,14 @@ def _build_prompt(brief: dict) -> str:
             parts.append(f"# returns: {hint_str}")
         else:
             parts.append(f"# returns: {hint_str}  (uncertain)")
+
+    # Available type APIs — what the body is allowed to call
+    for td in brief.get("type_defs", []):
+        parts.append(f"# {td['class_name']} ({td['file']}):")
+        if td.get("init_sig"):
+            parts.append(f"#   {td['init_sig']}")
+        for m in td.get("methods", []):
+            parts.append(f"#   {m['sig']}")
 
     # The def line — model completes the body
     parts.append(brief["signature"])
@@ -582,6 +699,10 @@ def sketch_stub(assessor: "Assessor", args: dict) -> str:
         out.append(f"  return type: {brief['return_type']}")
     if brief.get("body_shape") == "config_declared":
         out.append("  source: FSM config declaration (Python handler missing)")
+    if brief.get("type_defs"):
+        for td in brief["type_defs"]:
+            method_names = [m["name"] for m in td.get("methods", [])]
+            out.append(f"  type APIs: {td['class_name']} → {', '.join(method_names) or '(none)'}")
 
     out += ["", "SIGNATURE", f"  {brief['signature']}", ""]
 
