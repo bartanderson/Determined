@@ -376,6 +376,7 @@
       <button class="tab tab-nodot tab-primary" data-tab="knowledge">Knowledge</button>
       <button class="tab tab-nodot tab-primary" data-tab="workbench" title="Run any tool ad hoc with full parameter forms">Workbench</button>
       <button class="tab tab-nodot tab-primary" data-tab="chat" title="Ask questions — AI narrates answers drawn from your code's actual structure, not guesswork">⌕ Ask</button>
+      <span id="gx-active-badge" title="Node selected in Graph Explorer" style="display:inline-flex;align-items:center;padding:0 8px;margin-left:4px;border-radius:4px;font-size:.72em;color:var(--accent);border:1px solid var(--accent);opacity:0.85;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;display:none"></span>
       <!-- ⚙ utility menu -->
       <div class="more-wrap" id="util-wrap">
         <button class="tab tab-nodot" id="util-btn" title="Utilities">⚙</button>
@@ -5341,6 +5342,59 @@ socket.on("llm_status", data => {
 socket.on("connect", () => { socket.emit("llm_get_status", {}); });
 
 // ── Logs panel ──────────────────────────────────────────────────
+// ── Graph Explorer bridge ─────────────────────────────────
+
+// Fill every workbench tool input whose param is named "symbol".
+function wbSetSymbol(symbol) {
+  if (!symbol || !_wbTools) return;
+  _wbTools.forEach(tool => {
+    if (tool.param && tool.param.name === "symbol") {
+      const inp = document.getElementById(`wb-param-${tool.id}`);
+      if (inp) inp.value = symbol;
+    }
+  });
+}
+
+// gx_nav: graph explorer requests the UI navigate to a surface for a symbol.
+socket.on("gx_nav", data => {
+  const { destination, symbol, file } = data;
+  const dest = destination || "";
+  const badge = document.getElementById("gx-active-badge");
+  if (badge && symbol) badge.textContent = symbol;
+
+  if (dest === "workbench") {
+    activateTab("workbench");
+    wbSetSymbol(symbol);
+  } else if (dest === "oracle") {
+    activateTab("chat");
+    const qi = document.getElementById("question-input");
+    if (qi) { qi.value = `Tell me about ${symbol}`; qi.focus(); }
+  } else if (dest === "map") {
+    activateTab("map");
+    if (symbol) { gxInput.value = symbol; gxMap(symbol); }
+  } else if (dest === "call_tree") {
+    activateTab("call_tree");
+    const ctIn = document.getElementById("ct-input");
+    if (ctIn) { ctIn.value = symbol; ctIn.dispatchEvent(new Event("input")); }
+  } else if (dest === "editor") {
+    activateTab("editor");
+    // Server already opened VS Code; editor tab shows file context.
+  }
+});
+
+// gx_selection: graph explorer node selected — update breadcrumb only.
+socket.on("gx_selection", data => {
+  const badge = document.getElementById("gx-active-badge");
+  if (!badge) return;
+  if (data.symbol) {
+    badge.textContent = data.symbol;
+    badge.style.display = "inline-flex";
+  } else {
+    badge.textContent = "";
+    badge.style.display = "none";
+  }
+});
+
 const _logsEl = document.getElementById("logs-output");
 
 socket.on("server_log", data => {

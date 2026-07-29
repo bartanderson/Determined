@@ -629,6 +629,26 @@ def handle_tab_query(data):
     threading.Thread(target=_run, daemon=True).start()
 
 
+@socketio.on("gx_navigate")
+def handle_gx_navigate(data):
+    """Graph explorer requests the browser navigate to a surface for a symbol.
+
+    data: {destination, symbol, file}
+    destinations: workbench | oracle | map | call_tree | editor
+    Broadcasts gx_nav to all browser clients; JS handles tab switch + symbol load.
+    """
+    socketio.emit("gx_nav", data)
+
+
+@socketio.on("gx_select")
+def handle_gx_select(data):
+    """Graph explorer reports a node selection; broadcast so UI can show context.
+
+    data: {symbol, file, node_id, is_stub, is_tool}
+    """
+    socketio.emit("gx_selection", data)
+
+
 @socketio.on("clear_history")
 def handle_clear():
     global _history

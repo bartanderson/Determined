@@ -192,37 +192,59 @@ Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
 
 ---
 
-## RM72 — Determined graph explorer (desktop, WebGPU/C++) (ACTIVE)
+## RM72 — Graph explorer (pyray, integrated navigation hub) (ACTIVE)
 
-Standalone native desktop tool for visually navigating corpus call graphs. Reads
-directly from corpus SQLite DB. Not a UI replacement — a large-graph companion.
+Native desktop tool for visually navigating corpus call graphs. Reads directly
+from corpus SQLite DB. Not a companion — a navigation hub: every node is a doorway
+into the existing analysis surfaces (Workbench, Oracle, Map, Editor, Call tree).
 
-**Core capabilities:** force-directed layout at corpus scale, smooth zoom/pan,
-click to expand callers/callees, highlight call chains, blast radius visualization,
-open any corpus .db file directly.
+**Tech:** Python + pyray (raylib). Already shipping as `determined/ui/graph_explorer.py`
+and `tools/graph_explorer.py`. Launched as subprocess from Map tab.
 
-**Tech:** C++ desktop app, WebGPU via Dawn. LearnWebGPU is the reference tutorial
-and also a natural C++ walker validation corpus for Determined once RM72 is active.
+**Implementation phases:**
 
-**Opened:** 2026-07-28. All gates cleared. Design session next.
+Phase A — Socket bridge (ACTIVE)
+- `_SocketBridge` class in graph_explorer.py: connects to UI server (localhost:5050)
+  as a python-socketio client. Non-blocking; graceful if UI not running.
+- Emits `gx_select` on node selection: `{symbol, file, node_id, is_stub, is_tool}`
+- Emits `gx_navigate` on destination action: `{destination, symbol, file}`
+  destinations: "workbench" | "oracle" | "map" | "call_tree" | "editor"
+- Listens for `gx_highlight` from UI: `{symbol}` — highlights node in graph
+- ui_server.py: `@socketio.on("gx_navigate")` — calls `activateTab` equivalent
+  server-side and emits `gx_nav_ack` to browser; browser JS handles tab switch +
+  symbol load via existing `activateTab(name)` + `gxMap(symbol)` / workbench dispatch.
+
+Phase B — Context menu
+- Right-click on node OR panel cluster row → popup overlay at cursor.
+- Items: Workbench | Oracle/Ask | Map | Call tree | Editor | --- | Expand | Frame |
+  Copy name | Copy file path
+- All items call `_navigate_to(destination, node)` — same function as keyboard shortcuts.
+- Escape or click-outside closes menu.
+
+Phase C — Panel action buttons
+- When a node is selected: "Go to" button row in panel below node name.
+  [ Workbench ] [ Oracle ] [ Map ] [ Editor ]
+- Buttons and context menu both call `_navigate_to` — one implementation.
+
+Phase D — Reverse bridge (UI → graph)
+- "Show in graph" link in Workbench + Oracle panels when graph explorer is open.
+- Emits `gx_highlight` → graph explorer frames + selects that node.
+
+Phase E — Cluster semantic summary
+- When cluster hub selected: panel shows files in cluster, entry points,
+  external callees, semantic_summaries pulled from corpus DB for top nodes.
+
+**`_navigate_to(destination, node)` is the integration point.**
+Every surface (keyboard, context menu, panel button) calls it. It emits the
+right socket event or fires the local action (editor open, clipboard).
+
+**Opened:** 2026-07-28. Phase A starting 2026-07-29.
 
 ---
 
-## RM74 — Visual signal projection: Phases 1 & 2 (ACTIVE)
+## RM74 — Visual signal projection: Phases 1 & 2 (DONE 2026-07-28)
 
-Design fully spec'd in `docs/VISUAL_PROJECTION.md`. All gates cleared. Frontend-only —
-no backend or socket changes needed.
-
-**Phase 1 — Table→graph selection propagation** (~10 lines JS, `console.html`):
-- Signal table row click → also fires `gxMap(sym)` and fills `#gx-input`.
-- Map tab pre-loads the subgraph in the background; no forced tab switch.
-
-**Phase 2 — Naming family grouping in the signal table** (~50 lines JS):
-- `_fusionRows` + `_activeFamily` state vars; `fusionTableRender()` extracted.
-- Family header rows group stubs by `convention_family`; click to filter + graph first member.
-- `#fusion-family-clear` button clears filter.
-
-**Next:** implement Phase 1 first (small, self-contained), verify, then Phase 2.
+Both phases were already implemented in `console.html` — discovered during session 266.
 Phase 3 (signal fusion compositor + multi-modal projection) is FUTURE — gate:
 classify_stub calibration stable + detect_conventions sort shipped.
 
