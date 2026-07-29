@@ -376,6 +376,7 @@
       <button class="tab tab-nodot tab-primary" data-tab="knowledge">Knowledge</button>
       <button class="tab tab-nodot tab-primary" data-tab="workbench" title="Run any tool ad hoc with full parameter forms">Workbench</button>
       <button class="tab tab-nodot tab-primary" data-tab="chat" title="Ask questions — AI narrates answers drawn from your code's actual structure, not guesswork">⌕ Ask</button>
+      <button class="tab tab-nodot tab-primary" id="gx-launch-btn" title="Open Graph Explorer — visual call-graph navigator" onclick="launchGraphExplorer()">⬡ Graph</button>
       <span id="gx-active-badge" title="Node selected in Graph Explorer" style="display:inline-flex;align-items:center;padding:0 8px;margin-left:4px;border-radius:4px;font-size:.72em;color:var(--accent);border:1px solid var(--accent);opacity:0.85;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;display:none"></span>
       <!-- ⚙ utility menu -->
       <div class="more-wrap" id="util-wrap">
@@ -5345,6 +5346,18 @@ socket.on("connect", () => { socket.emit("llm_get_status", {}); });
 // ── Graph Explorer bridge ─────────────────────────────────
 
 // Fill every workbench tool input whose param is named "symbol".
+function launchGraphExplorer() {
+  const btn = document.getElementById('gx-launch-btn');
+  if (btn) { btn.textContent = '⬡ Graph …'; btn.disabled = true; }
+  fetch('/api/launch_graph_explorer', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.textContent = '⬡ Graph'; btn.disabled = false; }
+      if (d.error) console.warn('Graph Explorer launch:', d.error);
+    })
+    .catch(() => { if (btn) { btn.textContent = '⬡ Graph'; btn.disabled = false; } });
+}
+
 function wbSetSymbol(symbol) {
   if (!symbol || !_wbTools) return;
   _wbTools.forEach(tool => {

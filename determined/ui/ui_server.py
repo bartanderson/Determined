@@ -649,6 +649,25 @@ def handle_gx_select(data):
     socketio.emit("gx_selection", data)
 
 
+@app.route("/api/launch_graph_explorer", methods=["POST"])
+def launch_graph_explorer():
+    """Launch the graph explorer as a subprocess if not already running."""
+    import subprocess
+    from flask import jsonify
+    global _gx_proc
+    if _gx_proc is not None and _gx_proc.poll() is None:
+        return jsonify({"status": "already_running"})
+    if not _db_path:
+        return jsonify({"error": "No corpus loaded"})
+    launcher = Path(__file__).parent.parent.parent / "tools" / "graph_explorer.py"
+    python = Path(__file__).parent.parent.parent / ".venv" / "Scripts" / "python.exe"
+    _gx_proc = subprocess.Popen([str(python), str(launcher), Path(_db_path).name])
+    return jsonify({"status": "launched"})
+
+
+_gx_proc = None
+
+
 @socketio.on("clear_history")
 def handle_clear():
     global _history
