@@ -5364,7 +5364,14 @@ socket.on("gx_nav", data => {
 
   if (dest === "workbench") {
     activateTab("workbench");
-    wbSetSymbol(symbol);
+    if (_wbTools.length) {
+      wbSetSymbol(symbol);
+    } else {
+      // Tools load async — defer fill until workbench_tools arrives
+      wbLoad();
+      const _origHandler = socket.listeners("workbench_tools").slice(-1)[0];
+      socket.once("workbench_tools", () => { wbSetSymbol(symbol); });
+    }
   } else if (dest === "oracle") {
     activateTab("chat");
     const qi = document.getElementById("question-input");
