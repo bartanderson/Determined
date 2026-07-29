@@ -28,12 +28,13 @@ if TYPE_CHECKING:
 # Complexity signal
 # ---------------------------------------------------------------------------
 
-# Provisional threshold — calibrate after RM70 Step 2 (caller body reader).
-# RM71 baseline (2026-07-29, dj2 25 stubs): all real gaps score 0.24-0.48;
-# only 1 test mock crosses 0.5. caller_complexity=0 for all (LEFT JOIN name
-# mismatch in graph_edges vs functions table — fixed by RM70 Step 2).
-# Recalibrate once caller bodies are read correctly; threshold will likely
-# need to move up since caller_complexity carries 0.25 weight.
+# Provisional threshold — calibrated 2026-07-29 (post RM70 Step 2 JOIN fix).
+# dj2 25 stubs: range 0.342–0.500, mean 0.366. Only _get_combat_context hits
+# 0.500 (caller_complexity=0.633 from 19-line callers). FSM stubs cluster at
+# 0.351 (no callers in graph_edges — correct for config-declared stubs).
+# type_missing=1.000 for all dj2 stubs: CamelCase words in docstrings match
+# the regex but aren't corpus classes — signal is noisy on this corpus.
+# Threshold 0.5 holds; may need tuning on corpora with richer type signatures.
 _COMPLEXITY_THRESHOLD = 0.5
 
 

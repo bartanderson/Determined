@@ -13,10 +13,10 @@ import os
 # Repo root on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import sqlite3
 from determined.oracle.db_oracle import DBOracle
 from determined.assessor.assessor import Assessor
 from determined.agent.sketch_stub import build_brief, _llm_candidate, _verify_candidate
+from determined.agent.export_context import _complexity_score
 
 DB_PATH = r"C:\Users\bartl\dev\Determined\C_Users_bartl_dev_dj2.db"
 
@@ -41,8 +41,8 @@ def main():
         print(f"ERROR: DB not found: {DB_PATH}")
         sys.exit(1)
 
-    conn = sqlite3.connect(DB_PATH)
-    oracle = DBOracle(conn)
+    oracle = DBOracle(DB_PATH)
+    conn = oracle.conn
     assessor = Assessor(oracle)
 
     stubs = get_stubs(conn)
@@ -50,6 +50,7 @@ def main():
 
     v1_results = []
     v2_results = []
+    complexity_rows = []   # (name, score, signals) for RM71 calibration
     not_actionable = 0
     llm_unavailable = 0
     errors = 0
@@ -62,6 +63,10 @@ def main():
         if not brief.get("actionable"):
             not_actionable += 1
             continue
+
+        # RM71: complexity score (deterministic, no LLM needed)
+        cscore, csignals = _complexity_score(brief, oracle)
+        complexity_rows.append((name, cscore, csignals))
 
         best_sibling_body = (
             brief["siblings"][0].get("body_preview") if brief.get("siblings") else None
@@ -100,6 +105,28 @@ def main():
         print(f"V2 range:      {min(v2_results):.3f} – {max(v2_results):.3f}")
     else:
         print("No results to summarize.")
+
+    # RM71 calibration
+    if complexity_rows:
+        print()
+        print("=" * 60)
+        print("RM71 COMPLEXITY CALIBRATION")
+        print("=" * 60)
+        complexity_rows.sort(key=lambda r: r[1], reverse=True)
+        for name, score, sigs in complexity_rows:
+            tier = "ESCALATE" if score >= 0.5 else "local"
+            print(f"  {name:40s}  score={score:.3f}  [{tier}]")
+            print(f"    caller_cx={sigs['caller_complexity']:.3f}  "
+                  f"low_conf={sigs['low_confidence']:.3f}  "
+                  f"unres={sigs['unresolved_ratio']:.3f}  "
+                  f"type_miss={sigs['type_missing']:.3f}  "
+                  f"sib_miss={sigs['sibling_missing']:.0f}")
+        scores = [r[1] for r in complexity_rows]
+        print()
+        print(f"Complexity range: {min(scores):.3f} – {max(scores):.3f}  "
+              f"mean={sum(scores)/len(scores):.3f}")
+        escalate_count = sum(1 for s in scores if s >= 0.5)
+        print(f"Above threshold (0.5): {escalate_count}/{len(scores)}")
 
 
 if __name__ == "__main__":
