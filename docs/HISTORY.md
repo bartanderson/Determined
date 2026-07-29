@@ -8,6 +8,17 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-29 (s268): RM71 calibration — caller_complexity is dead for dj2. The LEFT JOIN
+in _caller_context() (graph_edges.caller vs functions.name) fails because graph_edges
+stores short caller names while functions stores fully-qualified ones (e.g. "ContextBuilder.build"
+vs None when the join doesn't resolve). All dj2 stubs score caller_complexity=0.000.
+Threshold 0.5 holds provisionally; must recalibrate after RM70 Step 2 fixes the join.
+
+2026-07-29 (s268): RM70 partial re-baseline (post improvements). 5/17 actionable stubs
+got LLM candidates (llama-server busy with UI). Those 5: V1 100% pass, V2 mean 0.833.
+Compare: s263 original baseline (pre-retrieval): V1 36%, V2 0.36. Signal: retrieval
+improvements are working. Full clean rerun needed without UI server competing.
+
 2026-07-29 (s266): graph_explorer socket bridge — websocket-client must be installed in
 the venv or python-socketio silently falls back to polling and the connection fails on
 reconnect. Symptom: `gx_select` emits never arrived at the UI server. Fix: pip install
