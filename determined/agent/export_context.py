@@ -28,7 +28,12 @@ if TYPE_CHECKING:
 # Complexity signal
 # ---------------------------------------------------------------------------
 
-# Provisional threshold — calibrate against real V2 baseline scores.
+# Provisional threshold — calibrate after RM70 Step 2 (caller body reader).
+# RM71 baseline (2026-07-29, dj2 25 stubs): all real gaps score 0.24-0.48;
+# only 1 test mock crosses 0.5. caller_complexity=0 for all (LEFT JOIN name
+# mismatch in graph_edges vs functions table — fixed by RM70 Step 2).
+# Recalibrate once caller bodies are read correctly; threshold will likely
+# need to move up since caller_complexity carries 0.25 weight.
 _COMPLEXITY_THRESHOLD = 0.5
 
 

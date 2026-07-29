@@ -661,7 +661,23 @@ class GraphExplorer:
         # Rebuild cluster summary if this node is a hub (or clear it)
         hub_ids = {h.id for h in self._clusters}
         if node.id in hub_ids and node.id != self._cluster_summary_for:
-            component_ids = {n.id for n in self._nodes}  # current view is the component
+            if self._expanded:
+                # Expanded view mixes multiple neighborhoods; walk only the hub's component.
+                _adj: dict[int, set[int]] = {}
+                for e in self._edges:
+                    _adj.setdefault(e.src_id, set()).add(e.dst_id)
+                    _adj.setdefault(e.dst_id, set()).add(e.src_id)
+                _vis: set[int] = {node.id}
+                _q = [node.id]
+                while _q:
+                    _cur = _q.pop()
+                    for _nbr in _adj.get(_cur, set()):
+                        if _nbr not in _vis:
+                            _vis.add(_nbr)
+                            _q.append(_nbr)
+                component_ids = _vis
+            else:
+                component_ids = {n.id for n in self._nodes}
             self._cluster_summary = self._db.cluster_summary(node, component_ids)
             self._cluster_summary_for = node.id
         elif node.id not in hub_ids:
