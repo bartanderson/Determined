@@ -235,6 +235,7 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_ui_surfaces.py"],
     "determined/ui/templates/console.html": [
         "tests/regression/test_ui_surfaces.py"],
+    "determined/ui/graph_explorer.py": [],
     # determined/validation/
     "determined/validation/system_validator.py": [
         "tests/regression/test_integrity_view_wiring.py"],

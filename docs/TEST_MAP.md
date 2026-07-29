@@ -129,6 +129,7 @@ pytest tests/regression/<file>  [<file2> ...]
 |---|---|
 | ui_server.py | test_ui_surfaces.py |
 | templates/console.html | test_ui_surfaces.py |
+| graph_explorer.py | *(no tests — UI-only, pyray window)* |
 
 ## determined/validation/
 
