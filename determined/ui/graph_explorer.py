@@ -313,6 +313,82 @@ class GraphDB:
         ).fetchone()
         return row[0] if row else 0
 
+    def cluster_summary(self, hub: Node, component_ids: set) -> dict:
+        """Return summary data for a cluster hub panel section.
+
+        component_ids: set of Node.id for all nodes in the hub's component.
+        Returns dict with keys: files, entry_points, external_callees, summaries.
+        """
+        component_names: list[str] = []
+        try:
+            rows = self._con.execute(
+                "SELECT DISTINCT name FROM functions WHERE id IN ({})".format(
+                    ",".join("?" * len(component_ids))
+                ),
+                list(component_ids),
+            ).fetchall()
+            component_names = [r[0] for r in rows]
+        except Exception:
+            pass
+
+        # Files in this cluster
+        files: list[str] = []
+        try:
+            rows = self._con.execute(
+                "SELECT DISTINCT file_path FROM functions WHERE id IN ({})".format(
+                    ",".join("?" * len(component_ids))
+                ),
+                list(component_ids),
+            ).fetchall()
+            files = sorted(set(r[0].replace("\\", "/").split("/")[-1] for r in rows))
+        except Exception:
+            pass
+
+        # Entry points: http_route or is_tool within the cluster
+        entry_points: list[str] = []
+        try:
+            rows = self._con.execute(
+                "SELECT name FROM functions WHERE id IN ({}) AND (http_route IS NOT NULL OR is_tool=1)".format(
+                    ",".join("?" * len(component_ids))
+                ),
+                list(component_ids),
+            ).fetchall()
+            entry_points = [r[0].split("::")[-1] for r in rows][:8]
+        except Exception:
+            pass
+
+        # External callees: edges from component to outside
+        external_callees: list[str] = []
+        if component_names:
+            try:
+                placeholders = ",".join("?" * len(component_names))
+                rows = self._con.execute(
+                    f"SELECT DISTINCT callee FROM graph_edges "
+                    f"WHERE caller IN ({placeholders}) AND callee NOT IN ({placeholders})",
+                    component_names + component_names,
+                ).fetchall()
+                external_callees = [r[0].split("::")[-1] for r in rows][:8]
+            except Exception:
+                pass
+
+        # Semantic summary for the hub itself
+        summaries: list[str] = []
+        try:
+            rows = self._con.execute(
+                "SELECT content FROM semantic_summaries WHERE subject=? LIMIT 1",
+                (hub.name,),
+            ).fetchall()
+            summaries = [r[0][:200] for r in rows]
+        except Exception:
+            pass
+
+        return {
+            "files": files[:8],
+            "entry_points": entry_points,
+            "external_callees": external_callees,
+            "summaries": summaries,
+        }
+
     def search(self, query: str, limit: int = 30) -> list[Node]:
         q = f"%{query}%"
         rows = self._con.execute("""
@@ -485,6 +561,8 @@ class GraphExplorer:
         self._bridge = _SocketBridge()
         self._ctx_menu: Optional[dict] = None   # {node, items, x, y, rects}
         self._action_btn_rects: list[tuple] = []  # (x,y,w,h,dest)
+        self._cluster_summary: Optional[dict] = None   # cached for selected hub
+        self._cluster_summary_for: Optional[int] = None  # node id it was built for
 
     # ------------------------------------------------------------------
     # Graph loading
@@ -580,6 +658,15 @@ class GraphExplorer:
                 self._callers_of_sel.add(e.src_id)
         self._inspect_scroll = 0
         self._bridge.emit_select(node)
+        # Rebuild cluster summary if this node is a hub (or clear it)
+        hub_ids = {h.id for h in self._clusters}
+        if node.id in hub_ids and node.id != self._cluster_summary_for:
+            component_ids = {n.id for n in self._nodes}  # current view is the component
+            self._cluster_summary = self._db.cluster_summary(node, component_ids)
+            self._cluster_summary_for = node.id
+        elif node.id not in hub_ids:
+            self._cluster_summary = None
+            self._cluster_summary_for = None
 
     def _navigate_to(self, destination: str, node: Node):
         """Route node to a UI surface or local action."""
@@ -944,6 +1031,42 @@ class GraphExplorer:
                     n2 = self._node_map.get(nid)
                     if n2:
                         line(f"  {n2.short_name}", COL_TEXT_DIM, 9, 4)
+
+            # --- Cluster summary (hub nodes only) ---
+            cs = self._cluster_summary
+            if cs and self._cluster_summary_for == nd.id:
+                y += 4
+                divider()
+                line("Cluster summary", COL_TEXT, 10)
+                if cs["files"]:
+                    line("Files:", COL_TEXT_DIM, 9)
+                    for f in cs["files"][:6]:
+                        line(f"  {f}", COL_TEXT_DIM, 8, 4)
+                if cs["entry_points"]:
+                    y += 2
+                    line("Entry points:", COL_TEXT_DIM, 9)
+                    for ep in cs["entry_points"][:5]:
+                        line(f"  {ep}", (120, 200, 120, 255), 8, 4)
+                if cs["external_callees"]:
+                    y += 2
+                    line("External callees:", COL_TEXT_DIM, 9)
+                    for ec in cs["external_callees"][:5]:
+                        line(f"  {ec}", COL_TEXT_DIM, 8, 4)
+                if cs["summaries"]:
+                    y += 2
+                    line("Summary:", COL_TEXT_DIM, 9)
+                    # Wrap at ~32 chars to fit panel width
+                    text = cs["summaries"][0]
+                    words = text.split()
+                    cur_line = ""
+                    for w in words:
+                        if len(cur_line) + len(w) + 1 > 32:
+                            line(f"  {cur_line.strip()}", COL_TEXT_DIM, 8, 4)
+                            cur_line = w + " "
+                        else:
+                            cur_line += w + " "
+                    if cur_line.strip():
+                        line(f"  {cur_line.strip()}", COL_TEXT_DIM, 8, 4)
 
             # --- Navigation action buttons ---
             y += 4
