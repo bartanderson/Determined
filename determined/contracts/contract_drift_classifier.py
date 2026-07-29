@@ -42,9 +42,6 @@ class ContractDriftClassifier:
     - no DB writes
     """
 
-    def __init__(self):
-        pass
-
     def classify(
         self,
         reports: List[Any],

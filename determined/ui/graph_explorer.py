@@ -64,6 +64,20 @@ ZOOM_MAX = 10.0
 TEXT_SCALE_STEPS = [0.75, 1.0, 1.25, 1.5, 2.0]
 TEXT_SCALE_DEFAULT = 1  # index into TEXT_SCALE_STEPS
 
+_CTX_MENU_ITEMS = [
+    ("Open in Workbench", "workbench"),
+    ("Ask Oracle",        "oracle"),
+    ("Show in Map",       "map"),
+    ("Call Tree",         "call_tree"),
+    ("Open in Editor",    "editor"),
+    None,  # divider
+    ("Copy name",         "copy_name"),
+    ("Copy file path",    "copy_path"),
+]
+_CTX_MENU_W   = 178
+_CTX_MENU_H   = 22   # per item
+_CTX_MENU_DIV = 8    # divider height
+
 # Font path — Segoe UI on Windows, fallback to None (raylib default)
 import os as _os
 _FONT_PATH = r"C:\Windows\Fonts\segoeui.ttf"
@@ -718,41 +732,38 @@ class GraphExplorer:
         ly = int(sy + node.radius * cam.zoom + 3)
         self._draw_text(label, lx, ly, fs, COL_TEXT_DIM)
 
+    @staticmethod
+    def _ctx_menu_total_h() -> int:
+        return sum(_CTX_MENU_DIV if it is None else _CTX_MENU_H for it in _CTX_MENU_ITEMS) + 8
+
+    @staticmethod
+    def _ctx_menu_clamped(raw_x: int, raw_y: int):
+        total_h = GraphExplorer._ctx_menu_total_h()
+        cx = min(raw_x, SCREEN_W - _CTX_MENU_W - 4)
+        cy = min(raw_y, SCREEN_H - total_h - 4)
+        return cx, cy
+
     def _draw_ctx_menu(self, cm: dict):
-        items = [
-            ("Open in Workbench", "workbench"),
-            ("Ask Oracle",        "oracle"),
-            ("Show in Map",       "map"),
-            ("Call Tree",         "call_tree"),
-            ("Open in Editor",    "editor"),
-            None,
-            ("Copy name",         "copy_name"),
-            ("Copy file path",    "copy_path"),
-        ]
         cm_fs = 11
-        cm_h  = 22
-        cm_w  = 178
-        div_h = 8
-        total_h = sum(div_h if it is None else cm_h for it in items) + 8
-        cx = min(cm["x"], SCREEN_W - cm_w - 4)
-        cy = min(cm["y"], SCREEN_H - total_h - 4)
+        total_h = self._ctx_menu_total_h()
+        cx, cy = cm["cx"], cm["cy"]
         # Shadow + background
-        rl.DrawRectangle(cx + 3, cy + 3, cm_w, total_h, _col(0, 0, 0, 120))
-        rl.DrawRectangle(cx, cy, cm_w, total_h, _col(30, 33, 45, 240))
-        rl.DrawRectangleLines(cx, cy, cm_w, total_h, _col(80, 90, 130, 200))
+        rl.DrawRectangle(cx + 3, cy + 3, _CTX_MENU_W, total_h, _col(0, 0, 0, 120))
+        rl.DrawRectangle(cx, cy, _CTX_MENU_W, total_h, _col(30, 33, 45, 240))
+        rl.DrawRectangleLines(cx, cy, _CTX_MENU_W, total_h, _col(80, 90, 130, 200))
         iy = cy + 4
         mx, my = int(rl.GetMouseX()), int(rl.GetMouseY())
-        for item in items:
+        for item in _CTX_MENU_ITEMS:
             if item is None:
-                rl.DrawLine(cx + 6, iy + 3, cx + cm_w - 6, iy + 3, _col(60, 65, 90, 200))
-                iy += div_h
+                rl.DrawLine(cx + 6, iy + 3, cx + _CTX_MENU_W - 6, iy + 3, _col(60, 65, 90, 200))
+                iy += _CTX_MENU_DIV
                 continue
             lbl, dest = item
-            hovered = cx <= mx <= cx + cm_w and iy <= my <= iy + cm_h
+            hovered = cx <= mx <= cx + _CTX_MENU_W and iy <= my <= iy + _CTX_MENU_H
             if hovered:
-                rl.DrawRectangle(cx + 2, iy, cm_w - 4, cm_h, _col(60, 80, 160, 180))
-            self._draw_text(lbl, cx + 10, iy + (cm_h - cm_fs) // 2, cm_fs, COL_TEXT)
-            iy += cm_h
+                rl.DrawRectangle(cx + 2, iy, _CTX_MENU_W - 4, _CTX_MENU_H, _col(60, 80, 160, 180))
+            self._draw_text(lbl, cx + 10, iy + (_CTX_MENU_H - cm_fs) // 2, cm_fs, COL_TEXT)
+            iy += _CTX_MENU_H
 
     def _draw_minimap(self, cam):
         if not self._nodes:
@@ -1119,39 +1130,27 @@ class GraphExplorer:
                     hit = self._node_at(cam, mx, my)
                     if hit:
                         self._select_node(hit)
-                        self._ctx_menu = {"node": hit, "x": mx, "y": my}
+                        cx, cy = self._ctx_menu_clamped(mx, my)
+                        self._ctx_menu = {"node": hit, "x": mx, "y": my, "cx": cx, "cy": cy}
                 elif self._selected:
                     # Right-click in panel on selected details area
-                    self._ctx_menu = {"node": self._selected, "x": mx, "y": my}
+                    cx, cy = self._ctx_menu_clamped(mx, my)
+                    self._ctx_menu = {"node": self._selected, "x": mx, "y": my, "cx": cx, "cy": cy}
 
-            # Close context menu on left-click elsewhere
+            # Context menu hit-test on left-click; always clears menu afterward
             if self._ctx_menu and rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT):
                 cm = self._ctx_menu
-                items = [
-                    ("Open in Workbench", "workbench"),
-                    ("Ask Oracle",        "oracle"),
-                    ("Show in Map",       "map"),
-                    ("Call Tree",         "call_tree"),
-                    ("Open in Editor",    "editor"),
-                    None,  # divider
-                    ("Copy name",         "copy_name"),
-                    ("Copy file path",    "copy_path"),
-                ]
-                cm_fs = 11
-                cm_h  = 22
-                cm_w  = 170
-                cy = cm["y"]
-                consumed = False
-                for item in items:
+                cx, cy = cm["cx"], cm["cy"]
+                iy = cy + 4
+                for item in _CTX_MENU_ITEMS:
                     if item is None:
-                        cy += 6
+                        iy += _CTX_MENU_DIV
                         continue
                     lbl, dest = item
-                    if cm["x"] <= mx <= cm["x"] + cm_w and cy <= my <= cy + cm_h:
+                    if cx <= mx <= cx + _CTX_MENU_W and iy <= my <= iy + _CTX_MENU_H:
                         self._navigate_to(dest, cm["node"])
-                        consumed = True
                         break
-                    cy += cm_h
+                    iy += _CTX_MENU_H
                 self._ctx_menu = None
 
             # Search result click (hit-test against rects recorded during draw)

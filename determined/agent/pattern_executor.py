@@ -216,9 +216,6 @@ class PatternExecutor:
     Drives a named task pattern step-by-step. Model interprets; executor navigates.
     """
 
-    def __init__(self):
-        pass
-
     def _call_llm(self, messages: list[dict], label: str = "", verbose: bool = False) -> str:
         from determined.agent.llm_client import chat as _llm_chat
         text = _llm_chat(messages) or "(interpretation unavailable: no response)"
