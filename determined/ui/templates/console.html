@@ -1476,7 +1476,6 @@ socket.on("oracle_result", data => {
     result.textContent = "Error: " + data.error;
     result.style.color = "var(--red, #e06c75)";
   } else {
-    // colorize signal lines
     result.innerHTML = escHtml(data.text || "")
       .replace(/^(CRITICAL[^\n]*)/gm, '<span style="color:#e05050;font-weight:600">$1</span>')
       .replace(/^(OPPORTUNITY[^\n]*)/gm, '<span style="color:var(--blue)">$1</span>')
@@ -1485,6 +1484,23 @@ socket.on("oracle_result", data => {
     result.style.color = "var(--text2)";
   }
   result.style.display = "";
+  // Inject "Show in Graph" link below oracle result if graph explorer is open
+  const sym = data.symbol || document.getElementById("oracle-ctx-input")?.value.trim() || _gxSymbol;
+  if (sym) {
+    let gxLink = document.getElementById("oracle-gx-link");
+    if (!gxLink) {
+      gxLink = document.createElement("div");
+      gxLink.id = "oracle-gx-link";
+      gxLink.style.cssText = "margin-top:5px;font-size:.75em";
+      result.parentNode.insertBefore(gxLink, result.nextSibling);
+    }
+    const badge = document.getElementById("gx-active-badge");
+    if (badge && badge.style.display !== "none") {
+      gxLink.innerHTML = `<a href="#" style="color:var(--accent);text-decoration:none" onclick="gxShowInGraph(${JSON.stringify(sym)});return false">⬡ Show in Graph</a>`;
+    } else {
+      gxLink.innerHTML = "";
+    }
+  }
 });
 
 // ── tabs ──────────────────────────────────────────────────
@@ -5210,8 +5226,13 @@ socket.on("workbench_tool_result", data => {
     out.textContent = data.result || "";
     out.style.color = "var(--text1)";
     if (data.stored) note.style.display = "";
-    // Refresh artifacts panel if it's in the DOM
     if (typeof arLoad === "function") arLoad();
+  }
+  // Inject "Show in Graph" button if graph explorer is open and a symbol is known
+  const sym = data.symbol || _gxSymbol;
+  if (sym) {
+    const hdr = document.querySelector("#wb-output-wrap > div");
+    if (hdr) _gxInjectBtn(hdr, sym);
   }
 });
 
@@ -5409,11 +5430,39 @@ socket.on("gx_selection", data => {
   if (data.symbol) {
     badge.textContent = data.symbol;
     badge.style.display = "inline-flex";
+    _gxSymbol = data.symbol;
   } else {
     badge.textContent = "";
     badge.style.display = "none";
+    _gxSymbol = null;
   }
 });
+
+// Track the symbol currently selected in graph explorer.
+let _gxSymbol = null;
+
+// gxShowInGraph: emit gx_highlight for a symbol; no-op if graph not open.
+function gxShowInGraph(symbol) {
+  if (!symbol) return;
+  socket.emit("gx_highlight", { symbol });
+}
+
+// Inject or update a "Show in Graph" button into a container element.
+// Only visible when graph explorer badge is shown.
+function _gxInjectBtn(container, symbol) {
+  const badge = document.getElementById("gx-active-badge");
+  if (!badge || badge.style.display === "none") return;
+  let btn = container.querySelector(".gx-show-btn");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.className = "send-btn gx-show-btn";
+    btn.style.cssText = "padding:2px 9px;font-size:.75em;margin-left:auto;flex-shrink:0";
+    btn.title = "Select this symbol in the Graph Explorer window";
+    container.appendChild(btn);
+  }
+  btn.textContent = "⬡ Show in Graph";
+  btn.onclick = () => gxShowInGraph(symbol);
+}
 
 const _logsEl = document.getElementById("logs-output");
 

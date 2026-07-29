@@ -649,6 +649,16 @@ def handle_gx_select(data):
     socketio.emit("gx_selection", data)
 
 
+@socketio.on("gx_highlight")
+def handle_gx_highlight(data):
+    """Browser requests graph explorer highlight a symbol.
+
+    data: {symbol}
+    Relays to all clients (graph explorer bridge listens for this event).
+    """
+    socketio.emit("gx_highlight", data)
+
+
 @app.route("/api/launch_graph_explorer", methods=["POST"])
 def launch_graph_explorer():
     """Launch the graph explorer as a subprocess if not already running."""
