@@ -8,6 +8,21 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-29 (s266): graph_explorer socket bridge — websocket-client must be installed in
+the venv or python-socketio silently falls back to polling and the connection fails on
+reconnect. Symptom: `gx_select` emits never arrived at the UI server. Fix: pip install
+websocket-client. Add to venv setup notes.
+
+2026-07-29 (s266): graph_explorer wbSetSymbol timing — Workbench tools load lazily on
+first tab open via `workbench_tools` socket event. If gx_nav fires before that event,
+_wbTools is empty and the symbol fill is a no-op. Fix: in the gx_nav handler, call
+wbLoad() then socket.once("workbench_tools") to defer wbSetSymbol until tools are loaded.
+
+2026-07-29 (s266): layout force constants — k=28, gravity=0.074 gives equilibrium
+radius ~378 units, fitting cleanly in the 1100×900 viewport. Earlier attempts (k=42,
+gravity=0.012) put equilibrium at ~3500 units, pushing clusters off screen. Rule: tune
+k and gravity so k/gravity ≈ target radius in world-pixel units.
+
 2026-07-28 (s265): RM70 Step 6 — ast.parse() rejects indented body fragments (e.g.
 "    return {}") without a wrapping def. Fix: _wrap_body() prepends "def _f():\n" before
 every parse call (V1, V3, _ast_node_sequence). Symptom: V1 falsely reported FAIL on
