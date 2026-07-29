@@ -85,16 +85,26 @@ _CALLER_BODY_CAP = 20  # lines of caller body to include in prompt
 
 def _caller_context(conn, name: str, file_path: str, limit: int = 3) -> list[dict]:
     """Return up to limit callers with their full source bodies."""
-    rows = conn.execute(
-        "SELECT DISTINCT e.caller, f.file_path, f.line_number "
-        "FROM graph_edges e "
-        "LEFT JOIN functions f ON f.name = e.caller "
-        "WHERE e.callee = ? OR e.callee LIKE ? "
-        "LIMIT ?",
+    callers = conn.execute(
+        "SELECT DISTINCT e.caller FROM graph_edges e "
+        "WHERE e.callee = ? OR e.callee LIKE ? LIMIT ?",
         (name, f"%.{name}", limit),
     ).fetchall()
     result = []
-    for caller, fp, ln in rows:
+    for (caller,) in callers:
+        # Exact match first; then try treating caller as a suffix (Class.method → method).
+        row = conn.execute(
+            "SELECT file_path, line_number FROM functions WHERE name = ?",
+            (caller,),
+        ).fetchone()
+        if row is None:
+            short = caller.rsplit(".", 1)[-1]
+            if short != caller:
+                row = conn.execute(
+                    "SELECT file_path, line_number FROM functions WHERE name = ?",
+                    (short,),
+                ).fetchone()
+        fp, ln = (row[0], row[1]) if row else (None, None)
         body = _read_function_body(fp, ln, cap=_CALLER_BODY_CAP) if fp and ln else ""
         result.append({
             "name": caller,
