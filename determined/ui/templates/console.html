@@ -405,7 +405,7 @@
         <div class="results-area tab-results" id="tab-call_tree" style="font-family:monospace;font-size:.85em"></div>
       </div>
       <!-- ── map tab (graph / imports / topology) ── -->
-      <div class="tab-panel" id="panel-map" style="flex-direction:column;min-height:0">
+      <div class="tab-panel" id="panel-map" style="flex-direction:column;min-height:0;position:relative">
         <div class="lens-sel-bar">
           <button class="lens-sel-btn active" data-mv="graph">Graph</button>
           <button class="lens-sel-btn" data-mv="imports">Imports</button>
@@ -451,6 +451,21 @@
           </div>
           <pre id="topo-content" style="font-size:.82em;line-height:1.7;white-space:pre-wrap;margin:0"></pre>
           <div id="topo-empty" style="color:var(--text3);padding:1rem;display:none">No corpus loaded.</div>
+        </div>
+        <!-- ── draggable node panel (floats over graph) ── -->
+        <div id="map-node-panel" style="display:none;position:absolute;z-index:100;width:272px;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;box-shadow:0 4px 22px rgba(0,0,0,.55);overflow:hidden;user-select:none">
+          <div id="mnp-header" style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--border);cursor:grab">
+            <span id="mnp-badge" style="font-size:.7em;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--bg2)"></span>
+            <span id="mnp-name" style="font-size:.86em;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text1)"></span>
+            <button id="mnp-close" title="Close" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:.95em;padding:0 2px;line-height:1;flex-shrink:0">✕</button>
+          </div>
+          <div style="padding:8px 10px 10px">
+            <div id="mnp-meta" style="font-size:.76em;color:var(--text3);margin-bottom:3px"></div>
+            <div id="mnp-doc"  style="font-size:.79em;color:var(--text2);font-style:italic;margin-bottom:6px;display:none;line-height:1.4"></div>
+            <div id="mnp-stats" style="font-size:.76em;color:var(--text3);display:flex;gap:10px;margin-bottom:9px"></div>
+            <div id="mnp-primary"   style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px"></div>
+            <div id="mnp-secondary" style="display:flex;gap:4px;flex-wrap:wrap;padding-top:5px;border-top:1px solid var(--border)"></div>
+          </div>
         </div>
       </div>
 
@@ -1772,7 +1787,8 @@ socket.on("graph_result", data => {
     const sym = evt.target.data("id");
     gxInput.value = sym;
     ctInput.value = sym;
-    openPopover(sym, evt.originalEvent || { clientX: _mouseX, clientY: _mouseY });
+    const oe = evt.originalEvent || {};
+    openMapPanel(sym, oe.clientX || _mouseX, oe.clientY || _mouseY);
   });
   _cy.on("dblclick dbltap", "node", evt => {
     // double tap = re-center graph on this node
@@ -1824,7 +1840,8 @@ socket.on("graph_path_result", data => {
   _cy.on("tap", "node", evt => {
     const sym = evt.target.data("id");
     gxInput.value = sym;
-    openPopover(sym, evt.originalEvent || { clientX: _mouseX, clientY: _mouseY });
+    const oe = evt.originalEvent || {};
+    openMapPanel(sym, oe.clientX || _mouseX, oe.clientY || _mouseY);
   });
 });
 
@@ -2441,6 +2458,7 @@ socket.on("symbol_quick_result", data => {
   if (!data.error && data.symbol) {
     _sqCache.set(data.symbol, data);
     if (typeof _renderPopover === "function") _renderPopover(data);
+    if (typeof _mnpRender === "function") _mnpRender(data);
     _trailEnrichFromCache();
   }
   // Ambient badge: tint every sym-link for HOT/WARM symbols regardless of hover state
@@ -2743,6 +2761,140 @@ document.addEventListener("click", e => {
   if (_popoverSym && !symPopover.contains(e.target) && !e.target.closest(".sym-link")) {
     closePopover();
   }
+});
+
+// ── map node panel ─────────────────────────────────────────
+const mnpPanel   = document.getElementById("map-node-panel");
+const mnpHeader  = document.getElementById("mnp-header");
+const mnpName    = document.getElementById("mnp-name");
+const mnpBadge   = document.getElementById("mnp-badge");
+const mnpMeta    = document.getElementById("mnp-meta");
+const mnpDoc     = document.getElementById("mnp-doc");
+const mnpStats   = document.getElementById("mnp-stats");
+const mnpPrimary = document.getElementById("mnp-primary");
+const mnpSecond  = document.getElementById("mnp-secondary");
+const mnpClose_  = document.getElementById("mnp-close");
+
+let _mnpSym      = null;
+let _mnpDragging = false;
+let _mnpDragOffX = 0, _mnpDragOffY = 0;
+let _mnpPinnedX  = null, _mnpPinnedY = null; // survives node changes after drag
+
+function _mnpRiskCls(risk) {
+  return risk === "HOT" ? "sym-risk-hot" : risk === "WARM" ? "sym-risk-warm" : "";
+}
+
+function _mnpButtons(data) {
+  const sym = data.symbol;
+  const all = [
+    { label: "workbench", fn: () => {
+        activateTab("workbench");
+        if (_wbTools.length) wbSetSymbol(sym);
+        else { wbLoad(); socket.once("workbench_tools", () => wbSetSymbol(sym)); }
+    }},
+    { label: "ask", fn: () => {
+        activateTab("chat");
+        const qi = document.getElementById("q-input");
+        if (qi) { qi.value = `Tell me about ${sym}`; qi.focus(); }
+    }},
+    { label: "↙ callers", fn: () => { ctUp.checked = true;  ctTrace(sym); activateTab("call_tree"); }},
+    { label: "↗ callees", fn: () => { ctUp.checked = false; ctTrace(sym); activateTab("call_tree"); }},
+    { label: "remap",     fn: () => { gxInput.value = sym; gxMap(sym); }},
+    { label: "spotlight", fn: () => openSpotlight(sym) },
+  ];
+  // pick 2 primary actions by node character
+  let pri;
+  if (data.is_stub)          pri = [0, 1];        // workbench + ask
+  else if (data.risk === "HOT") pri = [2, 0];     // callers + workbench
+  else if (data.badge === "EP") pri = [3, 0];     // callees + workbench
+  else                        pri = [0, 1];        // workbench + ask
+  const sec = all.map((_, i) => i).filter(i => !pri.includes(i));
+  return { primary: pri.map(i => all[i]), secondary: sec.map(i => all[i]) };
+}
+
+function _mnpRender(data) {
+  if (data.symbol !== _mnpSym) return;
+  mnpBadge.textContent = data.badge || "";
+  mnpBadge.className   = _mnpRiskCls(data.risk);
+  mnpName.textContent  = data.symbol;
+  mnpMeta.textContent  = `${data.type}  ·  ${data.file}:${data.line}` + (data.is_stub ? "  · stub" : "");
+  if (data.docstring) {
+    mnpDoc.textContent   = data.docstring.length > 130 ? data.docstring.slice(0, 130) + "…" : data.docstring;
+    mnpDoc.style.display = "";
+  } else {
+    mnpDoc.style.display = "none";
+  }
+  mnpStats.innerHTML = `<span>↙ ${data.caller_count} callers</span><span>↗ ${data.callee_count} callees</span>`
+    + (data.findings_count ? `<span>◈ ${data.findings_count}</span>` : "");
+
+  const { primary, secondary } = _mnpButtons(data);
+  const mkBtn = (b, big) => {
+    const btn = document.createElement("button");
+    btn.className = "tp-btn";
+    btn.style.cssText = big ? "font-size:.83em;padding:4px 10px" : "font-size:.75em;padding:2px 7px;opacity:.8";
+    btn.textContent = b.label;
+    btn.addEventListener("click", b.fn);
+    return btn;
+  };
+  mnpPrimary.innerHTML = ""; primary.forEach(b => mnpPrimary.appendChild(mkBtn(b, true)));
+  mnpSecond.innerHTML  = ""; secondary.forEach(b => mnpSecond.appendChild(mkBtn(b, false)));
+}
+
+function openMapPanel(sym, clientX, clientY) {
+  _mnpSym = sym;
+  // Position: use pinned spot if user dragged, else near click clamped to panel bounds
+  const panel = mnpPanel.parentElement; // #panel-map
+  const pr = panel.getBoundingClientRect();
+  const pw = 272, ph = 210;
+  let x, y;
+  if (_mnpPinnedX !== null) {
+    x = _mnpPinnedX; y = _mnpPinnedY;
+  } else {
+    x = (clientX - pr.left) + 20;
+    y = (clientY - pr.top)  - 30;
+    x = Math.min(x, pr.width  - pw - 8);
+    y = Math.max(8, Math.min(y, pr.height - ph - 8));
+  }
+  mnpPanel.style.left    = x + "px";
+  mnpPanel.style.top     = y + "px";
+  mnpPanel.style.display = "";
+  // loading state
+  mnpBadge.textContent = ""; mnpBadge.className = "";
+  mnpName.textContent  = sym;
+  mnpMeta.textContent  = "loading…";
+  mnpDoc.style.display = "none";
+  mnpStats.innerHTML = ""; mnpPrimary.innerHTML = ""; mnpSecond.innerHTML = "";
+  // render from cache or request
+  if (_sqCache.has(sym)) _mnpRender(_sqCache.get(sym));
+  else socket.emit("symbol_quick", { symbol: sym });
+}
+
+// drag
+mnpHeader.addEventListener("mousedown", e => {
+  if (e.target === mnpClose_) return;
+  _mnpDragging = true;
+  _mnpDragOffX = e.clientX - mnpPanel.getBoundingClientRect().left
+               + mnpPanel.parentElement.getBoundingClientRect().left;
+  _mnpDragOffY = e.clientY - mnpPanel.getBoundingClientRect().top
+               + mnpPanel.parentElement.getBoundingClientRect().top;
+  mnpHeader.style.cursor = "grabbing";
+  e.preventDefault();
+});
+document.addEventListener("mousemove", e => {
+  if (!_mnpDragging) return;
+  const pr = mnpPanel.parentElement.getBoundingClientRect();
+  const x = e.clientX - pr.left - _mnpDragOffX;
+  const y = e.clientY - pr.top  - _mnpDragOffY;
+  mnpPanel.style.left = x + "px";
+  mnpPanel.style.top  = y + "px";
+  _mnpPinnedX = x; _mnpPinnedY = y;
+});
+document.addEventListener("mouseup", () => {
+  if (_mnpDragging) { _mnpDragging = false; mnpHeader.style.cursor = "grab"; }
+});
+mnpClose_.addEventListener("click", () => {
+  mnpPanel.style.display = "none";
+  _mnpSym = null; _mnpPinnedX = null; _mnpPinnedY = null;
 });
 
 // close on Escape
