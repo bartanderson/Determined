@@ -689,7 +689,7 @@ class GraphExplorer:
         if destination == "editor":
             # Look up start_line from DB; fall back to line 1
             row = self._db._con.execute(
-                "SELECT start_line FROM functions WHERE name=? AND file_path=?",
+                "SELECT line_number FROM functions WHERE name=? AND file_path=?",
                 (node.name, node.file_path)
             ).fetchone()
             line = row[0] if row and row[0] else 1
