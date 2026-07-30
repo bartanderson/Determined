@@ -1568,6 +1568,105 @@ def handle_graph_path(data):
         emit("graph_path_result", {"error": str(exc)})
 
 
+@socketio.on("graph_full")
+def handle_graph_full(data):
+    """Return top-N highest-degree nodes + all edges between them.
+    Used by the in-browser full-corpus graph view (replaces pyray explorer)."""
+    limit = min(int(data.get("limit", 200)), 500)
+    if _oracle is None:
+        emit("graph_full_result", {"error": "no corpus"}); return
+    try:
+        conn = _oracle.conn
+        # Two fast queries instead of one slow JOIN+GROUP BY:
+        # 1. caller degree counts from graph_edges (indexed on caller)
+        deg_map = {}
+        for name, cnt in conn.execute(
+            "SELECT caller, COUNT(*) FROM graph_edges GROUP BY caller"
+        ).fetchall():
+            deg_map[name] = int(cnt)
+
+        # 2. all functions metadata (deduplicated by name, highest degree wins)
+        seen, rows = set(), []
+        for name, fp, is_stub, is_tool in conn.execute(
+            "SELECT name, file_path, is_stub, is_tool FROM functions"
+        ).fetchall():
+            if name not in seen:
+                seen.add(name)
+                rows.append((name, fp, is_stub, is_tool, deg_map.get(name, 0)))
+
+        # sort by degree desc, take top N
+        rows.sort(key=lambda r: r[4], reverse=True)
+        rows = rows[:limit]
+        names = {r[0] for r in rows}
+
+        nodes = []
+        for name, fp, is_stub, is_tool, deg in rows:
+            short = (fp or "").replace("\\", "/").split("/")[-1]
+            nodes.append({"id": name, "label": name.rsplit(".", 1)[-1],
+                          "file": short, "file_path": fp or "",
+                          "is_stub": bool(is_stub), "is_tool": bool(is_tool),
+                          "degree": int(deg or 0)})
+
+        # get all edges from our nodes; callee may not be in names (different file format)
+        # — send all and let the client decide which endpoints exist
+        ph = ",".join("?" * len(names))
+        edge_rows = conn.execute(
+            f"SELECT DISTINCT caller, callee FROM graph_edges WHERE caller IN ({ph})",
+            list(names)
+        ).fetchall()
+        edges = [{"source": r[0], "target": r[1]} for r in edge_rows if r[1] in names]
+
+        emit("graph_full_result", {"nodes": nodes, "edges": edges})
+    except Exception as exc:
+        emit("graph_full_result", {"error": str(exc)})
+
+
+@socketio.on("graph_expand")
+def handle_graph_expand(data):
+    """Return immediate neighbors of a node for expand-on-double-click.
+    existing_ids: set of node ids already in the client graph (to compute cross-edges)."""
+    symbol   = (data.get("symbol") or "").strip()
+    existing = set(data.get("existing_ids", []))
+    if not symbol or _oracle is None:
+        emit("graph_expand_result", {"error": "no corpus"}); return
+    try:
+        conn = _oracle.conn
+
+        callee_rows = conn.execute("""
+            SELECT DISTINCT e.callee, f.file_path, COALESCE(f.is_stub,0), COALESCE(f.is_tool,0)
+            FROM graph_edges e LEFT JOIN functions f ON f.name = e.callee
+            WHERE e.caller = ? LIMIT 60
+        """, (symbol,)).fetchall()
+
+        caller_rows = conn.execute("""
+            SELECT DISTINCT e.caller, f.file_path, COALESCE(f.is_stub,0), COALESCE(f.is_tool,0)
+            FROM graph_edges e LEFT JOIN functions f ON f.name = e.caller
+            WHERE e.callee = ? LIMIT 60
+        """, (symbol,)).fetchall()
+
+        new_nodes = []
+        new_names = set()
+        for name, fp, is_stub, is_tool in callee_rows + caller_rows:
+            if name and name not in existing:
+                short = (fp or "").replace("\\", "/").split("/")[-1]
+                new_nodes.append({"id": name, "label": name.rsplit(".", 1)[-1],
+                                  "file": short, "file_path": fp or "",
+                                  "is_stub": bool(is_stub), "is_tool": bool(is_tool), "degree": 0})
+                new_names.add(name)
+
+        all_names = existing | new_names | {symbol}
+        ph = ",".join("?" * len(all_names))
+        edge_rows = conn.execute(
+            f"SELECT DISTINCT caller, callee FROM graph_edges WHERE caller IN ({ph}) AND callee IN ({ph})",
+            list(all_names) * 2
+        ).fetchall()
+        edges = [{"source": r[0], "target": r[1]} for r in edge_rows]
+
+        emit("graph_expand_result", {"nodes": new_nodes, "edges": edges, "center": symbol})
+    except Exception as exc:
+        emit("graph_expand_result", {"error": str(exc)})
+
+
 # Frontier query lives in graph_utils.frontier_rows (shared with corpus verdict).
 from determined.agent.graph_utils import frontier_rows as _frontier_rows
 

@@ -1,92 +1,102 @@
-Written at commit: dab8bb5
+Written at commit: 2c5ff74
 
-# SESSION STATE — session 268 (end)
+# SESSION STATE — session 269 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `dab8bb5` — fix(graph_explorer): BFS component walk in expanded view (RM72 Phase E)
-                + calibrate(export_context): RM71 baseline findings documented
+- `d432cf0` — fix(sketch_stub): two-phase caller lookup (RM70 Step 2 JOIN fix)
+- `0f3c248` — calibrate(rm71): post-JOIN-fix findings; RM71 pass added to baseline script
+- `89cf719` — feat(map): add workbench + ask buttons to node popover
+- `5256adb` — fix(graph_explorer): start_line → line_number in editor nav
+- `0c498a5` — fix(graph_explorer): complete Phase B/C — all broken navigation paths
+- `2c5ff74` — feat(map): draggable floating node panel replaces popover on graph click
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-Skipped RM67 probe (user request). Did items 2, 3, 4, 5 from prior handoff.
+**RM70 Step 2 — caller body reader JOIN fix** [V]
+- `_caller_context` was LEFT JOINing `f.name = e.caller`; dj2 graph_edges stores
+  "Class.method" but functions.name may store just "method" → NULL file_path → no body
+- Fix: exact lookup first, then rsplit(".", 1) fallback for short-name callers
+- 144 tests pass [V]
 
-**Item 5 — UI verify Phase D ("Show in Graph")** [V]
-- Graph explorer launched successfully (raylib window, dj2 corpus)
-- "⬡ Show in Graph" button injects into workbench output header when:
-  (a) gx-active-badge is visible (graph explorer running), AND
-  (b) `_gxSymbol` is set (a node was previously selected in graph)
-- Verified via JS: button appears, click emits `gx_highlight: {symbol: "generate_lost"}` [V]
-- Pyray framing (does the window actually frame the node?) can't be verified headlessly —
-  signal chain up to it is confirmed; final step requires eyes on the desktop window.
-- Phase D is done; the one gap is visual confirmation in the pyray window.
+**RM70 baseline clean rerun + RM71 calibration** [V]
+- `tools/rm70_baseline.py` created (standalone runner, no UI server needed)
+- V1 pass: 71% (10/14), V2 mean: 0.357 — LLM non-determinism accounts for run-to-run variance
+- caller_complexity now live post-fix: _get_combat_context=0.633, _get_encounter_context=0.633
+- FSM stubs still caller_cx=0 (correct — no callers tracked in graph_edges for config-declared)
+- type_missing=1.000 for ALL dj2 stubs: CamelCase words in docstrings match regex but are not
+  corpus classes — noisy signal on this corpus; documented in export_context.py
+- Threshold 0.5 holds; only _get_combat_context hits it (correct escalation) [V documented]
 
-**Item 2 — RM72 Phase E (cluster summary in expanded view)** [V]
-- Fixed `_select_node` line 664: was `{n.id for n in self._nodes}` (all visible nodes)
-- In expanded view, `self._nodes` = top nodes + neighborhood mix — over-counts the component
-- Fix: BFS from hub through `self._edges` when `self._expanded` is set
-- 74 tests pass [V]
+**Graph explorer — full nav audit and fix** [V]
+- editor crash: wrong column name `start_line` → `line_number` [V]
+- oracle pre-fill silent no-op: `question-input` → `q-input` in both gx_nav handler
+  AND the popover "ask" button [V]
+- Expand + Frame missing from context menu (_CTX_MENU_ITEMS); wired to
+  _expand_node/_frame_node via self._cam stored in run() [V]
+- Socket bridge gave up after 3 attempts; now retries every 5s indefinitely [V]
+- _pending_highlight was a class variable (shared across instances) → instance var [V]
 
-**Item 4 — RM71 calibration** [V]
-- Ran complexity scores on all 25 dj2 stubs
-- Key finding: `caller_complexity` = 0.000 for EVERY stub
-  Cause: LEFT JOIN in `_caller_context` fails — `graph_edges.caller` is short name
-  ("ContextBuilder.build") but `functions.name` format doesn't match → NULL file_path
-  → `_read_function_body("", ...)` → body = "" → avg_lines = 0
-- Without that signal (weight 0.25), all real stubs score 0.24–0.48; one test mock at 0.51
-- Threshold 0.5 holds provisionally; must recalibrate after RM70 Step 2 fixes the JOIN
-- Documented in `export_context.py` comment and HISTORY.md
+**In-browser map: draggable node panel** [V]
+- Was: click node → dismissing popover near cursor, same 6 buttons always
+- Now: click node → floating panel overlaid on graph canvas
+  - Appears near click, drag header to reposition, pin survives node changes
+  - X to close resets pin position
+  - Adaptive primary buttons (2) by node type:
+      stub → workbench + ask
+      HOT  → ↙ callers + workbench
+      EP   → ↗ callees + workbench
+      else → workbench + ask
+  - Secondary row: remaining 4 actions at reduced prominence
+  - panel-map set to position:relative; panel is position:absolute within it
+    so it naturally hides when map tab is not active
+- Both _cy tap handlers (main map + path finder) → openMapPanel [V]
+- symbol_quick_result now calls _mnpRender alongside _renderPopover [V]
+- 11 UI surface tests pass [V]
 
-**Item 3 — RM70 Step 1 baseline (partial)** [V]
-- `_verify_candidate` (V1+V2) already exists and works [V]
-- Ran sketch_stub on 17 actionable dj2 stubs with llama-server live
-- 5/17 produced parseable LLM candidates (llama-server busy — UI server competing)
-- Those 5: V1 100% pass, V2 mean 0.833 (range 0.5–1.0)
-- `resolve_parley` worst: V2=0.5, calls 2/4 invented APIs
-- FSM guards best: V2=1.0 (no checkable corpus calls — builtins/pass bodies)
-- Compare to s263 original pre-retrieval baseline: V1 36%, V2 0.36 — clear improvement
-- Full clean rerun needed: start llama-server standalone BEFORE the UI server, or kill
-  UI first, run baseline script, then restart UI.
-  Command: `.venv\Scripts\python.exe scratchpad/rm70_baseline.py`
-  (copy to a stable location first; it's currently in session scratchpad)
+**Open question from Bart (answer next session):**
+"Did you revive the old style of display for some reason?"
+Refers to the popover (sym-popover) which still fires for sym-link clicks
+throughout the app (chat results, workbench output, call tree, frontier).
+Map node clicks now use the panel. The popover is still live elsewhere —
+is that the right call, or should the panel replace it everywhere?
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
-- `websocket-client` must be installed or bridge silently fails on reconnect. [V installed]
-- Graph explorer window has no Win32 title — trackable by PID only. [V]
-- `_gx_proc` in ui_server tracks subprocess; poll() detects exit and relaunches. [V]
 - Phase D pyray framing unverified visually — all code is correct; needs human eyes. [?]
-- `caller_complexity` dead signal in RM71 — see calibration finding above. [V]
-- RM70 baseline partial (5/17 stubs) — LLM contention with UI server. [V]
+- type_missing=1.000 for all dj2 stubs — CamelCase docstring words, not corpus classes [V documented]
+- RM70 V1/V2 scores vary run-to-run (LLM non-determinism) — take means, not single runs [V]
+- websocket-client must be installed in venv or bridge silently fails on reconnect [V]
+- Graph explorer window has no Win32 title — trackable by PID only [V]
+- CUDA stubs: dim3 vars [?] — accepted ceiling
+- C++ pure virtual not captured [?] — deferred to RM73
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **RM67 probe** — standing rule (skipped this session).
+1. **Answer the popover question** — sym-popover is still live for sym-link clicks
+   everywhere outside the map. Should it stay (lightweight quick-nav) or be replaced
+   by the same draggable panel? If replaced: openMapPanel would need to work outside
+   the map tab context (fixed positioning, not absolute within panel-map).
 
-2. **RM70 Step 2 — fix caller body reader JOIN**
-   Root cause: `_caller_context` LEFT JOIN on `functions.name = graph_edges.caller`
-   fails because dj2 graph_edges stores short names. Fix: try exact match first,
-   then fallback to `functions.name LIKE '%.' || ?` or match on file_path + line_number.
-   File: `determined/agent/sketch_stub.py`, `_caller_context()` ~line 86.
-   After fix: re-run RM70 baseline AND RM71 calibration in one pass.
+2. **RM67 probe** — standing rule, skipped two sessions running.
 
-3. **RM70 baseline clean rerun**
-   Baseline script: copy `scratchpad/rm70_baseline.py` to `tools/rm70_baseline.py`
-   (scratchpad is session-ephemeral). Run with llama-server only (no UI server).
-   Establish definitive V1+V2 scores post all RM70 improvements.
+3. **RM72 Phase D visual verify** — still needs eyes on the pyray window.
+   Start UI server, open graph explorer, click node, run workbench tool,
+   confirm "⬡ Show in Graph" appears and clicking it frames the node in pyray.
 
-4. **RM72 Phase D — visual verify**
-   Start UI server, open graph explorer, click a node (sets `_gxSymbol` for real),
-   run a workbench tool, confirm button appears and clicking it frames the node in
-   the pyray window. 5-minute manual check.
+4. **RM70 further steps** (build order in TRACKER RM70):
+   Step 3 — pattern sibling search (corpus-scoped Levenshtein)
+   Step 4 — return-shape inference
+   Steps 5-7 after those.
+   Run `tools/rm70_baseline.py` after each step to measure improvement.
 
 ---
 
@@ -95,14 +105,6 @@ Skipped RM67 probe (user request). Did items 2, 3, 4, 5 from prior handoff.
 - Pre-flight: `Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force`
 - Duplicate server trap: `netstat -ano | Select-String ":5050"` — two LISTENING = old process alive
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
-- Graph explorer: click Graph button in UI tab bar, or CLI:
-  `.venv\Scripts\python.exe tools\graph_explorer.py C_Users_bartl_dev_dj2.db`
+- Baseline runner: `.venv\Scripts\python.exe tools\rm70_baseline.py` (llama-server only, no UI)
+- Graph explorer CLI: `.venv\Scripts\python.exe tools\graph_explorer.py C_Users_bartl_dev_dj2.db`
 - websocket-client required in venv for bridge to work reliably
-- For LLM baseline runs: stop UI server first to avoid llama-server contention
-
-## Known issues (carried)
-
-- CUDA stubs: dim3 vars [?] — accepted ceiling
-- C++ pure virtual not captured [?] — deferred to RM73
-- Walker dispatch resolution (RM73) [?] — FUTURE
-- RM71 complexity threshold: provisional 0.5, recalibrate after RM70 Step 2 [V documented]

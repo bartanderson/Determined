@@ -163,6 +163,7 @@
 </style>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/cytoscape.min.js"></script>
+<script src="/static/force-graph.min.js"></script>
 <script src="/static/mermaid.min.js"></script>
 </head>
 <body>
@@ -433,6 +434,7 @@
           </div>
           <div id="gx-status" style="padding:.3rem .6rem;font-size:.8em;color:var(--text3);flex-shrink:0"></div>
           <div id="gx-cy" style="flex:1;min-height:0;background:var(--bg)"></div>
+          <div id="gx-fg" style="display:none;flex:1;min-height:0;background:var(--bg)"></div>
         </div>
         <div id="map-view-imports" style="display:none;flex-direction:column;flex:1;min-height:0">
           <div class="graph-toolbar" style="flex-shrink:0">
@@ -1723,90 +1725,396 @@ const gxInput  = document.getElementById("gx-input");
 const gxGo     = document.getElementById("gx-go");
 const gxHops   = document.getElementById("gx-hops");
 const gxStatus = document.getElementById("gx-status");
-let _cy = null;
+let _cy = null; // kept for imports/frontier cytoscape graphs
 
-const GX_STYLE = [
-  { selector: "node", style: {
-      label: "data(label)",
-      "font-size": 10,
-      "font-family": "monospace",
-      "text-valign": "bottom",
-      "text-margin-y": 4,
-      color: "#a0a8b8",
-      "background-color": "#3a4055",
-      "border-width": 1,
-      "border-color": "#555e7a",
-      width: 22, height: 22,
-  }},
-  { selector: "node[risk='hot']",  style: { "background-color": "#7a2228", "border-color": "#d44" } },
-  { selector: "node[risk='warm']", style: { "background-color": "#5a4010", "border-color": "#c80" } },
-  { selector: "node.gx-root",     style: {
-      "background-color": "#1a4a7a", "border-color": "#4af", "border-width": 2,
-      width: 30, height: 30, "font-size": 11, color: "#cde",
-  }},
-  { selector: "edge", style: {
-      width: 1, "line-color": "#3a4055",
-      "target-arrow-color": "#3a4055", "target-arrow-shape": "triangle",
-      "curve-style": "bezier", opacity: 0.7,
-  }},
-  { selector: "edge[count > 1]", style: {
-      label: "data(count)", "font-size": 8, color: "#6a7a9a",
-      "text-rotation": "autorotate", "text-margin-y": -6,
-  }},
-  { selector: "node:selected", style: { "border-color": "#8af", "border-width": 2 } },
-];
+// ── ForceGraph — full-corpus in-browser graph (replaces pyray) ──
+let _fg = null;
+let _fgData = { nodes: [], links: [] };
+let _fgReady = false;
+let _fgSelectedId = null;    // id of selected node
+let _fgExpandedId = null;    // id of node we dbl-clicked into (expand mode)
+let _fgMinimapGeo = null;    // stored for minimap click-to-pan
 
-function gxMap(symbol) {
-  if (!symbol) return;
-  gxStatus.textContent = `Mapping ${symbol}…`;
-  if (_cy) { _cy.destroy(); _cy = null; }
-  const cyEl = document.getElementById("gx-cy");
-  cyEl.innerHTML = "";
-  cyEl.style.cssText = "";
-  socket.emit("graph_subgraph", { symbol, hops: parseInt(gxHops.value) });
+// ── colours (pyray palette, exact values) ─────────────────
+const _fgColor = n => {
+  if (n._selected) return "#ffffff";              // COL_NODE_SEL
+  if (n._path)     return "#f1c40f";
+  if (n._caller)   return "#50dc64";             // COL_NODE_CALLER (80,220,100)
+  if (n._callee)   return "#dc5064";             // COL_NODE_CALLEE (220,80,100)
+  if (n._dim || n._selDim) return "#282d3c";     // COL_NODE_FADED (40,45,60)
+  if (n.is_stub)   return "#dc8228";             // COL_NODE_STUB  (220,130,40)
+  if (n.is_tool)   return "#3cc8a0";             // COL_NODE_TOOL  (60,200,160)
+  return "#5078c8";                              // COL_NODE_NORMAL (80,120,200)
+};
+const _fgBorder = n => {
+  if (n._selected) return "#ffffff";
+  if (n._path)     return "#f1c40f";
+  if (n._caller)   return "#30b844";
+  if (n._callee)   return "#b03040";
+  if (n._dim || n._selDim) return "#282d3c";
+  return n.is_stub ? "#b06010" : n.is_tool ? "#2aa880" : "#2a5aaa";
+};
+// radius: min(NODE_RADIUS_BASE + sqrt(deg)*1.2, NODE_RADIUS_MAX) — exact pyray formula
+const _fgRadius = n => Math.min(7 + Math.sqrt(n.degree || 0) * 1.2, 22);
+
+// ── minimap ───────────────────────────────────────────────
+function _fgDrawMinimap() {
+  const mm = document.getElementById("gx-minimap");
+  if (!mm || !_fg) return;
+  const ctx = mm.getContext("2d");
+  const W = mm.width, H = mm.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const nodes = _fgData.nodes.filter(n => n.x !== undefined);
+  if (!nodes.length) { _fgMinimapGeo = null; return; }
+
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rX = maxX - minX || 1, rY = maxY - minY || 1;
+  const pad = 6, scale = Math.min((W-pad*2)/rX, (H-pad*2)/rY);
+  const ox = pad + (W-pad*2 - rX*scale)/2;
+  const oy = pad + (H-pad*2 - rY*scale)/2;
+  const tx = n => ox + (n.x - minX)*scale;
+  const ty = n => oy + (n.y - minY)*scale;
+
+  // store geometry for click-to-pan (matches pyray _minimap_geo)
+  _fgMinimapGeo = { minX, minY, ox, oy, scale };
+
+  // edges
+  ctx.strokeStyle = "rgba(80,90,120,0.35)";
+  ctx.lineWidth = 0.5;
+  for (const l of _fgData.links) {
+    const s = l.source, t = l.target;
+    if (s.x === undefined || t.x === undefined) continue;
+    ctx.beginPath(); ctx.moveTo(tx(s), ty(s)); ctx.lineTo(tx(t), ty(t)); ctx.stroke();
+  }
+  // nodes — coloured by selection state (matches pyray _draw_minimap using _node_color)
+  for (const n of nodes) {
+    ctx.beginPath();
+    ctx.arc(tx(n), ty(n), Math.max(1.5, Math.min(4, _fgRadius(n)*scale*0.25)), 0, 2*Math.PI);
+    ctx.fillStyle = _fgColor(n); ctx.fill();
+  }
+  // viewport rectangle (COL_MINIMAP_VP = rgba(100,140,220,120))
+  const tr = _fg.zoom();
+  if (tr && tr.k) {
+    const vW = _fg.width()/tr.k, vH = _fg.height()/tr.k;
+    const vcx = -tr.x/tr.k, vcy = -tr.y/tr.k;
+    const rx = ox + (vcx - vW/2 - minX)*scale;
+    const ry = oy + (vcy - vH/2 - minY)*scale;
+    ctx.strokeStyle = "rgba(100,140,220,0.47)"; ctx.lineWidth = 1;
+    ctx.strokeRect(rx, ry, vW*scale, vH*scale);
+  }
 }
 
-socket.on("graph_result", data => {
-  if (data.error) { gxStatus.textContent = `Error: ${data.error}`; return; }
-  const nodes = data.nodes.map(n => ({ data: {
-    id: n.id, label: n.label || n.id.split(".").pop(),
-    risk: n.risk || "cool", file: n.file || "", line: n.line || 0,
-  }, classes: n.id === data.root ? "gx-root" : "" }));
-  const edges = dedupeEdges(data.edges);
-  const rawE  = data.edges.length;
-  const dupNote = rawE > edges.length ? ` (${rawE} raw)` : "";
-  gxStatus.textContent = `${nodes.length} nodes · ${edges.length} edges${dupNote}`;
-  _cy = cytoscape({
-    container: document.getElementById("gx-cy"),
-    elements: [...nodes, ...edges],
-    style: GX_STYLE,
-    layout: { name: "cose", animate: false, randomize: false,
-               nodeRepulsion: 8000, idealEdgeLength: 80, nodeDimensionsIncludeLabels: true },
+// ── selection (matches pyray _select_node) ────────────────
+function _fgSelect(node, evtX, evtY) {
+  _fgData.nodes.forEach(n => {
+    n._selected = false; n._caller = false; n._callee = false; n._selDim = false;
   });
-  _cy.on("tap", "node", evt => {
-    const sym = evt.target.data("id");
-    gxInput.value = sym;
-    ctInput.value = sym;
-    const oe = evt.originalEvent || {};
-    openMapPanel(sym, oe.clientX || _mouseX, oe.clientY || _mouseY);
+  _fgData.links.forEach(l => { l._selEdge = false; });
+
+  if (!node) {
+    _fgSelectedId = null;
+    _fg && _fg.resumeAnimation();
+    return;
+  }
+  _fgSelectedId = node.id;
+  node._selected = true;
+
+  // identify callers and callees from visible edges (matches pyray _callers_of_sel/_callees_of_sel)
+  const callerIds = new Set(), calleeIds = new Set();
+  for (const l of _fgData.links) {
+    const src = l.source.id !== undefined ? l.source.id : l.source;
+    const dst = l.target.id !== undefined ? l.target.id : l.target;
+    if (dst === node.id && src !== node.id) { callerIds.add(src); l._selEdge = true; }
+    if (src === node.id && dst !== node.id) { calleeIds.add(dst); l._selEdge = true; }
+  }
+
+  for (const n of _fgData.nodes) {
+    if (n.id === node.id) continue;
+    n._caller = callerIds.has(n.id);
+    n._callee = calleeIds.has(n.id);
+    // dim non-neighbours only in expand mode (matches pyray: faded only when self._expanded)
+    if (_fgExpandedId && !n._caller && !n._callee) n._selDim = true;
+  }
+
+  _fg.resumeAnimation();
+  openMapPanel(node.id, evtX != null ? evtX : _mouseX || 0, evtY != null ? evtY : _mouseY || 0);
+}
+
+// ── init ─────────────────────────────────────────────────
+function _fgInit() {
+  const container = document.getElementById("gx-fg");
+  if (_fg) { try { _fg._destructor(); } catch(e){} _fg = null; }
+  container.innerHTML = "";
+  container.style.position = "relative";
+
+  _fg = ForceGraph()(container)
+    .width(container.clientWidth || 900)
+    .height(container.clientHeight || 600)
+    .backgroundColor("transparent")
+    .nodeId("id")
+    .nodeCanvasObject((node, ctx, gs) => {
+      const r = _fgRadius(node) / gs;
+      // selected node: gold halo + white ring (matches pyray _draw_node rings)
+      if (node._selected) {
+        ctx.beginPath(); ctx.arc(node.x, node.y, r + 7/gs, 0, 2*Math.PI);
+        ctx.fillStyle = "rgba(255,215,0,0.63)"; ctx.fill();
+        ctx.beginPath(); ctx.arc(node.x, node.y, r + 4/gs, 0, 2*Math.PI);
+        ctx.fillStyle = "rgba(255,255,255,0.90)"; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, 2*Math.PI);
+      ctx.fillStyle = _fgColor(node); ctx.fill();
+      if (node._selected) {
+        ctx.strokeStyle = "rgba(255,255,255,0.71)";
+        ctx.lineWidth = 1.5/gs; ctx.stroke();
+      }
+      // label: Segoe UI 11px below node (matches pyray _draw_label fs=11, COL_TEXT_DIM)
+      if (!node._dim && !node._selDim &&
+          (node._selected || node._path || node._caller || node._callee || gs > 1.5)) {
+        const fs = 11 / gs;
+        ctx.font = `${fs}px "Segoe UI", system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillStyle = node._selected ? "#ffffff"
+          : node._path   ? "#f1c40f"
+          : node._caller ? "#50dc64"
+          : node._callee ? "#dc5064"
+          : "#c8cdd7";  // COL_TEXT_DIM
+        const lbl = (node.label || node.id.split(".").pop()).slice(0, 22);
+        ctx.fillText(lbl, node.x, node.y + r + fs + 3/gs);
+      }
+    })
+    .nodeCanvasObjectMode(() => "replace")
+    .nodeVal(n => Math.pow(_fgRadius(n), 2) / 4)
+    .linkColor(l => l._path    ? "#f1c40f"
+                  : l._selEdge ? "rgba(180,200,255,0.78)"  // COL_EDGE_SEL
+                  : l._hi      ? "#5a8af8"
+                  : "rgba(80,90,120,0.31)")                  // COL_EDGE_NORMAL
+    .linkWidth(l => l._path ? 2 : l._selEdge ? 1.5 : l._hi ? 1.5 : 0.8)
+    .linkDirectionalArrowLength(l => l._path ? 5 : 3)
+    .linkDirectionalArrowRelPos(1)
+    .onNodeClick((node, evt) => {
+      const now = Date.now();
+      if (now - (node._lastClick || 0) < 300) {
+        // double-click → expand (matches pyray double-click _expand_node)
+        node._lastClick = 0;
+        _fgExpandedId = node.id;
+        _fgExpand(node.id);
+        return;
+      }
+      node._lastClick = now;
+      gxInput.value = node.id;
+      if (typeof ctInput !== "undefined") ctInput.value = node.id;
+      _fgSelect(node, evt.clientX, evt.clientY);
+    })
+    .onBackgroundClick(() => {
+      // click empty space → deselect (matches pyray: click empty → selected=None)
+      _fgSelect(null);
+    })
+    .onNodeHover((node) => {
+      if (node) {
+        gxStatus.textContent =
+          `${node.id}  ·  ${node.file}  ·  ${node.is_stub ? "stub" : node.is_tool ? "tool" : "fn"}  ·  deg ${node.degree}`;
+        // hover edge-highlight only when nothing selected (matches pyray hover behaviour)
+        if (!_fgSelectedId) {
+          _fgData.links.forEach(l => {
+            const sid = l.source.id !== undefined ? l.source.id : l.source;
+            const tid = l.target.id !== undefined ? l.target.id : l.target;
+            l._hi = (sid === node.id || tid === node.id);
+          });
+        }
+      } else {
+        gxStatus.textContent = `${_fgData.nodes.length} nodes · ${_fgData.links.length} edges`;
+        if (!_fgSelectedId) _fgData.links.forEach(l => { l._hi = false; });
+      }
+      _fg.resumeAnimation();
+    })
+    .onZoom(() => _fgDrawMinimap())
+    .onEngineTick(() => {
+      // show settling indicator while simulation runs (matches pyray temperature indicator)
+      const s = document.getElementById("gx-settling");
+      if (s) s.style.display = "";
+    })
+    .onEngineStop(() => {
+      const s = document.getElementById("gx-settling");
+      if (s) s.style.display = "none";
+      _fgDrawMinimap();
+    });
+
+  // keyboard shortcuts (matches pyray Controls block)
+  container.setAttribute("tabindex", "0");
+  container.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      if (_fgExpandedId) {
+        // Escape in expand mode → collapse to top view (matches pyray Escape)
+        _fgExpandedId = null;
+        _fgSelect(null);
+        _fgLoadFull();
+      } else {
+        _fgSelect(null);
+      }
+      e.preventDefault();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "0") {
+      _fg.zoomToFit(400); e.preventDefault();
+    } else if (e.key === "f" || e.key === "F") {
+      // F: frame selected or all (matches pyray F key)
+      const sel = _fgData.nodes.find(n => n._selected);
+      if (sel && sel.x !== undefined) _fg.centerAt(sel.x, sel.y, 400);
+      else _fg.zoomToFit(400);
+      e.preventDefault();
+    } else if (e.key === "/") {
+      gxInput.focus(); e.preventDefault();
+    }
   });
-  _cy.on("dblclick dbltap", "node", evt => {
-    // double tap = re-center graph on this node
-    gxMap(evt.target.data("id"));
+
+  // resize
+  const ro = new ResizeObserver(() => {
+    if (_fg) { _fg.width(container.clientWidth).height(container.clientHeight); _fgDrawMinimap(); }
   });
-  _cy.on("mouseover", "node", evt => {
-    const d = evt.target.data();
-    gxStatus.textContent = `${d.id}${d.file ? "  —  " + d.file + ":" + d.line : ""}  [${d.risk}]`;
-  });
-  _cy.on("mouseout", "node", () => {
-    gxStatus.textContent = `${nodes.length} nodes · ${edges.length} edges`;
-  });
+  ro.observe(container);
+  _fg._destructor = () => ro.disconnect();
+
+  // minimap canvas — appended AFTER FG init (FG clears container internally)
+  const mm = document.createElement("canvas");
+  mm.id = "gx-minimap"; mm.width = 200; mm.height = 140;
+  mm.style.cssText = "position:absolute;bottom:10px;right:10px;z-index:10;" +
+    "border:1px solid var(--border);border-radius:4px;cursor:crosshair;" +
+    "background:rgba(18,20,26,0.88)";
+  container.appendChild(mm);
+
+  // minimap click/drag → pan main view (matches pyray minimap drag)
+  let _mmDrag = false;
+  function _mmPanTo(evt) {
+    if (!_fgMinimapGeo) return;
+    const rect = mm.getBoundingClientRect();
+    const g = _fgMinimapGeo;
+    const wx = g.minX + (evt.clientX - rect.left - g.ox) / g.scale;
+    const wy = g.minY + (evt.clientY - rect.top  - g.oy) / g.scale;
+    _fg.centerAt(wx, wy, 0);
+    _fgDrawMinimap();
+  }
+  mm.addEventListener("mousedown",  e => { _mmDrag = true;  _mmPanTo(e); e.stopPropagation(); });
+  mm.addEventListener("mousemove",  e => { if (_mmDrag) _mmPanTo(e); });
+  mm.addEventListener("mouseup",    () => { _mmDrag = false; });
+  mm.addEventListener("mouseleave", () => { _mmDrag = false; });
+
+  // "settling…" overlay — visible while simulation runs (matches pyray settling indicator)
+  const settl = document.createElement("div");
+  settl.id = "gx-settling";
+  settl.style.cssText = "display:none;position:absolute;bottom:160px;left:8px;z-index:11;" +
+    "background:rgba(40,44,58,0.85);padding:2px 8px;border-radius:3px;" +
+    "font-size:11px;color:#6480b4;pointer-events:none;" +
+    "font-family:'Segoe UI',system-ui,sans-serif";
+  settl.textContent = "settling…";
+  container.appendChild(settl);
+}
+
+// ── load full corpus ──────────────────────────────────────
+function _fgLoadFull() {
+  if (!_fg) _fgInit();
+  gxStatus.textContent = "Loading corpus graph…";
+  document.getElementById("gx-fg").style.display = "";
+  document.getElementById("gx-cy").style.display = "none";
+  socket.emit("graph_full", { limit: 200 });
+}
+
+socket.on("graph_full_result", data => {
+  if (data.error) { gxStatus.textContent = `Graph error: ${data.error}`; return; }
+  document.getElementById("gx-fg").style.display = "";
+  document.getElementById("gx-cy").style.display = "none";
+  if (!_fg) _fgInit();
+  _fgReady = true;
+  _fgData = {
+    nodes: data.nodes,
+    links: data.edges.map(e => ({ source: e.source, target: e.target })),
+  };
+  _fg.graphData(_fgData);
+  gxStatus.textContent = `${data.nodes.length} nodes · ${data.edges.length} edges`;
+  setTimeout(() => { _fg.zoomToFit(600); _fgDrawMinimap(); }, 1000);
 });
 
+// ── expand node (double-click or search-navigate) ─────────
+function _fgExpand(symbol) {
+  socket.emit("graph_expand", { symbol, existing_ids: _fgData.nodes.map(n => n.id) });
+}
+
+socket.on("graph_expand_result", data => {
+  if (data.error || !_fg) return;
+  const existingIds = new Set(_fgData.nodes.map(n => n.id));
+  const newNodes = data.nodes.filter(n => !existingIds.has(n.id));
+  const allNodes = [..._fgData.nodes, ...newNodes];
+  const allLinks = data.edges.map(e => ({ source: e.source, target: e.target }));
+  _fgData = { nodes: allNodes, links: allLinks };
+  _fg.graphData(_fgData);
+  gxStatus.textContent = `${allNodes.length} nodes · ${allLinks.length} edges`;
+
+  // after expand: select + frame center node (matches pyray _expand_node → _select_node + _frame_node)
+  if (data.center) {
+    setTimeout(() => {
+      const n = _fgData.nodes.find(n => n.id === data.center);
+      if (n) {
+        if (n.x !== undefined) {
+          _fg.centerAt(n.x, n.y, 400);
+          if ((_fg.zoom()?.k || 1) < 1.2) _fg.zoom(1.2, 400);
+        }
+        if (_fgExpandedId === data.center) {
+          // true expand mode (from double-click): select with neighbour colouring
+          _fgSelect(n, null, null);
+        }
+      }
+    }, 400);
+  }
+});
+
+// ── "Map ↵" — search/center in existing graph ────────────
+function gxMap(symbol) {
+  if (!symbol) return;
+  if (!_fgReady) { _fgLoadFull(); return; }
+  // clear all highlight/selection state
+  _fgData.nodes.forEach(n => {
+    n._dim = false; n._path = false; n._selected = false;
+    n._caller = false; n._callee = false; n._selDim = false;
+  });
+  _fgData.links.forEach(l => { l._path = false; l._hi = false; l._selEdge = false; });
+  _fgSelectedId = null;
+  // find matching nodes (substring, matches pyray search)
+  const lo = symbol.toLowerCase();
+  const hits = _fgData.nodes.filter(n =>
+    n.id.toLowerCase().includes(lo) || (n.label || "").toLowerCase().includes(lo));
+  if (hits.length) {
+    _fgData.nodes.forEach(n => { n._dim = !hits.includes(n); });
+    const exact = hits.find(n => n.id === symbol || n.label === symbol) || hits[0];
+    exact._selected = true;
+    _fgSelectedId = exact.id;
+    _fg.resumeAnimation();
+    if (exact.x !== undefined) _fg.centerAt(exact.x, exact.y, 400);
+    gxStatus.textContent = `${hits.length} match${hits.length > 1 ? "es" : ""} for "${symbol}"`;
+    openMapPanel(symbol, _mouseX, _mouseY);
+  } else {
+    // not in view — load neighbourhood without entering expand mode
+    gxStatus.textContent = `"${symbol}" not in current view — loading…`;
+    socket.emit("graph_expand", { symbol, existing_ids: _fgData.nodes.map(n => n.id) });
+  }
+}
 gxGo.addEventListener("click", () => gxMap(gxInput.value.trim()));
+// Enter key in search bar → jump (matches pyray search Enter)
 gxInput.addEventListener("keydown", e => { if (e.key === "Enter") gxMap(gxInput.value.trim()); });
 
-// ── graph path: from → to ─────────────────────────────────
+// live search: dim non-matching nodes as user types (matches pyray search live dim)
+gxInput.addEventListener("input", () => {
+  if (!_fg || !_fgReady) return;
+  const v = gxInput.value.trim().toLowerCase();
+  if (v.length < 2) {
+    _fgData.nodes.forEach(n => { n._dim = false; }); _fg.resumeAnimation(); return;
+  }
+  _fgData.nodes.forEach(n => {
+    n._dim = !n.id.toLowerCase().includes(v) && !(n.label || "").toLowerCase().includes(v);
+  });
+  _fg.resumeAnimation();
+});
+
+// ── path finder ───────────────────────────────────────────
 const gxSrc    = document.getElementById("gx-src");
 const gxDst    = document.getElementById("gx-dst");
 const gxPathGo = document.getElementById("gx-path-go");
@@ -1823,25 +2131,53 @@ gxDst.addEventListener("keydown", e => { if (e.key === "Enter") gxFindPath(); })
 socket.on("graph_path_result", data => {
   if (data.error) { gxStatus.textContent = `No path: ${data.error}`; return; }
   const path = data.path || [];
-  if (!path.length) { gxStatus.textContent = "No path found between those symbols."; return; }
+  if (!path.length) { gxStatus.textContent = "No path found."; return; }
   gxStatus.textContent = `Path (${path.length} hops): ${path.join(" → ")}`;
-  // render the path as a linear graph
-  if (_cy) { _cy.destroy(); _cy = null; }
-  const cyEl = document.getElementById("gx-cy");
-  cyEl.innerHTML = "";
-  const nodes = path.map(s => ({ data: { id: s, label: s.split(".").pop() }, classes: s === path[0] ? "gx-root" : "" }));
-  const edges = path.slice(1).map((s, i) => ({ data: { id: `e${i}`, source: path[i], target: s } }));
-  _cy = cytoscape({
-    container: cyEl,
-    elements: [...nodes, ...edges],
-    style: GX_STYLE,
-    layout: { name: "breadthfirst", directed: true, padding: 20 },
+  // clear all state
+  _fgData.nodes.forEach(n => {
+    n._path = false; n._dim = false; n._selected = false;
+    n._caller = false; n._callee = false; n._selDim = false;
   });
-  _cy.on("tap", "node", evt => {
-    const sym = evt.target.data("id");
-    gxInput.value = sym;
-    const oe = evt.originalEvent || {};
-    openMapPanel(sym, oe.clientX || _mouseX, oe.clientY || _mouseY);
+  _fgData.links.forEach(l => { l._path = false; l._selEdge = false; });
+  _fgSelectedId = null;
+  const pathSet = new Set(path);
+  // merge any path nodes not already in graph
+  const existing = new Set(_fgData.nodes.map(n => n.id));
+  const newNodes = path.filter(s => !existing.has(s)).map(s => ({
+    id: s, label: s.split(".").pop(), file: "", is_stub: false, is_tool: false, degree: 0,
+  }));
+  if (newNodes.length) {
+    _fgData.nodes.push(...newNodes);
+    const newLinks = path.slice(1).map((s, i) => ({ source: path[i], target: s, _path: true }));
+    _fgData.links.push(...newLinks);
+  }
+  _fgData.nodes.forEach(n => { if (pathSet.has(n.id)) { n._path = true; n._dim = false; } else n._dim = true; });
+  _fgData.links.forEach(l => {
+    const sid = l.source.id !== undefined ? l.source.id : l.source;
+    const tid = l.target.id !== undefined ? l.target.id : l.target;
+    if (pathSet.has(sid) && pathSet.has(tid)) l._path = true;
+  });
+  _fg.graphData(_fgData);
+  _fg.resumeAnimation();
+  const pathNodes = _fgData.nodes.filter(n => n._path && n.x !== undefined);
+  if (pathNodes.length > 1) {
+    const cx = pathNodes.reduce((s, n) => s + n.x, 0) / pathNodes.length;
+    const cy = pathNodes.reduce((s, n) => s + n.y, 0) / pathNodes.length;
+    _fg.centerAt(cx, cy, 400);
+  }
+});
+
+// ── auto-load on corpus ready + map tab click ─────────────
+let _fgMapTabActive = false;
+socket.on("corpus_ready", () => {
+  _fgData = { nodes: [], links: [] }; _fgReady = false;
+  _fgSelectedId = null; _fgExpandedId = null;
+  if (_fgMapTabActive) _fgLoadFull();
+});
+document.querySelectorAll('.tab[data-tab="map"]').forEach(btn => {
+  btn.addEventListener("click", () => {
+    _fgMapTabActive = true;
+    if (!_fgReady) _fgLoadFull();
   });
 });
 
