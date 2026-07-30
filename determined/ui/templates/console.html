@@ -415,8 +415,9 @@
         </div>
         <div id="map-view-graph" style="display:flex;flex-direction:column;flex:1;min-height:0">
           <div class="graph-toolbar">
-            <input id="gx-input" class="path-input" placeholder="Symbol" style="flex:1">
+            <input id="gx-input" class="path-input" placeholder="Symbol to explore" style="flex:1">
             <button class="send-btn" id="gx-go">Map ↵</button>
+            <button class="send-btn" id="gx-overview" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)" title="Load top-200 nodes by degree">Overview</button>
             <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
               hops <select id="gx-hops" style="background:var(--surface2);color:var(--text1);border:1px solid var(--border);border-radius:3px;padding:2px 4px">
                 <option value="1">1</option>
@@ -2167,17 +2168,21 @@ socket.on("graph_path_result", data => {
   }
 });
 
-// ── auto-load on corpus ready + map tab click ─────────────
-let _fgMapTabActive = false;
+// ── Overview button + map tab init ───────────────────────
+document.getElementById("gx-overview").addEventListener("click", _fgLoadFull);
+
 socket.on("corpus_ready", () => {
   _fgData = { nodes: [], links: [] }; _fgReady = false;
   _fgSelectedId = null; _fgExpandedId = null;
-  if (_fgMapTabActive) _fgLoadFull();
+  // reset to empty state — user chooses whether to load overview or search directly
+  if (_fg) { _fg.graphData({ nodes: [], links: [] }); }
+  gxStatus.textContent = "Corpus ready — search a symbol or click Overview";
 });
+
 document.querySelectorAll('.tab[data-tab="map"]').forEach(btn => {
   btn.addEventListener("click", () => {
-    _fgMapTabActive = true;
-    if (!_fgReady) _fgLoadFull();
+    if (!_fg) _fgInit();
+    if (!_fgReady) gxStatus.textContent = "Search a symbol to start, or click Overview";
   });
 });
 
