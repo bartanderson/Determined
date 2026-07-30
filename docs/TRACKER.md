@@ -99,6 +99,117 @@ Report: "here's what I found / here's what needs your input / here's what I can 
 
 ---
 
+## RM74 — Analyst-level workflow capability audit
+
+**Origin:** 2026-07-30 walkthrough session — using Determined on dj2 as a live evaluation.
+Every time Claude reaches for something outside the tool (raw SQL, file reads, mental synthesis)
+that's a gap. Goal: systematically close those gaps so Determined does the analysis, not Claude.
+
+**Constraint:** All new capabilities must be corpus-agnostic and language-agnostic.
+They operate on graph structure, stub signals, call edges — never on domain knowledge baked in.
+The corpus tells you what's important; the tool surfaces it.
+
+**Approach:** As the walkthrough continues, log each gap below. Then build or wire the tool
+to cover it. Expect to discover workflows that work for any corpus.
+
+### Gaps found so far
+
+**GAP-1: Island detection** (2026-07-30)
+- What happened: Claude queried stubs directly from DB to find the encounter island (25 stubs,
+  all orphaned — no live callers anywhere in chain). Frontier Direct mode only showed 6 stubs
+  (the ones live code is already calling). The other 19 were invisible to the UI.
+- What Determined shows instead: FSM-SPEC cards on WHERE TO START hint at it, but don't name
+  the island or show its scope.
+- Gap: No tool or surface for "stub clusters with no live callers anywhere in the chain."
+  These are design-complete but unwired subsystems. Different signal from Direct stubs.
+- Corpus-agnostic form: "Find all stubs where no caller exists anywhere in the transitive
+  closure — the code knows what to build but nothing calls it yet."
+
+**GAP-2: Cross-layer chain synthesis** (2026-07-30)
+- What happened: Claude mentally assembled the broken wiring chain
+  (progress_journey → trigger_encounter → generate_encounter → FSM → resolver → route → frontend).
+  No tool produced this.
+- Gap: No "show me the chain this stub would live in if it were wired" output. The tool knows
+  all the pieces; it doesn't assemble the narrative of how they connect.
+- Corpus-agnostic form: "Given a stub or domain name, trace the expected path from entry point
+  to implementation and show which links are missing."
+
+**GAP-3: Route/boundary blind spot** (2026-07-30)
+- What happened: Claude flagged `/api/resolve-encounter` as "unknown — check manually."
+  JS fetch() calls to Flask routes don't produce Python graph edges, so the tool can't
+  confirm whether the backend route exists.
+- Gap: Cross-language boundary tracing (JS → HTTP → Python). The tool ingests both sides
+  but doesn't join them on route strings.
+- Corpus-agnostic form: "For each JS fetch/XHR/axios call with a string route, check whether
+  a matching Python/backend route decorator exists. Surface unmatched pairs."
+
+**GAP-4: Ask bar returns data, not analysis** (2026-07-30, confirmed)
+- What happened: Ask bar was tested with "what is the state of the encounter subsystem?"
+  It returned: 5 files, 20 symbols, 18 call relationships, 1 stored finding.
+  No narrative. No stub status per symbol. No wiring gap assessment. No verdict.
+- Retrieval is good — it found symbols I missed (start_encounter, _action_trigger_encounter
+  in adjudication_engine.py). The semantic search works.
+- Gap: Synthesis is absent. The Ask bar is a semantic search surface, not an analyst.
+  It hands back a pile of facts with no interpretation on top.
+- Corpus-agnostic form: After retrieval, run a narration pass that answers:
+  "What is complete? What is stub? What is orphaned? What is the wiring gap?
+  What design exists to guide implementation? What should be built first?"
+
+### The larger arc (2026-07-30)
+
+This is not just a fix — it's a capability tier upgrade. The current tool has:
+  - Ingestion (structural facts into DB)
+  - Retrieval (semantic search, call graph queries)
+  - Display (UI surfaces — Frontier, Shape, Ask, etc.)
+
+What it needs:
+
+**Tier 1 — Analyst layer** (narrate domain state from corpus facts)
+  - Given a domain name or entry point, produce a written assessment:
+    completeness, stubs, orphans, wiring gaps, design available, recommended first step
+  - Output is a human-readable document, also stored as a knowledge_artifact
+  - This is what Claude did manually; the tool should do it automatically
+
+**Tier 2 — Plan layer** (sequenced build plan from analysis)
+  - From an analyst report, generate: what to build, in what order, with what design
+  - Grounded in graph structure — ordering respects dependency chains
+  - Output stored as workflow_items in the DB, visible in Build Queue
+
+**Tier 3 — Direction layer** (progress tracking + pivot)
+  - As stubs get implemented, re-run the analyst on the domain
+  - Surface what just unlocked (new callers became satisfiable)
+  - Identify adjacent domains that become workable once this one closes
+  - "You finished encounter flee/parley — combat is now the blocker. Here's its state."
+
+**Tier 4 — Knowledge accumulation**
+  - Each analyst run enriches knowledge_artifacts
+  - Future runs start from the stored prior analysis, not from scratch
+  - The tool gets smarter about each corpus over time
+
+All tiers must be corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any language.
+
+### Build order
+
+1. **Analyst narration layer** — highest leverage, unlocks everything else.
+   Add a narration pass to the query pipeline: after retrieval, synthesize a written
+   assessment using the LLM + structured corpus facts (stubs, edges, design notes).
+   Target: Ask bar answers "what is the state of X?" with analyst-quality output.
+
+2. **Island detection tool** (`find_stub_islands`) — corpus-agnostic, deterministic.
+   No LLM needed. Pure graph query: stub clusters where transitive caller closure = empty.
+
+3. **Chain synthesis** — given a domain, trace entry-point-to-implementation path,
+   mark missing links. LLM-narrated over graph data.
+
+4. **Cross-language route matching** — JS fetch() → Python route decorator join.
+   Ingestion-time: extract route strings from JS, match against @app.route decorators.
+
+5. **Plan generation** — analyst output → ordered workflow_items in Build Queue.
+
+6. **Direction/pivot** — re-run analyst after each stub is closed, surface what unlocks.
+
+---
+
 ## RM68 — Remove subrace concept from dj2
 
 **[dj2 REPO ONLY — NOT A DETERMINED TASK — NEVER ACT ON THIS IN A DETERMINED SESSION]**

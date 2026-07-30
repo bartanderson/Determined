@@ -5930,29 +5930,33 @@ def gap_analysis(assessor: "Assessor", args: dict) -> str:
     # 3. Gap metrics block for grounding
     gap_block = _gap_summary_block(assessor)
 
-    # 4. Prompt the quality-tier model with game-domain framing
+    # 4. Derive corpus identity from project_meta (corpus-agnostic)
+    try:
+        root_row = oracle.conn.execute(
+            "SELECT value FROM project_meta WHERE key='project_root'"
+        ).fetchone()
+        corpus_label = root_row[0].replace("\\", "/").rstrip("/").split("/")[-1] if root_row else "this codebase"
+    except Exception:
+        corpus_label = "this codebase"
+
     from determined.agent.llm_client import chat_quality as chat
     prompt_msgs = [
         {"role": "system", "content":
-            "You are analyzing a Python codebase for an AI-driven dungeon-master (DM) game. "
-            "The game uses an LLM as the DM's voice and judgment, but the LLM never mutates state — "
-            "all state changes flow through a deterministic Intent->Adjudication->Action chain. "
-            "Key game subsystems include: world state, session management, event logging, "
-            "tool dispatch, action adjudication, and AI boundary enforcement. "
-            "Given per-file semantic summaries, identify what game features are missing, "
+            f"You are analyzing a software codebase ({corpus_label}). "
+            "Given per-file semantic summaries, identify what features or subsystems are missing, "
             "incomplete, or disconnected. Propose typed fills:\n"
             "  extend   — add missing capability to an existing module\n"
             "  bridge   — connect two modules that should interact but don't\n"
             "  mirror   — add analogous coverage that exists elsewhere but is missing here\n"
             "  consolidate — merge fragmented logic into one place\n"
             "Be concrete: name the file, the gap, and what the fix looks like. "
-            "5-10 proposals. Focus on game functionality, not documentation."},
+            "5-10 proposals. Focus on functionality and architecture, not documentation."},
         {"role": "user", "content":
             f"Scope: {scope_label}\n\n"
             f"=== Per-file semantic summaries ===\n{summary_block}\n\n"
             f"=== Design notes ===\n{design_block}\n\n"
             f"=== Coverage metrics ===\n{gap_block}\n\n"
-            "What game features are missing, incomplete, or disconnected? "
+            "What features or subsystems are missing, incomplete, or disconnected? "
             "Propose typed fills (extend/bridge/mirror/consolidate)."},
     ]
     llm_response = chat(prompt_msgs, timeout=300)
@@ -6172,8 +6176,17 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
         file_list = file_list[:char_limit]
         print(f"  (trimmed to fit context)")
 
+    # Derive corpus identity from project_meta (corpus-agnostic)
+    try:
+        root_row = conn.execute(
+            "SELECT value FROM project_meta WHERE key='project_root'"
+        ).fetchone()
+        corpus_label = root_row[0].replace("\\", "/").rstrip("/").split("/")[-1] if root_row else "this codebase"
+    except Exception:
+        corpus_label = "this codebase"
+
     pass1_prompt = (
-        "You are analyzing a Python dungeon-master (DM) game codebase.\n"
+        f"You are analyzing a software codebase ({corpus_label}).\n"
         "Below is a one-line description of every source file.\n"
         "Group them into 6-10 named subsystems.\n"
         "For each subsystem write ONE paragraph: what it does today, "
@@ -6192,22 +6205,19 @@ def corpus_synthesis(assessor: "Assessor", args: dict) -> str:
     # --- Pass 2: 27B reasons over subsystem map for architectural gaps ---
     pass2_msgs = [
         {"role": "system", "content": (
-            "You are analyzing an AI-driven dungeon-master game in Python. "
-            "The game's core invariant: the LLM is the DM's voice and judgment "
-            "but NEVER mutates state directly. All mutations flow through a chain: "
-            "Intent -> Adjudication -> Action -> WorldState. "
+            f"You are analyzing a software codebase ({corpus_label}). "
             "Given a subsystem map of what currently exists, identify structural gaps: "
             "subsystems that are disconnected, flows that are broken, features that "
             "cannot work because a required bridge is missing. "
             "Be specific: name the gap, the files involved, the type of fix "
-            "(extend / bridge / mirror / consolidate), and why it matters for gameplay. "
-            "5-8 findings. Focus on game correctness and architecture, not documentation."
+            "(extend / bridge / mirror / consolidate), and why it matters. "
+            "5-8 findings. Focus on correctness and architecture, not documentation."
         )},
         {"role": "user", "content": (
             f"Subsystem map:\n{subsystem_map}\n\n"
-            "What is structurally missing or disconnected in this game system?\n"
+            "What is structurally missing or disconnected?\n"
             "Which subsystems cannot talk to each other yet?\n"
-            "What would break if someone tried to run a game session today?"
+            "What would fail if someone tried to use the core functionality today?"
         )},
     ]
 
@@ -9368,6 +9378,99 @@ def find_isolated_modules(oracle: "DBOracle", args: dict) -> str:
 
 
 TOOLS["find_isolated_modules"] = (find_isolated_modules, "oracle")
+
+
+# ------------------------------------------------------------------
+# find_stub_islands -- stub clusters with no live callers anywhere
+# in the transitive closure. These are design-complete but unwired
+# subsystems — different from Direct stubs (which have callers waiting).
+# Corpus-agnostic: operates purely on graph tables.
+# ------------------------------------------------------------------
+
+def find_stub_islands(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_stub_islands([scope][, min_size=2]) — find clusters of stub functions
+    where no caller exists anywhere in the corpus for any stub in the cluster.
+
+    These are "design islands": the code knows what to build (stubs exist, often
+    with docstrings or FSM configs), but nothing calls them yet. Distinct from
+    Frontier Direct stubs, which already have live callers waiting.
+
+    Args:
+        scope:    optional file path substring to restrict search
+        min_size: minimum island size to report (default 1)
+    """
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+    min_size = int(args.get("min_size", 1))
+
+    # All stubs in scope
+    q = "SELECT name, file_path FROM functions WHERE is_stub = 1"
+    params: list = []
+    if scope:
+        q += " AND file_path LIKE ?"
+        params.append(f"%{scope}%")
+    stub_rows = conn.execute(q, params).fetchall()
+
+    if not stub_rows:
+        return "No stubs found" + (f" in scope '{scope}'" if scope else "") + "."
+
+    # For each stub, check whether any callers exist in graph_edges
+    islands: list[tuple[str, str, int]] = []  # (name, file_path, caller_count)
+    for name, fp in stub_rows:
+        caller_count = conn.execute(
+            "SELECT COUNT(*) FROM graph_edges WHERE callee = ?", (name,)
+        ).fetchone()[0]
+        islands.append((name, fp, caller_count))
+
+    # Separate: orphaned stubs (0 callers) vs stubs with callers (Direct)
+    orphaned = [(n, fp, c) for n, fp, c in islands if c == 0]
+    has_callers = [(n, fp, c) for n, fp, c in islands if c > 0]
+
+    # Group orphaned stubs by file to identify island clusters
+    from collections import defaultdict
+    by_file: dict[str, list[str]] = defaultdict(list)
+    for name, fp, _ in orphaned:
+        by_file[fp].append(name)
+
+    if not orphaned:
+        return (
+            f"No stub islands found — all {len(stub_rows)} stub(s) have at least one caller.\n"
+            "This means every stub is a Direct stub (live code already waiting on it)."
+        )
+
+    # Sort clusters by size descending
+    clusters = sorted(by_file.items(), key=lambda x: len(x[1]), reverse=True)
+    clusters = [(fp, names) for fp, names in clusters if len(names) >= min_size]
+
+    lines = [
+        f"STUB ISLANDS — {len(orphaned)} orphaned stub(s) across {len(by_file)} file(s)",
+        f"(no caller exists anywhere in the corpus for these stubs)",
+        f"Direct stubs (have callers): {len(has_callers)}",
+        "",
+    ]
+
+    for fp, names in clusters:
+        short_fp = fp.replace("\\", "/").split("/")[-1]
+        lines.append(f"  [{short_fp}]  {len(names)} orphaned stub(s)")
+        for name in sorted(names):
+            lines.append(f"    - {name}")
+
+    if not clusters:
+        lines.append("  (no clusters meet the min_size threshold)")
+
+    lines += [
+        "",
+        "These stubs are design-complete but unwired — nothing calls them yet.",
+        "To wire them: find the entry point that should trigger this subsystem",
+        "and add the call chain. Run feature_shape() on the relevant directory",
+        "to see completeness % and identify the connecting functions.",
+    ]
+
+    return "\n".join(lines)
+
+
+TOOLS["find_stub_islands"] = (find_stub_islands, "oracle")
 
 
 # ------------------------------------------------------------------

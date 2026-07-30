@@ -216,6 +216,150 @@ def _assemble_prompt(question: str, facts_text: str, history: list[dict],
 
 
 # ------------------------------------------------------------------
+# Domain analyst: synthesise a state assessment for a named domain.
+# Fires when the question is "what is the state of X / how complete is X".
+# Enriches the retrieved facts with stub status and wiring analysis,
+# then calls LLM with an analyst prompt — NOT the generic assemble prompt.
+# Corpus-agnostic: operates on graph structure, never domain knowledge.
+# ------------------------------------------------------------------
+
+_ANALYST_SYSTEM = """\
+You are a code analyst. Given structured facts about a named subsystem, write a \
+state assessment covering:
+1. COMPLETE — what is already implemented and connected
+2. STUBS — what exists in name only (pass/TODO/NotImplemented bodies)
+3. ORPHANED — stubs or implementations with zero callers anywhere in the codebase
+4. WIRING GAPS — the chain that needs to exist but is broken (entry point → ... → implementation)
+5. DESIGN AVAILABLE — what design artifacts (FSM configs, docstrings, design notes) exist to guide implementation
+6. FIRST STEP — the single most leveraged thing to build next
+
+Rules:
+- Base every claim on the facts provided. Do not invent symbols or files.
+- Name specific functions and files. Avoid vague generalisations.
+- Keep it under 400 words. Write in plain prose, not bullet points.
+- If the facts are thin, say so — "coverage is low, consider running discovery first."
+"""
+
+_DOMAIN_STATE_RE = re.compile(
+    r"\b(state of|status of|how complete|completeness of|what.s missing in|"
+    r"what is.+subsystem|what.s.+subsystem|overview of|survey of|"
+    r"what.s built in|what exists in|what.s done in|assess)\b",
+    re.I,
+)
+
+
+def _is_domain_analysis_question(question: str, needs: list[str]) -> bool:
+    """True when the question asks for a domain state assessment."""
+    if _DOMAIN_STATE_RE.search(question):
+        return True
+    # Also fire when survey heuristic matched (files+symbols+findings) but question
+    # has an evaluative word — the user wants analysis, not a data dump.
+    evaluative = re.compile(
+        r"\b(state|status|complete|missing|done|built|ready|progress|overview|assess)\b", re.I
+    )
+    return bool(_is_survey_needs(needs) and evaluative.search(question))
+
+
+def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
+    """
+    Augment the fact set with stub/caller status for each symbol found.
+    Returns a structured text block ready for the analyst prompt.
+    Corpus-agnostic: operates purely on graph tables.
+    """
+    # Collect symbol names from search_symbols results
+    symbol_names = []
+    for f in facts:
+        if f.get("tool") not in ("search_symbols", "symbols_in_file"):
+            continue
+        result = f.get("result", "") or ""
+        for line in result.splitlines()[1:]:
+            line = line.strip()
+            if line:
+                # lines look like: "generate_encounter (function) in encounter_generator.py line 36"
+                name = line.split("(")[0].strip().split()[-1]
+                if name:
+                    symbol_names.append(name)
+
+    if not symbol_names:
+        return ""
+
+    conn = oracle.conn
+    lines = ["Symbol status (from graph):"]
+    for name in symbol_names[:30]:  # cap to avoid huge context
+        try:
+            stub_row = conn.execute(
+                "SELECT is_stub, file_path FROM functions WHERE name = ? LIMIT 1",
+                (name,)
+            ).fetchone()
+            caller_count = conn.execute(
+                "SELECT COUNT(*) FROM graph_edges WHERE callee = ?", (name,)
+            ).fetchone()[0]
+            if stub_row:
+                stub_flag = "STUB" if stub_row[0] else "impl"
+                orphan_flag = " ORPHANED" if caller_count == 0 else f" ({caller_count} callers)"
+                lines.append(f"  {stub_flag}{orphan_flag}  {name}  [{stub_row[1]}]")
+        except Exception:
+            pass
+
+    # Also surface design notes for the domain
+    domain_words = set()
+    for f in facts:
+        result = f.get("result", "") or ""
+        for line in result.splitlines()[:5]:
+            for word in line.lower().split():
+                if len(word) > 4 and word.isalpha():
+                    domain_words.add(word)
+    domain_words = list(domain_words)[:5]
+
+    design_notes = []
+    for word in domain_words:
+        try:
+            rows = conn.execute(
+                "SELECT kind, content FROM knowledge_artifacts "
+                "WHERE (subject LIKE ? OR content LIKE ?) AND kind IN ('design_note','finding','sots') "
+                "LIMIT 3",
+                (f"%{word}%", f"%{word}%")
+            ).fetchall()
+            for kind, content in rows:
+                design_notes.append(f"  [{kind}] {content[:120]}")
+        except Exception:
+            pass
+
+    result_lines = ["\n".join(lines)]
+    if design_notes:
+        result_lines.append("Design artifacts found:\n" + "\n".join(design_notes[:8]))
+
+    return "\n\n".join(result_lines)
+
+
+def build_domain_analysis(question: str, facts: list[dict], oracle,
+                           history: list[dict]) -> str:
+    """
+    Analyst-level domain state assessment.
+    Enriches retrieved facts with stub/caller/design data, then calls LLM
+    with a purpose-built analyst prompt.
+    """
+    # Build the standard fact text
+    facts_text = facts_to_text(facts)
+
+    # Enrich with stub status and design notes
+    enrichment = _enrich_with_stub_status(facts, oracle)
+
+    full_context = facts_text
+    if enrichment:
+        full_context = facts_text + "\n\n=== STUB / ORPHAN STATUS ===\n" + enrichment
+
+    messages = [{"role": "system", "content": _ANALYST_SYSTEM}]
+    for turn in history[-4:]:
+        messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content":
+        f"Question: {question}\n\n"
+        f"=== CORPUS FACTS ===\n{full_context}\n=== END FACTS ==="
+    })
+    return _llm_chat(messages, timeout=_LLM_TIMEOUT) or "(analyst: no LLM response)"
+
+
+# ------------------------------------------------------------------
 # Survey bypass: build structured answer directly from facts
 # (bypasses LLM for survey heuristic - tiny model ignores facts)
 # ------------------------------------------------------------------
@@ -463,7 +607,9 @@ def _answer(
     # Phase 3: ASSEMBLE
     # Several heuristics get a deterministic answer (tiny model ignores or degrades facts).
     bypass = None
-    if _is_survey_needs(needs):
+    if _is_domain_analysis_question(user_input, needs):
+        answer = build_domain_analysis(user_input, facts, oracle, history); bypass = "domain_analyst"
+    elif _is_survey_needs(needs):
         answer = build_survey_answer(facts); bypass = "survey"
     elif _is_git_history_needs(needs):
         answer = build_git_history_answer(facts); bypass = "git_history"
