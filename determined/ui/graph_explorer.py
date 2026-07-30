@@ -71,6 +71,9 @@ _CTX_MENU_ITEMS = [
     ("Call Tree",         "call_tree"),
     ("Open in Editor",    "editor"),
     None,  # divider
+    ("Expand node",       "expand"),
+    ("Frame node",        "frame"),
+    None,  # divider
     ("Copy name",         "copy_name"),
     ("Copy file path",    "copy_path"),
 ]
@@ -171,23 +174,28 @@ class _SocketBridge:
     def __init__(self):
         self._sio = None
         self._connected = False
+        self._pending_highlight: Optional[str] = None
         if _SOCKETIO_AVAILABLE:
             threading.Thread(target=self._connect, daemon=True).start()
 
     def _connect(self):
-        try:
-            sio = _sio_mod.Client(reconnection=True, reconnection_attempts=3,
-                                  logger=False, engineio_logger=False)
+        # Retry indefinitely — UI may start after graph explorer.
+        while True:
+            try:
+                sio = _sio_mod.Client(reconnection=True, reconnection_attempts=0,
+                                      logger=False, engineio_logger=False)
 
-            @sio.on("gx_highlight")
-            def on_highlight(data):
-                self._pending_highlight = data.get("symbol")
+                @sio.on("gx_highlight")
+                def on_highlight(data):
+                    self._pending_highlight = data.get("symbol")
 
-            sio.connect(self.UI_URL, transports=["websocket"])
-            self._sio = sio
-            self._connected = True
-        except Exception:
-            pass  # UI not running — silent
+                sio.connect(self.UI_URL, transports=["websocket"])
+                self._sio = sio
+                self._connected = True
+                return  # connected — done
+            except Exception:
+                self._connected = False
+                time.sleep(5)  # UI not running yet — retry in 5s
 
     def emit_select(self, node):
         if not self._connected:
@@ -218,9 +226,6 @@ class _SocketBridge:
     @property
     def connected(self) -> bool:
         return self._connected
-
-    # Set by the on_highlight callback; polled by the main loop.
-    _pending_highlight: Optional[str] = None
 
 
 class GraphDB:
@@ -687,7 +692,6 @@ class GraphExplorer:
     def _navigate_to(self, destination: str, node: Node):
         """Route node to a UI surface or local action."""
         if destination == "editor":
-            # Look up start_line from DB; fall back to line 1
             row = self._db._con.execute(
                 "SELECT line_number FROM functions WHERE name=? AND file_path=?",
                 (node.name, node.file_path)
@@ -697,6 +701,15 @@ class GraphExplorer:
                 subprocess.Popen(["code", "--goto", f"{node.file_path}:{line}"])
             except FileNotFoundError:
                 pass  # VS Code not on PATH — silently ignore
+        elif destination == "expand":
+            self._expand_node(node)
+            self._select_node(node)
+            if hasattr(self, "_cam"):
+                self._frame_node(self._cam, node)
+        elif destination == "frame":
+            self._select_node(node)
+            if hasattr(self, "_cam"):
+                self._frame_node(self._cam, node)
         elif destination == "copy_name":
             try:
                 import pyperclip
@@ -1144,6 +1157,7 @@ class GraphExplorer:
             rl.SetTextureFilter(self._font.texture, rl.TEXTURE_FILTER_BILINEAR)
 
         cam = self._make_camera()
+        self._cam = cam  # expose to _navigate_to for frame/expand actions
 
         # Load graph in background so window appears immediately
         t = threading.Thread(target=self._load_top, daemon=True)

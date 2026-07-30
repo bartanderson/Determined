@@ -5420,7 +5420,7 @@ socket.on("gx_nav", data => {
     }
   } else if (dest === "oracle") {
     activateTab("chat");
-    const qi = document.getElementById("question-input");
+    const qi = document.getElementById("q-input");
     if (qi) { qi.value = `Tell me about ${symbol}`; qi.focus(); }
   } else if (dest === "map") {
     activateTab("map");
