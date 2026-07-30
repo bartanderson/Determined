@@ -224,8 +224,11 @@ def _assemble_prompt(question: str, facts_text: str, history: list[dict],
 # ------------------------------------------------------------------
 
 _ANALYST_SYSTEM = """\
-You are a code analyst. Given structured facts about a named subsystem, write a \
-state assessment covering:
+You are a code analyst. Respond directly with the assessment — no preamble, \
+no "let me break this down", no restating the question. Start immediately with \
+the findings.
+
+Given structured facts about a named subsystem, write a state assessment covering:
 1. COMPLETE — what is already implemented and connected
 2. STUBS — what exists in name only (pass/TODO/NotImplemented bodies)
 3. ORPHANED — stubs or implementations with zero callers anywhere in the codebase
@@ -234,6 +237,7 @@ state assessment covering:
 6. FIRST STEP — the single most leveraged thing to build next
 
 Rules:
+- The facts provided are authoritative graph data from the corpus database. Treat them as ground truth. Assert directly — do not hedge claims that come from these facts.
 - Base every claim on the facts provided. Do not invent symbols or files.
 - Name specific functions and files. Avoid vague generalisations.
 - Keep it under 400 words. Write in plain prose, not bullet points.
@@ -292,12 +296,17 @@ def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
                 (name,)
             ).fetchone()
             caller_count = conn.execute(
-                "SELECT COUNT(*) FROM graph_edges WHERE callee = ?", (name,)
+                "SELECT COUNT(*) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+                (name, f"%.{name}")
             ).fetchone()[0]
             if stub_row:
-                stub_flag = "STUB" if stub_row[0] else "impl"
-                orphan_flag = " ORPHANED" if caller_count == 0 else f" ({caller_count} callers)"
-                lines.append(f"  {stub_flag}{orphan_flag}  {name}  [{stub_row[1]}]")
+                if stub_row[0]:
+                    # Stub: body not written
+                    status = f"UNIMPLEMENTED, {caller_count} caller(s) depend on it" if caller_count else "UNIMPLEMENTED, nothing calls it yet"
+                else:
+                    # Real implementation
+                    status = f"implemented, {caller_count} caller(s)" if caller_count else "implemented but ORPHANED (0 callers)"
+                lines.append(f"  {name}  [{stub_row[1]}]  — {status}")
         except Exception:
             pass
 
@@ -356,7 +365,18 @@ def build_domain_analysis(question: str, facts: list[dict], oracle,
         f"Question: {question}\n\n"
         f"=== CORPUS FACTS ===\n{full_context}\n=== END FACTS ==="
     })
-    return _llm_chat(messages, timeout=_LLM_TIMEOUT) or "(analyst: no LLM response)"
+    raw = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "(analyst: no LLM response)"
+    return _strip_reasoning_preamble(raw)
+
+
+def _strip_reasoning_preamble(text: str) -> str:
+    """Strip inline reasoning before the first numbered section heading."""
+    import re as _re
+    # Find first occurrence of a numbered section like "1. COMPLETE" or "COMPLETE:"
+    m = _re.search(r"(?m)^(\d+\.\s+[A-Z]|COMPLETE:|STUBS:|WIRING|FIRST STEP)", text)
+    if m and m.start() > 0:
+        return text[m.start():]
+    return text
 
 
 # ------------------------------------------------------------------
