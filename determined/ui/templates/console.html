@@ -2672,6 +2672,18 @@ function _renderPopover(data) {
 
   sp2Actions.innerHTML = "";
   const btns = [
+    { label: "workbench", fn: () => {
+        activateTab("workbench");
+        if (_wbTools.length) { wbSetSymbol(data.symbol); }
+        else { wbLoad(); socket.once("workbench_tools", () => wbSetSymbol(data.symbol)); }
+        closePopover();
+    }},
+    { label: "ask",        fn: () => {
+        activateTab("chat");
+        const qi = document.getElementById("q-input");
+        if (qi) { qi.value = `Tell me about ${data.symbol}`; qi.focus(); }
+        closePopover();
+    }},
     { label: "↙ callers",  fn: () => { ctUp.checked = true;  ctTrace(data.symbol); activateTab("call_tree"); closePopover(); } },
     { label: "↗ callees",  fn: () => { ctUp.checked = false; ctTrace(data.symbol); activateTab("call_tree"); closePopover(); } },
     { label: "graph",      fn: () => { gxMap(data.symbol); activateTab("map"); closePopover(); } },
