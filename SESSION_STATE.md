@@ -1,102 +1,84 @@
-Written at commit: 2c5ff74
+Written at commit: 00101d6
 
-# SESSION STATE — session 269 (end)
+# SESSION STATE — session 270 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `d432cf0` — fix(sketch_stub): two-phase caller lookup (RM70 Step 2 JOIN fix)
-- `0f3c248` — calibrate(rm71): post-JOIN-fix findings; RM71 pass added to baseline script
-- `89cf719` — feat(map): add workbench + ask buttons to node popover
-- `5256adb` — fix(graph_explorer): start_line → line_number in editor nav
-- `0c498a5` — fix(graph_explorer): complete Phase B/C — all broken navigation paths
-- `2c5ff74` — feat(map): draggable floating node panel replaces popover on graph click
+- `f74b349` — ForceGraph white-glove parity with pyray graph_explorer
+- `00101d6` — ego-graph focus mode: empty start, Overview on demand
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**RM70 Step 2 — caller body reader JOIN fix** [V]
-- `_caller_context` was LEFT JOINing `f.name = e.caller`; dj2 graph_edges stores
-  "Class.method" but functions.name may store just "method" → NULL file_path → no body
-- Fix: exact lookup first, then rsplit(".", 1) fallback for short-name callers
-- 144 tests pass [V]
+**ForceGraph white-glove audit (full pyray parity)** [V]
+- Rewrote the entire ForceGraph JS section in console.html (~350 lines)
+- All pyray graph_explorer.py behaviours now implemented in-browser:
+  - `_fgSelect()`: callers (green), callees (red), `_selDim` for non-neighbours
+    in expand mode, `_selEdge` on incident edges — matches pyray `_select_node`
+  - Gold halo + white ring on selected node — matches pyray `_draw_node` rings
+  - `onBackgroundClick` → deselect
+  - `onEngineTick`/`onEngineStop` → "settling…" overlay show/hide
+  - Minimap click-to-pan via stored `_fgMinimapGeo`; viewport rect in COL_MINIMAP_VP
+  - Minimap nodes coloured by selection state
+  - Escape: expand mode → `_fgLoadFull()`; else → clear selection
+  - Enter on `gxInput` → `gxMap()`
+  - After `graph_expand_result`: select + frame center node; expand-mode dim
+  - F key: frame selected or zoomToFit; Ctrl+0: zoomToFit
+  - Double-click → `_fgExpand` + set `_fgExpandedId`
+  - New state: `_fgSelectedId`, `_fgExpandedId`, `_fgMinimapGeo`
+  - `_fg.refresh()` → `_fg.resumeAnimation()` (correct v1.51.4 API)
+- Also added `graph_full` and `graph_expand` socket handlers to `ui_server.py`
 
-**RM70 baseline clean rerun + RM71 calibration** [V]
-- `tools/rm70_baseline.py` created (standalone runner, no UI server needed)
-- V1 pass: 71% (10/14), V2 mean: 0.357 — LLM non-determinism accounts for run-to-run variance
-- caller_complexity now live post-fix: _get_combat_context=0.633, _get_encounter_context=0.633
-- FSM stubs still caller_cx=0 (correct — no callers tracked in graph_edges for config-declared)
-- type_missing=1.000 for ALL dj2 stubs: CamelCase words in docstrings match regex but are not
-  corpus classes — noisy signal on this corpus; documented in export_context.py
-- Threshold 0.5 holds; only _get_combat_context hits it (correct escalation) [V documented]
+**Ego-graph focus mode** [V]
+- Map tab previously auto-loaded 200 nodes on open
+- Now starts empty: "Search a symbol to start, or click Overview"
+- "Overview" button in toolbar loads top-N by degree (same as before)
+- Searching a symbol from empty hits the expand branch → ego-graph seeds from that node
+- Queued for review during Bart's full analysis workflow walkthrough
 
-**Graph explorer — full nav audit and fix** [V]
-- editor crash: wrong column name `start_line` → `line_number` [V]
-- oracle pre-fill silent no-op: `question-input` → `q-input` in both gx_nav handler
-  AND the popover "ask" button [V]
-- Expand + Frame missing from context menu (_CTX_MENU_ITEMS); wired to
-  _expand_node/_frame_node via self._cam stored in run() [V]
-- Socket bridge gave up after 3 attempts; now retries every 5s indefinitely [V]
-- _pending_highlight was a class variable (shared across instances) → instance var [V]
+**Popover (sym-popover) — resolved** [V]
+- Decision: leave it. It fires for sym-link clicks in chat/workbench/call tree.
+  Bart doesn't consciously use it; removing it risks breaking symbol link clicks.
+  Not worth touching until the full flow review.
 
-**In-browser map: draggable node panel** [V]
-- Was: click node → dismissing popover near cursor, same 6 buttons always
-- Now: click node → floating panel overlaid on graph canvas
-  - Appears near click, drag header to reposition, pin survives node changes
-  - X to close resets pin position
-  - Adaptive primary buttons (2) by node type:
-      stub → workbench + ask
-      HOT  → ↙ callers + workbench
-      EP   → ↗ callees + workbench
-      else → workbench + ask
-  - Secondary row: remaining 4 actions at reduced prominence
-  - panel-map set to position:relative; panel is position:absolute within it
-    so it naturally hides when map tab is not active
-- Both _cy tap handlers (main map + path finder) → openMapPanel [V]
-- symbol_quick_result now calls _mnpRender alongside _renderPopover [V]
-- 11 UI surface tests pass [V]
+---
 
-**Open question from Bart (answer next session):**
-"Did you revive the old style of display for some reason?"
-Refers to the popover (sym-popover) which still fires for sym-link clicks
-throughout the app (chat results, workbench output, call tree, frontier).
-Map node clicks now use the panel. The popover is still live elsewhere —
-is that the right call, or should the panel replace it everywhere?
+## WHAT IS QUEUED FOR FLOW REVIEW
+
+Bart wants a session where he walks through the full analysis workflow using the tool.
+During that session, review:
+- Ego-graph focus mode vs overview — does the split feel right in practice?
+- Popover vs panel — after using both surfaces, decide if popover should go away
+- Drop-box / breadcrumbs / history for pinning nodes across surfaces
+- Full navigation flow: chat result → sym-link → graph → expand → workbench → back
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
-- Phase D pyray framing unverified visually — all code is correct; needs human eyes. [?]
-- type_missing=1.000 for all dj2 stubs — CamelCase docstring words, not corpus classes [V documented]
-- RM70 V1/V2 scores vary run-to-run (LLM non-determinism) — take means, not single runs [V]
-- websocket-client must be installed in venv or bridge silently fails on reconnect [V]
-- Graph explorer window has no Win32 title — trackable by PID only [V]
-- CUDA stubs: dim3 vars [?] — accepted ceiling
-- C++ pure virtual not captured [?] — deferred to RM73
+- Phase D pyray framing unverified visually [?]
+- type_missing=1.000 for all dj2 stubs — CamelCase docstring words, not corpus classes [V]
+- RM70 V1/V2 scores vary run-to-run (LLM non-determinism) — take means [V]
+- websocket-client must be installed in venv for bridge to work reliably [V]
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Answer the popover question** — sym-popover is still live for sym-link clicks
-   everywhere outside the map. Should it stay (lightweight quick-nav) or be replaced
-   by the same draggable panel? If replaced: openMapPanel would need to work outside
-   the map tab context (fixed positioning, not absolute within panel-map).
+1. **Bart walks through the analysis workflow** — next session is a demo/use session.
+   Start UI server, load dj2, Bart asks questions, we find gaps together.
+   This drives the flow review items above.
 
-2. **RM67 probe** — standing rule, skipped two sessions running.
+2. **RM67 probe** — standing rule, skipped multiple sessions.
 
-3. **RM72 Phase D visual verify** — still needs eyes on the pyray window.
-   Start UI server, open graph explorer, click node, run workbench tool,
-   confirm "⬡ Show in Graph" appears and clicking it frames the node in pyray.
+3. **RM72 Phase D visual verify** — start UI + pyray, click node, run workbench,
+   confirm "⬡ Show in Graph" frames correctly.
 
-4. **RM70 further steps** (build order in TRACKER RM70):
-   Step 3 — pattern sibling search (corpus-scoped Levenshtein)
-   Step 4 — return-shape inference
-   Steps 5-7 after those.
-   Run `tools/rm70_baseline.py` after each step to measure improvement.
+4. **RM70 Steps 3+** — pattern sibling search (Levenshtein), return-shape inference.
+   Run `tools/rm70_baseline.py` after each step.
 
 ---
 
@@ -107,4 +89,3 @@ is that the right call, or should the panel replace it everywhere?
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
 - Baseline runner: `.venv\Scripts\python.exe tools\rm70_baseline.py` (llama-server only, no UI)
 - Graph explorer CLI: `.venv\Scripts\python.exe tools\graph_explorer.py C_Users_bartl_dev_dj2.db`
-- websocket-client required in venv for bridge to work reliably
