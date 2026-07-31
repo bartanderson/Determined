@@ -487,6 +487,106 @@ rebuilds, owned by the project being built.
 lives as a file, gets ingested as `kind='design_note'` rows. Decisions are the same
 pattern applied to the target project.
 
+### Name resolutions
+
+A second ledger entry type alongside architectural decisions: **canonical names for
+opaque or misleading symbols**, derived from structural evidence and committed as
+durable facts.
+
+**Problem:** corpora with meaningless names (`f1`, `handle`, `process`, `do_thing`)
+or obfuscated/minified names defeat fuzzy symbol resolution at query time. The
+wiring_chain expansion heuristic (name-match + file-path match) works for clean
+subsystem names but is fragile and re-derived on every query. Once you've determined
+what `f1` means, that knowledge should survive re-ingest the same way an architectural
+decision does.
+
+**Inspiration:** Acoda (arxiv 2606.11755) — adversarial code obfuscation that defeats
+LLM analysis by breaking token-level name signals. The structural evidence Determined
+already holds (callers, callees, file path, inline notes, body shape) is exactly what
+survives obfuscation. Name resolutions commit that inference as a first-class artifact.
+
+**Schema addition to `decisions.toml`:**
+```toml
+[[name_resolutions]]
+original = "f1"
+canonical = "handle_encounter_flee"
+confidence = "high"
+evidence = ["callers: resolve_flee (adjudication_engine.py)", "file: encounter_resolver.py"]
+```
+
+**Integration points:**
+- Graph query layer and wiring_chain fuzzy expansion check resolutions first; committed
+  canonical name wins over heuristic
+- Analyst narration (section 1-4) displays canonical name alongside original
+- Section 5 (DESIGN) can surface the resolution evidence as a design note
+- Future: auto-suggest resolutions when Determined detects opaque names + strong
+  structural evidence; human confirms, gets written to `decisions.toml`
+
+**Same gate as decisions:** corpus rebuilds re-materialize resolutions as
+`kind='name_resolution'` in `knowledge_artifacts` on load.
+
+**Variable resolutions — same ledger, different evidence model:**
+
+Function resolutions use call graph evidence (callers, callees, file path). Variables
+don't appear in the graph — they need AST-derived evidence instead. The schema handles
+both via a `scope` field:
+
+```toml
+# Function-level resolution (graph evidence)
+[[name_resolutions]]
+original = "f1"
+canonical = "handle_encounter_flee"
+scope = "symbol"
+confidence = "high"
+evidence = ["callers: resolve_flee (adjudication_engine.py)", "file: encounter_resolver.py"]
+
+# Parameter resolution (AST + usage evidence)
+[[name_resolutions]]
+original = "x"
+canonical = "encounter_context"
+scope = "parameter"
+parent = "f1"
+confidence = "medium"
+evidence = ["passed to: get_encounter_data()", "type hint: dict", "usage: x['state']"]
+
+# Local variable resolution (AST + assignment source evidence)
+[[name_resolutions]]
+original = "_d"
+canonical = "encounter_db_row"
+scope = "local"
+parent = "f1"
+confidence = "medium"
+evidence = ["assigned from: db.fetchone()", "indexed as: _d['id'], _d['type']"]
+
+# Module-level variable resolution
+[[name_resolutions]]
+original = "_cfg"
+canonical = "encounter_config"
+scope = "module"
+parent = "encounter_resolver.py"
+confidence = "high"
+evidence = ["assigned from: load_config('encounter')", "read-only after init"]
+```
+
+**Evidence sources by scope:**
+
+| Scope | Primary evidence | Secondary |
+|-------|-----------------|-----------|
+| symbol | callers, callees, file path | inline notes, body shape |
+| parameter | how it's passed downstream, type hints, attribute access pattern | sibling function signatures |
+| local | assignment source (RHS of `=`), keys/indices accessed, functions it's passed to | adjacent comments |
+| module | assignment source, read-only vs mutated, import pattern | file name, usage sites |
+
+**Resolution chain:** when a symbol is resolved, its parameter resolutions inherit
+the canonical symbol name as context — `x` in `f1` becomes `encounter_context` in
+`handle_encounter_flee`. The full chain is preserved so analyst output reads coherently
+at every level, not just at the function boundary.
+
+**Auto-suggest trigger:** Determined flags a resolution candidate when:
+- A symbol/parameter/local name is ≤3 chars OR matches known opaque patterns (`tmp`, `x`, `v`, `_d`, `k`, `n`)
+- AND structural evidence score exceeds threshold (strong assignment source, or ≥2 usage signals)
+Human confirms → written to `decisions.toml`. No auto-write without confirmation.
+
 ### When to build
 
 Before the shift from "using dj2 to test Determined" to "using Determined to build
