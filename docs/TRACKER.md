@@ -448,6 +448,56 @@ could ship earlier as a standalone tool.
 
 ---
 
+## RM76 — Decision ledger for target projects (FUTURE)
+
+A persistent human layer for architectural commitments that survives corpus rebuilds.
+
+### Problem
+
+Corpus DBs are expendable — rebuilt on re-ingest, deletable at any time. Any
+decision recorded in `knowledge_artifacts` is lost on rebuild. This is correct
+for derived facts (graph edges, stubs) but wrong for human commitments ("this
+stub must be implemented before encounter resolution can close").
+
+When Determined development ends and dj2 development begins in earnest, the usage
+mode shifts: analysis is no longer done to improve Determined, it's done to guide
+game development. At that point, decisions need to persist across sessions and
+rebuilds, owned by the project being built.
+
+### Design
+
+**Decisions live in the target project, not in Determined's DB.**
+
+- File: `<target>/.determined/decisions.toml` (or `.json`), checked into the
+  target repo and versioned with it
+- On corpus load, Determined reads this file and materializes rows into
+  `knowledge_artifacts` as `kind='decision'`
+- Re-ingest rebuilds derived facts, then re-loads decisions as an overlay
+- The file is the source of truth; the DB is always a derived view
+- Decisions are diff-able in git: when committed, when changed, by whom
+
+**Analyst integration:**
+- Section 5 (DESIGN) already reads `knowledge_artifacts` — decisions surface there
+  automatically
+- Drift check: analyst compares committed stubs/interfaces against current graph
+  state and flags overdue items ("you committed to _get_encounter_context being
+  implemented; it is still a stub after N sessions")
+
+**Precedent:** same pattern as `docs/sots.md` in Determined — authoritative content
+lives as a file, gets ingested as `kind='design_note'` rows. Decisions are the same
+pattern applied to the target project.
+
+### When to build
+
+Before the shift from "using dj2 to test Determined" to "using Determined to build
+dj2." That transition is the natural trigger — when analysis sessions start producing
+decisions worth keeping rather than observations worth discarding.
+
+**Gate:** RM67 convergence reached on dj2 corpus AND at least one session where
+Bart says "I want to record this decision."
+
+---
+
 ## Cross-language — remaining tasks
 
 Walkers all done (C, C++, Zig, Lua, Rust). See DESIGN.md for rationale and design.
