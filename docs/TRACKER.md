@@ -146,14 +146,14 @@ to cover it. Expect to discover workflows that work for any corpus.
   JS http_fetch/cross_language edges (e.g. dungeon.enterIntegratedMode → dungeon_enter).
   Commit: 9553e65
 
-**GAP-4: Ask bar returns data, not analysis** (2026-07-30, confirmed; partially fixed 2026-07-31)
-- Routing: domain_analyst bypass fires correctly for "what is the state of X?" questions.
-  All tested phrasings route to build_domain_analysis, not the survey bypass.
-- Fix (2026-07-31, commit 8237b2f): _build_wiring_gaps now reports isolated stubs (0 callers)
-  as "unimplemented and not yet connected to any caller" instead of silently skipping them.
-  Previously, corpora where all stubs are orphans (e.g. dj2) always saw "No direct wiring gaps found."
-- Remaining gap: section 5 DESIGN is thin until dj2 re-ingested with design_docs.
-  The larger arc (Tiers 1-4 below) is still open — the fix closes the most common empty-section bug.
+**GAP-4: Ask bar returns data, not analysis** — FIXED (2026-07-31, verified in UI)
+- Fix (commit 8237b2f): _build_wiring_gaps reports isolated stubs as "unimplemented and not
+  yet connected to any caller." Routing was already correct.
+- Verified: "what is the state of the encounter subsystem?" on dj2 (post re-ingest) produces
+  all 6 sections: COMPLETE (7 funcs), STUBS (_get_encounter_context w/ caller waiting),
+  ORPHANED (7 funcs), WIRING GAPS (build → _get_encounter_context, unimplemented),
+  DESIGN (3 design_notes from docs/design/), FIRST STEP (implement _get_encounter_context).
+- Remaining arc (Tiers 2-4 below): plan layer, direction layer — not started.
 
 ### The larger arc (2026-07-30)
 
