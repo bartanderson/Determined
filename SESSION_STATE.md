@@ -1,6 +1,6 @@
-Written at commit: c80978d
+Written at commit: 9553e65
 
-# SESSION STATE — session 276 (end)
+# SESSION STATE — session 277 (end)
 
 ## Active branch: main [V]
 
@@ -10,65 +10,61 @@ Written at commit: c80978d
 
 ## WHAT HAPPENED THIS SESSION
 
-**ingest_design_docs on dj2** [V]
-Ran CLI script against C_Users_bartl_dev_dj2.db. Result: 594 design_notes + 2
-layer_rules stored from 15 docs. Before: zero design_note rows. Section 5 now
-returns real content (5 encounter-matching rules) instead of "No design artifacts
-found." Verified live in browser.
+**RM76: decisions ledger — .determined/decisions.toml** [V]
+New module `determined/intent/decisions_ledger.py`. Reads `<target>/.determined/decisions.toml`,
+materializes `kind='decision'` and `kind='name_resolution'` rows into `knowledge_artifacts`
+on every `init()`. Idempotent (deletes prior human-confirmed rows, re-inserts). No-ops if
+file absent. Two new kinds added to `VALID_KINDS`. `ui_server.py init()` hooked to recover
+`_source_path` from `project_meta` and call `load_decisions`. `_check_design_violations_core`
+now surfaces `'decision'` alongside `'design_note'`. Commit: ff5b14f
 
-**GAP-1: find_stub_islands wired to Workbench** [V]
-Added to _WORKBENCH_TOOLS in ui_server.py under Frontier category with optional
-scope param. Tool was already implemented in agent_tools.py (commit a2231bd).
-11 UI tests pass. Live verify: returns all 25 orphaned dj2 stubs grouped by file.
+Also fixed pre-existing gap: `find_stub_islands` and `chain_context` added to `tool_registry.py`
+(they were in TOOLS but missing from REGISTRY, causing `test_tool_registry_covers_all_tools` to fail).
 
-**GAP-2: chain_context tool built and wired** [V]
-New tool in agent_tools.py (commit c80978d). Given a symbol, traces upstream
-(reverse BFS to nearest EP) and downstream (forward BFS into callees), flagging
-[STUB] gaps at each hop. Wired to Workbench Frontier palette. Registered in TOOLS
-and test allowlist. Live verify: `_get_encounter_context` shows correct upstream
-path through test harness; `trigger_encounter` correctly shows as orphan.
+**wiring_chain regex fix** [V]
+"Trace the call chain from the web route to the database" was routing to `wiring_chain`
+instead of `trace_call_chain`. Root cause: both the `call chain` arm and the `trace` arm
+matched any word after `from`, including articles + generic nouns ("the web route").
+Fix: `(?!(?:the|a|an)\s)` negative lookahead after `from` and `to` in both arms.
+All 15 technique3 tests pass. Commit: 2a608a8
 
-**RM67 probe — Determined corpus (self-model check)** [V]
-DB: C_Users_bartl_dev_Determined.db. Results:
-- 12 stubs: 2 real gaps (pattern_executor.__init__, contract_drift_classifier.__init__),
-  1 known accepted (suggest_tags), 9 test mocks. 0 false positives.
-- 95.6% unresolved edges — external-lib ceiling, accepted.
-- 1426/2147 inferred EPs — framework-caller ceiling, accepted.
-- Docstring health: 62.1% missing (test files dominant; assessor.py notable).
-TRACKER.md updated with today's numbers for both Determined and dj2 rows (commit f9c9756).
-
-**llama-server pre-flight rule corrected** [V]
-Prior memory/SESSION_STATE said "kill llama-server before every UI start, no
-exceptions." This was wrong — llama-server is stateless, no reason to kill it
-unless a duplicate is accumulating. Memory file updated. SESSION_STATE pre-flight
-rule corrected below.
+**GAP-3: JS→Python route matching** [V]
+Root cause found and fixed. `_persist_cross_boundary_edges` disk-scan fallback guarded by
+`not html_srcs and not js_srcs` — HTML templates from file_analyses made `html_srcs` non-empty,
+so JS was never scanned from disk. Fixed by decoupling with `_need_html`/`_need_js` flags
+computed before the loop. Re-ingest of dj2 now produces 21 JS `http_fetch` + `cross_language`
+edges (e.g. `dungeon.enterIntegratedMode → dungeon_enter`, `CharacterCreator.completeCharacter → create_character`).
+TRACKER GAP-3 marked FIXED. Commit: 9553e65
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- GAP-3 (JS→Python route matching): not built
+- GAP-4: Ask bar synthesis — retrieval works but no narration pass (data not analysis)
 - Plan layer (workflow_items from analysis): not built
-- RM76 implementation (name/variable resolution decision ledger): design in TRACKER, not built
-- test_detect_trace_call_chain_route: pre-existing failure (wiring_chain regex fires
-  too broadly). Spawn task created for fix.
-- assessor.py docstring gap: 37 missing — not urgent, noted in RM67 probe
+- assessor.py docstring gap: 37 missing — not urgent
+- RM76 usage: decisions.toml schema is live; no dj2 decisions written yet (Bart's call)
+- dj2 re-ingest needed to refresh DB after GAP-3 fix (CLI ingest was run for verification,
+  but full engine ingest with design_docs not re-run this session)
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **GAP-3: JS→Python route matching** — JS fetch() to Flask routes not joined.
-   Check if route strings are already in the DB (graph_edges.callee or symbol_references)
-   before building anything new.
+1. **GAP-4: Ask bar synthesis** — retrieval is working; the gap is no narration pass after
+   retrieval. Check `determined/agent/local_agent.py` around the Ask handler for where
+   synthesis would hook in. The "what is complete / stub / orphaned / wiring gap" verdict
+   needs to run after the semantic search returns context.
 
-2. **RM76 implementation** — design is in TRACKER.md. Build the name/variable
-   resolution ledger (decisions.toml schema, auto-suggest trigger, human-confirm flow).
+2. **RM76 usage: seed decisions.toml for dj2** — the ledger is live. Write the first
+   `.determined/decisions.toml` for dj2 with the known architectural commitments:
+   - _get_encounter_context must be implemented before encounter resolution closes
+   - The 12 FSM stubs (encounter/trade/barter) are design-complete islands — implement next
+   - The 5 subrace stubs are delete-candidates when dj2 coding starts
 
-3. **wiring_chain pattern regex fix** — pre-existing test failure in
-   test_technique3.py::test_detect_trace_call_chain_route. Tighten wiring_chain regex
-   so generic noun phrases ("web route", "database") fall through to trace_call_chain.
-   Spawn task is waiting.
+3. **dj2 full re-ingest** — re-run with the UI (not just the CLI tool) to get design_docs
+   re-ingested alongside the new GAP-3 JS edges. CLI ingest cleared the DB; design_notes
+   are gone until re-ingested.
 
 ---
 
@@ -80,11 +76,12 @@ rule corrected below.
 - No tests mapped to `local_agent.py` or `pattern_executor.py` in FILE_MAP. [V]
 - dj2 DB schema: stub data is in `functions` table, NOT `symbols`. Symbols has no
   is_stub column. graph_edges uses `resolved` (0/1) not a missing-callee join. [V]
-- wiring_chain fuzzy expansion: cross-contamination filter works for clean subsystem
-  names but may fail if src and dst share a common word. [?]
+- dj2 DB currently stale: CLI ingest (no design_docs) was run for GAP-3 verification.
+  Next session: re-ingest from UI to restore design_notes. [V]
 - chain_context upstream paths may surface test EPs (test_ functions with 0 callers)
-  rather than prod EPs — filter exclude_tests applies to find_entry_points set but
-  reverse BFS walks all callers. [?]
+  rather than prod EPs — reverse BFS walks all callers. [?]
+- wiring_chain cross-contamination filter works for clean subsystem names but may fail
+  if src and dst share a common word. [?]
 
 ---
 

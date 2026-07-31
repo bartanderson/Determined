@@ -134,14 +134,17 @@ to cover it. Expect to discover workflows that work for any corpus.
 - Corpus-agnostic form: "Given a stub or domain name, trace the expected path from entry point
   to implementation and show which links are missing."
 
-**GAP-3: Route/boundary blind spot** (2026-07-30)
+**GAP-3: Route/boundary blind spot** (2026-07-30, FIXED 2026-07-31)
 - What happened: Claude flagged `/api/resolve-encounter` as "unknown — check manually."
   JS fetch() calls to Flask routes don't produce Python graph edges, so the tool can't
   confirm whether the backend route exists.
 - Gap: Cross-language boundary tracing (JS → HTTP → Python). The tool ingests both sides
   but doesn't join them on route strings.
-- Corpus-agnostic form: "For each JS fetch/XHR/axios call with a string route, check whether
-  a matching Python/backend route decorator exists. Surface unmatched pairs."
+- Fix (2026-07-31): Bug in _persist_cross_boundary_edges — HTML templates found in
+  file_analyses prevented JS disk scan from running (single `not html_srcs and not js_srcs`
+  guard). Decoupled with _need_html/_need_js flags. Re-ingest of dj2 now produces 21
+  JS http_fetch/cross_language edges (e.g. dungeon.enterIntegratedMode → dungeon_enter).
+  Commit: 9553e65
 
 **GAP-4: Ask bar returns data, not analysis** (2026-07-30, confirmed)
 - What happened: Ask bar was tested with "what is the state of the encounter subsystem?"
@@ -448,7 +451,7 @@ could ship earlier as a standalone tool.
 
 ---
 
-## RM76 — Decision ledger for target projects (FUTURE)
+## RM76 — Decision ledger for target projects (IMPLEMENTED 2026-07-31)
 
 A persistent human layer for architectural commitments that survives corpus rebuilds.
 
