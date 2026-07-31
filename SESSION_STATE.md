@@ -1,91 +1,97 @@
-Written at commit: 75cc8ef
+Written at commit: 62e8050
 
-# SESSION STATE — session 279 (end)
+# SESSION STATE — session 280 (end)
 
 ## Active branch: main [V]
 
-## Working tree: clean [V]
+## Working tree: clean (after this commit) [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**dj2 full re-ingest via UI** [V]
-Re-ingest ran successfully. Full DB state after ingest:
-- 158 files, 1444 functions, 10100 edges
-- 25 stubs (vs 13 in stale CLI DB): 12 FSM stubs from barter.json/encounter.json/trade.json
-  are now correctly indexed (these were missing from the CLI ingest)
-- 33 JS cross_language edges (vs 21 from CLI ingest — more JS routes found)
-- 594 design_notes extracted from docs/design/ markdown files
-- 9 decisions loaded from .determined/decisions.toml
+**GAP-4 Tier 2 — Plan layer** [V] (commit abbf018 + 62e8050)
+New `generate_domain_plan()` in `determined/agent/local_agent.py`:
+- Detects "plan for X" / "build plan for X" queries via `_is_plan_request()`
+- Routes before domain analyst in Phase 3 bypass block
+- Calls `_enrich_with_stub_status()` on facts; falls back to `_enrich_from_db()`
+  when facts are empty (Phase 1 gives no NEED: lines for short queries)
+- Writes ranked `workflow_items` to DB: stubs-with-callers → next_up #1,2,...;
+  isolated stubs → next_up after; orphaned → backlog
+- Returns plain-text summary of what was added
+6 tests in `test_domain_analyst.py`, all pass.
 
-FSM stub breakdown now visible:
-- EncounterFSM: start_combat, resolve_flee, resolve_parley, flee_possible, parley_possible
-- TradeFSM: update_price, execute_buy, price_too_low, price_acceptable
-- BarterFSM: add_gold, execute_barter, need_more_gold
+Verified in UI: "plan for encounter" on dj2 produced 24 items in Build Queue.
+`_get_encounter_context` ranked #1 (1 caller waiting). Build Queue tab renders
+all 8 next_up items after tab activation fires `bqLoad()`.
 
-**GAP-4 verified in UI** [V]
-"what is the state of the encounter subsystem?" on fresh dj2 DB produces all 6 sections:
-1. COMPLETE: 7 encounter functions with caller counts
-2. STUBS: _get_encounter_context (1 caller waiting) + test_encounter_parley_failure
-3. ORPHANED: 7 functions (trigger_encounter, _action_trigger_encounter, etc.)
-4. WIRING GAPS: "build → _get_encounter_context (unimplemented)" — the new isolated stub
-   reporting works: test_encounter_parley_failure also reported as "not yet connected"
-5. DESIGN: 3 design_notes from docs/design/ (03 phased plan, context builder v1.3, etc.)
-6. FIRST STEP: "Implement _get_encounter_context — it already has callers depending on it"
+**RM67 dj2 probe update** [V] (commit abab512)
+Fresh probe numbers in TRACKER dj2 row:
+- 594 design_notes, 9 decisions (now loaded from decisions.toml)
+- 66 JS cross-boundary edges (33 http_fetch + 33 cross_language)
+- Unresolved edge ratio: 87.6% (resolved=0 column; was 87.8% — same ceiling)
+- Docstring: 804/1419 non-stub = 56.7% missing
+- process_consequences: 0 callers (orphaned, not a blocker; prior entry called it a "real gap")
+- No `is_entry_point` column in dj2 schema — old "inferred EPs 1131/1419" removed
 
-This matches the decisions.toml priority. GAP-4 closed. Commit: 75cc8ef (TRACKER update).
-
-**decisions.toml note** [V]
-9 decisions confirmed in dj2 DB. File at C:\Users\bartl\dev\dj2\.determined\decisions.toml
-is still untracked in dj2 git — Bart commits when ready.
+**dj2 decisions.toml — FSM JSON stubs decision added** [V]
+New `[[decisions]]` block for `fsm_json_callback_stubs` in
+`C:\Users\bartl\dev\dj2\.determined\decisions.toml`.
+Documents all 12 FSM stubs (EncounterFSM/TradeFSM/BarterFSM), explains
+string-dispatch invocation (no static call edges), sets implementation sequencing.
+File still untracked in dj2 git — Bart commits when ready.
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- GAP-4 larger arc (TRACKER tiers 2-4): plan layer, direction layer not started
-- dj2 decisions.toml: untracked in dj2 repo — Bart to commit
-- assessor.py docstring gap: 37 missing — not urgent
-- Plan layer (workflow_items from analysis): not built
-- dj2 decisions.toml: phases_abstract_methods decision references phases.py ABCs, but
-  the real FSM stubs are in JSON files (barter.json etc.). Update the decision text if needed.
+- GAP-4 Tier 3 — Direction layer: re-run analyst after stub closes, surface what unlocks
+- GAP-4 Tier 4 — Knowledge accumulation: store analyst runs as knowledge_artifacts
+- GAP-1 — Island detection tool (`find_stub_islands`): pure graph query, no LLM
+- GAP-2 — Chain synthesis: entry-point-to-implementation path with missing links
+- dj2 decisions.toml: untracked in dj2 git — Bart to commit
+- RM70 Step 1: V1+V2 baseline measurement (not started this session)
+- RM72 Phase A: graph_explorer socket bridge (not started this session)
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **GAP-4 Tier 2 — Plan layer**: analyst output → ordered workflow_items in Build Queue.
-   From an analyst report on a domain, generate: what to build, in what order, with what
-   design. Output stored as workflow_items, visible in Build Queue. This is the next
-   unbuilt tier from the TRACKER larger arc (see docs/TRACKER.md "The larger arc").
+1. **Build Queue rendering check** — verify next session that Build Queue shows the
+   24 encounter items from this session (they persist in the dj2 corpus DB).
+   If they need de-duplication (plan run twice), `list_items(conn, status='active')`
+   then `update_item(conn, id, status='done')` to clear.
 
-2. **RM67 probe update** — after dj2 re-ingest with 594 design_notes and 33 JS edges,
-   run a fresh RM67 convergence probe on dj2. Previous probe (2026-07-30) was on stale DB.
-   Update TRACKER RM67 dj2 row with new edge count and design_note count.
+2. **GAP-4 Tier 3 — Direction layer**: after a stub is implemented, re-run analyst on
+   the domain, surface what just unlocked. Design: detect "I implemented X" or
+   "X is done" → re-run `build_domain_analysis` → diff stubs list → report what's new.
 
-3. **Update dj2 decisions.toml** — FSM stubs are in barter.json/encounter.json/trade.json,
-   not phases.py ABCs. The `phases_abstract_methods` decision is accurate (phases.py IS there)
-   but a new decision documenting the FSM JSON callback stubs would be more precise.
+3. **RM70 Step 1 baseline**: run `.venv\Scripts\python tools\rm70_baseline.py` without
+   UI server competing (kill UI first). Get clean V1/V2 numbers to compare against s268
+   partial result (5 stubs: V1 100%, V2 mean 0.833).
+
+4. **RM72 Phase A socket bridge** — graph_explorer `_SocketBridge` class connecting to
+   UI on localhost:5050. See TRACKER RM72 for full Phase A spec.
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
+- Plan layer DB fallback: `_enrich_from_db` queries by LIKE on name/file_path.
+  For subsystems with common words ("world", "game") this may over-match.
+  Subsystem specificity matters — "encounter" is safe, "world" is not. [?]
 - dj2 decisions.toml: untracked in dj2 git. [V]
 - Ask bar browser automation: Set `#q-input` value + dispatchEvent + click `#send-btn`.
-  Use JS not refs (refs go to 0,0 after read_page(all)). [V]
-- dj2 DB schema: stub data in `functions` table; FSM stubs from JSON files have names
-  like "EncounterFSM::action::start_combat" — these are the 12 FSM stubs from TRACKER. [V]
+  Use JS not refs. [V]
+- dj2 DB schema: no `is_entry_point` column — old probes that counted EPs used
+  a different schema version. [V]
 - chain_context upstream paths may surface test EPs (test_ functions with 0 callers). [?]
-- wiring_chain cross-contamination filter may fail if src/dst share a common word. [?]
 
 ---
 
 ## RESOURCE / PROCESS RULES [V]
 
-- llama-server: stateless, no reason to kill between UI restarts. Only kill if a
-  duplicate is accumulating (multiple processes on same port).
+- llama-server: stateless, no reason to kill between UI restarts.
 - Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"` — find PID, kill it
 - UI server restart: kill PID on 5050, then `preview_start {name: "Determined UI"}`, navigate
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.

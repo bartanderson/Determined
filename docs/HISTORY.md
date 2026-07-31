@@ -8,6 +8,16 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-07-31 (s280): Plan layer DB fallback pattern — `_is_plan_request` routes "plan for X"
+queries before domain analyst. But Phase 1 gives empty needs for short ambiguous queries
+(LLM enters reasoning mode instead of emitting NEED: lines). Fix: `_enrich_from_db(oracle, subsystem)`
+queries functions table directly by LIKE match on name/file_path when facts are empty.
+This pattern will recur for any bypass that needs graph data but can't rely on Phase 1.
+
+2026-07-31 (s280): Build Queue socket timing — `bqLoad()` fires on tab activation but
+only renders after `build_queue_result` arrives. Manual `activateTab('build_queue')` in
+a browser eval fires the socket; rows appear after the response. Working as designed.
+
 2026-07-29 (s268): RM71 calibration — caller_complexity is dead for dj2. The LEFT JOIN
 in _caller_context() (graph_edges.caller vs functions.name) fails because graph_edges
 stores short caller names while functions stores fully-qualified ones (e.g. "ContextBuilder.build"
