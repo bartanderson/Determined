@@ -599,6 +599,114 @@ def build_domain_analysis(question: str, facts: list[dict], oracle,
     )
 
 
+_PLAN_RE = re.compile(
+    r"\b(plan for|build plan for|generate plan for|create plan for|make plan for"
+    r"|plan the|what should i build|build order for|implementation plan for"
+    r"|what to build)\b",
+    re.I,
+)
+
+
+def _is_plan_request(question: str) -> bool:
+    return bool(_PLAN_RE.search(question))
+
+
+def generate_domain_plan(question: str, facts: list[dict], oracle, assessor) -> str:
+    """
+    Tier 2 plan layer: from analyst enrichment, produce ordered workflow_items.
+    Stubs with callers waiting → next_up (ranked by caller count desc).
+    Isolated stubs → next_up (unranked callers, lower rank).
+    Orphaned functions → backlog.
+    Returns a plain-text summary of items added.
+    """
+    from determined.intent.workflow_store import add_item, list_items
+
+    conn = getattr(assessor, "_knowledge_conn", None)
+    if conn is None:
+        return "No knowledge DB — load a corpus first."
+
+    # Extract domain name (same logic as analyst)
+    subsystem = ""
+    m = _SUBSYSTEM_NAME_RE.search(question)
+    if m:
+        subsystem = (m.group(1) or m.group(2) or "").lower().strip()
+    if not subsystem:
+        # Try last word of common plan patterns
+        m2 = re.search(r"(?:plan for|plan the|build order for|implementation plan for)\s+(?:the\s+)?(\w+)", question, re.I)
+        if m2:
+            subsystem = m2.group(1).lower()
+
+    enrichment = _enrich_with_stub_status(facts, oracle, subsystem=subsystem)
+
+    # Separate stubs: callers-waiting vs isolated
+    callers_waiting = []
+    isolated = []
+    for entry in enrichment["stubs"]:
+        name = entry.split("(")[0].strip()
+        if "waiting" in entry:
+            # Parse caller count
+            try:
+                count = int(re.search(r"(\d+)\s+caller", entry).group(1))
+            except Exception:
+                count = 0
+            callers_waiting.append((name, count, entry))
+        else:
+            isolated.append((name, entry))
+    callers_waiting.sort(key=lambda x: x[1], reverse=True)
+
+    # Check existing items to avoid duplicates
+    existing = {i["subject"] for i in list_items(conn, kind="next_up", status="active", limit=500)}
+    existing |= {i["subject"] for i in list_items(conn, kind="backlog", status="active", limit=500)}
+
+    added = []
+    rank = 1
+
+    for name, count, entry in callers_waiting:
+        subject = f"implement: {name}"
+        if subject not in existing:
+            add_item(conn, kind="next_up", subject=subject,
+                     content=f"{count} caller(s) waiting — implement to unblock wiring chain",
+                     rank=rank, provenance="analyst")
+            added.append((rank, name, "next_up", f"{count} caller(s) waiting"))
+            existing.add(subject)
+        rank += 1
+
+    for name, entry in isolated:
+        subject = f"implement: {name}"
+        if subject not in existing:
+            add_item(conn, kind="next_up", subject=subject,
+                     content="isolated stub — implement then wire into caller",
+                     rank=rank, provenance="analyst")
+            added.append((rank, name, "next_up", "isolated stub"))
+            existing.add(subject)
+        rank += 1
+
+    backlog_rank = 1
+    for entry in enrichment["orphaned"]:
+        name = entry.split("(")[0].strip()
+        subject = f"wire: {name}"
+        if subject not in existing:
+            add_item(conn, kind="backlog", subject=subject,
+                     content="orphaned function — connect to caller chain",
+                     rank=backlog_rank, provenance="analyst")
+            added.append((None, name, "backlog", "orphaned"))
+            existing.add(subject)
+            backlog_rank += 1
+
+    if not added:
+        return (
+            f"Plan for '{subsystem or 'domain'}': no new items (all already in Build Queue or no stubs found).\n"
+            f"Check Build Queue tab to see existing items."
+        )
+
+    lines = [f"Plan for '{subsystem or 'domain'}' — added {len(added)} item(s) to Build Queue:\n"]
+    for rank_val, name, kind, note in added:
+        rank_str = f"#{rank_val} " if rank_val else ""
+        lines.append(f"  {rank_str}[{kind}] {name} — {note}")
+    lines.append("\nSee Build Queue tab for the full ordered list.")
+    return "\n".join(lines)
+
+
 def _strip_reasoning_preamble(text: str) -> str:
     """Strip inline reasoning before the first numbered section heading."""
     import re as _re
@@ -874,7 +982,9 @@ def _answer(
     # Phase 3: ASSEMBLE
     # Several heuristics get a deterministic answer (tiny model ignores or degrades facts).
     bypass = None
-    if _is_domain_analysis_question(user_input, needs):
+    if _is_plan_request(user_input):
+        answer = generate_domain_plan(user_input, facts, oracle, assessor); bypass = "domain_plan"
+    elif _is_domain_analysis_question(user_input, needs):
         answer = build_domain_analysis(user_input, facts, oracle, history); bypass = "domain_analyst"
     elif _is_survey_needs(needs):
         answer = build_survey_answer(facts); bypass = "survey"

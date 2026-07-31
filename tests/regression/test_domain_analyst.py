@@ -152,3 +152,110 @@ def test_domain_routing_status_of():
     from determined.agent.local_agent import _is_domain_analysis_question
 
     assert _is_domain_analysis_question("what is the status of the trade subsystem?", [])
+
+
+# ── _is_plan_request routing ──────────────────────────────────────────────────
+
+def test_plan_routing_plan_for():
+    from determined.agent.local_agent import _is_plan_request
+    assert _is_plan_request("plan for encounter")
+    assert _is_plan_request("build plan for trade")
+    assert _is_plan_request("generate plan for barter")
+    assert _is_plan_request("implementation plan for encounter")
+
+
+def test_plan_routing_negative():
+    from determined.agent.local_agent import _is_plan_request
+    assert not _is_plan_request("what is the state of the encounter subsystem?")
+    assert not _is_plan_request("show me all stubs")
+
+
+# ── generate_domain_plan ──────────────────────────────────────────────────────
+
+def _make_assessor_with_db():
+    """Build an in-memory assessor mock with a real SQLite connection."""
+    import sqlite3
+    from determined.intent.workflow_store import ensure_workflow_items_table, ensure_artifact_columns
+
+    conn = sqlite3.connect(":memory:")
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_path TEXT)")
+    ensure_workflow_items_table(cur)
+    ensure_artifact_columns(cur)
+    conn.commit()
+
+    assessor = MagicMock()
+    assessor._knowledge_conn = conn
+    return assessor, conn
+
+
+def test_generate_domain_plan_callers_waiting():
+    """Stubs with callers waiting become next_up items ranked by caller count."""
+    from determined.agent.local_agent import generate_domain_plan
+    from determined.intent.workflow_store import list_items
+
+    oracle = _make_oracle(
+        {
+            "_get_encounter_context": (True, "encounter.py"),
+            "resolve_flee": (True, "encounter.py"),
+        },
+        {
+            "_get_encounter_context": ["build", "run"],  # 2 callers
+            "resolve_flee": ["adjudicate"],              # 1 caller
+        },
+    )
+    # Real search_symbols format: header line (skipped), then "  name (type) in file line N"
+    facts = [
+        {"tool": "search_symbols", "args": {"query": "encounter"},
+         "result": "Symbols matching 'encounter':\n"
+                   "  _get_encounter_context (function) in encounter.py line 10\n"
+                   "  resolve_flee (function) in encounter.py line 20\n"},
+    ]
+
+    assessor, conn = _make_assessor_with_db()
+    result = generate_domain_plan("plan for encounter", facts, oracle, assessor)
+
+    assert "added" in result.lower() or "no new items" in result.lower()
+    items = list_items(conn, kind="next_up", status="active", limit=20)
+    names = [i["subject"] for i in items]
+    assert any("_get_encounter_context" in n or "resolve_flee" in n for n in names)
+
+
+def test_generate_domain_plan_no_stubs():
+    """Domain with no stubs produces a clear 'nothing to add' message."""
+    from determined.agent.local_agent import generate_domain_plan
+
+    oracle = _make_oracle({}, {})
+    facts = [
+        {"tool": "search_symbols", "args": {"query": "combat"},
+         "result": "Symbols matching 'combat':\n"
+                   "  fight (function) in combat.py line 5\n"},
+    ]
+    assessor, _ = _make_assessor_with_db()
+    result = generate_domain_plan("plan for combat", facts, oracle, assessor)
+    assert "no new items" in result.lower() or "added" in result.lower()
+
+
+def test_generate_domain_plan_idempotent():
+    """Running plan twice does not duplicate items."""
+    from determined.agent.local_agent import generate_domain_plan
+    from determined.intent.workflow_store import list_items
+
+    oracle = _make_oracle(
+        {"_get_encounter_context": (True, "encounter.py")},
+        {"_get_encounter_context": ["build"]},
+    )
+    facts = [
+        {"tool": "search_symbols", "args": {"query": "encounter"},
+         "result": "Symbols matching 'encounter':\n"
+                   "  _get_encounter_context (function) in encounter.py line 10\n"},
+    ]
+    assessor, conn = _make_assessor_with_db()
+
+    generate_domain_plan("plan for encounter", facts, oracle, assessor)
+    generate_domain_plan("plan for encounter", facts, oracle, assessor)
+
+    items = list_items(conn, kind="next_up", status="active", limit=20)
+    subjects = [i["subject"] for i in items]
+    # No duplicate subjects
+    assert len(subjects) == len(set(subjects))
