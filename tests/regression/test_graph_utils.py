@@ -374,6 +374,116 @@ def test_list_callees_raw_default_includes_unresolved():
     assert "get" in callees
 
 
+# ── find_stub_islands ─────────────────────────────────────────────────────────
+
+def _make_island_oracle(functions, edges):
+    """
+    functions: list of (name, file_path, is_stub)
+    edges: list of (caller, callee)
+    """
+    import sqlite3
+    from unittest.mock import MagicMock
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE functions (name TEXT, file_path TEXT, is_stub INTEGER)"
+    )
+    conn.executemany("INSERT INTO functions VALUES (?,?,?)", functions)
+    conn.execute("CREATE TABLE graph_edges (caller TEXT, callee TEXT)")
+    conn.executemany("INSERT INTO graph_edges VALUES (?,?)", edges)
+    # _has_id_columns checks for source_id/target_id — don't add them so it falls back to callee
+    conn.commit()
+
+    oracle = MagicMock()
+    oracle.conn = conn
+    return oracle
+
+
+def test_stub_islands_all_unwired():
+    """Stubs with no callers at all are islands."""
+    from determined.agent.graph_utils import find_stub_islands
+    oracle = _make_island_oracle(
+        functions=[
+            ("_get_encounter_context", "encounter.py", 1),
+            ("resolve_flee", "encounter.py", 1),
+        ],
+        edges=[],
+    )
+    islands = find_stub_islands(oracle)
+    names = [i["name"] for i in islands]
+    assert "_get_encounter_context" in names
+    assert "resolve_flee" in names
+
+
+def test_stub_islands_excludes_stubs_with_live_callers():
+    """A stub called by live code is NOT an island."""
+    from determined.agent.graph_utils import find_stub_islands
+    oracle = _make_island_oracle(
+        functions=[
+            ("_get_encounter_context", "encounter.py", 1),
+            ("trigger_encounter", "encounter.py", 0),  # live caller
+        ],
+        edges=[
+            ("trigger_encounter", "_get_encounter_context"),
+        ],
+    )
+    islands = find_stub_islands(oracle)
+    names = [i["name"] for i in islands]
+    assert "_get_encounter_context" not in names
+
+
+def test_stub_islands_transitive_live_caller():
+    """A stub reachable only through another stub — but that stub has a live caller — is NOT an island."""
+    from determined.agent.graph_utils import find_stub_islands
+    oracle = _make_island_oracle(
+        functions=[
+            ("deep_stub", "combat.py", 1),
+            ("mid_stub", "combat.py", 1),
+            ("live_fn", "combat.py", 0),
+        ],
+        edges=[
+            ("live_fn", "mid_stub"),
+            ("mid_stub", "deep_stub"),
+        ],
+    )
+    islands = find_stub_islands(oracle)
+    names = [i["name"] for i in islands]
+    assert "deep_stub" not in names
+    assert "mid_stub" not in names
+
+
+def test_stub_islands_subsystem_filter():
+    """subsystem kwarg limits results by name/file_path."""
+    from determined.agent.graph_utils import find_stub_islands
+    oracle = _make_island_oracle(
+        functions=[
+            ("_get_encounter_context", "encounter.py", 1),
+            ("resolve_barter", "barter.py", 1),
+        ],
+        edges=[],
+    )
+    islands = find_stub_islands(oracle, subsystem="encounter")
+    names = [i["name"] for i in islands]
+    assert "_get_encounter_context" in names
+    assert "resolve_barter" not in names
+
+
+def test_stub_islands_tool_wrapper():
+    """find_stub_islands tool wrapper returns a human-readable summary."""
+    from determined.agent.agent_tools import find_stub_islands as tool_fn
+    oracle = _make_island_oracle(
+        functions=[
+            ("_get_encounter_context", "encounter.py", 1),
+            ("resolve_barter", "barter.py", 1),
+        ],
+        edges=[],
+    )
+    result = tool_fn(oracle, {})
+    assert "island" in result.lower()
+    assert "_get_encounter_context" in result
+    assert "resolve_barter" in result
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

@@ -383,3 +383,100 @@ def test_direction_update_adjacent_stubs():
     )
 
     assert "_get_flee_context" in result
+
+
+# ── Tier 4: knowledge accumulation ───────────────────────────────────────────
+
+def _make_full_assessor(functions=None, edges=None):
+    """In-memory DB with functions + graph_edges + workflow tables + knowledge_artifacts."""
+    import sqlite3
+    from determined.intent.workflow_store import ensure_workflow_items_table, ensure_artifact_columns
+
+    conn = sqlite3.connect(":memory:")
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_path TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS functions (name TEXT, file_path TEXT, is_stub INTEGER)")
+    if functions:
+        cur.executemany("INSERT INTO functions VALUES (?,?,?)", functions)
+    cur.execute("CREATE TABLE IF NOT EXISTS graph_edges (caller TEXT, callee TEXT)")
+    if edges:
+        cur.executemany("INSERT INTO graph_edges VALUES (?,?)", edges)
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS knowledge_artifacts "
+        "(id INTEGER PRIMARY KEY, kind TEXT, subject TEXT, content TEXT, provenance TEXT)"
+    )
+    ensure_workflow_items_table(cur)
+    ensure_artifact_columns(cur)
+    conn.commit()
+
+    assessor = MagicMock()
+    assessor._knowledge_conn = conn
+    return assessor, conn
+
+
+def test_domain_analysis_stores_artifact():
+    """build_domain_analysis stores an analyst_run artifact after the first run."""
+    from determined.agent.local_agent import build_domain_analysis
+    from determined.intent.workflow_store import get_artifact_by_name
+
+    assessor, conn = _make_full_assessor()
+    oracle = MagicMock()
+    oracle.conn.execute.return_value.fetchall.return_value = []
+    oracle.conn.execute.return_value.fetchone.return_value = None
+
+    facts = [
+        {"tool": "search_symbols", "args": {"query": "encounter"},
+         "result": "Symbols matching 'encounter':\n  do_encounter (function) in encounter.py line 1\n"},
+    ]
+    build_domain_analysis("what is the state of encounter", facts, oracle, [], assessor=assessor)
+
+    artifact = get_artifact_by_name(conn, "analyst_run:encounter")
+    assert artifact is not None
+    assert "COMPLETE" in artifact["content"] or "STUBS" in artifact["content"]
+
+
+def test_domain_analysis_diff_shows_closed_stub():
+    """Second run with a stub removed reports it as closed in the delta."""
+    from determined.agent.local_agent import build_domain_analysis
+    from determined.intent.workflow_store import store_artifact
+
+    assessor, conn = _make_full_assessor()
+    oracle = MagicMock()
+    oracle.conn.execute.return_value.fetchall.return_value = []
+    oracle.conn.execute.return_value.fetchone.return_value = None
+
+    # Seed a prior artifact that had a stub
+    prior_text = (
+        "1. COMPLETE: (none)\n"
+        "2. STUBS: _get_encounter_context (encounter.py, 1 caller(s) waiting)\n"
+        "3. ORPHANED: (none)\n4. WIRING GAPS: ...\n5. DESIGN: ...\n6. FIRST STEP: ...\n"
+    )
+    store_artifact(conn, "analyst_run:encounter", "domain_analyst", prior_text)
+
+    # Current run shows no stubs (stub was implemented)
+    facts = [
+        {"tool": "search_symbols", "args": {"query": "encounter"},
+         "result": "Symbols matching 'encounter':\n  _get_encounter_context (function) in encounter.py line 1\n"},
+    ]
+    result = build_domain_analysis(
+        "what is the state of encounter", facts, oracle, [], assessor=assessor
+    )
+
+    assert "Closed" in result or "closed" in result
+
+
+def test_domain_analysis_no_diff_on_first_run():
+    """First run produces no delta prefix."""
+    from determined.agent.local_agent import build_domain_analysis
+
+    assessor, conn = _make_full_assessor()
+    oracle = MagicMock()
+    oracle.conn.execute.return_value.fetchall.return_value = []
+    oracle.conn.execute.return_value.fetchone.return_value = None
+
+    facts = []
+    result = build_domain_analysis(
+        "what is the state of encounter", facts, oracle, [], assessor=assessor
+    )
+
+    assert "Since last analyst run" not in result

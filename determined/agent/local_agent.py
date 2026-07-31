@@ -553,11 +553,14 @@ def _build_wiring_gaps(enrichment: dict, oracle) -> str:
 
 
 def build_domain_analysis(question: str, facts: list[dict], oracle,
-                           history: list[dict]) -> str:
+                           history: list[dict], assessor=None) -> str:
     """
     Fully deterministic domain state assessment — no LLM call.
     All 6 sections derived from graph data and knowledge artifacts.
+    Stores the result as a knowledge_artifact and diffs against the prior run.
     """
+    from determined.intent.workflow_store import store_artifact, get_artifact_by_name
+
     subsystem = ""
     m = _SUBSYSTEM_NAME_RE.search(question)
     if m:
@@ -589,7 +592,7 @@ def build_domain_analysis(question: str, facts: list[dict], oracle,
     else:
         s6 = "All named symbols are implemented. Run discovery to find deeper gaps."
 
-    return (
+    result = (
         f"1. COMPLETE: {s1}\n"
         f"2. STUBS: {s2}\n"
         f"3. ORPHANED: {s3}\n"
@@ -597,6 +600,49 @@ def build_domain_analysis(question: str, facts: list[dict], oracle,
         f"5. DESIGN: {s5}\n"
         f"6. FIRST STEP: {s6}\n"
     )
+
+    # Tier 4: store as knowledge artifact and diff against prior run
+    conn = getattr(assessor, "_knowledge_conn", None) if assessor else None
+    if conn and subsystem:
+        artifact_key = f"analyst_run:{subsystem}"
+        prior = get_artifact_by_name(conn, artifact_key)
+        delta = _diff_analyst_runs(prior["content"] if prior else None, result, subsystem)
+        store_artifact(conn, artifact_key, "domain_analyst", result)
+        if delta:
+            result = delta + "\n---\n" + result
+
+    return result
+
+
+def _diff_analyst_runs(prior: str | None, current: str, subsystem: str) -> str:
+    """
+    Compare stub lists between two analyst run texts.
+    Returns a short delta summary, or "" if this is the first run or nothing changed.
+    """
+    if not prior:
+        return ""
+
+    def _extract_stubs(text: str) -> set[str]:
+        m = re.search(r"2\. STUBS:(.*?)(?:\n\d\.|\Z)", text, re.S)
+        if not m:
+            return set()
+        return {s.strip() for s in m.group(1).split(",") if s.strip() and s.strip() != "(none)"}
+
+    prior_stubs = _extract_stubs(prior)
+    current_stubs = _extract_stubs(current)
+
+    closed = prior_stubs - current_stubs
+    opened = current_stubs - prior_stubs
+
+    if not closed and not opened:
+        return ""
+
+    lines = [f"[Since last analyst run on '{subsystem}']"]
+    if closed:
+        lines.append(f"  Closed: {', '.join(sorted(closed))}")
+    if opened:
+        lines.append(f"  New stubs: {', '.join(sorted(opened))}")
+    return "\n".join(lines)
 
 
 _PLAN_RE = re.compile(
@@ -1155,7 +1201,7 @@ def _answer(
     elif _is_plan_request(user_input):
         answer = generate_domain_plan(user_input, facts, oracle, assessor); bypass = "domain_plan"
     elif _is_domain_analysis_question(user_input, needs):
-        answer = build_domain_analysis(user_input, facts, oracle, history); bypass = "domain_analyst"
+        answer = build_domain_analysis(user_input, facts, oracle, history, assessor=assessor); bypass = "domain_analyst"
     elif _is_survey_needs(needs):
         answer = build_survey_answer(facts); bypass = "survey"
     elif _is_git_history_needs(needs):

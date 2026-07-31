@@ -247,6 +247,10 @@ _PATTERNS = [
     (re.compile(r"(?:file\s+)?clusters?(?:\s+containing\s+\S+)?\s*$", re.I),
      "graph_clusters", None, None),
 
+    # "stub islands" / "unwired stubs" / "stub islands in X"
+    (re.compile(r"(?:stub\s+islands?|unwired\s+stubs?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+     "find_stub_islands", "subsystem", 1),
+
     # "workflow status" / "what's next" / "current priorities" / "what am I working on"
     (re.compile(r"(?:workflow\s+status|what'?s?\s+next|current\s+priorities|what\s+am\s+I\s+working\s+on)\s*$", re.I),
      "workflow_status", None, None),

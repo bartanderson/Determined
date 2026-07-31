@@ -513,3 +513,88 @@ def frontier_rows(conn, mode: str = "direct"):
     if mode == "all":
         return _run(0, 1) + _run(1, 1)
     return _run(caller_stub=0, callee_stub=1)  # default: direct
+
+
+# ------------------------------------------------------------------
+# Stub islands: stubs with no live callers anywhere in transitive closure
+# ------------------------------------------------------------------
+
+def find_stub_islands(oracle: "DBOracle", subsystem: str = "") -> list[dict]:
+    """
+    Return stubs where no non-stub caller exists anywhere in the transitive
+    closure of callers. These are design-complete but entirely unwired — nothing
+    in live code touches them, even indirectly.
+
+    Different from the frontier (which shows stubs that DO have callers).
+    Different from orphaned (which are non-stub symbols with no callers).
+
+    Returns list of {name, file_path, transitive_caller_count} sorted by name.
+    Optional subsystem: filter by file_path or name substring.
+    """
+    conn = oracle.conn
+    use_ids = _has_id_columns(conn)
+
+    # Get all stubs (optionally filtered)
+    if subsystem:
+        sub = subsystem.lower()
+        stubs = conn.execute(
+            "SELECT name, file_path FROM functions "
+            "WHERE is_stub = 1 AND (LOWER(file_path) LIKE ? OR LOWER(name) LIKE ?)",
+            (f"%{sub}%", f"%{sub}%"),
+        ).fetchall()
+    else:
+        stubs = conn.execute(
+            "SELECT name, file_path FROM functions WHERE is_stub = 1"
+        ).fetchall()
+
+    if not stubs:
+        return []
+
+    # Build a reverse adjacency map: callee -> set of callers
+    if use_ids:
+        edge_rows = conn.execute("SELECT caller, target_id FROM graph_edges").fetchall()
+    else:
+        edge_rows = conn.execute("SELECT caller, callee FROM graph_edges").fetchall()
+
+    callers_of: dict[str, set[str]] = {}
+    for caller, callee in edge_rows:
+        bare = callee.rsplit(".", 1)[-1] if "." in callee else callee
+        callers_of.setdefault(callee, set()).add(caller)
+        if bare != callee:
+            callers_of.setdefault(bare, set()).add(caller)
+
+    # Non-stub symbol names (live code)
+    live_names: set[str] = set()
+    for (name,) in conn.execute("SELECT name FROM functions WHERE is_stub = 0").fetchall():
+        live_names.add(name)
+        live_names.add(name.rsplit(".", 1)[-1])
+
+    islands = []
+    for (stub_name, stub_file) in stubs:
+        # BFS upward through caller chain; stop if any live (non-stub) caller found
+        visited: set[str] = set()
+        queue = [stub_name, stub_name.rsplit(".", 1)[-1]]
+        has_live_caller = False
+        while queue:
+            node = queue.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+            for caller in callers_of.get(node, set()):
+                if caller in live_names:
+                    has_live_caller = True
+                    break
+                if caller not in visited:
+                    queue.append(caller)
+            if has_live_caller:
+                break
+
+        if not has_live_caller:
+            islands.append({
+                "name": stub_name,
+                "file_path": stub_file,
+                "transitive_caller_count": 0,
+            })
+
+    islands.sort(key=lambda x: x["name"])
+    return islands

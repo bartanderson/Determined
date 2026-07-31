@@ -1639,6 +1639,26 @@ def graph_entry_points(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_stub_islands(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_stub_islands([subsystem]) - stubs with no live callers in any transitive path.
+    These are design-complete but entirely unwired subsystems.
+    """
+    from determined.agent.graph_utils import find_stub_islands as _find_islands
+    subsystem = args.get("subsystem", "").strip()
+    islands = _find_islands(oracle, subsystem=subsystem)
+    if not islands:
+        label = f" in '{subsystem}'" if subsystem else ""
+        return f"No stub islands found{label} — all stubs have at least one live caller in the chain."
+    label = f" for '{subsystem}'" if subsystem else ""
+    lines = [f"Stub islands{label}: {len(islands)} stub(s) with no live callers anywhere in the chain"]
+    lines.append("(These are design-complete but entirely unwired — nothing in live code calls them, even indirectly.)\n")
+    for item in islands:
+        fp = item["file_path"].replace("\\", "/").split("/")[-1]
+        lines.append(f"  ○ {item['name']} ({fp})")
+    return "\n".join(lines)
+
+
 def graph_most_connected(oracle: "DBOracle", args: dict):
     """
     graph_most_connected(filter) - top symbols by call degree with risk badges.
@@ -7846,6 +7866,7 @@ TOOLS = {
     "ask_truth_layer":      (ask_truth_layer,      "assessor"),
     "graph_path":           (graph_path,           "oracle"),
     "graph_entry_points":   (graph_entry_points,   "oracle"),
+    "find_stub_islands":    (find_stub_islands,    "oracle"),
     "graph_most_connected": (graph_most_connected, "oracle"),
     "graph_subgraph":       (graph_subgraph,       "oracle"),
     "graph_clusters":       (graph_clusters,       "oracle"),

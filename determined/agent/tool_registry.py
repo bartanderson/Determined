@@ -133,6 +133,14 @@ REGISTRY: dict[str, dict] = {
         "use_when": "Orienting to a codebase; finding where execution begins.",
         "category": "graph",
     },
+    "find_stub_islands": {
+        "purpose": "Find stubs with no live callers anywhere in the transitive call chain — design-complete but unwired subsystems.",
+        "args": {"subsystem": "(optional) file or name substring to limit scope"},
+        "output": "list of island stubs with file locations",
+        "feeds": ["list_stubs", "generate_domain_plan"],
+        "use_when": "Finding subsystems that are fully designed but not yet wired into live code.",
+        "category": "graph",
+    },
     "graph_most_connected": {
         "purpose": "Return the most-called project symbols (by in-degree).",
         "args": {"filter": "(optional) path fragment to limit scope"},
