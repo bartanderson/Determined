@@ -76,14 +76,15 @@ _DETECT_RULES: list[tuple] = [
     (re.compile(r"(?:explore|look at|what(?:'s| is) in)\s+['\"]?(\S+\.py)['\"]?", re.I),
      "explore_file", 1),
 
-    # wiring_chain — general symbol-to-symbol shortest-path queries.
+    # wiring_chain — concrete symbol-to-symbol shortest-path queries.
     # Must come before trace_data_flow and trace_call_chain so "wiring chain from X to Y"
     # is handled deterministically via graph_utils.shortest_path rather than LLM decomposition.
+    # The trace arm requires identifiers (not bare English noun phrases after articles).
     (re.compile(
-        r"\b(?:wiring chain|call chain|call path)\b.{0,50}?\bfrom\s+\w.{1,30}?\bto\s+\w|"
+        r"\b(?:wiring chain|call chain|call path)\b.{0,50}?\bfrom\s+(?!(?:the|a|an)\s)\w.{1,30}?\bto\s+(?!(?:the|a|an)\s)\w|"
         r"\bhow does\s+\w.{1,30}?\breach(?:es)?\s+\w|"
         r"\bwhat connects\s+\w.{1,30}?\binto\s+\w|"
-        r"\btrace\b.{0,20}?\bfrom\s+\w{3}.{1,30}?\bto\s+\w{3}",
+        r"\btrace\b.{0,20}?\bfrom\s+(?!(?:the|a|an)\s)\w{3}.{1,30}?\bto\s+(?!(?:the|a|an)\s)\w{3}",
         re.I,
     ), "wiring_chain", None),
 
