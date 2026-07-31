@@ -224,24 +224,19 @@ def _assemble_prompt(question: str, facts_text: str, history: list[dict],
 # ------------------------------------------------------------------
 
 _ANALYST_SYSTEM = """\
-You are a code analyst. Respond directly with the assessment — no preamble, \
-no "let me break this down", no restating the question. Start immediately with \
-the findings.
+You are a code analyst. Sections 1-3 are already written. Write only sections 4, 5, and 6.
 
-Given structured facts about a named subsystem, write a state assessment covering:
-1. COMPLETE — what is already implemented and connected
-2. STUBS — what exists in name only (pass/TODO/NotImplemented bodies)
-3. ORPHANED — stubs or implementations with zero callers anywhere in the codebase
-4. WIRING GAPS — the chain that needs to exist but is broken (entry point → ... → implementation)
-5. DESIGN AVAILABLE — what design artifacts (FSM configs, docstrings, design notes) exist to guide implementation
-6. FIRST STEP — the single most leveraged thing to build next
+Writing rules (ASD-STE100):
+- Use active voice only. Never use passive voice.
+- Do not use the words: may, might, could, would, should, perhaps, probably, note, however, actually, wait.
+- Write one claim per sentence. Keep each sentence under 20 words.
+- Start each section with its label and one sentence. No reasoning steps before the answer.
 
-Rules:
-- The facts provided are authoritative graph data from the corpus database. Treat them as ground truth. Assert directly — do not hedge claims that come from these facts.
-- Base every claim on the facts provided. Do not invent symbols or files.
-- Name specific functions and files. Avoid vague generalisations.
-- Keep it under 400 words. Write in plain prose, not bullet points.
-- If the facts are thin, say so — "coverage is low, consider running discovery first."
+4. WIRING GAPS: Name the broken chain from entry point to the unimplemented stub.
+5. DESIGN: Name any FSM configs, docstrings, or design notes that exist.
+6. FIRST STEP: Name the single function with the most callers waiting for it.
+
+Start with "4. WIRING GAPS:". Zero words before it.
 """
 
 _DOMAIN_STATE_RE = re.compile(
@@ -264,13 +259,12 @@ def _is_domain_analysis_question(question: str, needs: list[str]) -> bool:
     return bool(_is_survey_needs(needs) and evaluative.search(question))
 
 
-def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
+def _enrich_with_stub_status(facts: list[dict], oracle) -> dict:
     """
     Augment the fact set with stub/caller status for each symbol found.
-    Returns a structured text block ready for the analyst prompt.
+    Returns a dict with keys: complete, stubs, orphaned, design_notes.
     Corpus-agnostic: operates purely on graph tables.
     """
-    # Collect symbol names from search_symbols results
     symbol_names = []
     for f in facts:
         if f.get("tool") not in ("search_symbols", "symbols_in_file"):
@@ -279,17 +273,17 @@ def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
         for line in result.splitlines()[1:]:
             line = line.strip()
             if line:
-                # lines look like: "generate_encounter (function) in encounter_generator.py line 36"
                 name = line.split("(")[0].strip().split()[-1]
                 if name:
                     symbol_names.append(name)
 
-    if not symbol_names:
-        return ""
-
     conn = oracle.conn
-    lines = ["Symbol status (from graph):"]
-    for name in symbol_names[:30]:  # cap to avoid huge context
+    complete, stubs, orphaned = [], [], []
+    seen = set()
+    for name in symbol_names[:30]:
+        if name in seen:
+            continue
+        seen.add(name)
         try:
             stub_row = conn.execute(
                 "SELECT is_stub, file_path FROM functions WHERE name = ? LIMIT 1",
@@ -299,18 +293,23 @@ def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
                 "SELECT COUNT(*) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
                 (name, f"%.{name}")
             ).fetchone()[0]
-            if stub_row:
-                if stub_row[0]:
-                    # Stub: body not written
-                    status = f"UNIMPLEMENTED, {caller_count} caller(s) depend on it" if caller_count else "UNIMPLEMENTED, nothing calls it yet"
+            if not stub_row:
+                continue
+            fname = stub_row[1].split("/")[-1].split("\\")[-1]
+            if stub_row[0]:
+                if caller_count:
+                    stubs.append(f"{name} ({fname}, {caller_count} caller(s) waiting)")
                 else:
-                    # Real implementation
-                    status = f"implemented, {caller_count} caller(s)" if caller_count else "implemented but ORPHANED (0 callers)"
-                lines.append(f"  {name}  [{stub_row[1]}]  — {status}")
+                    stubs.append(f"{name} ({fname}, not yet called)")
+            else:
+                if caller_count:
+                    complete.append(f"{name} ({fname}, {caller_count} caller(s))")
+                else:
+                    orphaned.append(f"{name} ({fname})")
         except Exception:
             pass
 
-    # Also surface design notes for the domain
+    # Surface design notes
     domain_words = set()
     for f in facts:
         result = f.get("result", "") or ""
@@ -318,10 +317,9 @@ def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
             for word in line.lower().split():
                 if len(word) > 4 and word.isalpha():
                     domain_words.add(word)
-    domain_words = list(domain_words)[:5]
 
     design_notes = []
-    for word in domain_words:
+    for word in list(domain_words)[:5]:
         try:
             rows = conn.execute(
                 "SELECT kind, content FROM knowledge_artifacts "
@@ -330,53 +328,118 @@ def _enrich_with_stub_status(facts: list[dict], oracle) -> str:
                 (f"%{word}%", f"%{word}%")
             ).fetchall()
             for kind, content in rows:
-                design_notes.append(f"  [{kind}] {content[:120]}")
+                design_notes.append(f"[{kind}] {content[:120]}")
         except Exception:
             pass
 
-    result_lines = ["\n".join(lines)]
-    if design_notes:
-        result_lines.append("Design artifacts found:\n" + "\n".join(design_notes[:8]))
+    return {
+        "complete": complete,
+        "stubs": stubs,
+        "orphaned": orphaned,
+        "design_notes": design_notes[:8],
+    }
 
-    return "\n\n".join(result_lines)
+
+def _fmt_list(items: list[str]) -> str:
+    """Format a list of items as a readable comma-joined string."""
+    if not items:
+        return "none found."
+    return "; ".join(items) + "."
+
+
+def _build_wiring_gaps(enrichment: dict, oracle) -> str:
+    """
+    Deterministically derive wiring gaps: for each stub with callers,
+    find what calls it and report the broken edge.
+    """
+    conn = oracle.conn
+    gaps = []
+    for entry in enrichment["stubs"]:
+        # entry looks like "func_name (file.py, N caller(s) waiting)"
+        name = entry.split("(")[0].strip()
+        if "not yet called" in entry:
+            continue
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? OR callee LIKE ? LIMIT 3",
+                (name, f"%.{name}")
+            ).fetchall()
+            callers = [r[0].split(".")[-1] for r in rows]
+            if callers:
+                gaps.append(f"{' / '.join(callers)} → {name} (unimplemented)")
+        except Exception:
+            pass
+    if not gaps:
+        return "No direct wiring gaps found in graph data."
+    return "; ".join(gaps) + "."
 
 
 def build_domain_analysis(question: str, facts: list[dict], oracle,
                            history: list[dict]) -> str:
     """
-    Analyst-level domain state assessment.
-    Enriches retrieved facts with stub/caller/design data, then calls LLM
-    with a purpose-built analyst prompt.
+    Fully deterministic domain state assessment — no LLM call.
+    All 6 sections derived from graph data and knowledge artifacts.
     """
-    # Build the standard fact text
-    facts_text = facts_to_text(facts)
-
-    # Enrich with stub status and design notes
     enrichment = _enrich_with_stub_status(facts, oracle)
 
-    full_context = facts_text
-    if enrichment:
-        full_context = facts_text + "\n\n=== STUB / ORPHAN STATUS ===\n" + enrichment
+    s1 = _fmt_list(enrichment["complete"])
+    s2 = _fmt_list(enrichment["stubs"])
+    s3 = _fmt_list(enrichment["orphaned"])
 
-    messages = [{"role": "system", "content": _ANALYST_SYSTEM}]
-    for turn in history[-4:]:
-        messages.append({"role": turn["role"], "content": turn["content"]})
-    messages.append({"role": "user", "content":
-        f"Question: {question}\n\n"
-        f"=== CORPUS FACTS ===\n{full_context}\n=== END FACTS ==="
-    })
-    raw = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "(analyst: no LLM response)"
-    return _strip_reasoning_preamble(raw)
+    # Section 4: wiring gaps from graph
+    s4 = _build_wiring_gaps(enrichment, oracle)
+
+    # Section 5: design artifacts already collected
+    if enrichment["design_notes"]:
+        s5 = "; ".join(n[:80] for n in enrichment["design_notes"][:3]) + "."
+    else:
+        s5 = "No design artifacts found — run discovery to build coverage."
+
+    # Section 6: first step = stub with most callers waiting (first in stubs list)
+    callers_waiting = [e for e in enrichment["stubs"] if "waiting" in e]
+    if callers_waiting:
+        first = callers_waiting[0]
+        name = first.split("(")[0].strip()
+        s6 = f"Implement {name} — it already has callers depending on it."
+    elif enrichment["stubs"]:
+        name = enrichment["stubs"][0].split("(")[0].strip()
+        s6 = f"Implement {name} and wire it into a caller."
+    else:
+        s6 = "All named symbols are implemented. Run discovery to find deeper gaps."
+
+    return (
+        f"1. COMPLETE: {s1}\n"
+        f"2. STUBS: {s2}\n"
+        f"3. ORPHANED: {s3}\n"
+        f"4. WIRING GAPS: {s4}\n"
+        f"5. DESIGN: {s5}\n"
+        f"6. FIRST STEP: {s6}\n"
+    )
 
 
 def _strip_reasoning_preamble(text: str) -> str:
     """Strip inline reasoning before the first numbered section heading."""
     import re as _re
-    # Find first occurrence of a numbered section like "1. COMPLETE" or "COMPLETE:"
     m = _re.search(r"(?m)^(\d+\.\s+[A-Z]|COMPLETE:|STUBS:|WIRING|FIRST STEP)", text)
     if m and m.start() > 0:
         return text[m.start():]
     return text
+
+
+def _strip_to_section(text: str, section_num: int) -> str:
+    """Strip everything before the given numbered section heading."""
+    import re as _re
+    m = _re.search(rf"(?m)^{section_num}\.\s+\S", text)
+    if m:
+        return text[m.start():]
+    # Fallback: try to find any of the expected section labels
+    for label in ("WIRING GAPS", "DESIGN", "FIRST STEP"):
+        m = _re.search(rf"(?m)\b{label}\b", text)
+        if m:
+            # Find start of that line
+            line_start = text.rfind("\n", 0, m.start()) + 1
+            return f"{section_num}. {text[line_start:]}"
+    return ""
 
 
 # ------------------------------------------------------------------
