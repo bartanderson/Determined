@@ -3274,6 +3274,15 @@ _WORKBENCH_TOOLS = [
         "args": {},
     },
     {
+        "id": "find_stub_islands",
+        "label": "Stub islands",
+        "tool": "find_stub_islands",
+        "description": "Orphaned stub clusters — designed but not yet called from anywhere",
+        "category": "Frontier",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "file path filter e.g. encounter (optional)"},
+    },
+    {
         "id": "find_missing_bridges",
         "label": "Missing bridges",
         "tool": "find_missing_bridges",
