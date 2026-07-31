@@ -10948,6 +10948,165 @@ def fsm_diagram(assessor: "Assessor", args: dict) -> str:
 TOOLS["fsm_diagram"] = (fsm_diagram, "assessor")
 
 
+# ── chain_context — GAP-2: cross-layer chain synthesis ────────────────────────
+# Given a stub or domain name, show the full chain it would live in:
+# upstream to the nearest entry point(s) and downstream into its callees.
+# Marks stub hops so missing links are visible without needing src+dst.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chain_context(oracle: "DBOracle", args: dict) -> str:
+    """
+    chain_context(symbol) — show the call chain a stub or symbol lives in.
+
+    Traces upstream to the nearest entry point(s) and downstream into callees.
+    Stub hops are flagged [STUB] so missing links are immediately visible.
+    Corpus-agnostic: operates on graph_edges and functions tables only.
+
+    Args:
+        symbol: function name or subsystem keyword to resolve
+        depth:  max hops upstream and downstream (default 5)
+    """
+    from determined.agent.graph_utils import find_entry_points, bfs_callees
+
+    symbol = (args.get("symbol") or "").strip()
+    if not symbol:
+        return "ERROR: symbol is required."
+    depth = int(args.get("depth", 5))
+    conn = oracle.conn
+
+    # ── Resolve symbol ────────────────────────────────────────────
+    # Exact match first, then LIKE fallback on name, then file path.
+    row = conn.execute(
+        "SELECT name, file_path, is_stub FROM functions WHERE name = ? LIMIT 1", (symbol,)
+    ).fetchone()
+    if row is None:
+        candidates = conn.execute(
+            "SELECT name, file_path, is_stub FROM functions WHERE name LIKE ? LIMIT 5",
+            (f"%{symbol}%",)
+        ).fetchall()
+        if not candidates:
+            # Try file path match
+            candidates = conn.execute(
+                "SELECT name, file_path, is_stub FROM functions "
+                "WHERE file_path LIKE ? AND is_stub = 0 LIMIT 5",
+                (f"%{symbol}%",)
+            ).fetchall()
+        if not candidates:
+            return f"No symbol matching '{symbol}' found in corpus."
+        if len(candidates) == 1:
+            row = candidates[0]
+        else:
+            names = ", ".join(r[0] for r in candidates[:5])
+            return f"Ambiguous: '{symbol}' matches multiple symbols — be more specific: {names}"
+    name, file_path, is_stub = row
+
+    short_file = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    lines = [f"Chain context for: {name}  [{short_file}]{'  [STUB]' if is_stub else ''}"]
+    lines.append("")
+
+    # ── Corpus symbol set for filtering ───────────────────────────
+    corpus_names: set[str] = {
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT name FROM functions WHERE name IS NOT NULL"
+        ).fetchall()
+    }
+
+    # ── Upstream: reverse BFS to nearest EPs ─────────────────────
+    ep_names: set[str] = {ep["name"] for ep in find_entry_points(oracle, exclude_tests=True)}
+
+    visited_up: set[str] = {name}
+    # queue: (current_node, path_so_far)
+    from collections import deque
+    queue: deque = deque([(name, [name])])
+    upstream_paths: list[list[str]] = []
+    found_eps: set[str] = set()
+
+    while queue and len(upstream_paths) < 3:
+        node, path = queue.popleft()
+        callers = [r[0] for r in conn.execute(
+            "SELECT DISTINCT source_id FROM graph_edges WHERE target_id = ? AND source_id != ''",
+            (node,)
+        ).fetchall() if r[0] in corpus_names]
+        if not callers:
+            # Dead end — include if path is non-trivial
+            if len(path) > 1:
+                upstream_paths.append(path)
+            continue
+        for caller in callers:
+            if caller in visited_up:
+                continue
+            visited_up.add(caller)
+            new_path = [caller] + path
+            if caller in ep_names or len(new_path) >= depth:
+                upstream_paths.append(new_path)
+                found_eps.add(caller)
+            else:
+                queue.append((caller, new_path))
+
+    if upstream_paths:
+        lines.append("UPSTREAM (entry point → this symbol):")
+        for path in upstream_paths[:3]:
+            annotated = []
+            for n in path:
+                stub_row = conn.execute(
+                    "SELECT is_stub FROM functions WHERE name = ? LIMIT 1", (n,)
+                ).fetchone()
+                tag = " [STUB]" if (stub_row and stub_row[0]) else ""
+                ep_tag = " [EP]" if n in ep_names else ""
+                annotated.append(f"{n}{ep_tag}{tag}")
+            lines.append("  " + " → ".join(annotated))
+    else:
+        lines.append("UPSTREAM: no callers found — this symbol may itself be an entry point or orphan.")
+
+    lines.append("")
+
+    # ── Downstream: forward BFS from symbol ──────────────────────
+    callees = bfs_callees(oracle, name, max_depth=depth, max_nodes=30)
+    stub_callees = [c for c in callees if c.get("is_stub")]
+    real_callees = [c for c in callees if not c.get("is_stub")]
+
+    if callees:
+        lines.append(f"DOWNSTREAM ({len(callees)} callees, depth ≤{depth}):")
+        # Show depth-1 callees with stub flag
+        depth1 = [c for c in callees if c.get("depth", 99) == 1]
+        for c in depth1[:10]:
+            tag = " [STUB]" if c.get("is_stub") else ""
+            cfile = (c.get("file_path") or "").replace("\\", "/").rsplit("/", 1)[-1]
+            lines.append(f"  {c['name']}{tag}  [{cfile}]")
+        if len(depth1) > 10:
+            lines.append(f"  … and {len(depth1)-10} more direct callees")
+        if stub_callees:
+            lines.append(f"\n  Stub callees (missing implementations): {len(stub_callees)}")
+            for c in stub_callees[:5]:
+                lines.append(f"    [STUB] {c['name']}")
+    else:
+        lines.append("DOWNSTREAM: no callees found — leaf node or all callees are external.")
+
+    lines.append("")
+
+    # ── Summary ──────────────────────────────────────────────────
+    upstream_stub_count = sum(
+        1 for path in upstream_paths for n in path
+        if n != name and conn.execute(
+            "SELECT is_stub FROM functions WHERE name = ? LIMIT 1", (n,)
+        ).fetchone() and conn.execute(
+            "SELECT is_stub FROM functions WHERE name = ? LIMIT 1", (n,)
+        ).fetchone()[0]
+    )
+    total_stubs = upstream_stub_count + len(stub_callees)
+    if total_stubs:
+        lines.append(f"MISSING LINKS: {total_stubs} stub(s) in chain — implement these to close the wiring gap.")
+    elif is_stub:
+        lines.append("MISSING LINKS: this symbol itself is a stub — nothing in its chain is implemented yet.")
+    else:
+        lines.append("Chain looks complete — no stub gaps detected.")
+
+    return "\n".join(lines)
+
+
+TOOLS["chain_context"] = (chain_context, "oracle")
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.

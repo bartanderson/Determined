@@ -591,6 +591,10 @@ def test_dispatch_all_tools_registered():
         "find_isolated_modules",
         "find_orphaned_interfaces",
         "find_phantom_factories",
+        # GAP-1: island detection
+        "find_stub_islands",
+        # GAP-2: chain context synthesis
+        "chain_context",
     }
 
     assert set(TOOLS.keys()) == expected

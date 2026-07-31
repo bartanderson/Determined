@@ -3274,6 +3274,15 @@ _WORKBENCH_TOOLS = [
         "args": {},
     },
     {
+        "id": "chain_context",
+        "label": "Chain context",
+        "tool": "chain_context",
+        "description": "Upstream path to entry point + downstream callees — stub gaps flagged",
+        "category": "Frontier",
+        "args": {},
+        "param": {"name": "symbol", "placeholder": "stub or function name"},
+    },
+    {
         "id": "find_stub_islands",
         "label": "Stub islands",
         "tool": "find_stub_islands",
