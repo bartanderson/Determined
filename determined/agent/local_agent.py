@@ -611,6 +611,54 @@ def _is_plan_request(question: str) -> bool:
     return bool(_PLAN_RE.search(question))
 
 
+def _enrich_from_db(oracle, subsystem: str) -> dict:
+    """
+    Direct DB fallback for plan layer: find stubs matching subsystem name.
+    Used when Phase 1 returned no NEED: lines so facts is empty.
+    """
+    conn = oracle.conn
+    complete, stubs, orphaned = [], [], []
+    try:
+        rows = conn.execute(
+            "SELECT name, file_path, is_stub FROM functions "
+            "WHERE (LOWER(name) LIKE ? OR LOWER(file_path) LIKE ?) "
+            "ORDER BY is_stub DESC, name LIMIT 40",
+            (f"%{subsystem}%", f"%{subsystem}%"),
+        ).fetchall()
+        for name, file_path, is_stub in rows:
+            fname = file_path.replace("\\", "/").split("/")[-1]
+            caller_count = conn.execute(
+                "SELECT COUNT(*) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+                (name, f"%.{name}")
+            ).fetchone()[0]
+            if is_stub:
+                if caller_count:
+                    stubs.append(f"{name} ({fname}, {caller_count} caller(s) waiting)")
+                else:
+                    stubs.append(f"{name} ({fname}, not yet called)")
+            else:
+                if caller_count == 0:
+                    orphaned.append(f"{name} ({fname})")
+                else:
+                    complete.append(f"{name} ({fname}, {caller_count} caller(s))")
+    except Exception:
+        pass
+
+    design_notes = []
+    try:
+        rows = conn.execute(
+            "SELECT kind, content FROM knowledge_artifacts "
+            "WHERE (subject LIKE ? OR content LIKE ?) AND kind IN ('design_note','decision','finding') LIMIT 5",
+            (f"%{subsystem}%", f"%{subsystem}%"),
+        ).fetchall()
+        for kind, content in rows:
+            design_notes.append(f"[{kind}] {content[:120]}")
+    except Exception:
+        pass
+
+    return {"complete": complete, "stubs": stubs, "orphaned": orphaned, "design_notes": design_notes}
+
+
 def generate_domain_plan(question: str, facts: list[dict], oracle, assessor) -> str:
     """
     Tier 2 plan layer: from analyst enrichment, produce ordered workflow_items.
@@ -637,6 +685,10 @@ def generate_domain_plan(question: str, facts: list[dict], oracle, assessor) -> 
             subsystem = m2.group(1).lower()
 
     enrichment = _enrich_with_stub_status(facts, oracle, subsystem=subsystem)
+
+    # Fallback: if facts were empty (LLM gave no NEED: lines), query DB directly
+    if not enrichment["stubs"] and not enrichment["complete"] and subsystem:
+        enrichment = _enrich_from_db(oracle, subsystem)
 
     # Separate stubs: callers-waiting vs isolated
     callers_waiting = []
