@@ -71,7 +71,7 @@ def _load_session() -> str | None:
 
 
 def init(db_path: str) -> None:
-    global _oracle, _assessor, _db_path
+    global _oracle, _assessor, _db_path, _source_path
     _oracle   = DBOracle(db_path)
     # Migrate older DBs forward — ensure_schema is idempotent (CREATE IF NOT EXISTS)
     from determined.persistence.persistence_engine import ensure_schema
@@ -79,6 +79,21 @@ def init(db_path: str) -> None:
     _assessor = Assessor(_oracle)
     _db_path  = db_path
     _save_session(db_path)
+    # Recover source path from project_meta (set during ingest; fallback to existing global).
+    try:
+        row = _oracle.conn.execute(
+            "SELECT value FROM project_meta WHERE key='project_root' LIMIT 1"
+        ).fetchone()
+        if row and row[0]:
+            _source_path = row[0]
+    except Exception:
+        pass
+    # Materialize decisions.toml overlay (idempotent; no-ops if file absent).
+    try:
+        from determined.intent.decisions_ledger import load_decisions
+        load_decisions(_source_path, _oracle.conn)
+    except Exception:
+        pass
 
 
 def _corpus_status() -> dict:

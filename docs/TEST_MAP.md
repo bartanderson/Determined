@@ -91,6 +91,7 @@ pytest tests/regression/<file>  [<file2> ...]
 
 | Source module | Test file(s) |
 |---|---|
+| decisions_ledger.py | test_intent_layer_ab.py test_agent_tools.py |
 | knowledge_artifact.py | test_intent_layer_ab.py test_agent_tools.py test_annotate_function.py test_annotation_pass.py test_infer_behavior.py test_ui_surfaces.py |
 | semantic_summary.py | test_intent_layer_ab.py test_agent_tools.py test_infer_behavior.py test_ui_surfaces.py |
 

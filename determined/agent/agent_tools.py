@@ -888,7 +888,7 @@ def _check_design_violations_core(
     scored = retrieve_evidence_scored(
         query,
         assessor.oracle.conn,
-        surfaces=["design_note"],
+        surfaces=["design_note", "decision"],
         top_n=5,
         threshold=0.30,
         extra_items=list(tenet_texts()) + list(principle_texts()),

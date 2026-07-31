@@ -161,6 +161,9 @@ FILE_MAP: dict[str, list[str]] = {
     "determined/ingestion/structure_induction.py": [
         "tests/regression/test_structure_induction.py"],
     # determined/intent/
+    "determined/intent/decisions_ledger.py": [
+        "tests/regression/test_intent_layer_ab.py",
+        "tests/regression/test_agent_tools.py"],
     "determined/intent/knowledge_artifact.py": [
         "tests/regression/test_intent_layer_ab.py",
         "tests/regression/test_agent_tools.py",

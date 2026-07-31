@@ -1196,6 +1196,26 @@ REGISTRY: dict[str, dict] = {
         "use_when": "After work_session_primer identifies an FSM-SPEC item — generate the handler skeleton before implementing.",
         "category": "planning",
     },
+    "find_stub_islands": {
+        "purpose": "Find orphaned stubs — stubs with zero live callers anywhere in the corpus. Groups results by file. Optionally scoped to a subsystem path prefix.",
+        "args": {
+            "scope": "(optional) file path prefix to restrict the search (e.g. 'encounter/')",
+        },
+        "output": "Grouped list of stubs with zero callers, by file",
+        "feeds": ["classify_stub", "explore_stub", "chain_context"],
+        "use_when": "Find design-complete but unreachable stubs — signals dead concept islands that block feature closure.",
+        "category": "frontier",
+    },
+    "chain_context": {
+        "purpose": "Trace a symbol upstream (reverse BFS to nearest entry point) and downstream (forward BFS into callees), flagging [STUB] gaps at each hop. Shows the full context chain for understanding where a symbol sits in the execution path.",
+        "args": {
+            "symbol": "function or method name to trace",
+        },
+        "output": "Upstream path to entry point + downstream callees, with [STUB] markers",
+        "feeds": ["classify_stub", "explore_stub", "find_stub_islands"],
+        "use_when": "After identify a stub or gap — understand what calls it and what it calls before deciding implementation order.",
+        "category": "frontier",
+    },
 }
 
 

@@ -46,6 +46,10 @@ VALID_KINDS = {
     "inline_note",
     # LLM-inferred param types, return type, behavioral contract for unannotated functions
     "inferred_annotation",
+    # human architectural commitment in <target>/.determined/decisions.toml
+    "decision",
+    # human-confirmed canonical name for opaque/obfuscated symbol/variable
+    "name_resolution",
 }
 
 VALID_PROVENANCES = {
