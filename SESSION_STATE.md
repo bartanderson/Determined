@@ -1,6 +1,6 @@
-Written at commit: 62e8050
+Written at commit: 7db2691
 
-# SESSION STATE — session 280 (end)
+# SESSION STATE — session 281 (end)
 
 ## Active branch: main [V]
 
@@ -10,67 +10,69 @@ Written at commit: 62e8050
 
 ## WHAT HAPPENED THIS SESSION
 
-**GAP-4 Tier 2 — Plan layer** [V] (commit abbf018 + 62e8050)
-New `generate_domain_plan()` in `determined/agent/local_agent.py`:
-- Detects "plan for X" / "build plan for X" queries via `_is_plan_request()`
-- Routes before domain analyst in Phase 3 bypass block
-- Calls `_enrich_with_stub_status()` on facts; falls back to `_enrich_from_db()`
-  when facts are empty (Phase 1 gives no NEED: lines for short queries)
-- Writes ranked `workflow_items` to DB: stubs-with-callers → next_up #1,2,...;
-  isolated stubs → next_up after; orphaned → backlog
-- Returns plain-text summary of what was added
-6 tests in `test_domain_analyst.py`, all pass.
+**GAP-4 Tier 3 — Direction layer** [V] (commit 1e32ee9)
+New `generate_direction_update()` in `determined/agent/local_agent.py`:
+- Detects "I implemented X" / "I've implemented X" / "I finished X" / "done with X" via `_IMPL_RE`.
+- Marks matching workflow_items done in Build Queue.
+- BFS upward to find callers now unblocked; reports adjacent stubs in same file as new frontier.
+- Routes before plan check in Phase 3 bypass block.
+4 tests in `test_domain_analyst.py`, all pass.
 
-Verified in UI: "plan for encounter" on dj2 produced 24 items in Build Queue.
-`_get_encounter_context` ranked #1 (1 caller waiting). Build Queue tab renders
-all 8 next_up items after tab activation fires `bqLoad()`.
+**GAP-4 Tier 4 — Knowledge accumulation** [V] (commit 71a4b9b)
+`build_domain_analysis()` now takes optional `assessor` param:
+- Stores each run as `analyst_run:{subsystem}` knowledge artifact via `store_artifact()`.
+- On subsequent runs: diffs stub lists against prior artifact, prepends "[Since last analyst run]" delta.
+- `_diff_analyst_runs()` extracts stub section by regex, computes closed/opened sets.
+3 tests in `test_domain_analyst.py`, all pass.
 
-**RM67 dj2 probe update** [V] (commit abab512)
-Fresh probe numbers in TRACKER dj2 row:
-- 594 design_notes, 9 decisions (now loaded from decisions.toml)
-- 66 JS cross-boundary edges (33 http_fetch + 33 cross_language)
-- Unresolved edge ratio: 87.6% (resolved=0 column; was 87.8% — same ceiling)
-- Docstring: 804/1419 non-stub = 56.7% missing
-- process_consequences: 0 callers (orphaned, not a blocker; prior entry called it a "real gap")
-- No `is_entry_point` column in dj2 schema — old "inferred EPs 1131/1419" removed
+**GAP-1 — Island detection** [V] (commit 71a4b9b)
+New `find_stub_islands()` in `determined/agent/graph_utils.py`:
+- BFS upward from each stub through caller chain; stub is an island if no non-stub caller
+  exists in transitive closure (more accurate than direct-caller check).
+- Existing `find_stub_islands` tool in `agent_tools.py` upgraded to call the BFS version;
+  output now groups by file and references `chain_context` for drill-down.
+- Ask bar patterns: "stub islands [in X]" / "unwired stubs" → `find_stub_islands`.
+- `tool_registry.py` entry added with feeds pointing to `chain_context`.
+5 tests in `test_graph_utils.py`, all pass.
 
-**dj2 decisions.toml — FSM JSON stubs decision added** [V]
-New `[[decisions]]` block for `fsm_json_callback_stubs` in
-`C:\Users\bartl\dev\dj2\.determined\decisions.toml`.
-Documents all 12 FSM stubs (EncounterFSM/TradeFSM/BarterFSM), explains
-string-dispatch invocation (no static call edges), sets implementation sequencing.
-File still untracked in dj2 git — Bart commits when ready.
+**GAP-2 — Chain synthesis** [V] (commit 7db2691)
+New `chain_synthesis()` in `determined/agent/graph_utils.py`:
+- BFS upward from stub to nearest EP; annotates each hop as implemented/stub/EP.
+- Returns `{upstream, downstream, missing, is_island}`.
+- Internal building block; user-facing surface is existing `chain_context` tool.
+- Existing `find_stub_islands` tool detection logic upgraded to use BFS version.
+- Ask bar pattern: "chain for X" / "wiring chain for X" / "call chain for X" → `chain_context`.
+3 tests in `test_graph_utils.py`, all pass.
+
+**TRACKER.md updated** [V]
+- GAP-1, GAP-2 marked FIXED with commit refs.
+- Tiers 1-4 all marked DONE with commit refs.
+- RM74 build order section replaced with completed status summary.
+
+Total tests: 494 pass, 2 deselected. [V]
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- GAP-4 Tier 3 — Direction layer: re-run analyst after stub closes, surface what unlocks
-- GAP-4 Tier 4 — Knowledge accumulation: store analyst runs as knowledge_artifacts
-- GAP-1 — Island detection tool (`find_stub_islands`): pure graph query, no LLM
-- GAP-2 — Chain synthesis: entry-point-to-implementation path with missing links
-- dj2 decisions.toml: untracked in dj2 git — Bart to commit
-- RM70 Step 1: V1+V2 baseline measurement (not started this session)
-- RM72 Phase A: graph_explorer socket bridge (not started this session)
+- RM70 Step 1: V1+V2 baseline measurement — not started this session.
+- RM72 Phase A: graph_explorer socket bridge — not started this session.
+- Build Queue rendering check: verify 24 encounter items still present in dj2 corpus DB
+  (carried from session 280 — not checked this session).
+- dj2 decisions.toml: still untracked in dj2 git — Bart to commit when ready.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Build Queue rendering check** — verify next session that Build Queue shows the
-   24 encounter items from this session (they persist in the dj2 corpus DB).
-   If they need de-duplication (plan run twice), `list_items(conn, status='active')`
-   then `update_item(conn, id, status='done')` to clear.
+1. **Build Queue check** — open UI on dj2, check Build Queue tab shows encounter items.
+   If duplicated (plan ran twice): `list_items(conn, status='active')` then clear extras.
 
-2. **GAP-4 Tier 3 — Direction layer**: after a stub is implemented, re-run analyst on
-   the domain, surface what just unlocked. Design: detect "I implemented X" or
-   "X is done" → re-run `build_domain_analysis` → diff stubs list → report what's new.
+2. **RM70 Step 1 baseline**: kill UI first, then run:
+   `.venv\Scripts\python tools\rm70_baseline.py`
+   Compare to s268 partial result (5 stubs: V1 100%, V2 mean 0.833).
 
-3. **RM70 Step 1 baseline**: run `.venv\Scripts\python tools\rm70_baseline.py` without
-   UI server competing (kill UI first). Get clean V1/V2 numbers to compare against s268
-   partial result (5 stubs: V1 100%, V2 mean 0.833).
-
-4. **RM72 Phase A socket bridge** — graph_explorer `_SocketBridge` class connecting to
+3. **RM72 Phase A socket bridge** — `_SocketBridge` class in graph_explorer connecting to
    UI on localhost:5050. See TRACKER RM72 for full Phase A spec.
 
 ---
@@ -78,21 +80,22 @@ File still untracked in dj2 git — Bart commits when ready.
 ## KNOWN ISSUES / TRAPS
 
 - Plan layer DB fallback: `_enrich_from_db` queries by LIKE on name/file_path.
-  For subsystems with common words ("world", "game") this may over-match.
-  Subsystem specificity matters — "encounter" is safe, "world" is not. [?]
-- dj2 decisions.toml: untracked in dj2 git. [V]
+  Common-word subsystems ("world", "game") may over-match. "encounter" is safe. [?]
+- `chain_synthesis()` in graph_utils uses raw `callee` column for the island BFS path
+  but `source_id/target_id` for the upward walk. Mixed — works for dj2, verify on
+  other corpora before relying on it. [?]
+- Build Queue items from session 280 (24 encounter items) may need de-dup if plan
+  was run more than once. Check next session. [?]
 - Ask bar browser automation: Set `#q-input` value + dispatchEvent + click `#send-btn`.
   Use JS not refs. [V]
-- dj2 DB schema: no `is_entry_point` column — old probes that counted EPs used
-  a different schema version. [V]
-- chain_context upstream paths may surface test EPs (test_ functions with 0 callers). [?]
+- dj2 DB schema: no `is_entry_point` column. [V]
 
 ---
 
 ## RESOURCE / PROCESS RULES [V]
 
 - llama-server: stateless, no reason to kill between UI restarts.
-- Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"` — find PID, kill it
-- UI server restart: kill PID on 5050, then `preview_start {name: "Determined UI"}`, navigate
+- Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"` — find PID, kill it.
+- UI server restart: kill PID on 5050, then `preview_start {name: "Determined UI"}`, navigate.
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
 - Baseline runner: `.venv\Scripts\python.exe tools\rm70_baseline.py`

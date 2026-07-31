@@ -114,25 +114,17 @@ to cover it. Expect to discover workflows that work for any corpus.
 
 ### Gaps found so far
 
-**GAP-1: Island detection** (2026-07-30)
-- What happened: Claude queried stubs directly from DB to find the encounter island (25 stubs,
-  all orphaned — no live callers anywhere in chain). Frontier Direct mode only showed 6 stubs
-  (the ones live code is already calling). The other 19 were invisible to the UI.
-- What Determined shows instead: FSM-SPEC cards on WHERE TO START hint at it, but don't name
-  the island or show its scope.
-- Gap: No tool or surface for "stub clusters with no live callers anywhere in the chain."
-  These are design-complete but unwired subsystems. Different signal from Direct stubs.
-- Corpus-agnostic form: "Find all stubs where no caller exists anywhere in the transitive
-  closure — the code knows what to build but nothing calls it yet."
+**GAP-1: Island detection** (2026-07-30, FIXED 2026-07-31)
+- Fix: find_stub_islands() in graph_utils.py — BFS upward through caller chain; stub is an
+  island if no non-stub caller exists in transitive closure. Tool wrapper + resolver pattern
+  "stub islands [in X]" / "unwired stubs". Upgraded existing find_stub_islands tool to use
+  BFS logic (was direct-caller check only). Commit: 71a4b9b
 
-**GAP-2: Cross-layer chain synthesis** (2026-07-30)
-- What happened: Claude mentally assembled the broken wiring chain
-  (progress_journey → trigger_encounter → generate_encounter → FSM → resolver → route → frontend).
-  No tool produced this.
-- Gap: No "show me the chain this stub would live in if it were wired" output. The tool knows
-  all the pieces; it doesn't assemble the narrative of how they connect.
-- Corpus-agnostic form: "Given a stub or domain name, trace the expected path from entry point
-  to implementation and show which links are missing."
+**GAP-2: Cross-layer chain synthesis** (2026-07-30, FIXED 2026-07-31)
+- Fix: chain_synthesis() in graph_utils.py — BFS upward from stub to nearest EP, annotates
+  each hop as implemented/stub/EP, returns downstream callees and missing-link list.
+  Wired to chain_context tool (already existed, now reachable via "chain for X" / "wiring
+  chain for X" Ask bar patterns). Commit: 7db2691
 
 **GAP-3: Route/boundary blind spot** (2026-07-30, FIXED 2026-07-31)
 - What happened: Claude flagged `/api/resolve-encounter` as "unknown — check manually."
@@ -153,7 +145,7 @@ to cover it. Expect to discover workflows that work for any corpus.
   all 6 sections: COMPLETE (7 funcs), STUBS (_get_encounter_context w/ caller waiting),
   ORPHANED (7 funcs), WIRING GAPS (build → _get_encounter_context, unimplemented),
   DESIGN (3 design_notes from docs/design/), FIRST STEP (implement _get_encounter_context).
-- Remaining arc (Tiers 2-4 below): plan layer, direction layer — not started.
+- Tiers 2-4: all shipped (see below).
 
 ### The larger arc (2026-07-30)
 
@@ -164,49 +156,23 @@ This is not just a fix — it's a capability tier upgrade. The current tool has:
 
 What it needs:
 
-**Tier 1 — Analyst layer** (narrate domain state from corpus facts)
-  - Given a domain name or entry point, produce a written assessment:
-    completeness, stubs, orphans, wiring gaps, design available, recommended first step
-  - Output is a human-readable document, also stored as a knowledge_artifact
-  - This is what Claude did manually; the tool should do it automatically
+**Tier 1 — Analyst layer** DONE (2026-07-31, commit 8237b2f)
+  - build_domain_analysis(): 6-section deterministic output from graph + knowledge artifacts.
+  - Ask bar: "what is the state of X?" routes to analyst, no LLM call.
 
-**Tier 2 — Plan layer** (sequenced build plan from analysis)
-  - From an analyst report, generate: what to build, in what order, with what design
-  - Grounded in graph structure — ordering respects dependency chains
-  - Output stored as workflow_items in the DB, visible in Build Queue
+**Tier 2 — Plan layer** DONE (2026-07-31, commits abbf018 + 62e8050 + 0889c47)
+  - generate_domain_plan(): "plan for X" → ranked workflow_items in Build Queue.
+  - Stubs with callers → next_up #1,2,...; isolated → next_up after; orphaned → backlog.
 
-**Tier 3 — Direction layer** (progress tracking + pivot)
-  - As stubs get implemented, re-run the analyst on the domain
-  - Surface what just unlocked (new callers became satisfiable)
-  - Identify adjacent domains that become workable once this one closes
-  - "You finished encounter flee/parley — combat is now the blocker. Here's its state."
+**Tier 3 — Direction layer** DONE (2026-07-31, commit 1e32ee9)
+  - generate_direction_update(): "I implemented X" → marks item done, reports callers
+    now unblocked, surfaces remaining stubs in same file as new frontier.
 
-**Tier 4 — Knowledge accumulation**
-  - Each analyst run enriches knowledge_artifacts
-  - Future runs start from the stored prior analysis, not from scratch
-  - The tool gets smarter about each corpus over time
+**Tier 4 — Knowledge accumulation** DONE (2026-07-31, commit 71a4b9b)
+  - build_domain_analysis() stores each run as analyst_run:{subsystem} artifact.
+  - Second run diffs stub lists and prepends "[Since last analyst run]" delta.
 
-All tiers must be corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any language.
-
-### Build order
-
-1. **Analyst narration layer** — highest leverage, unlocks everything else.
-   Add a narration pass to the query pipeline: after retrieval, synthesize a written
-   assessment using the LLM + structured corpus facts (stubs, edges, design notes).
-   Target: Ask bar answers "what is the state of X?" with analyst-quality output.
-
-2. **Island detection tool** (`find_stub_islands`) — corpus-agnostic, deterministic.
-   No LLM needed. Pure graph query: stub clusters where transitive caller closure = empty.
-
-3. **Chain synthesis** — given a domain, trace entry-point-to-implementation path,
-   mark missing links. LLM-narrated over graph data.
-
-4. **Cross-language route matching** — JS fetch() → Python route decorator join.
-   Ingestion-time: extract route strings from JS, match against @app.route decorators.
-
-5. **Plan generation** — analyst output → ordered workflow_items in Build Queue.
-
-6. **Direction/pivot** — re-run analyst after each stub is closed, surface what unlocks.
+All tiers corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any language.
 
 ---
 
