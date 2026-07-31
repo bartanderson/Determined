@@ -146,17 +146,14 @@ to cover it. Expect to discover workflows that work for any corpus.
   JS http_fetch/cross_language edges (e.g. dungeon.enterIntegratedMode → dungeon_enter).
   Commit: 9553e65
 
-**GAP-4: Ask bar returns data, not analysis** (2026-07-30, confirmed)
-- What happened: Ask bar was tested with "what is the state of the encounter subsystem?"
-  It returned: 5 files, 20 symbols, 18 call relationships, 1 stored finding.
-  No narrative. No stub status per symbol. No wiring gap assessment. No verdict.
-- Retrieval is good — it found symbols I missed (start_encounter, _action_trigger_encounter
-  in adjudication_engine.py). The semantic search works.
-- Gap: Synthesis is absent. The Ask bar is a semantic search surface, not an analyst.
-  It hands back a pile of facts with no interpretation on top.
-- Corpus-agnostic form: After retrieval, run a narration pass that answers:
-  "What is complete? What is stub? What is orphaned? What is the wiring gap?
-  What design exists to guide implementation? What should be built first?"
+**GAP-4: Ask bar returns data, not analysis** (2026-07-30, confirmed; partially fixed 2026-07-31)
+- Routing: domain_analyst bypass fires correctly for "what is the state of X?" questions.
+  All tested phrasings route to build_domain_analysis, not the survey bypass.
+- Fix (2026-07-31, commit 8237b2f): _build_wiring_gaps now reports isolated stubs (0 callers)
+  as "unimplemented and not yet connected to any caller" instead of silently skipping them.
+  Previously, corpora where all stubs are orphans (e.g. dj2) always saw "No direct wiring gaps found."
+- Remaining gap: section 5 DESIGN is thin until dj2 re-ingested with design_docs.
+  The larger arc (Tiers 1-4 below) is still open — the fix closes the most common empty-section bug.
 
 ### The larger arc (2026-07-30)
 
