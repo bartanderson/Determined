@@ -259,3 +259,127 @@ def test_generate_domain_plan_idempotent():
     subjects = [i["subject"] for i in items]
     # No duplicate subjects
     assert len(subjects) == len(set(subjects))
+
+
+# ── _is_direction_request routing ────────────────────────────────────────────
+
+def test_direction_routing_positive():
+    from determined.agent.local_agent import _is_direction_request
+    assert _is_direction_request("I implemented _get_encounter_context")
+    assert _is_direction_request("I've implemented resolve_flee")
+    assert _is_direction_request("I finished _get_combat_context")
+    assert _is_direction_request("implemented the resolve_barter stub")
+    assert _is_direction_request("done with on_arc_completed")
+
+
+def test_direction_routing_negative():
+    from determined.agent.local_agent import _is_direction_request
+    assert not _is_direction_request("plan for encounter")
+    assert not _is_direction_request("what is the state of encounter?")
+    assert not _is_direction_request("show me all stubs")
+
+
+# ── generate_direction_update ─────────────────────────────────────────────────
+
+def _make_assessor_with_stubs(functions, edges):
+    """
+    functions: list of (name, file_path, is_stub)
+    edges: list of (caller, callee)
+    """
+    import sqlite3
+    from determined.intent.workflow_store import (
+        ensure_workflow_items_table, ensure_artifact_columns, add_item,
+    )
+
+    conn = sqlite3.connect(":memory:")
+    cur = conn.cursor()
+    cur.execute(
+        "CREATE TABLE functions (name TEXT, file_path TEXT, is_stub INTEGER)"
+    )
+    cur.executemany("INSERT INTO functions VALUES (?,?,?)", functions)
+    cur.execute(
+        "CREATE TABLE graph_edges (caller TEXT, callee TEXT)"
+    )
+    cur.executemany("INSERT INTO graph_edges VALUES (?,?)", edges)
+    cur.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_path TEXT)")
+    ensure_workflow_items_table(cur)
+    ensure_artifact_columns(cur)
+    conn.commit()
+
+    # Pre-populate a workflow item for the stub
+    for name, fpath, is_stub in functions:
+        if is_stub:
+            add_item(conn, kind="next_up", subject=f"implement: {name}",
+                     content="stub", rank=1, provenance="analyst")
+
+    assessor = MagicMock()
+    assessor._knowledge_conn = conn
+    return assessor, conn
+
+
+def test_direction_update_marks_done_and_reports_unblocked():
+    """Implementing a stub marks it done and reports callers now unblocked."""
+    from determined.agent.local_agent import generate_direction_update
+    from determined.intent.workflow_store import list_items
+
+    assessor, conn = _make_assessor_with_stubs(
+        functions=[
+            ("_get_encounter_context", "encounter.py", 1),
+            ("trigger_encounter", "encounter.py", 0),
+        ],
+        edges=[
+            ("trigger_encounter", "_get_encounter_context"),
+        ],
+    )
+    oracle = MagicMock()
+    oracle.conn = conn
+
+    result = generate_direction_update(
+        "I implemented _get_encounter_context", oracle, assessor
+    )
+
+    assert "_get_encounter_context" in result
+    assert "trigger_encounter" in result or "unblocked" in result.lower()
+
+    # The workflow item should be closed
+    active = list_items(conn, status="active", limit=20)
+    active_subjects = [i["subject"] for i in active]
+    assert not any("_get_encounter_context" in s for s in active_subjects)
+
+
+def test_direction_update_no_callers():
+    """Implementing an isolated stub (no callers) produces a clear 'no chain unblocked' message."""
+    from determined.agent.local_agent import generate_direction_update
+
+    assessor, conn = _make_assessor_with_stubs(
+        functions=[("resolve_barter", "barter.py", 1)],
+        edges=[],
+    )
+    oracle = MagicMock()
+    oracle.conn = conn
+
+    result = generate_direction_update("I finished resolve_barter", oracle, assessor)
+
+    assert "resolve_barter" in result
+    assert "no chain unblocked" in result.lower() or "no caller" in result.lower()
+
+
+def test_direction_update_adjacent_stubs():
+    """Reports remaining stubs in the same file as the new frontier."""
+    from determined.agent.local_agent import generate_direction_update
+
+    assessor, conn = _make_assessor_with_stubs(
+        functions=[
+            ("_get_encounter_context", "encounter.py", 1),
+            ("_get_flee_context", "encounter.py", 1),
+        ],
+        edges=[],
+    )
+    oracle = MagicMock()
+    oracle.conn = conn
+
+    result = generate_direction_update(
+        "I implemented _get_encounter_context", oracle, assessor
+    )
+
+    assert "_get_flee_context" in result

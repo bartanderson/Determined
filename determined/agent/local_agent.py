@@ -606,9 +606,125 @@ _PLAN_RE = re.compile(
     re.I,
 )
 
+_IMPL_RE = re.compile(
+    r"\b(?:i(?:'ve)?\s+(?:implemented|finished|completed|wrote|built|done)|"
+    r"(?:implemented|finished|completed|done)\s+(?:the\s+)?)"
+    r"\s*(?:the\s+)?([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)",
+    re.I,
+)
+
 
 def _is_plan_request(question: str) -> bool:
     return bool(_PLAN_RE.search(question))
+
+
+def _is_direction_request(question: str) -> bool:
+    return bool(_IMPL_RE.search(question))
+
+
+def generate_direction_update(question: str, oracle, assessor) -> str:
+    """
+    Tier 3 direction layer: user says "I implemented X".
+    1. Extract symbol name from the statement.
+    2. Mark any matching workflow_item done.
+    3. Re-check what that symbol was blocking (its callers that had stubs).
+    4. Diff against remaining active items → report what just unlocked.
+    """
+    from determined.intent.workflow_store import list_items, mark_done
+
+    conn = getattr(assessor, "_knowledge_conn", None)
+    if conn is None:
+        return "No knowledge DB — load a corpus first."
+
+    m = _IMPL_RE.search(question)
+    if not m:
+        return "Could not extract a symbol name from that statement."
+    symbol = m.group(1).strip()
+    # Handle dotted names — use the last component for DB matching
+    bare = symbol.split(".")[-1]
+
+    # Mark the matching workflow item done
+    marked = []
+    active = list_items(conn, status="active", limit=500)
+    for item in active:
+        subj = item.get("subject", "")
+        if bare.lower() in subj.lower():
+            if mark_done(conn, item["id"]):
+                marked.append(subj)
+
+    # Find what was waiting on this stub (callers of `bare` that are now satisfiable)
+    newly_satisfiable = []
+    try:
+        callers = conn.execute(
+            "SELECT DISTINCT caller FROM graph_edges "
+            "WHERE callee = ? OR callee LIKE ?",
+            (bare, f"%.{bare}"),
+        ).fetchall()
+        for (caller,) in callers:
+            # Is the caller itself a stub?
+            row = conn.execute(
+                "SELECT is_stub, file_path FROM functions WHERE name = ?", (caller,)
+            ).fetchone()
+            if row and not row[0]:
+                # Non-stub caller — it was waiting on `bare`; now `bare` is done
+                newly_satisfiable.append(caller)
+            # Check if caller's other dependencies are now all done
+            # (simple heuristic: report it as unblocked either way)
+            elif row is None:
+                newly_satisfiable.append(caller)
+    except Exception:
+        pass
+
+    # Find adjacent stubs in the same file/domain that are now the new frontier
+    adjacent_stubs = []
+    try:
+        file_row = conn.execute(
+            "SELECT file_path FROM functions WHERE name = ? LIMIT 1", (bare,)
+        ).fetchone()
+        if file_row:
+            fpath = file_row[0]
+            rows = conn.execute(
+                "SELECT name FROM functions WHERE file_path = ? AND is_stub = 1 AND name != ?",
+                (fpath, bare),
+            ).fetchall()
+            for (name,) in rows:
+                adjacent_stubs.append(name)
+    except Exception:
+        pass
+
+    # Build response
+    lines = [f"Direction update: '{bare}' marked as implemented.\n"]
+
+    if marked:
+        lines.append(f"Build Queue items closed:")
+        for s in marked:
+            lines.append(f"  ✓ {s}")
+        lines.append("")
+
+    if newly_satisfiable:
+        lines.append(f"Callers now unblocked ({len(newly_satisfiable)}):")
+        for c in newly_satisfiable:
+            lines.append(f"  → {c}")
+        lines.append("")
+    else:
+        lines.append(f"No callers were waiting on '{bare}' — no chain unblocked.")
+        lines.append("")
+
+    if adjacent_stubs:
+        lines.append(f"Remaining stubs in the same file (new frontier):")
+        for s in adjacent_stubs[:6]:
+            lines.append(f"  ○ {s}")
+        if len(adjacent_stubs) > 6:
+            lines.append(f"  … and {len(adjacent_stubs) - 6} more")
+        lines.append("")
+
+    remaining = list_items(conn, kind="next_up", status="active", limit=3)
+    if remaining:
+        lines.append(f"Next up in Build Queue:")
+        for item in remaining:
+            lines.append(f"  #{item.get('rank','?')} {item['subject']}")
+
+    return "\n".join(lines)
 
 
 def _enrich_from_db(oracle, subsystem: str) -> dict:
@@ -1034,7 +1150,9 @@ def _answer(
     # Phase 3: ASSEMBLE
     # Several heuristics get a deterministic answer (tiny model ignores or degrades facts).
     bypass = None
-    if _is_plan_request(user_input):
+    if _is_direction_request(user_input):
+        answer = generate_direction_update(user_input, oracle, assessor); bypass = "direction"
+    elif _is_plan_request(user_input):
         answer = generate_domain_plan(user_input, facts, oracle, assessor); bypass = "domain_plan"
     elif _is_domain_analysis_question(user_input, needs):
         answer = build_domain_analysis(user_input, facts, oracle, history); bypass = "domain_analyst"
