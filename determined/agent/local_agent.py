@@ -254,6 +254,157 @@ _SUBSYSTEM_NAME_RE = re.compile(
     re.I,
 )
 
+_CHAIN_STOP = r"(?:from|the|a|an|is|are|does|do|what|how|this|that|it|in|of|for|with|by)"
+# Pattern 1: "chain/path/trace from X to Y"
+_CHAIN_RE = re.compile(
+    r"\b(?:wiring chain|call chain|call path|path|chain|how does|how is|"
+    r"how do(?:es)?|what connects|what calls|trace)\b"
+    r".{0,40}?\bfrom\s+(?!" + _CHAIN_STOP + r"\b)(\w+)\b"
+    r".{1,30}?\b(?:to|reach(?:es)?|into|trigger(?:s)?)\b\s+(?!" + _CHAIN_STOP + r"\b)(\w+)\b",
+    re.I,
+)
+# Pattern 2: "how does X reach/connect/trigger Y" or "what connects X into Y"
+_CHAIN_RE2 = re.compile(
+    r"\b(?:how does|how do(?:es)?|what connects|what calls)\b\s+"
+    r"(?!" + _CHAIN_STOP + r"\b)(\w+)\b"
+    r".{1,30}?\b(?:reach(?:es)?|connect(?:s)?|trigger(?:s)?|call(?:s)?|lead(?:s)? to|into)\b"
+    r"\s+(?!" + _CHAIN_STOP + r"\b)(\w+)\b",
+    re.I,
+)
+
+
+def _extract_chain_endpoints(question: str) -> tuple[str, str] | tuple[None, None]:
+    """Extract (src, dst) from chain questions like 'wiring chain from travel to encounter'."""
+    m = _CHAIN_RE.search(question)
+    if m:
+        return m.group(1).lower(), m.group(2).lower()
+    m = _CHAIN_RE2.search(question)
+    if m:
+        return m.group(1).lower(), m.group(2).lower()
+    return None, None
+
+
+def _is_chain_question(question: str) -> bool:
+    src, dst = _extract_chain_endpoints(question)
+    return src is not None and dst is not None
+
+
+def build_chain_answer(question: str, oracle) -> str:
+    """
+    Deterministic chain synthesis — no LLM call.
+    Finds the shortest call path between two symbols named in the question,
+    annotates stubs, and appends a domain-analysis hint if the terminal is a stub.
+    """
+    from determined.agent.graph_utils import shortest_path, _shortest_path_by_name
+
+    src, dst = _extract_chain_endpoints(question)
+    if src is None:
+        return "Could not extract source and destination from question."
+
+    path = shortest_path(oracle, src, dst)
+    if path is None:
+        path = _shortest_path_by_name(oracle, src, dst)
+
+    # Fuzzy fallback: src/dst may be subsystem words, not exact function names.
+    # Expand candidates via (1) source_id/target_id name match, and (2) file path match —
+    # so 'travel' finds progress_journey in travel_system.py even though the name itself
+    # doesn't contain 'travel'.
+    if path is None:
+        try:
+            conn = oracle.conn
+
+            _GENERIC = frozenset({
+                "get", "set", "to_dict", "to_json", "from_dict", "__init__",
+                "__str__", "__repr__", "update", "save", "load", "run", "main",
+            })
+
+            def _by_name(word: str, id_col: str) -> list[str]:
+                return [r[0] for r in conn.execute(
+                    f"SELECT DISTINCT {id_col} FROM graph_edges "
+                    f"WHERE {id_col} LIKE ? AND {id_col} != ''",
+                    (f"%{word}%",)
+                ).fetchall()]
+
+            def _by_file(word: str, id_col: str) -> list[str]:
+                rows = conn.execute(
+                    f"SELECT DISTINCT {id_col} FROM graph_edges ge "
+                    f"JOIN functions f ON f.name = ge.{id_col} "
+                    f"WHERE (f.file_path LIKE ? OR f.file_path LIKE ?) AND {id_col} != ''",
+                    (f"%/{word}%", f"%\\{word}%")
+                ).fetchall()
+                return [r[0] for r in rows
+                        if len(r[0]) > 4 and r[0] not in _GENERIC and not r[0].startswith("__")]
+
+            # Try in confidence order: name×name first, then file×name, then name×file
+            src_by_name = _by_name(src, "source_id")
+            dst_by_name = _by_name(dst, "target_id")
+            # Exclude from file-match candidates any symbol whose name already signals
+            # the OTHER subsystem — they're cross-contamination, not origin points.
+            src_by_file = [s for s in _by_file(src, "source_id") if dst not in s.lower()]
+            dst_by_file = [d for d in _by_file(dst, "target_id") if src not in d.lower()]
+
+            for src_cands, dst_cands in [
+                (src_by_name, dst_by_name),
+                (src_by_file, dst_by_name),
+                (src_by_name, dst_by_file),
+                (src_by_file, dst_by_file),
+            ]:
+                for s in src_cands:
+                    for d in dst_cands:
+                        p = shortest_path(oracle, s, d)
+                        if p:
+                            path = p
+                            src, dst = s, d
+                            break
+                    if path:
+                        break
+                if path:
+                    break
+        except Exception:
+            pass
+
+    if path is None:
+        return (
+            f"No call path found from '{src}' to '{dst}'. "
+            f"They may be in disconnected subgraphs, or one name was not resolved."
+        )
+
+    conn = oracle.conn
+    # Annotate each hop: mark stubs and file location
+    annotated = []
+    for name in path:
+        try:
+            row = conn.execute(
+                "SELECT is_stub, file_path FROM functions WHERE name = ? LIMIT 1", (name,)
+            ).fetchone()
+            if row:
+                label = f"{name} ({'stub' if row[0] else row[1].split('/')[-1].split(chr(92))[-1]})"
+            else:
+                label = name
+        except Exception:
+            label = name
+        annotated.append(label)
+
+    chain_str = " → ".join(annotated)
+    result = f"Call chain from '{src}' to '{dst}':\n  {chain_str}"
+
+    # If terminal node is a stub, append a one-line action hint
+    terminal = path[-1]
+    try:
+        terminal_row = conn.execute(
+            "SELECT is_stub FROM functions WHERE name = ? LIMIT 1", (terminal,)
+        ).fetchone()
+        if terminal_row and terminal_row[0]:
+            callers = conn.execute(
+                "SELECT COUNT(*) FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+                (terminal, f"%.{terminal}")
+            ).fetchone()[0]
+            result += f"\n  → '{terminal}' is a stub with {callers} caller(s) waiting — implement it to close this chain."
+    except Exception:
+        pass
+
+    return result
+
 
 def _is_domain_analysis_question(question: str, needs: list[str]) -> bool:
     """True when the question asks for a domain state assessment."""
@@ -657,7 +808,9 @@ def _answer(
         if verbose:
             print(f"\n[pattern detected] {pattern_name} / subject={subject}", flush=True)
         executor = PatternExecutor()
-        if pattern_name == "trace_call_chain":
+        if pattern_name == "wiring_chain":
+            answer = build_chain_answer(user_input, oracle)
+        elif pattern_name == "trace_call_chain":
             answer = executor.run_traversal(user_input, oracle, verbose=verbose)
         else:
             answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
