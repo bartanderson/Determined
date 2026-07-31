@@ -137,7 +137,7 @@ REGISTRY: dict[str, dict] = {
         "purpose": "Find stubs with no live callers anywhere in the transitive call chain — design-complete but unwired subsystems.",
         "args": {"subsystem": "(optional) file or name substring to limit scope"},
         "output": "list of island stubs with file locations",
-        "feeds": ["list_stubs", "generate_domain_plan"],
+        "feeds": ["chain_synthesis", "generate_domain_plan"],
         "use_when": "Finding subsystems that are fully designed but not yet wired into live code.",
         "category": "graph",
     },

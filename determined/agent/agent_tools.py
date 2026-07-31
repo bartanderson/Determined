@@ -1639,26 +1639,6 @@ def graph_entry_points(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
-def find_stub_islands(oracle: "DBOracle", args: dict) -> str:
-    """
-    find_stub_islands([subsystem]) - stubs with no live callers in any transitive path.
-    These are design-complete but entirely unwired subsystems.
-    """
-    from determined.agent.graph_utils import find_stub_islands as _find_islands
-    subsystem = args.get("subsystem", "").strip()
-    islands = _find_islands(oracle, subsystem=subsystem)
-    if not islands:
-        label = f" in '{subsystem}'" if subsystem else ""
-        return f"No stub islands found{label} — all stubs have at least one live caller in the chain."
-    label = f" for '{subsystem}'" if subsystem else ""
-    lines = [f"Stub islands{label}: {len(islands)} stub(s) with no live callers anywhere in the chain"]
-    lines.append("(These are design-complete but entirely unwired — nothing in live code calls them, even indirectly.)\n")
-    for item in islands:
-        fp = item["file_path"].replace("\\", "/").split("/")[-1]
-        lines.append(f"  ○ {item['name']} ({fp})")
-    return "\n".join(lines)
-
-
 def graph_most_connected(oracle: "DBOracle", args: dict):
     """
     graph_most_connected(filter) - top symbols by call degree with risk badges.
@@ -7866,7 +7846,6 @@ TOOLS = {
     "ask_truth_layer":      (ask_truth_layer,      "assessor"),
     "graph_path":           (graph_path,           "oracle"),
     "graph_entry_points":   (graph_entry_points,   "oracle"),
-    "find_stub_islands":    (find_stub_islands,    "oracle"),
     "graph_most_connected": (graph_most_connected, "oracle"),
     "graph_subgraph":       (graph_subgraph,       "oracle"),
     "graph_clusters":       (graph_clusters,       "oracle"),
@@ -9410,72 +9389,57 @@ TOOLS["find_isolated_modules"] = (find_isolated_modules, "oracle")
 
 def find_stub_islands(oracle: "DBOracle", args: dict) -> str:
     """
-    find_stub_islands([scope][, min_size=2]) — find clusters of stub functions
-    where no caller exists anywhere in the corpus for any stub in the cluster.
+    find_stub_islands([scope][, min_size=1]) — find stubs where no live caller
+    exists anywhere in the transitive closure of the call graph. These are
+    design-complete but entirely unwired subsystems.
 
-    These are "design islands": the code knows what to build (stubs exist, often
-    with docstrings or FSM configs), but nothing calls them yet. Distinct from
-    Frontier Direct stubs, which already have live callers waiting.
+    Uses BFS upward through the caller chain; a stub is an island only if no
+    non-stub caller is reachable — more accurate than a direct-caller check.
 
     Args:
-        scope:    optional file path substring to restrict search
-        min_size: minimum island size to report (default 1)
+        scope:    optional file path or name substring to restrict search
+        min_size: minimum cluster size to report (default 1)
     """
-    conn = oracle.conn
+    from determined.agent.graph_utils import find_stub_islands as _bfs_islands
+    from collections import defaultdict
+
     scope = (args.get("scope") or "").strip()
     min_size = int(args.get("min_size", 1))
 
-    # All stubs in scope
-    q = "SELECT name, file_path FROM functions WHERE is_stub = 1"
-    params: list = []
-    if scope:
-        q += " AND file_path LIKE ?"
-        params.append(f"%{scope}%")
-    stub_rows = conn.execute(q, params).fetchall()
+    island_items = _bfs_islands(oracle, subsystem=scope)
 
-    if not stub_rows:
-        return "No stubs found" + (f" in scope '{scope}'" if scope else "") + "."
+    # Count total stubs for context
+    conn = oracle.conn
+    total_stubs = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 1").fetchone()[0]
+    direct_stubs = total_stubs - len(island_items)
 
-    # For each stub, check whether any callers exist in graph_edges
-    islands: list[tuple[str, str, int]] = []  # (name, file_path, caller_count)
-    for name, fp in stub_rows:
-        caller_count = conn.execute(
-            "SELECT COUNT(*) FROM graph_edges WHERE callee = ?", (name,)
-        ).fetchone()[0]
-        islands.append((name, fp, caller_count))
-
-    # Separate: orphaned stubs (0 callers) vs stubs with callers (Direct)
-    orphaned = [(n, fp, c) for n, fp, c in islands if c == 0]
-    has_callers = [(n, fp, c) for n, fp, c in islands if c > 0]
-
-    # Group orphaned stubs by file to identify island clusters
-    from collections import defaultdict
-    by_file: dict[str, list[str]] = defaultdict(list)
-    for name, fp, _ in orphaned:
-        by_file[fp].append(name)
-
-    if not orphaned:
+    if not island_items:
+        label = f" in scope '{scope}'" if scope else ""
         return (
-            f"No stub islands found — all {len(stub_rows)} stub(s) have at least one caller.\n"
+            f"No stub islands found{label} — all {total_stubs} stub(s) have at least one live caller.\n"
             "This means every stub is a Direct stub (live code already waiting on it)."
         )
 
-    # Sort clusters by size descending
+    # Group by file for cluster view
+    by_file: dict[str, list[str]] = defaultdict(list)
+    for item in island_items:
+        by_file[item["file_path"]].append(item["name"])
+
     clusters = sorted(by_file.items(), key=lambda x: len(x[1]), reverse=True)
     clusters = [(fp, names) for fp, names in clusters if len(names) >= min_size]
 
     lines = [
-        f"STUB ISLANDS — {len(orphaned)} orphaned stub(s) across {len(by_file)} file(s)",
-        f"(no caller exists anywhere in the corpus for these stubs)",
-        f"Direct stubs (have callers): {len(has_callers)}",
+        f"STUB ISLANDS — {len(island_items)} stub(s) across {len(by_file)} file(s)",
+        f"(no live caller exists anywhere in the transitive call chain for these stubs)",
+        f"Direct stubs (have callers): {direct_stubs}",
         "",
     ]
 
     for fp, names in clusters:
         short_fp = fp.replace("\\", "/").split("/")[-1]
-        lines.append(f"  [{short_fp}]  {len(names)} orphaned stub(s)")
+        lines.append(f"  [{short_fp}]  {len(names)} island stub(s)")
         for name in sorted(names):
-            lines.append(f"    - {name}")
+            lines.append(f"    ○ {name}")
 
     if not clusters:
         lines.append("  (no clusters meet the min_size threshold)")
@@ -9483,9 +9447,7 @@ def find_stub_islands(oracle: "DBOracle", args: dict) -> str:
     lines += [
         "",
         "These stubs are design-complete but unwired — nothing calls them yet.",
-        "To wire them: find the entry point that should trigger this subsystem",
-        "and add the call chain. Run feature_shape() on the relevant directory",
-        "to see completeness % and identify the connecting functions.",
+        "Run chain_synthesis(<name>) on any stub to see where it would fit in the call graph.",
     ]
 
     return "\n".join(lines)

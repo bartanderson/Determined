@@ -598,3 +598,156 @@ def find_stub_islands(oracle: "DBOracle", subsystem: str = "") -> list[dict]:
 
     islands.sort(key=lambda x: x["name"])
     return islands
+
+
+# ------------------------------------------------------------------
+# Chain synthesis: entry-point-to-stub path with missing-link labels
+# ------------------------------------------------------------------
+
+def chain_synthesis(oracle: "DBOracle", name: str, max_depth: int = 8) -> dict:
+    """
+    Given a stub or domain name, assemble the call chain from the nearest
+    entry point down to (and through) that stub, annotating each hop as
+    implemented, stub, or missing.
+
+    Returns a dict with:
+      name       — the resolved bare name queried
+      upstream   — list of {name, is_stub, is_ep, file_path} from EP → stub
+                   (shortest path; empty if stub is an island)
+      downstream — list of {name, is_stub, file_path} immediately called by stub
+      missing    — list of stub/unresolved names blocking the chain
+      is_island  — True if no caller chain reaches an entry point
+    """
+    conn = oracle.conn
+    use_ids = _has_id_columns(conn)
+
+    # Resolve name to canonical form
+    bare = name.rsplit(".", 1)[-1]
+    if use_ids:
+        try:
+            row = conn.execute(
+                "SELECT canonical_id FROM symbol_names WHERE name = ? LIMIT 1", (bare,)
+            ).fetchone()
+            canonical = row[0] if row else bare
+        except Exception:
+            canonical = bare
+    else:
+        canonical = bare
+
+    # Build is_stub + file_path lookup from functions table
+    def _node_info(sym: str) -> dict:
+        try:
+            row = conn.execute(
+                "SELECT is_stub, file_path FROM functions WHERE name = ? LIMIT 1", (sym,)
+            ).fetchone()
+            if row:
+                return {"is_stub": bool(row[0]), "file_path": row[1] or ""}
+        except Exception:
+            pass
+        return {"is_stub": False, "file_path": ""}
+
+    # Identify entry points (nodes with no callers in the corpus)
+    if use_ids:
+        all_targets: set[str] = {
+            r[0] for r in conn.execute("SELECT DISTINCT target_id FROM graph_edges").fetchall()
+        }
+        all_sources: set[str] = {
+            r[0] for r in conn.execute("SELECT DISTINCT source_id FROM graph_edges").fetchall()
+        }
+    else:
+        all_targets = {r[0] for r in conn.execute("SELECT DISTINCT callee FROM graph_edges").fetchall()}
+        all_sources = {r[0] for r in conn.execute("SELECT DISTINCT caller FROM graph_edges").fetchall()}
+    entry_point_ids = all_sources - all_targets
+
+    # BFS upward from `canonical` to find the shortest path reaching an EP
+    # Each queue item is a path (list) from canonical upward: [canonical, caller1, caller2, ...]
+    visited_up: set[str] = {canonical}
+    queue: deque[list[str]] = deque([[canonical]])
+    best_upstream_reversed: list[str] | None = None  # path from stub up to EP
+
+    while queue:
+        path = queue.popleft()
+        tip = path[-1]
+
+        if len(path) > max_depth:
+            continue
+
+        # Get callers of tip
+        if use_ids:
+            rows = conn.execute(
+                "SELECT DISTINCT source_id FROM graph_edges WHERE target_id = ?", (tip,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT DISTINCT caller FROM graph_edges WHERE callee = ? OR callee LIKE ?",
+                (tip, f"%.{tip}"),
+            ).fetchall()
+
+        has_any_caller = bool(rows)
+        if not has_any_caller or tip in entry_point_ids:
+            # tip has no callers — it's a root
+            if len(path) > 1:  # don't count the stub itself as its own EP
+                best_upstream_reversed = path
+                break
+
+        for (caller,) in rows:
+            if caller not in visited_up:
+                visited_up.add(caller)
+                new_path = path + [caller]
+                if caller in entry_point_ids:
+                    best_upstream_reversed = new_path
+                    queue.clear()  # found an EP — take shortest path
+                    break
+                queue.append(new_path)
+
+        if best_upstream_reversed:
+            break
+
+    # Reverse so it reads EP → stub
+    if best_upstream_reversed:
+        upstream_names = list(reversed(best_upstream_reversed))
+    else:
+        upstream_names = [canonical]  # just the stub itself (island)
+
+    upstream = []
+    for sym in upstream_names:
+        info = _node_info(sym)
+        upstream.append({
+            "name": sym,
+            "is_stub": info["is_stub"],
+            "is_ep": sym in entry_point_ids or sym == upstream_names[0],
+            "file_path": info["file_path"],
+        })
+
+    # BFS downward from stub — one hop (immediate callees)
+    if use_ids:
+        callee_rows = conn.execute(
+            "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ?", (canonical,)
+        ).fetchall()
+    else:
+        callee_rows = conn.execute(
+            "SELECT DISTINCT callee FROM graph_edges WHERE caller = ?", (canonical,)
+        ).fetchall()
+
+    downstream = []
+    for (callee,) in callee_rows:
+        info = _node_info(callee)
+        downstream.append({
+            "name": callee,
+            "is_stub": info["is_stub"],
+            "file_path": info["file_path"],
+        })
+
+    # Collect missing links: stubs in the chain
+    missing = [n["name"] for n in upstream if n["is_stub"]]
+    missing += [n["name"] for n in downstream if n["is_stub"] and n["name"] not in missing]
+
+    is_island = len(upstream) == 1 and upstream[0]["name"] == canonical
+
+    return {
+        "name": canonical,
+        "upstream": upstream,
+        "downstream": downstream,
+        "missing": missing,
+        "is_island": is_island,
+    }

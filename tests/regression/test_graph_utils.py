@@ -484,6 +484,79 @@ def test_stub_islands_tool_wrapper():
     assert "resolve_barter" in result
 
 
+# ── chain_synthesis (graph_utils) ─────────────────────────────────────────────
+
+def _make_chain_oracle(functions, edges):
+    """functions: (name, file_path, is_stub), edges: (caller, callee)."""
+    import sqlite3
+    from unittest.mock import MagicMock
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE functions (name TEXT, file_path TEXT, is_stub INTEGER)")
+    conn.executemany("INSERT INTO functions VALUES (?,?,?)", functions)
+    conn.execute("CREATE TABLE graph_edges (caller TEXT, callee TEXT, source_id TEXT, target_id TEXT)")
+    for caller, callee in edges:
+        conn.execute("INSERT INTO graph_edges VALUES (?,?,?,?)", (caller, callee, caller, callee))
+    conn.commit()
+
+    oracle = MagicMock()
+    oracle.conn = conn
+    return oracle
+
+
+def test_chain_synthesis_finds_upstream_ep():
+    """Chain synthesis traces from EP through live code down to a stub."""
+    from determined.agent.graph_utils import chain_synthesis
+
+    oracle = _make_chain_oracle(
+        functions=[
+            ("progress_journey", "journey.py", 0),    # EP
+            ("trigger_encounter", "encounter.py", 0),
+            ("_get_encounter_context", "encounter.py", 1),  # stub
+        ],
+        edges=[
+            ("progress_journey", "trigger_encounter"),
+            ("trigger_encounter", "_get_encounter_context"),
+        ],
+    )
+    result = chain_synthesis(oracle, "_get_encounter_context")
+    names = [n["name"] for n in result["upstream"]]
+    assert "_get_encounter_context" in names
+    assert result["is_island"] is False
+    assert "_get_encounter_context" in result["missing"]
+
+
+def test_chain_synthesis_island_stub():
+    """A stub with no callers is reported as an island."""
+    from determined.agent.graph_utils import chain_synthesis
+
+    oracle = _make_chain_oracle(
+        functions=[("resolve_barter", "barter.py", 1)],
+        edges=[],
+    )
+    result = chain_synthesis(oracle, "resolve_barter")
+    assert result["is_island"] is True
+    assert result["upstream"][0]["name"] == "resolve_barter"
+
+
+def test_chain_synthesis_downstream_callees():
+    """Downstream shows what the stub calls."""
+    from determined.agent.graph_utils import chain_synthesis
+
+    oracle = _make_chain_oracle(
+        functions=[
+            ("my_stub", "x.py", 1),
+            ("helper", "x.py", 0),
+        ],
+        edges=[
+            ("my_stub", "helper"),
+        ],
+    )
+    result = chain_synthesis(oracle, "my_stub")
+    callee_names = [n["name"] for n in result["downstream"]]
+    assert "helper" in callee_names
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

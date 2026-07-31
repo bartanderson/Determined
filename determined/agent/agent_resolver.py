@@ -251,6 +251,10 @@ _PATTERNS = [
     (re.compile(r"(?:stub\s+islands?|unwired\s+stubs?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_stub_islands", "subsystem", 1),
 
+    # "chain for X" / "wiring chain for X" / "call chain for X" / "chain context for X"
+    (re.compile(r"(?:wiring\s+)?(?:call\s+)?chain(?:\s+context)?\s+for\s+['\"]?([a-zA-Z_][a-zA-Z0-9_.]*)['\"]?\s*$", re.I),
+     "chain_context", "symbol", 1),
+
     # "workflow status" / "what's next" / "current priorities" / "what am I working on"
     (re.compile(r"(?:workflow\s+status|what'?s?\s+next|current\s+priorities|what\s+am\s+I\s+working\s+on)\s*$", re.I),
      "workflow_status", None, None),
