@@ -62,8 +62,8 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 
 | Corpus | Target | Status |
 |--------|--------|--------|
-| Determined (Python) | Full convergence | probe DONE (2026-07-21); adversarial re-run DONE — 3 stubs clean, 0 false positives |
-| dj2 (Python+JS) | Full convergence | probe 2026-07-25: 248 inferred EPs (down from 331, good movement); 12 FSM stubs (real work queue); 5 subrace stubs (delete when dj2 coding starts); 3 test mocks (accepted); 5 real gaps; phases.py 39 abstract methods = real ABC, unwired not abandoned — future implementation target; world/ 100% unresolved (accepted ceiling) |
+| Determined (Python) | Full convergence | probe 2026-07-31 (self-model check): 12 stubs total — 2 real gaps (pattern_executor.__init__, contract_drift_classifier.__init__), 1 known accepted (suggest_tags), 9 test mocks; 0 false positives; 95.6% unresolved edges (external-lib ceiling, accepted); 1426/2147 inferred EPs (framework-caller ceiling, accepted); docstring health 62.1% missing (test files dominant; assessor.py notable) |
+| dj2 (Python+JS) | Full convergence | probe 2026-07-30: 25 stubs, all orphans (0 live callers); 12 FSM stubs (encounter/trade/barter — design-complete islands, GAP-1); 5 subrace stubs (delete when dj2 coding starts, accepted); 5 real gaps (_get_encounter_context, _get_combat_context, process_consequences, _register_world_tools, on_arc_completed); 3 test mocks (accepted); unresolved edge ratio 87.8% (world/ ceiling, accepted); inferred EPs 1131/1419; docstring health 43.3% (804 missing) |
 | Commonplace (Python) | Full convergence | 1 stub (suggest_tags); classified: frontier stub, waits for LLM_ENDPOINT design decision |
 | rotjs (TS) | Probe-passes | 6 stubs; lib/src dual-rep known |
 | dungeoncrawler (TS) | Probe-passes | 0 stubs; clean |
