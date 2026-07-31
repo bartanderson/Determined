@@ -246,6 +246,14 @@ _DOMAIN_STATE_RE = re.compile(
     re.I,
 )
 
+_SUBSYSTEM_NAME_RE = re.compile(
+    r"\b(?:state of|status of|overview of|survey of|completeness of|"
+    r"what.s built in|what exists in|what.s done in|what.s missing in|"
+    r"assess)\s+(?:the\s+)?(\w+)"
+    r"|(\w+)\s+subsystem\b",
+    re.I,
+)
+
 
 def _is_domain_analysis_question(question: str, needs: list[str]) -> bool:
     """True when the question asks for a domain state assessment."""
@@ -259,7 +267,7 @@ def _is_domain_analysis_question(question: str, needs: list[str]) -> bool:
     return bool(_is_survey_needs(needs) and evaluative.search(question))
 
 
-def _enrich_with_stub_status(facts: list[dict], oracle) -> dict:
+def _enrich_with_stub_status(facts: list[dict], oracle, subsystem: str = "") -> dict:
     """
     Augment the fact set with stub/caller status for each symbol found.
     Returns a dict with keys: complete, stubs, orphaned, design_notes.
@@ -309,23 +317,26 @@ def _enrich_with_stub_status(facts: list[dict], oracle) -> dict:
         except Exception:
             pass
 
-    # Surface design notes
-    domain_words = set()
-    for f in facts:
-        result = f.get("result", "") or ""
-        for line in result.splitlines()[:5]:
-            for word in line.lower().split():
-                if len(word) > 4 and word.isalpha():
-                    domain_words.add(word)
-
+    # Surface design notes — search by subsystem name if available, else mine fact words
     design_notes = []
-    for word in list(domain_words)[:5]:
+    search_terms = [subsystem] if subsystem else []
+    if not search_terms:
+        domain_words = set()
+        for f in facts:
+            result = f.get("result", "") or ""
+            for line in result.splitlines()[:5]:
+                for word in line.lower().split():
+                    if len(word) > 4 and word.isalpha():
+                        domain_words.add(word)
+        search_terms = list(domain_words)[:5]
+
+    for term in search_terms:
         try:
             rows = conn.execute(
                 "SELECT kind, content FROM knowledge_artifacts "
                 "WHERE (subject LIKE ? OR content LIKE ?) AND kind IN ('design_note','finding','sots') "
                 "LIMIT 3",
-                (f"%{word}%", f"%{word}%")
+                (f"%{term}%", f"%{term}%")
             ).fetchall()
             for kind, content in rows:
                 design_notes.append(f"[{kind}] {content[:120]}")
@@ -380,7 +391,11 @@ def build_domain_analysis(question: str, facts: list[dict], oracle,
     Fully deterministic domain state assessment — no LLM call.
     All 6 sections derived from graph data and knowledge artifacts.
     """
-    enrichment = _enrich_with_stub_status(facts, oracle)
+    subsystem = ""
+    m = _SUBSYSTEM_NAME_RE.search(question)
+    if m:
+        subsystem = (m.group(1) or m.group(2) or "").lower().strip()
+    enrichment = _enrich_with_stub_status(facts, oracle, subsystem=subsystem)
 
     s1 = _fmt_list(enrichment["complete"])
     s2 = _fmt_list(enrichment["stubs"])
