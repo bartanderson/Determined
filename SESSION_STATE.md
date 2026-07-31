@@ -1,105 +1,102 @@
-Written at commit: 6b86d52
+Written at commit: fe5c659
 
-# SESSION STATE — session 273 (end)
+# SESSION STATE — session 274 (end)
 
 ## Active branch: main [V]
 
 ## This session (committed) [V]
 
-- `6b86d52` — feat(analyst): fully deterministic 6-section assessment — no LLM hedging
+- `c44fb3b` — fix(analyst): section 5 DESIGN uses subsystem name not random words
+- `fe5c659` — feat(analyst): GAP-2 chain synthesis — wiring_chain pattern + fuzzy symbol resolution
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**Analyst narration — ground-truth rule + new labels, first live test** [V]
-- Loaded session 272 code (ground-truth assertion rule + enrichment label fix)
-- First test: response started clean ("1. COMPLETE:") but model still hedged inline
-  ("However, note:", "But note:") — ground-truth rule didn't suppress CoT style
+**Section 5 DESIGN fix** [V]
+`_enrich_with_stub_status` was mining random words from fact text to query
+`knowledge_artifacts`. Fixed to extract the subsystem name from the question
+(e.g. "encounter" from "what is the state of the encounter subsystem?") via
+`_SUBSYSTEM_NAME_RE` and pass it as `subsystem=` param. Falls back to word-mining
+only when no name is found. Live test not run (server not up at fix time).
 
-**Prompt iteration — 5 attempts, all failed** [V]
-- Attempt 1: ground-truth rule in system prompt (session 272 code)
-- Attempt 2: pre-sorted SYMBOL STATUS block + bracket placeholder sections
-  → model echoed the placeholders as meta-commentary instead of filling them
-- Attempt 3: concrete one-shot example format
-  → model copied the example structure but still reasoned through each slot
-- Attempt 4: ASD-STE100 rules (SimpleEnglish repo) — ban modals, active voice,
-  20-word limit, one claim per sentence
-  → model ignored modal ban, used bullet reasoning steps instead
-- Attempt 5: split into det sections 1-3 + LLM only for 4-6 (300 tokens)
-  → model burned all 300 tokens reasoning, never wrote section 4 conclusion
+**GAP-2 probe: "what is the wiring chain from travel to encounter?"** [V]
+First probe run showed `[heuristic matched] ['symbols named wiring', ...]` —
+LLM decomposed "wiring" as a symbol name, returned nothing. Pattern fired in
+Phase 1, not Phase 0a.
 
-**Root cause confirmed** [V]
-Qwen3-8B with /no_think externalizes reasoning in output tokens regardless of
-system prompt instructions. Style rules ("no hedging") are opinions; structural
-constraints (word limits, modal bans) help but don't stop non-modal reasoning paths.
-The model is fundamentally a CoT reasoner — prompt engineering cannot suppress it.
+**Root cause: `graph_path` already existed, but wasn't routed to** [V]
+`graph_path` tool + `shortest_path` in `graph_utils.py` fully built since earlier
+sessions. The gap was routing: "wiring chain from X to Y" fell through to LLM
+decomposition. `trace_call_chain` pattern in `pattern_executor.py` only matches
+HTTP→database chains, not general symbol-to-symbol chains.
 
-**Fix: fully deterministic analyst, no LLM** [V]
-Refactored `build_domain_analysis` in `determined/agent/local_agent.py`:
-- Sections 1-3 (COMPLETE/STUBS/ORPHANED): assembled from graph data in `_enrich_with_stub_status`
-- Section 4 (WIRING GAPS): `_build_wiring_gaps` queries graph_edges for callers of each stub
-- Section 5 (DESIGN): from knowledge_artifacts query already in enrichment
-- Section 6 (FIRST STEP): stub with most callers waiting (first in stubs list)
-Zero LLM calls. Instant response. Consistent output.
+**Fix: `wiring_chain` pattern + `build_chain_answer`** [V]
+Three-layer change:
+1. `pattern_executor.py`: added `wiring_chain` detect rule before `trace_data_flow`
+   — catches "wiring chain/call chain/call path from X to Y", "how does X reach Y",
+   "trace from X to Y"
+2. `local_agent.py`: added `_CHAIN_RE`/`_CHAIN_RE2` for endpoint extraction,
+   `build_chain_answer()` calling `shortest_path` with stub annotation
+3. Phase 0a: routes `wiring_chain` pattern to `build_chain_answer`, bypasses all LLM
 
-**Live test result** [V]
-"what is the state of the encounter subsystem?" produced:
+**Fuzzy symbol resolution required** [V]
+The question says "travel" and "encounter" (subsystem words), not real function names.
+`shortest_path('travel', 'encounter')` returns None. Three rounds of iteration:
+- Round 1: source_id/target_id name-match only → missed `progress_journey` (in
+  travel_system.py but name contains no 'travel')
+- Round 2: added file-path expansion → cross-contamination: `generate_encounter`
+  in travel_system.py appeared as a travel source, found spurious `generate_encounter
+  → Encounter` path  
+- Round 3: cross-contamination filter (exclude src candidates whose name contains
+  dst word and vice versa) → clean
+
+Final result [V]:
 ```
-1. COMPLETE: generate_encounter (encounter_generator.py, 6 caller(s)); start_encounter...
-2. STUBS: _get_encounter_context (context_builder.py, 1 caller(s) waiting); ...
-3. ORPHANED: trigger_encounter (phases.py); test_encounter_flee_success; ...
-4. WIRING GAPS: build → _get_encounter_context (unimplemented).
-5. DESIGN: No design artifacts found — run discovery to build coverage.
-6. FIRST STEP: Implement _get_encounter_context — it already has callers depending on it.
+Call chain from 'progress_journey' to 'Encounter':
+  progress_journey (travel_system.py) → generate_encounter (encounter_generator.py) → Encounter
 ```
-Clean, correct, no hedging, matches manual analysis in docs/analyses/dj2_encounter_analysis_1.md. [V]
-
-**External references saved to memory** [V]
-- SimpleEnglish / ASD-STE100: https://github.com/AminBlg/SimpleEnglish
-  Key finding: "Clearly" is opinion, "no sentence over 20 words" is spec.
-  Useful for future LLM prompt design — structural constraints beat style instructions.
-- CEL engine article: https://bsid.io/writing/building-a-cel-engine-for-net
-  Watch for: compile-once/evaluate-many pattern; ratcheting conformance skip-list.
+Instant, deterministic, correct.
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- RM74 second question: "what is the wiring chain from travel to encounter?"
-  Tests GAP-2 (chain synthesis). Not started this session.
+- Section 5 (DESIGN) fix not live-tested yet — server wasn't reloaded after that commit.
+  Easy to verify: ask "what is the state of the encounter subsystem?" and check section 5
+  now says something about encounter.json FSM configs instead of "No design artifacts found."
 - GAP-3 (JS→Python route matching): not built
 - Plan layer (workflow_items from analysis): not built
 - find_stub_islands not yet wired to UI Workbench picker
+- RM67 probe: skipped again this session
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **RM74 GAP-2 probe** — ask "what is the wiring chain from travel to encounter?"
-   in the live UI. If the analyst returns a data dump with no chain narrative, GAP-2
-   is confirmed unfilled. Browser sequence: navigate → wait 6s → JS click Ask tab →
-   set q-input value → click send-btn → wait 20s → read results innerText.
+1. **Section 5 DESIGN live verify** — ask "what is the state of the encounter subsystem?"
+   in the live UI. Confirm section 5 now returns FSM config content instead of "No design
+   artifacts found." If still empty, check whether encounter.json artifacts are in
+   `knowledge_artifacts` table at all (may need discovery pass first).
 
-2. **RM67 probe** — standing rule, skipped again.
+2. **RM67 probe** — standing rule, skipped two sessions running.
 
-3. **Section 5 (DESIGN) quality check** — the live test showed "No design artifacts
-   found." The encounter subsystem has FSM configs (encounter.json). The knowledge_artifacts
-   query is matching on random domain_words extracted from fact text, not on the subsystem
-   name. Fix: pass the subsystem name directly as the search term instead of random words.
+3. **Chain answer quality** — current output names `Encounter` (a class) as terminal node.
+   Consider annotating class vs function, and whether the terminal node being a class
+   (not a stub) changes the action hint logic.
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
 - Ask bar browser automation: click Ask tab via JS (`.tab` elements, find one with
-  "Ask" in textContent, call .click()). Then set `#q-input` value + dispatchEvent +
-  click `#send-btn`. Do NOT use ref_14 — it toggles and closes if already open. [V]
+  "Ask" in textContent, call .click()). Set `#q-input` value + dispatchEvent + click
+  `#send-btn`. Do NOT use ref_14 — toggles closed if already open. [V]
 - After read_page(all), refs go to (0,0) — always use JS for Ask bar interaction. [V]
-- Section 5 DESIGN is returning "no artifacts" even when FSM configs exist — domain_words
-  extraction is noisy; needs subsystem-name-based lookup instead. [?]
-- No tests mapped to local_agent.py in FILE_MAP — if changes are made, add mapping. [V]
-- Python test proxy is unreliable (thin facts = poor output). Always test analyst in live UI. [V]
+- No tests mapped to `local_agent.py` or `pattern_executor.py` in FILE_MAP. [V]
+- wiring_chain fuzzy expansion: cross-contamination filter works for clean subsystem
+  names but may fail if src and dst share a common word. Watch for this. [?]
+- Section 5 DESIGN fix verified by regex test only, not live UI — see next session item 1. [?]
 
 ---
 
