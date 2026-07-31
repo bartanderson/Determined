@@ -511,15 +511,18 @@ def _fmt_list(items: list[str]) -> str:
 
 def _build_wiring_gaps(enrichment: dict, oracle) -> str:
     """
-    Deterministically derive wiring gaps: for each stub with callers,
-    find what calls it and report the broken edge.
+    Deterministically derive wiring gaps: stubs with callers show the broken
+    edge; stubs with no callers are reported as unconnected (isolated gap).
     """
     conn = oracle.conn
-    gaps = []
+    connected_gaps = []   # stub has callers waiting — broken edge
+    isolated_gaps = []    # stub has no callers — not yet wired in
+
     for entry in enrichment["stubs"]:
-        # entry looks like "func_name (file.py, N caller(s) waiting)"
+        # entry looks like "func_name (file.py, N caller(s) waiting)" or "func_name (file.py, not yet called)"
         name = entry.split("(")[0].strip()
         if "not yet called" in entry:
+            isolated_gaps.append(name)
             continue
         try:
             rows = conn.execute(
@@ -528,12 +531,25 @@ def _build_wiring_gaps(enrichment: dict, oracle) -> str:
             ).fetchall()
             callers = [r[0].split(".")[-1] for r in rows]
             if callers:
-                gaps.append(f"{' / '.join(callers)} → {name} (unimplemented)")
+                connected_gaps.append(f"{' / '.join(callers)} → {name} (unimplemented)")
         except Exception:
             pass
-    if not gaps:
+
+    parts = []
+    if connected_gaps:
+        parts.append("; ".join(connected_gaps))
+    if isolated_gaps:
+        # Group isolated stubs — they exist but nothing calls them yet
+        if len(isolated_gaps) == 1:
+            parts.append(f"{isolated_gaps[0]} is unimplemented and not yet connected to any caller")
+        else:
+            parts.append(
+                f"{isolated_gaps[0]} and {len(isolated_gaps) - 1} other stub(s) are unimplemented "
+                f"and not yet connected to any caller"
+            )
+    if not parts:
         return "No direct wiring gaps found in graph data."
-    return "; ".join(gaps) + "."
+    return "; ".join(parts) + "."
 
 
 def build_domain_analysis(question: str, facts: list[dict], oracle,

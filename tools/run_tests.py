@@ -33,6 +33,8 @@ ROOT = Path(__file__).parent.parent
 # ---------------------------------------------------------------------------
 FILE_MAP: dict[str, list[str]] = {
     # determined/agent/
+    "determined/agent/local_agent.py": [
+        "tests/regression/test_domain_analyst.py"],
     "determined/agent/agent_prompt.py": [
         "tests/regression/test_agent_prompt.py"],
     "determined/agent/context_compactor.py": [
