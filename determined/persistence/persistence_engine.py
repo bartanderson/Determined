@@ -1337,22 +1337,27 @@ def _persist_cross_boundary_edges(connection, file_analyses, annotation_file=Non
         elif fp.endswith('.js'):
             js_srcs.append((src, fp))
 
-    # If no HTML/JS from file_analyses (scan_project_files skips them), read from disk
-    if flask_route_map and not html_srcs and not js_srcs:
+    # If HTML or JS were not found in file_analyses, read from disk.
+    # These are checked independently — HTML templates may come from file_analyses
+    # (via scan_project_files) while JS files do not, so JS must always be scanned
+    # separately when not already collected.
+    if flask_route_map and (not html_srcs or not js_srcs):
         try:
             row = cursor.execute("SELECT value FROM project_meta WHERE key='project_root'").fetchone()
             if row:
                 _root = Path(row[0])
                 _SKIP = {'.venv', 'node_modules', '__pycache__', '.git'}
+                _need_html = not html_srcs
+                _need_js = not js_srcs
                 for _p in _root.rglob('*'):
                     if any(s in _p.parts for s in _SKIP):
                         continue
-                    if _p.suffix == '.html':
+                    if _need_html and _p.suffix == '.html':
                         try:
                             html_srcs.append(_p.read_text(encoding='utf-8', errors='replace'))
                         except OSError:
                             pass
-                    elif _p.suffix == '.js':
+                    elif _need_js and _p.suffix == '.js':
                         try:
                             js_srcs.append((_p.read_text(encoding='utf-8', errors='replace'), str(_p)))
                         except OSError:
