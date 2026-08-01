@@ -213,7 +213,7 @@ the complexity signal exceeds the local LLM ceiling (or on explicit user request
 sibling availability, classify_stub confidence, unresolved edge ratio (neighborhood).
 Threshold calibrated against real examples; above threshold → escalate.
 
-**Gate:** RM70 done 2026-08-01 — gate cleared. Build when RM72 Phase A ships.
+**Gate:** RM70 done 2026-08-01, RM72 done 2026-08-01 — all gates cleared. Ready to build.
 
 Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
 
