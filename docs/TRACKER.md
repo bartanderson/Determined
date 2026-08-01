@@ -219,56 +219,6 @@ Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
 
 ---
 
-## RM72 — Graph explorer (pyray, integrated navigation hub) (ACTIVE)
-
-Native desktop tool for visually navigating corpus call graphs. Reads directly
-from corpus SQLite DB. Not a companion — a navigation hub: every node is a doorway
-into the existing analysis surfaces (Workbench, Oracle, Map, Editor, Call tree).
-
-**Tech:** Python + pyray (raylib). Already shipping as `determined/ui/graph_explorer.py`
-and `tools/graph_explorer.py`. Launched as subprocess from Map tab.
-
-**Implementation phases:**
-
-Phase A — Socket bridge (ACTIVE)
-- `_SocketBridge` class in graph_explorer.py: connects to UI server (localhost:5050)
-  as a python-socketio client. Non-blocking; graceful if UI not running.
-- Emits `gx_select` on node selection: `{symbol, file, node_id, is_stub, is_tool}`
-- Emits `gx_navigate` on destination action: `{destination, symbol, file}`
-  destinations: "workbench" | "oracle" | "map" | "call_tree" | "editor"
-- Listens for `gx_highlight` from UI: `{symbol}` — highlights node in graph
-- ui_server.py: `@socketio.on("gx_navigate")` — calls `activateTab` equivalent
-  server-side and emits `gx_nav_ack` to browser; browser JS handles tab switch +
-  symbol load via existing `activateTab(name)` + `gxMap(symbol)` / workbench dispatch.
-
-Phase B — Context menu
-- Right-click on node OR panel cluster row → popup overlay at cursor.
-- Items: Workbench | Oracle/Ask | Map | Call tree | Editor | --- | Expand | Frame |
-  Copy name | Copy file path
-- All items call `_navigate_to(destination, node)` — same function as keyboard shortcuts.
-- Escape or click-outside closes menu.
-
-Phase C — Panel action buttons
-- When a node is selected: "Go to" button row in panel below node name.
-  [ Workbench ] [ Oracle ] [ Map ] [ Editor ]
-- Buttons and context menu both call `_navigate_to` — one implementation.
-
-Phase D — Reverse bridge (UI → graph)
-- "Show in graph" link in Workbench + Oracle panels when graph explorer is open.
-- Emits `gx_highlight` → graph explorer frames + selects that node.
-
-Phase E — Cluster semantic summary
-- When cluster hub selected: panel shows files in cluster, entry points,
-  external callees, semantic_summaries pulled from corpus DB for top nodes.
-
-**`_navigate_to(destination, node)` is the integration point.**
-Every surface (keyboard, context menu, panel button) calls it. It emits the
-right socket event or fires the local action (editor open, clipboard).
-
-**Opened:** 2026-07-28. Phase A active as of 2026-08-01 (RM70 done, moving here).
-
----
-
 ## RM74 — Visual signal projection: Phases 1 & 2 (DONE 2026-07-28)
 
 Both phases were already implemented in `console.html` — discovered during session 266.
