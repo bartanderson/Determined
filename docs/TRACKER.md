@@ -174,16 +174,16 @@ What it needs:
 
 All tiers corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any language.
 
-**GAP-5: graph_path can't traverse JS→HTTP→Python boundary** (2026-08-01)
-- `graph_path(TravelUI.resolveEncounter → _get_encounter_context)` returns no path.
-- Cross-boundary edges (http_fetch) are ingested (GAP-3 fix), but the edge connects
-  the JS function to a Flask *route string*, not directly to the Python handler.
-  BFS finds no registered-corpus node at the route string, so the path breaks.
-- Fix needed: either (a) create a synthetic "route stub" node that bridges the JS
-  http_fetch edge to the Python decorator edge, or (b) teach graph_path to resolve
-  route strings via the decorator edge table.
-- Impact: "trace the path from frontend to backend" questions return no path even
-  when both sides are ingested. Must mentally stitch the boundary manually.
+**GAP-5: graph_path can't traverse JS→HTTP→Python boundary** — FIXED (2026-08-01)
+- Root cause: `/api/resolve-encounter` has no Python handler in dj2 (the route itself
+  is unimplemented — a dj2 gap, not a Determined gap). Working cases like
+  `dungeon.enterIntegratedMode → dungeon_enter` traverse correctly via http_fetch edges.
+- Fix: added `_explain_missing_path()` in graph_utils.py — when BFS returns None, it
+  inspects reachable nodes for raw `fetch(...)` callee strings, extracts URLs, and
+  reports the specific boundary that broke rather than a generic "no path found."
+- Output now: "Path breaks at HTTP boundary: resolveEncounter → fetch('/api/resolve-encounter')
+  — no Flask handler registered for this route. Implement the route and re-ingest."
+- commit: (this session)
 
 **GAP-6: ABC void detection has no intent signal** (2026-08-01)
 - `find_abc_gaps` on dj2 found 8 ABCs in phases.py with zero concrete subclasses.

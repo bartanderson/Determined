@@ -256,6 +256,76 @@ def shortest_path(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
     return None
 
 
+def _explain_missing_path(oracle: "DBOracle", src: str, dst: str) -> str:
+    """
+    When shortest_path returns None, explain *why* the path is missing.
+
+    Checks whether any node reachable from src (within 3 hops) has edges that
+    cross a language boundary but the target has no corresponding handler in the
+    corpus — i.e. the chain breaks at an HTTP dead-end.
+
+    Returns a human-readable explanation, or "" if no specific reason found.
+    """
+    src_id = _resolve_to_canonical(oracle, src)
+
+    # Collect nodes within 3 hops of src (BFS, not restricted to corpus_names
+    # so we can see where the chain reaches unregistered symbols)
+    corpus_names: set[str] = {
+        r[0] for r in oracle.conn.execute(
+            "SELECT DISTINCT name FROM functions WHERE name IS NOT NULL"
+        ).fetchall()
+    }
+
+    reachable: set[str] = {src_id}
+    frontier: set[str] = {src_id}
+    for _ in range(3):
+        next_frontier: set[str] = set()
+        for node in frontier:
+            rows = oracle.conn.execute(
+                "SELECT DISTINCT target_id FROM graph_edges WHERE source_id = ?", (node,)
+            ).fetchall()
+            for (t,) in rows:
+                if t not in reachable:
+                    reachable.add(t)
+                    next_frontier.add(t)
+        frontier = next_frontier
+
+    # Find nodes reachable from src that have http_fetch edges whose target is
+    # NOT in the corpus functions table — these are broken HTTP boundaries.
+    dead_ends: list[tuple[str, str]] = []  # (js_caller, url_or_handler_target)
+    for node in reachable:
+        # Check if this node has any outgoing edges that look like fetch() calls
+        # stored as raw fetch strings (JS → unresolved HTTP)
+        rows = oracle.conn.execute(
+            "SELECT callee FROM graph_edges WHERE source_id = ? AND callee LIKE 'fetch(%'",
+            (node,)
+        ).fetchall()
+        for (callee,) in rows:
+            # Extract URL from the stored callee string
+            import re as _re
+            m = _re.search(r"""fetch\s*\(\s*['"]([^'"]+)['"]""", callee)
+            url = m.group(1) if m else callee[:60]
+            dead_ends.append((node, url))
+
+    if dead_ends:
+        lines = [
+            f"Path from '{src}' to '{dst}' breaks at an HTTP boundary:",
+        ]
+        seen_urls: set[str] = set()
+        for js_fn, url in dead_ends:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                lines.append(
+                    f"  {js_fn} → fetch('{url}') — no Flask handler registered for this route"
+                )
+        lines.append(
+            "  Tip: implement the Flask route and re-ingest to close the chain."
+        )
+        return "\n".join(lines)
+
+    return ""
+
+
 def _shortest_path_by_name(oracle: "DBOracle", src: str, dst: str) -> list[str] | None:
     """
     Fallback BFS over graph_edges.caller/callee columns (not source_id/target_id).
