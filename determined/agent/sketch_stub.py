@@ -444,8 +444,15 @@ def _extract_type_names(signature: str, docstring: str | None) -> list[str]:
 
 def _pull_type_defs(conn, type_names: list[str]) -> list[dict]:
     """
-    For each name that resolves to a class in the DB, return its
-    __init__ signature and public non-stub methods with their signatures.
+    For each name that resolves to a corpus type, return its interface.
+
+    Primary path — Python class in `classes` table: returns __init__ signature
+    and public non-stub methods.
+
+    Fallback path — corpus entity using ClassName:: prefix notation (e.g. FSM
+    actions/guards stored as EncounterFSM::action::start_combat): returns the
+    implemented entries as pseudo-methods. Corpus-agnostic: fires for any corpus
+    whose non-Python entities use the ClassName::kind::name notation in `functions`.
 
     Returns a list of dicts: {class_name, file, init_sig, methods: [{name, sig}]}.
     Caps at 3 classes and 8 methods per class to keep prompts bounded.
@@ -455,62 +462,102 @@ def _pull_type_defs(conn, type_names: list[str]) -> list[dict]:
     for name in type_names:
         if name in seen_classes or len(results) >= 3:
             break
+
+        # Primary: Python class in `classes` table
         row = conn.execute(
             "SELECT file_path, methods_json FROM classes WHERE name = ? LIMIT 1",
             (name,),
         ).fetchone()
-        if not row:
-            continue
-        file_path, methods_json = row
-        try:
-            method_names = json.loads(methods_json or "[]")
-        except (ValueError, TypeError):
-            method_names = []
+        if row:
+            file_path, methods_json = row
+            try:
+                method_names = json.loads(methods_json or "[]")
+            except (ValueError, TypeError):
+                method_names = []
 
-        short_file = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
+            short_file = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
 
-        # Fetch __init__ and public non-stub methods (no leading underscore except __init__)
-        public = ["__init__"] + [
-            m for m in method_names
-            if not m.startswith("_") and m != "__init__"
-        ]
-        public = public[:9]  # __init__ + up to 8 public methods
+            public = ["__init__"] + [
+                m for m in method_names
+                if not m.startswith("_") and m != "__init__"
+            ]
+            public = public[:9]
 
-        if not public:
-            continue
-
-        placeholders = ",".join("?" * len(public))
-        rows = conn.execute(
-            f"SELECT name, param_types_json, return_type, is_stub "
-            f"FROM functions WHERE file_path = ? AND name IN ({placeholders})",
-            [file_path] + public,
-        ).fetchall()
-
-        methods_out = []
-        init_sig = None
-        for mname, ptj, rtype, is_stub in rows:
-            if is_stub:
+            if not public:
                 continue
+
+            placeholders = ",".join("?" * len(public))
+            rows = conn.execute(
+                f"SELECT name, param_types_json, return_type, is_stub "
+                f"FROM functions WHERE file_path = ? AND name IN ({placeholders})",
+                [file_path] + public,
+            ).fetchall()
+
+            methods_out = []
+            init_sig = None
+            for mname, ptj, rtype, is_stub in rows:
+                if is_stub:
+                    continue
+                try:
+                    params = json.loads(ptj or "[]")
+                except (ValueError, TypeError):
+                    params = []
+                param_str = ", ".join(params) if params else ""
+                ret = f" -> {rtype}" if rtype else ""
+                sig = f"{mname}({param_str}){ret}"
+                if mname == "__init__":
+                    init_sig = sig
+                else:
+                    methods_out.append({"name": mname, "sig": sig})
+
+            if init_sig or methods_out:
+                results.append({
+                    "class_name": name,
+                    "file": short_file,
+                    "init_sig": init_sig,
+                    "methods": methods_out[:8],
+                })
+                seen_classes.add(name)
+            continue
+
+        # Fallback: corpus entity using ClassName:: prefix in `functions` table.
+        # Covers FSM actions/guards and any other non-Python entity using this
+        # notation. Returns implemented entries only (is_stub=0).
+        prefix = name + "::"
+        fsm_rows = conn.execute(
+            "SELECT name, file_path, param_types_json, return_type FROM functions "
+            "WHERE name LIKE ? AND is_stub = 0 "
+            "ORDER BY name LIMIT ?",
+            (prefix + "%", 9),
+        ).fetchall()
+        if not fsm_rows:
+            continue
+
+        short_file = (fsm_rows[0][1] or "").replace("\\", "/").rsplit("/", 1)[-1]
+        methods_out = []
+        for mname, fp, ptj, rtype in fsm_rows:
+            # Use the local name (last segment after ::) as the callable label
+            local = mname.rsplit("::", 1)[-1]
+            kind_tag = ""
+            if "::action::" in mname:
+                kind_tag = "[action] "
+            elif "::guard::" in mname:
+                kind_tag = "[guard] "
             try:
                 params = json.loads(ptj or "[]")
             except (ValueError, TypeError):
                 params = []
-            param_str = ", ".join(params) if params else ""
-            ret = f" -> {rtype}" if rtype else ""
-            sig = f"{mname}({param_str}){ret}"
-            if mname == "__init__":
-                init_sig = sig
-            else:
-                methods_out.append({"name": mname, "sig": sig})
+            param_str = ", ".join(params) if params else "context"
+            sig = f"{kind_tag}{local}({param_str})"
+            methods_out.append({"name": local, "sig": sig})
 
-        if init_sig or methods_out:
-            results.append({
-                "class_name": name,
-                "file": short_file,
-                "init_sig": init_sig,
-                "methods": methods_out[:8],
-            })
-            seen_classes.add(name)
+        results.append({
+            "class_name": name,
+            "file": short_file,
+            "init_sig": None,
+            "methods": methods_out,
+        })
+        seen_classes.add(name)
 
     return results
 
@@ -708,8 +755,7 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
     return_shape = _infer_return_shape(callers)
     short_path = (file_path or "").replace("\\", "/").rsplit("/", 1)[-1]
 
-    docstring = signals.get("docstring") or ""
-    type_names = _extract_type_names(signature, docstring)
+    type_names = _extract_type_names(signature, signals.get("intent_text") or "")
     type_defs = _pull_type_defs(conn, type_names)
 
     # FSM-specific context: JSON transition spec + implemented handler siblings
