@@ -8,6 +8,23 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-08-01 (s283): _wrap_body() must be applied consistently across sketch_stub.py.
+It exists to handle indented body fragments that ast.parse() rejects with SyntaxError.
+Used in _verify_candidate and _ast_node_sequence but was missing from _infer_return_shape,
+causing return-shape inference to silently return NONE for all callers. Same root cause
+applied to _fsm_builtin_siblings: JSON config rows have line_number=0, ORDER BY line_number
+returns them first, exhausting the LIMIT before real Python functions appear — add
+line_number > 0 to the WHERE clause. Rule: any sketch_stub function that parses a body
+fragment must use _wrap_body(); any query ordered by line_number must exclude line_number=0.
+
+2026-08-01 (s283): RM70 acceptance criteria in RM70_DESIGN.md are partly wrong.
+"Pattern sibling search finds _get_combat_context as top match" tests the algorithm
+against a specific expected name, not the outcome. _get_combat_context is also a stub
+(no body), so it would be useless as a style example regardless of rank. The real
+criterion is: top sibling is implemented (is_stub=0) and its body demonstrates the
+same structural pattern. The highest-scoring difflib match on a corpus with consistent
+naming conventions will be the right one. Don't re-litigate this criterion.
+
 2026-08-01 (s282): RM70 baseline lesson — always start llama-server before running rm70_baseline.py.
 The first clean run (no UI competing, server warm) is the one to trust. Partial runs with server
 mid-start or post-timeout are noise. Official Step 1 baseline: V1=20% (3/15), V2 mean=0.089 on dj2.

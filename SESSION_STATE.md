@@ -1,56 +1,53 @@
-Written at commit: 7b2dc74
+Written at commit: 74ab6b8
 
-# SESSION STATE — session 282 (end)
+# SESSION STATE — session 283 (end)
 
 ## Active branch: main [V]
 
-## Working tree: clean (after HISTORY.md update — commit that next) [V]
+## Working tree: HISTORY.md updated, not yet committed [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**RM70 Step 1 — Official baseline** [V]
-- Three runs total; first two were flawed (no LLM, then post-timeout noise).
-- Clean run (llama-server warm, no UI competing): V1=20% (3/15), V2 mean=0.089.
-- 7 `[no LLM]` stubs per run — server drops capacity mid-run consistently. Accepted as noise.
-- s268 partial (V1=100%, V2=0.833) was biased sample — 5 easy stubs. Real baseline is worse.
+**Post-Step-3 baseline run** [V]
+- First run showed regression: V1=21% (3/14), V2=0.125 vs Step 2's V1=40%, V2=0.300.
+- FSM stubs that passed in Step 2 (flee_possible, need_more_gold) all scoring 0.000.
 
-**RM70 Step 2 — FSM transition context + builtin sibling retrieval** [V] (commit beede0c)
-New in `determined/agent/sketch_stub.py`:
-- `_fsm_transition_context(json_path, symbol)`: reads FSM JSON config, finds which
-  transition(s) use this action/guard, returns event/from/to/cond as `fsm_context`.
-- `_fsm_builtin_siblings(conn, stub_name)`: queries corpus for implemented functions
-  in `file_path LIKE '%fsm%'` files; returns `(instance, event_data)` style examples.
-- Both wired into `build_brief()` when `body_shape == "config_declared"` and file ends in `.json`.
-- `_build_prompt()` updated: FSM siblings shown first as style examples; transition spec
-  shown as `# FSM: EncounterFSM (action 'start_combat') / event 'fight': awaiting_choice -> resolving_fight`.
-- 6 new tests. Post-step baseline: V1=40% (4/10), V2 mean=0.300. Guards improved most
-  (`flee_possible`, `need_more_gold` both V1=PASS, V2=1.000).
+**Bug 1 fixed: line_number=0 in _fsm_builtin_siblings** [V] (commit f0d309e)
+- `_fsm_builtin_siblings` queries `file_path LIKE '%fsm%' AND is_stub=0 ORDER BY line_number`.
+- JSON config entries (FSM states/events) are stored with line_number=0 and is_stub=0.
+- They filled the entire LIMIT before real Python functions in builtins.py appeared.
+- Fix: add `line_number > 0` to the WHERE clause.
+- After fix: re-run scored V1=60% (6/10), V2=0.600. [V]
 
-**RM70 Step 3 — Same-class sibling priority** [V] (commit 7b2dc74)
-New in `determined/agent/sketch_stub.py`:
-- `_same_class_siblings(conn, stub_name, limit)`: for `ClassName::method` names, queries
-  implemented siblings with same `ClassName::` prefix. Returns them with `similarity=1.0`.
-- `_pattern_siblings()` refactored: runs `_same_class_siblings` first; corpus-wide difflib
-  fills remaining slots; plain function names skip same-class path entirely.
-- 4 new tests. All pass.
+**Evaluation methodology assessment** [V]
+- Denominator varies each run (random LLM server drops). Step comparisons are not apples-to-apples.
+- V2 mean is cleaner signal than V1 rate across runs with different denominators.
+- Root insight: all of Stage 1 (retrieval) is deterministic and independently verifiable.
+  LLM is only at Stage 2. Verify retrieval quality directly, not via noisy LLM output.
+- RM70_DESIGN.md criterion "finds _get_combat_context as top match" is wrong:
+  _get_combat_context is also a stub (no body). Highest difflib scorer on a well-named
+  corpus is the right sibling. Criterion updated in HISTORY.md. [V]
 
-**HISTORY.md updated** [V] (not yet committed)
-- Added FSM dispatch pattern discovery + baseline lesson.
-
-**Test count at session end**: targeted tests pass (exit 0). [V]
+**Bug 2 fixed: _infer_return_shape silently returning NONE** [V] (commit 74ab6b8)
+- Caller bodies are indented fragments. ast.parse() rejects them with SyntaxError.
+- _infer_return_shape caught the SyntaxError silently and returned NONE for all callers.
+- _wrap_body() already existed for this exact problem, used in _verify_candidate and
+  _ast_node_sequence but not applied in _infer_return_shape.
+- Fix: `ast.parse(_wrap_body(body))` instead of `ast.parse(body)`.
+- After fix: _get_encounter_context return-shape yields STRONG confidence with hints. [V]
+- 154 tests pass. [V]
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- HISTORY.md update not committed (done in-session, needs `git add docs/HISTORY.md && git commit`).
-- RM70 Steps 4-7: return-shape inference, type def pull, V3+V4 scoring, multi-sample loop —
-  all already implemented from s263-s265. The stairs are largely climbed; main gap was FSM stubs.
-- No post-Step-3 baseline run — LLM variance makes each run noisy; deferred.
+- HISTORY.md update not committed (done in-session, needs commit).
+- RM70 acceptance criteria: all 7 design steps are implemented. Two retrieval bugs
+  fixed this session. Remaining criteria not yet verified (Steps 5-7).
 - Build Queue check (carried from s280): verify 24 encounter items in dj2 UI. Not done.
-- RM72 Phase A socket bridge: not started this session.
+- RM72 Phase A socket bridge: not started.
 - dj2 decisions.toml: still untracked in dj2 git.
 
 ---
@@ -58,30 +55,33 @@ New in `determined/agent/sketch_stub.py`:
 ## WHAT TO DO NEXT SESSION
 
 1. **Commit HISTORY.md**:
-   `git add docs/HISTORY.md && git commit -m "chore: HISTORY.md session 282 -- RM70 FSM retrieval lessons"`
+   `git add docs/HISTORY.md && git commit -m "chore: HISTORY.md session 283 -- _wrap_body rule, criteria lesson"`
 
-2. **Post-Step-3 baseline** (optional — LLM variance is high):
-   Ensure llama-server running first, then: `.venv\Scripts\python.exe tools\rm70_baseline.py`
+2. **Verify remaining RM70 acceptance criteria** (deterministic, no LLM):
+   - Does _get_encounter_context brief contain type_defs with real corpus methods? (Step 5)
+   - Does V3/V4 scoring run correctly on a passing candidate? (Step 6)
+   - Does feedback loop emit specific constraint on V2 failure? (Step 7)
+   Check via build_brief() and _verify_candidate() directly.
 
-3. **Build Queue check** — open UI on dj2, verify encounter items still present.
+3. **Mark RM70 done in TRACKER.md** if criteria pass, then move to RM72 Phase A.
 
-4. **RM72 Phase A** — `_SocketBridge` in graph_explorer. See TRACKER for full spec.
+4. **Build Queue check** — open UI on dj2, verify encounter items still present.
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
-- RM70 baseline: ALWAYS start llama-server before running rm70_baseline.py. Check with
-  `.venv\Scripts\python.exe -c "from determined.agent.llm_client import is_available; print(is_available())"`.
-  First call after cold start may timeout (600s) and corrupt the run.
-- 7 `[no LLM]` stubs per baseline run: server drops mid-run. Consistent pattern, accepted noise.
-- FSM stubs (body_shape=config_declared): callers = 0 always — GenericFSM dispatches by registry.
-  Step 2 fix covers this; `_fsm_transition_context` reads JSON from `file_path`. [V]
-- Plan layer DB fallback: `_enrich_from_db` LIKE match may over-match common-word subsystems. [?]
-- `chain_synthesis()` mixed column usage (callee vs source_id/target_id). Works on dj2. [?]
+- _wrap_body() must be used anywhere in sketch_stub.py that parses a body fragment.
+  Currently consistent after today's fix. If new functions parse bodies, apply it. [V]
+- line_number=0 trap: any query on functions table ordered by line_number must exclude
+  line_number=0 to avoid config-declared entries crowding out Python functions. [V]
+- RM70 baseline runner: always start llama-server first. 7 [no LLM] drops per run
+  is normal; denominator varies; don't compare V1 rates across runs with different
+  denominators. Use V2 mean or verify retrieval quality deterministically. [V]
+- FSM stubs (body_shape=config_declared): callers=0 always. _fsm_transition_context
+  reads JSON from file_path; _fsm_builtin_siblings reads builtins.py. Both working. [V]
 - Build Queue items from s280 (24 encounter items) may need de-dup. [?]
-- Ask bar browser automation: Set `#q-input` value + dispatchEvent + click `#send-btn`. JS not refs. [V]
-- dj2 DB schema: no `is_entry_point` column. [V]
+- dj2 DB schema: no is_entry_point column. [V]
 
 ---
 
