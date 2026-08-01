@@ -1,6 +1,6 @@
-Written at commit: c36decc
+Written at commit: ef3f4bc
 
-# SESSION STATE — session 285 (mid)
+# SESSION STATE — session 285 (end)
 
 ## Active branch: main [V]
 
@@ -11,43 +11,59 @@ Written at commit: c36decc
 ## WHAT HAPPENED THIS SESSION
 
 **RM71 discovered already done** [V]
-- `determined/agent/export_context.py` was fully implemented in a prior session.
-- TRACKER said "DESIGN DONE" — deleted the block (items are deleted when done). [V]
-- 11 existing tests passed. Commit: 1279a59
+- export_context.py fully implemented prior session. Deleted stale TRACKER block. Commit: 1279a59.
 
-**RM71 session accumulator added** [V] (commit c36decc)
-- `export_context(symbol)` now starts/resets a per-symbol session accumulator.
-- `export_context_append(symbol, tool, tool_args)` — dispatches any Determined tool,
-  stores formatted differential chunk. Also accepts `content=` for user-supplied freetext
-  (LLM responses, manual notes). Source field: "determined" | "user_supplied" | "back_channel".
-- `export_context_dump(symbol)` — recoalesces: session log + initial packet + all chunks.
-  Use for new LLM handoff.
-- Grounded manifest: Section 4 now pre-fills every DETERMINE: command with the real
-  symbol and real caller names so the external LLM can emit copy-paste-ready requests.
-- Protocol header: `DETERMINE: tool_name(arg="value", ...)` format; user relays until
-  back-channel (RM77) exists.
-- 20 tests, 363 total passing. [V]
+**RM71 session accumulator + grounded manifest** [V] (commit c36decc)
+- export_context() now starts/resets per-symbol session.
+- export_context_append(symbol, tool, tool_args) — dispatches Determined tool, stores chunk.
+  Also accepts content= for user-supplied freetext. source: "determined"|"user_supplied".
+- export_context_dump(symbol) — recoalesces: session log + initial packet + all chunks.
+- Section 4 (TOOL API MANIFEST) now pre-fills every DETERMINE: command with real symbol
+  and real caller names. Protocol header: "DETERMINE: tool(arg=val)" format for relay.
+- RM77 added to TRACKER: back-channel to auto-parse DETERMINE: requests (future).
+- 20 tests, 363 total passing.
 
-**RM77 added to TRACKER** [V]
-- Back-channel future work: sub-agent or browser automation parses DETERMINE: lines
-  and calls export_context_append automatically. Gate: first verify external LLM tab
-  is observable via browser MCP.
+**Build Queue check** [V]
+- dj2 queue correct: _get_encounter_context #1 (1 real caller), FSM action/guard stubs #2-6
+  (isolated, design-complete), check_parley/#7 and test stub/#8 (accepted).
+- FSM event handlers in backlog as "orphaned" — correct, they are config-declared islands.
+- No de-dup needed.
+
+**RM74 probe: GAP-5 and GAP-6 found and logged** [V] (commit 0a847e4)
+- GAP-5: graph_path silent on HTTP boundary dead-ends — logged and FIXED this session.
+- GAP-6: find_abc_gaps can't distinguish intentional scaffold from abandoned interface —
+  logged, fix deferred to RM76 (decisions.toml overlay).
+
+**GAP-5 fixed** [V] (commit ef3f4bc)
+- Root cause: /api/resolve-encounter has NO Python handler in dj2 (route is unimplemented).
+  Working cross-boundary paths (enterIntegratedMode → dungeon_enter) traverse correctly.
+- Fix: _explain_missing_path() in graph_utils.py — after BFS returns None, inspects nodes
+  reachable within 3 hops, detects raw fetch(...) callee strings, extracts URLs, reports
+  which route has no Flask handler.
+- Before: "No call path found from TravelUI.resolveEncounter to _get_encounter_context"
+- After: "Path breaks at HTTP boundary: resolveEncounter → fetch('/api/resolve-encounter')
+  — no Flask handler registered for this route. Implement and re-ingest."
+- 363 tests pass. [V]
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- Build Queue check (carried from s280): verify encounter items in dj2 UI. Still not done.
 - dj2 decisions.toml: still untracked in dj2 git.
+- GAP-6 (ABC scaffold intent): deferred to RM76.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Continue open TRACKER items** — RM74 (analyst workflow gaps), RM75 (corpus expansion
-   probe table update), RM21 (small-model reasoning), RM73 (walker dispatch resolution),
-   RM76 (decision ledger), RM77 (back-channel future).
-2. **Build Queue check** — open UI on dj2, verify encounter items present.
+1. **RM74 continued** — re-run the 6 canonical walkthrough questions with the fixes in place;
+   see if any new gaps surface. Focus: feature_shape tool (needs feature_path, not feature);
+   domain analysis routing via ask bar.
+2. **RM76 decisions.toml** — gates are met (dj2 convergence reached, analysis producing
+   keeper decisions). Design is in TRACKER. First step: read the design, implement the
+   file loader (load_decisions_from_toml → materialize as knowledge_artifacts on corpus load).
+3. **RM73** (walker dispatch resolution) or **RM21** (small-model reasoning) — pick based on
+   what the next dj2 probe surfaces as the binding constraint.
 
 ---
 
@@ -60,8 +76,11 @@ Written at commit: c36decc
   (2) functions LIKE 'TypeName::%' for FSM/protocol entities. If a new stub's
   docstring names a CamelCase type that resolves neither way, type_defs is empty —
   expected, not a bug. [V]
-- export_context session is in-memory; resets on server restart. This is intentional —
-  sessions are transient. No persistence to DB planned until RM77 ships. [V]
+- export_context session is in-memory; resets on server restart. Intentional. [V]
+- GAP-5 fix (fetch dead-end detection) only finds fetch() calls stored as raw callee
+  strings in graph_edges. If the JS walker improves and stores these as http_fetch edges
+  instead, _explain_missing_path needs updating. [?]
+- feature_shape tool requires feature_path argument (not feature). Caught during probe.
 
 ---
 
