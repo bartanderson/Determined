@@ -193,55 +193,6 @@ world/authority_system.py.
 
 ---
 
-## RM70 — Stub solution synthesis (ACTIVE DESIGN)
-
-Enhance `sketch_stub` from typed-placeholder generator to corpus-grounded
-solution candidate generator. Full design: `docs/RM70_DESIGN.md`.
-
-**Problem:** current brief gives the LLM caller names + docstrings. Not enough
-for anything beyond `return {}`. When the local model is insufficient, there is
-no assembled context to hand to something more capable — leaving the user stuck.
-
-**Architecture:** tiered reasoning ladder — local LLM first (always), escalate
-by complexity to web LLM (tier 2) or Claude (tier 3). Determined computes a
-complexity signal from corpus facts before invoking any LLM and routes accordingly.
-`export_context` (RM71) is the escalation mechanism: clipboard-ready packet with
-corpus context + tool API manifest + reasoning chain.
-
-**Local pipeline:** four-stage — retrieve → generate → verify → refine.
-
-**Stage 1 — Retrieval (deterministic):**
-- Full caller bodies (not docstrings) — shows how return value is used
-- Return-shape inference via AST walk — STRONG/WEAK/NONE confidence; WEAK shown as "(uncertain)"
-- Pattern sibling search: name-normalized Levenshtein corpus-wide (primary) + SetFit tiebreaker (secondary only)
-- Referenced type definitions: named classes → their public methods (what the body may call)
-
-**Stage 2 — Generation:** completion-mode prompt with full retrieval context.
-Default: 1 sample (quick, interactive). `mode=thorough`: K=3 samples, ranked.
-
-**Stage 3 — Verification (deterministic scoring):**
-- V1: `ast.parse()` — hard gate
-- V2: corpus call check — fraction of called names in DB; primary quality signal (weight 0.6)
-- V3: return type compatibility — AST walk; soft signal (weight 0.2)
-- V4: pattern similarity to best sibling — tiebreaker only, never a rejection criterion (weight 0.2)
-
-**Stage 4 — Iterative refinement:** lowest-scoring V2 signal → specific constraint
-("you called X — not in corpus; available: Y, Z") → retry. 3-iteration ceiling.
-Visible in output if ceiling hit. Not MCTS — honest name: feedback-guided retry.
-
-**Build order** (each step shippable independently):
-1. V1+V2 baseline (measure current sketch_stub quality first)
-2. Caller body reader
-3. Pattern sibling search (corpus-scoped)
-4. Return-shape inference
-5. Type definition pull
-6. V3+V4 scoring
-7. Multi-sample + feedback loop
-
-**Gate:** start with step 1 next session. Each step measured against baseline.
-
----
-
 ## RM71 — export_context: context packet for external LLM escalation (DESIGN DONE)
 
 New tool. Assembles a clipboard-ready plain-text packet for a function when
@@ -262,8 +213,7 @@ the complexity signal exceeds the local LLM ceiling (or on explicit user request
 sibling availability, classify_stub confidence, unresolved edge ratio (neighborhood).
 Threshold calibrated against real examples; above threshold → escalate.
 
-**Gate:** build after RM70 Step 1 (V1+V2 baseline) so complexity signal can be
-validated against real generation quality data.
+**Gate:** RM70 done 2026-08-01 — gate cleared. Build when RM72 Phase A ships.
 
 Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
 
@@ -315,7 +265,7 @@ Phase E — Cluster semantic summary
 Every surface (keyboard, context menu, panel button) calls it. It emits the
 right socket event or fires the local action (editor open, clipboard).
 
-**Opened:** 2026-07-28. Phase A starting 2026-07-29.
+**Opened:** 2026-07-28. Phase A active as of 2026-08-01 (RM70 done, moving here).
 
 ---
 
