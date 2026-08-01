@@ -144,7 +144,7 @@ def _fsm_builtin_siblings(conn, stub_name: str, limit: int = _FSM_SIBLING_CAP) -
     local = stub_name.rsplit("::", 1)[-1]
     rows = conn.execute(
         "SELECT name, file_path, line_number FROM functions "
-        "WHERE file_path LIKE '%fsm%' AND is_stub = 0 AND name != ? "
+        "WHERE file_path LIKE '%fsm%' AND is_stub = 0 AND line_number > 0 AND name != ? "
         "ORDER BY line_number LIMIT ?",
         (local, limit * 4),
     ).fetchall()
