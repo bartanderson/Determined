@@ -8,6 +8,16 @@ Format: `DATE: fact -- why it matters`
 
 ## Active entries
 
+2026-08-01 (s282): RM70 baseline lesson — always start llama-server before running rm70_baseline.py.
+The first clean run (no UI competing, server warm) is the one to trust. Partial runs with server
+mid-start or post-timeout are noise. Official Step 1 baseline: V1=20% (3/15), V2 mean=0.089 on dj2.
+
+2026-08-01 (s282): FSM stubs have zero Python callers — GenericFSM dispatches actions/guards
+by setattr from a registry, so graph_edges has no callee edges for them. Caller body reader
+(Step 2) is useless for these; the fix is: (1) read the JSON config to get the transition spec,
+(2) pull implemented siblings from world/fsm/builtins.py via file_path LIKE '%fsm%'. Same
+interface contract (instance, event_data) is discoverable from corpus, not hardcoded.
+
 2026-07-31 (s280): Plan layer DB fallback pattern — `_is_plan_request` routes "plan for X"
 queries before domain analyst. But Phase 1 gives empty needs for short ambiguous queries
 (LLM enters reasoning mode instead of emitting NEED: lines). Fix: `_enrich_from_db(oracle, subsystem)`

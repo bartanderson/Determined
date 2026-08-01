@@ -1,93 +1,86 @@
-Written at commit: 7db2691
+Written at commit: 7b2dc74
 
-# SESSION STATE — session 281 (end)
+# SESSION STATE — session 282 (end)
 
 ## Active branch: main [V]
 
-## Working tree: clean (after this commit) [V]
+## Working tree: clean (after HISTORY.md update — commit that next) [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**GAP-4 Tier 3 — Direction layer** [V] (commit 1e32ee9)
-New `generate_direction_update()` in `determined/agent/local_agent.py`:
-- Detects "I implemented X" / "I've implemented X" / "I finished X" / "done with X" via `_IMPL_RE`.
-- Marks matching workflow_items done in Build Queue.
-- BFS upward to find callers now unblocked; reports adjacent stubs in same file as new frontier.
-- Routes before plan check in Phase 3 bypass block.
-4 tests in `test_domain_analyst.py`, all pass.
+**RM70 Step 1 — Official baseline** [V]
+- Three runs total; first two were flawed (no LLM, then post-timeout noise).
+- Clean run (llama-server warm, no UI competing): V1=20% (3/15), V2 mean=0.089.
+- 7 `[no LLM]` stubs per run — server drops capacity mid-run consistently. Accepted as noise.
+- s268 partial (V1=100%, V2=0.833) was biased sample — 5 easy stubs. Real baseline is worse.
 
-**GAP-4 Tier 4 — Knowledge accumulation** [V] (commit 71a4b9b)
-`build_domain_analysis()` now takes optional `assessor` param:
-- Stores each run as `analyst_run:{subsystem}` knowledge artifact via `store_artifact()`.
-- On subsequent runs: diffs stub lists against prior artifact, prepends "[Since last analyst run]" delta.
-- `_diff_analyst_runs()` extracts stub section by regex, computes closed/opened sets.
-3 tests in `test_domain_analyst.py`, all pass.
+**RM70 Step 2 — FSM transition context + builtin sibling retrieval** [V] (commit beede0c)
+New in `determined/agent/sketch_stub.py`:
+- `_fsm_transition_context(json_path, symbol)`: reads FSM JSON config, finds which
+  transition(s) use this action/guard, returns event/from/to/cond as `fsm_context`.
+- `_fsm_builtin_siblings(conn, stub_name)`: queries corpus for implemented functions
+  in `file_path LIKE '%fsm%'` files; returns `(instance, event_data)` style examples.
+- Both wired into `build_brief()` when `body_shape == "config_declared"` and file ends in `.json`.
+- `_build_prompt()` updated: FSM siblings shown first as style examples; transition spec
+  shown as `# FSM: EncounterFSM (action 'start_combat') / event 'fight': awaiting_choice -> resolving_fight`.
+- 6 new tests. Post-step baseline: V1=40% (4/10), V2 mean=0.300. Guards improved most
+  (`flee_possible`, `need_more_gold` both V1=PASS, V2=1.000).
 
-**GAP-1 — Island detection** [V] (commit 71a4b9b)
-New `find_stub_islands()` in `determined/agent/graph_utils.py`:
-- BFS upward from each stub through caller chain; stub is an island if no non-stub caller
-  exists in transitive closure (more accurate than direct-caller check).
-- Existing `find_stub_islands` tool in `agent_tools.py` upgraded to call the BFS version;
-  output now groups by file and references `chain_context` for drill-down.
-- Ask bar patterns: "stub islands [in X]" / "unwired stubs" → `find_stub_islands`.
-- `tool_registry.py` entry added with feeds pointing to `chain_context`.
-5 tests in `test_graph_utils.py`, all pass.
+**RM70 Step 3 — Same-class sibling priority** [V] (commit 7b2dc74)
+New in `determined/agent/sketch_stub.py`:
+- `_same_class_siblings(conn, stub_name, limit)`: for `ClassName::method` names, queries
+  implemented siblings with same `ClassName::` prefix. Returns them with `similarity=1.0`.
+- `_pattern_siblings()` refactored: runs `_same_class_siblings` first; corpus-wide difflib
+  fills remaining slots; plain function names skip same-class path entirely.
+- 4 new tests. All pass.
 
-**GAP-2 — Chain synthesis** [V] (commit 7db2691)
-New `chain_synthesis()` in `determined/agent/graph_utils.py`:
-- BFS upward from stub to nearest EP; annotates each hop as implemented/stub/EP.
-- Returns `{upstream, downstream, missing, is_island}`.
-- Internal building block; user-facing surface is existing `chain_context` tool.
-- Existing `find_stub_islands` tool detection logic upgraded to use BFS version.
-- Ask bar pattern: "chain for X" / "wiring chain for X" / "call chain for X" → `chain_context`.
-3 tests in `test_graph_utils.py`, all pass.
+**HISTORY.md updated** [V] (not yet committed)
+- Added FSM dispatch pattern discovery + baseline lesson.
 
-**TRACKER.md updated** [V]
-- GAP-1, GAP-2 marked FIXED with commit refs.
-- Tiers 1-4 all marked DONE with commit refs.
-- RM74 build order section replaced with completed status summary.
-
-Total tests: 494 pass, 2 deselected. [V]
+**Test count at session end**: targeted tests pass (exit 0). [V]
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- RM70 Step 1: V1+V2 baseline measurement — not started this session.
-- RM72 Phase A: graph_explorer socket bridge — not started this session.
-- Build Queue rendering check: verify 24 encounter items still present in dj2 corpus DB
-  (carried from session 280 — not checked this session).
-- dj2 decisions.toml: still untracked in dj2 git — Bart to commit when ready.
+- HISTORY.md update not committed (done in-session, needs `git add docs/HISTORY.md && git commit`).
+- RM70 Steps 4-7: return-shape inference, type def pull, V3+V4 scoring, multi-sample loop —
+  all already implemented from s263-s265. The stairs are largely climbed; main gap was FSM stubs.
+- No post-Step-3 baseline run — LLM variance makes each run noisy; deferred.
+- Build Queue check (carried from s280): verify 24 encounter items in dj2 UI. Not done.
+- RM72 Phase A socket bridge: not started this session.
+- dj2 decisions.toml: still untracked in dj2 git.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Build Queue check** — open UI on dj2, check Build Queue tab shows encounter items.
-   If duplicated (plan ran twice): `list_items(conn, status='active')` then clear extras.
+1. **Commit HISTORY.md**:
+   `git add docs/HISTORY.md && git commit -m "chore: HISTORY.md session 282 -- RM70 FSM retrieval lessons"`
 
-2. **RM70 Step 1 baseline**: kill UI first, then run:
-   `.venv\Scripts\python tools\rm70_baseline.py`
-   Compare to s268 partial result (5 stubs: V1 100%, V2 mean 0.833).
+2. **Post-Step-3 baseline** (optional — LLM variance is high):
+   Ensure llama-server running first, then: `.venv\Scripts\python.exe tools\rm70_baseline.py`
 
-3. **RM72 Phase A socket bridge** — `_SocketBridge` class in graph_explorer connecting to
-   UI on localhost:5050. See TRACKER RM72 for full Phase A spec.
+3. **Build Queue check** — open UI on dj2, verify encounter items still present.
+
+4. **RM72 Phase A** — `_SocketBridge` in graph_explorer. See TRACKER for full spec.
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
-- Plan layer DB fallback: `_enrich_from_db` queries by LIKE on name/file_path.
-  Common-word subsystems ("world", "game") may over-match. "encounter" is safe. [?]
-- `chain_synthesis()` in graph_utils uses raw `callee` column for the island BFS path
-  but `source_id/target_id` for the upward walk. Mixed — works for dj2, verify on
-  other corpora before relying on it. [?]
-- Build Queue items from session 280 (24 encounter items) may need de-dup if plan
-  was run more than once. Check next session. [?]
-- Ask bar browser automation: Set `#q-input` value + dispatchEvent + click `#send-btn`.
-  Use JS not refs. [V]
+- RM70 baseline: ALWAYS start llama-server before running rm70_baseline.py. Check with
+  `.venv\Scripts\python.exe -c "from determined.agent.llm_client import is_available; print(is_available())"`.
+  First call after cold start may timeout (600s) and corrupt the run.
+- 7 `[no LLM]` stubs per baseline run: server drops mid-run. Consistent pattern, accepted noise.
+- FSM stubs (body_shape=config_declared): callers = 0 always — GenericFSM dispatches by registry.
+  Step 2 fix covers this; `_fsm_transition_context` reads JSON from `file_path`. [V]
+- Plan layer DB fallback: `_enrich_from_db` LIKE match may over-match common-word subsystems. [?]
+- `chain_synthesis()` mixed column usage (callee vs source_id/target_id). Works on dj2. [?]
+- Build Queue items from s280 (24 encounter items) may need de-dup. [?]
+- Ask bar browser automation: Set `#q-input` value + dispatchEvent + click `#send-btn`. JS not refs. [V]
 - dj2 DB schema: no `is_entry_point` column. [V]
 
 ---
@@ -98,4 +91,4 @@ Total tests: 494 pass, 2 deselected. [V]
 - Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"` — find PID, kill it.
 - UI server restart: kill PID on 5050, then `preview_start {name: "Determined UI"}`, navigate.
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
-- Baseline runner: `.venv\Scripts\python.exe tools\rm70_baseline.py`
+- Baseline runner: `.venv\Scripts\python.exe tools\rm70_baseline.py` — llama-server must be up first.
