@@ -194,6 +194,33 @@ world/authority_system.py.
 ---
 
 
+## RM77 — export_context back-channel (FUTURE)
+
+When a future capability exists to monitor or intercept external LLM output
+(sub-agent listening to web LLM, browser automation reading responses, or
+equivalent), wire it into `export_context_append` as a third source path.
+
+**Current state (RM71 session accumulator):**
+- `export_context_append(symbol, tool, args)` — user-relayed: user reads external
+  LLM request, calls Determined tool, relays result. Source: `"determined"`.
+- `export_context_append(symbol, content, source="user")` — freetext: user pastes
+  LLM response or manual note into session. Source: `"user_supplied"`.
+
+**Back-channel would add:**
+- Source: `"back_channel"` — external LLM output parsed and relayed automatically,
+  either as tool dispatch (LLM says "run blast_radius on X") or raw text capture.
+
+**Candidate mechanisms (evaluate when relevant):**
+1. Sub-agent monitors external LLM tab output and calls append automatically.
+2. Browser automation (claude-in-chrome) reads response text, extracts tool requests.
+3. External LLM has a plugin/API that can call back to a local endpoint.
+
+**Gate:** first evaluate whether the external LLM session can be observed at all
+(browser MCP read access to the LLM tab). If yes, option 2 is likely cheapest.
+If not, option 1 requires the external LLM to emit structured output.
+
+---
+
 ## RM74 — Visual signal projection: Phases 1 & 2 (DONE 2026-07-28)
 
 Both phases were already implemented in `console.html` — discovered during session 266.

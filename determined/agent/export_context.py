@@ -12,16 +12,59 @@
 #   3. Complexity score — which signals drove escalation (visible reasoning)
 #   4. Tool API manifest — what Determined can answer if asked
 #
+# Session accumulator (RM71):
+#   export_context(symbol)            — initial packet; starts/resets session
+#   export_context_append(symbol, ...) — run a follow-up tool, store + return chunk
+#   export_context_dump(symbol)       — recoalesce: initial + all chunks (new LLM handoff)
+#
+# Each session entry carries source: "determined" (tool dispatched internally)
+# or "user_supplied" (freetext pasted by user or external LLM response text).
+# Future back-channel source: "back_channel" (RM77).
+#
 # SOTS XIII: complexity score and driving signals are always shown.
 # SOTS XI:  complexity is deterministic; no LLM needed to decide tier.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from determined.oracle.db_oracle import DBOracle
     from determined.assessor.assessor import Assessor
+
+
+# ---------------------------------------------------------------------------
+# Session accumulator
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class _SessionEntry:
+    source: str          # "determined" | "user_supplied" | "back_channel"
+    tool: str            # tool name if source=="determined", else ""
+    args: dict           # tool args if source=="determined", else {}
+    chunk: str           # formatted output
+    timestamp: str       # ISO8601
+
+
+@dataclasses.dataclass
+class _ExportSession:
+    symbol: str
+    initial_packet: str
+    entries: list[_SessionEntry] = dataclasses.field(default_factory=list)
+
+
+# Keyed by (db_path, symbol). Resets when export_context() is called again.
+_sessions: dict[tuple[str, str], _ExportSession] = {}
+
+
+def _session_key(oracle: "DBOracle", symbol: str) -> tuple[str, str]:
+    return (getattr(oracle, "db_path", ""), symbol)
+
+
+def _get_session(oracle: "DBOracle", symbol: str) -> _ExportSession | None:
+    return _sessions.get(_session_key(oracle, symbol))
 
 
 # ---------------------------------------------------------------------------
@@ -114,39 +157,59 @@ def _tier_label(score: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool API manifest
+# Tool API manifest (grounded — pre-fills symbol from brief)
 # ---------------------------------------------------------------------------
 
-_TOOL_MANIFEST = """\
-If the external LLM needs more context, ask Determined with these tools:
+_BACKCHANNEL_PROTOCOL = """\
+== REQUEST PROTOCOL ==
+To request additional context, emit a line in exactly this format:
+  DETERMINE: tool_name(arg="value", ...)
+The user will run this in Determined and paste the result back.
+When a back-channel is available, these commands will be executed automatically.
+Emit one request per line. Chain requests only after receiving the previous result."""
 
-  classify_stub(symbol=X)
-      Why does this stub exist? Ranked hypotheses with evidence.
 
-  sketch_stub(symbol=X)
-      Generate a candidate implementation (local LLM + corpus context).
-      Use mode=thorough for K=3 ranked samples.
+def _build_manifest(brief: dict) -> str:
+    """Build a grounded tool manifest with pre-filled symbol arguments."""
+    sym = brief.get("symbol", "SYMBOL")
+    callers = brief.get("callers", [])
+    # Pick a representative caller for find_call_chain example
+    caller_example = callers[0]["name"] if callers else "CALLER"
 
-  blast_radius(symbol=X)
-      What breaks if this function is changed or implemented incorrectly?
-
-  symbol_context(symbol=X)
-      Full caller/callee list, declaration, design frame for any symbol.
-
-  find_call_chain(from_symbol=X, to_symbol=Y)
-      Trace the execution path between two symbols.
-
-  list_stubs()
-      All stubs in the active corpus, ranked by caller count.
-
-  stub_prerequisite_map(symbol=X)
-      What must exist before this stub can be implemented?
-
-  explore_stub(symbol=X)
-      Deep dive: callers, callees, sibling patterns, concept presence.
-
-To run a tool: call it via the Workbench tab in Determined, or via Python:
-  from determined.agent.agent_tools import <tool>; <tool>(assessor, {args})"""
+    lines = [
+        _BACKCHANNEL_PROTOCOL,
+        "",
+        "Available tools (ready-to-run commands for this symbol):",
+        "",
+        f'  DETERMINE: classify_stub(symbol="{sym}")',
+        f'      Why does this stub exist? Ranked hypotheses with evidence.',
+        "",
+        f'  DETERMINE: sketch_stub(symbol="{sym}")',
+        f'      Generate a candidate implementation from corpus patterns.',
+        f'      Use mode="thorough" for K=3 ranked samples.',
+        "",
+        f'  DETERMINE: blast_radius(symbol="{sym}")',
+        f'      What breaks if this function is changed or left unimplemented?',
+        "",
+        f'  DETERMINE: symbol_context(symbol="{sym}")',
+        f'      Full caller/callee list, declaration, design frame.',
+        "",
+        f'  DETERMINE: find_call_chain(from_symbol="{caller_example}", to_symbol="{sym}")',
+        f'      Trace the execution path from a caller to this stub.',
+        "",
+        f'  DETERMINE: stub_prerequisite_map(symbol="{sym}")',
+        f'      What must exist before this stub can be implemented?',
+        "",
+        f'  DETERMINE: explore_stub(symbol="{sym}")',
+        f'      Deep dive: callers, callees, sibling patterns, concept presence.',
+        "",
+        f'  DETERMINE: export_context_append(symbol="{sym}", tool="TOOL", tool_args={{...}})',
+        f'      Add any of the above results to the running session.',
+        "",
+        f'  DETERMINE: export_context_dump(symbol="{sym}")',
+        f'      Recoalesce full session — use when handing off to a new LLM.',
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +302,7 @@ def _build_packet(brief: dict, oracle: "DBOracle") -> str:
     s3.append(f"  sibling_missing:    {signals['sibling_missing']:.3f}  ({'no pattern sibling' if not siblings else 'sibling found'})")
 
     # ── Section 4: Tool API manifest ────────────────────────────────────
-    s4: list[str] = [_TOOL_MANIFEST]
+    s4: list[str] = [_build_manifest(brief)]
 
     divider = "\n" + ("─" * 60) + "\n"
     return divider.join([
@@ -289,4 +352,128 @@ def export_context(assessor: "Assessor", args: dict) -> str:
             f"design-intent-stated or blocked-on-prerequisite."
         )
 
-    return _build_packet(brief, oracle)
+    packet = _build_packet(brief, oracle)
+
+    # Start (or reset) the session for this symbol.
+    key = _session_key(oracle, symbol)
+    _sessions[key] = _ExportSession(symbol=symbol, initial_packet=packet)
+
+    return packet
+
+
+# ---------------------------------------------------------------------------
+# Session accumulator entry points
+# ---------------------------------------------------------------------------
+
+def export_context_append(assessor: "Assessor", args: dict) -> str:
+    """
+    export_context_append — run a follow-up tool and add its output to the
+    active export session for a symbol.
+
+    Two modes:
+      (a) tool dispatch — Determined runs the tool and stores the result:
+            symbol, tool, args (dict of tool arguments)
+      (b) user-supplied text — store freetext (LLM response, manual note):
+            symbol, content, source (optional, default "user_supplied")
+
+    Returns the new chunk only (differential). Use export_context_dump to
+    get the full accumulated session.
+    """
+    from determined.agent.agent_tools import TOOLS
+
+    oracle = assessor.oracle
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    session = _get_session(oracle, symbol)
+    if session is None:
+        return (
+            f"ERROR: no active export session for '{symbol}'. "
+            f"Call export_context(symbol='{symbol}') first."
+        )
+
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+
+    # Mode (b): user-supplied freetext
+    content = args.get("content", "").strip()
+    if content:
+        source = args.get("source", "user_supplied")
+        chunk = _section(
+            f"USER-SUPPLIED CONTEXT ({now})",
+            [f"[source: {source}]", "", content],
+        )
+        session.entries.append(_SessionEntry(
+            source=source, tool="", args={}, chunk=chunk, timestamp=now
+        ))
+        return chunk
+
+    # Mode (a): dispatch a Determined tool
+    tool_name = args.get("tool", "").strip()
+    if not tool_name:
+        return "ERROR: provide 'tool' (tool name) or 'content' (freetext)"
+    if tool_name not in TOOLS:
+        return f"ERROR: unknown tool '{tool_name}'. Check export_context_dump for manifest."
+
+    tool_args = args.get("tool_args", {})
+    if not isinstance(tool_args, dict):
+        return "ERROR: tool_args must be a dict"
+
+    fn, tool_tier = TOOLS[tool_name]
+    # Tools are (fn, tier_string). Assessor is always passed as first arg.
+    raw = fn(assessor, tool_args)
+
+    chunk = _section(
+        f"FOLLOW-UP: {tool_name}({_fmt_args(tool_args)})  [{now}]",
+        [raw] if isinstance(raw, str) else [str(raw)],
+    )
+    session.entries.append(_SessionEntry(
+        source="determined", tool=tool_name, args=tool_args,
+        chunk=chunk, timestamp=now,
+    ))
+    return chunk
+
+
+def export_context_dump(assessor: "Assessor", args: dict) -> str:
+    """
+    export_context_dump — recoalesce the full session for a symbol.
+
+    Returns: initial packet + all accumulated chunks, with a session log
+    header listing every tool call that built the session. Use this to hand
+    off full context to a new external LLM session.
+
+    Args:
+        symbol: function name (required)
+    """
+    oracle = assessor.oracle
+    symbol = args.get("symbol", "").strip()
+    if not symbol:
+        return "ERROR: symbol argument required"
+
+    session = _get_session(oracle, symbol)
+    if session is None:
+        return (
+            f"ERROR: no active export session for '{symbol}'. "
+            f"Call export_context(symbol='{symbol}') first."
+        )
+
+    divider = "\n" + ("─" * 60) + "\n"
+
+    # Session log header
+    if session.entries:
+        log_lines = [f"Session for: {symbol}", f"Steps: {len(session.entries)}"]
+        for i, e in enumerate(session.entries, 1):
+            if e.source == "determined":
+                log_lines.append(f"  {i}. {e.tool}({_fmt_args(e.args)})  [{e.timestamp}]")
+            else:
+                log_lines.append(f"  {i}. [user_supplied]  [{e.timestamp}]")
+        header = _section("SESSION LOG", log_lines)
+    else:
+        header = _section("SESSION LOG", [f"Session for: {symbol}", "No follow-up steps yet."])
+
+    parts = [header, session.initial_packet] + [e.chunk for e in session.entries]
+    return divider.join(parts)
+
+
+def _fmt_args(args: dict) -> str:
+    return ", ".join(f"{k}={v!r}" for k, v in args.items()) if args else ""

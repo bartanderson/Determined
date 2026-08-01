@@ -981,13 +981,39 @@ REGISTRY: dict[str, dict] = {
     },
 
     "export_context": {
-        "purpose": "Assemble a clipboard-ready context packet for external LLM escalation. Computes a complexity score from corpus facts (caller complexity, classify confidence, unresolved edge ratio, type resolution, sibling availability) and advises Tier 1 (local LLM) or Tier 2 (web LLM paste). The packet contains: function signature + classification, full caller bodies and pattern siblings, complexity score with driving signals, and a tool API manifest for interactive follow-up.",
+        "purpose": "Assemble a clipboard-ready context packet for external LLM escalation. Computes a complexity score from corpus facts (caller complexity, classify confidence, unresolved edge ratio, type resolution, sibling availability) and advises Tier 1 (local LLM) or Tier 2 (web LLM paste). The packet contains: function signature + classification, full caller bodies and pattern siblings, complexity score with driving signals, and a tool API manifest for interactive follow-up. Also starts a session accumulator — use export_context_append to add follow-up tool results, export_context_dump to recoalesce everything for a new LLM handoff.",
         "args": {
             "symbol": "stub function name (required)",
         },
-        "output": "four-section clipboard packet: function analysis, neighbor context, complexity score, tool API manifest",
-        "feeds": ["sketch_stub"],
+        "output": "four-section clipboard packet: function analysis, neighbor context, complexity score, tool API manifest. Starts/resets session accumulator for this symbol.",
+        "feeds": ["sketch_stub", "export_context_append", "export_context_dump"],
         "use_when": "When sketch_stub produces low-quality output (V2 score < 0.5) or when the stub is complex enough to warrant a web LLM or Claude review. Also useful standalone when a human wants full corpus context assembled in one place.",
+        "category": "planning",
+    },
+
+    "export_context_append": {
+        "purpose": "Add a follow-up tool result (or user-supplied text) to the active export session for a symbol. Tool dispatch mode: Determined runs the named tool and stores the formatted result as a differential chunk. User-supplied mode: stores freetext (e.g. an external LLM response). Returns the new chunk only — paste this into the ongoing external LLM conversation.",
+        "args": {
+            "symbol":    "stub function name — must match an active export_context session (required)",
+            "tool":      "Determined tool name to run (e.g. 'blast_radius') — use this OR content",
+            "tool_args": "dict of args to pass to the tool (e.g. {\"symbol\": \"X\"})",
+            "content":   "freetext to store instead of running a tool — use this OR tool",
+            "source":    "label for freetext source: 'user_supplied' (default) or 'back_channel'",
+        },
+        "output": "formatted differential chunk ready to paste into the external LLM session",
+        "feeds": ["export_context_dump"],
+        "use_when": "After export_context() when the external LLM asks for additional context (blast radius, call chain, etc.). Run as many times as needed before dumping.",
+        "category": "planning",
+    },
+
+    "export_context_dump": {
+        "purpose": "Recoalesce the full export session for a symbol: session log + initial packet + all accumulated follow-up chunks. Use when handing off to a new external LLM session or when you want the complete surface in one place.",
+        "args": {
+            "symbol": "stub function name — must match an active export_context session (required)",
+        },
+        "output": "session log header + initial packet + all differential chunks, divider-separated",
+        "feeds": [],
+        "use_when": "When starting a new external LLM conversation and you want to give it everything accumulated so far, or when you want to review the full session surface.",
         "category": "planning",
     },
 

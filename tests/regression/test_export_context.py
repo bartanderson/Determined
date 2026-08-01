@@ -10,7 +10,10 @@ import pytest
 from determined.agent.export_context import (
     _complexity_score,
     _build_packet,
+    _sessions,
     export_context,
+    export_context_append,
+    export_context_dump,
 )
 
 
@@ -279,3 +282,124 @@ def test_export_context_non_actionable_stub():
     # concept-not-applicable → not actionable → no packet
     result = export_context(assessor, {"symbol": "concept_stub"})
     assert "Not actionable" in result or "export_context" in result
+
+
+# ---------------------------------------------------------------------------
+# Session accumulator
+# ---------------------------------------------------------------------------
+
+def _make_actionable_stub_db():
+    return _make_db(stubs=[{
+        "name": "do_thing",
+        "docstring": "Implement the thing. Will be built when subsystem is ready.",
+        "file_path": "engine/core.py",
+    }])
+
+
+def test_export_context_starts_session():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    export_context(assessor, {"symbol": "do_thing"})
+    key = ("", "do_thing")
+    assert key in _sessions
+    assert _sessions[key].symbol == "do_thing"
+    assert _sessions[key].initial_packet != ""
+    assert _sessions[key].entries == []
+
+
+def test_export_context_resets_session():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    export_context(assessor, {"symbol": "do_thing"})
+    # Manually add a fake entry so we can confirm it gets cleared on re-call.
+    from determined.agent.export_context import _SessionEntry
+    _sessions[("", "do_thing")].entries.append(
+        _SessionEntry(source="user_supplied", tool="", args={},
+                      chunk="old chunk", timestamp="2026-01-01T00:00:00")
+    )
+    assert len(_sessions[("", "do_thing")].entries) == 1
+    export_context(assessor, {"symbol": "do_thing"})
+    assert _sessions[("", "do_thing")].entries == []
+
+
+def test_export_context_append_no_session():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    result = export_context_append(assessor, {"symbol": "do_thing", "tool": "list_stubs", "tool_args": {}})
+    assert "ERROR" in result
+    assert "export_context" in result
+
+
+def test_export_context_append_requires_symbol():
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    result = export_context_append(assessor, {})
+    assert result.startswith("ERROR")
+
+
+def test_export_context_append_user_supplied():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    export_context(assessor, {"symbol": "do_thing"})
+    chunk = export_context_append(assessor, {
+        "symbol": "do_thing",
+        "content": "The LLM said: implement using a queue.",
+    })
+    assert "USER-SUPPLIED" in chunk
+    assert "queue" in chunk
+    session = _sessions[("", "do_thing")]
+    assert len(session.entries) == 1
+    assert session.entries[0].source == "user_supplied"
+
+
+def test_export_context_append_unknown_tool():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    export_context(assessor, {"symbol": "do_thing"})
+    result = export_context_append(assessor, {
+        "symbol": "do_thing",
+        "tool": "nonexistent_tool",
+        "tool_args": {},
+    })
+    assert "ERROR" in result
+
+
+def test_export_context_dump_no_session():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    result = export_context_dump(assessor, {"symbol": "do_thing"})
+    assert "ERROR" in result
+
+
+def test_export_context_dump_empty_session():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    export_context(assessor, {"symbol": "do_thing"})
+    result = export_context_dump(assessor, {"symbol": "do_thing"})
+    assert "SESSION LOG" in result
+    assert "FUNCTION UNDER ANALYSIS" in result
+    assert "No follow-up steps" in result
+
+
+def test_export_context_dump_with_entries():
+    _sessions.clear()
+    conn = _make_actionable_stub_db()
+    assessor = _FakeAssessor(conn)
+    export_context(assessor, {"symbol": "do_thing"})
+    export_context_append(assessor, {
+        "symbol": "do_thing",
+        "content": "Response from external LLM.",
+    })
+    result = export_context_dump(assessor, {"symbol": "do_thing"})
+    assert "SESSION LOG" in result
+    assert "FUNCTION UNDER ANALYSIS" in result
+    assert "USER-SUPPLIED" in result
+    assert "Response from external LLM" in result
+    assert "Steps: 1" in result

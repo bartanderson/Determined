@@ -8713,8 +8713,12 @@ TOOLS["classify_stub"] = (classify_stub, "assessor")
 from determined.agent.sketch_stub import sketch_stub  # noqa: E402
 TOOLS["sketch_stub"] = (sketch_stub, "assessor")
 
-from determined.agent.export_context import export_context  # noqa: E402
-TOOLS["export_context"] = (export_context, "assessor")
+from determined.agent.export_context import (  # noqa: E402
+    export_context, export_context_append, export_context_dump,
+)
+TOOLS["export_context"]        = (export_context,        "assessor")
+TOOLS["export_context_append"] = (export_context_append, "assessor")
+TOOLS["export_context_dump"]   = (export_context_dump,   "assessor")
 
 from determined.agent.corpus_projections import (  # noqa: E402
     stub_file_shape,
