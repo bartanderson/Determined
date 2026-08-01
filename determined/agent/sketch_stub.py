@@ -354,7 +354,7 @@ def _infer_return_shape(callers: list[dict]) -> dict:
         if not body:
             continue
         try:
-            tree = ast.parse(body)
+            tree = ast.parse(_wrap_body(body))
         except SyntaxError:
             continue
 
