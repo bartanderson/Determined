@@ -193,31 +193,6 @@ world/authority_system.py.
 
 ---
 
-## RM71 — export_context: context packet for external LLM escalation (DESIGN DONE)
-
-New tool. Assembles a clipboard-ready plain-text packet for a function when
-the complexity signal exceeds the local LLM ceiling (or on explicit user request).
-
-**Output sections:**
-1. Function under analysis + corpus signals + classify_stub verdict
-2. Neighbor context (caller bodies, callees, name-similar siblings)
-3. Complexity score + which signals drove escalation (visible reasoning)
-4. Tool API manifest — what Determined can answer if the external LLM asks
-
-**Escalation ladder (three tiers):**
-- Tier 1: local LLM (always tried first)
-- Tier 2: web LLM (Deepseek, ChatGPT) — paste packet, interactive via tool manifest
-- Tier 3: Claude — architectural arbitration; packet includes prior reasoning chain
-
-**Complexity signal inputs:** caller body avg lines, referenced type count, pattern
-sibling availability, classify_stub confidence, unresolved edge ratio (neighborhood).
-Threshold calibrated against real examples; above threshold → escalate.
-
-**Gate:** RM70 done 2026-08-01, RM72 done 2026-08-01 — all gates cleared. Ready to build.
-
-Full design: `docs/RM70_DESIGN.md` (Tiered reasoning ladder section).
-
----
 
 ## RM74 — Visual signal projection: Phases 1 & 2 (DONE 2026-07-28)
 
