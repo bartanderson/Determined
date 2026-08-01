@@ -1161,3 +1161,86 @@ def test_run_thorough_returns_k_samples_sorted():
     # Sorted best composite first
     composites = [vr["composite"] for _, vr in results]
     assert composites == sorted(composites, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# _same_class_siblings tests
+# ---------------------------------------------------------------------------
+
+def _make_db_with_class_siblings(tmp_path, siblings, stub_name):
+    """Create a DB with implemented class siblings and a stub for the target."""
+    import pathlib
+    src = pathlib.Path(tmp_path) / "fsm_handlers.py"
+    lines = []
+    ln = 1
+    line_map = {}
+    for name, body in siblings:
+        line_map[name] = ln
+        lines.append(f"def {name}(instance, event_data):")
+        lines.extend(f"    {l}" for l in body.splitlines())
+        lines.append("")
+        ln += len(body.splitlines()) + 2
+    src.write_text("\n".join(lines), encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE functions (
+            name TEXT, file_path TEXT, line_number INTEGER,
+            docstring TEXT, param_types_json TEXT, return_type TEXT,
+            is_stub INTEGER DEFAULT 0, is_tool INTEGER DEFAULT 0,
+            decorators_json TEXT, arguments_json TEXT
+        )
+    """)
+    fp = str(src).replace("\\", "/")
+    for name, _ in siblings:
+        conn.execute("INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                     (name, fp, line_map[name], None, None, None, 0, 0, None, None))
+    conn.execute("INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                 (stub_name, fp, ln, None, None, None, 1, 0, None, None))
+    conn.commit()
+    return conn
+
+
+def test_same_class_siblings_returns_same_prefix(tmp_path):
+    from determined.agent.sketch_stub import _same_class_siblings
+    conn = _make_db_with_class_siblings(tmp_path, [
+        ("MyFSM::action::do_thing", "return instance.context"),
+        ("MyFSM::guard::can_do", "return True"),
+        ("OtherFSM::action::go", "pass"),
+    ], "MyFSM::action::new_thing")
+    result = _same_class_siblings(conn, "MyFSM::action::new_thing", limit=3)
+    names = [r["name"] for r in result]
+    assert "MyFSM::action::do_thing" in names
+    assert "MyFSM::guard::can_do" in names
+    assert "OtherFSM::action::go" not in names
+
+
+def test_same_class_siblings_excludes_stub_itself(tmp_path):
+    from determined.agent.sketch_stub import _same_class_siblings
+    conn = _make_db_with_class_siblings(tmp_path, [
+        ("MyFSM::action::done", "return instance.context"),
+    ], "MyFSM::action::target")
+    result = _same_class_siblings(conn, "MyFSM::action::target", limit=3)
+    names = [r["name"] for r in result]
+    assert "MyFSM::action::target" not in names
+
+
+def test_same_class_siblings_returns_empty_for_plain_name(tmp_path):
+    from determined.agent.sketch_stub import _same_class_siblings
+    conn = _make_db_with_class_siblings(tmp_path, [
+        ("MyFSM::action::done", "return instance.context"),
+    ], "plain_function")
+    result = _same_class_siblings(conn, "plain_function", limit=3)
+    assert result == []
+
+
+def test_pattern_siblings_prefers_same_class(tmp_path):
+    from determined.agent.sketch_stub import _pattern_siblings
+    conn = _make_db_with_class_siblings(tmp_path, [
+        ("MyFSM::action::resolve_flee", "return instance.context"),
+        ("some_unrelated_function", "return None"),
+    ], "MyFSM::action::start_combat")
+    result = _pattern_siblings(conn, "/fake/path.py", "MyFSM::action::start_combat")
+    assert len(result) >= 1
+    assert result[0]["name"] == "MyFSM::action::resolve_flee"
+    assert result[0]["similarity"] == 1.0

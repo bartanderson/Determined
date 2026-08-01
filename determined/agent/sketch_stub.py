@@ -242,17 +242,55 @@ def _normalize_name(name: str) -> str:
     return n.lower()
 
 
+def _same_class_siblings(conn, stub_name: str, limit: int) -> list[dict]:
+    """Return implemented siblings that share the same class prefix (e.g. EncounterFSM::).
+
+    For framework-dispatched methods (FSM actions/guards, protocol methods) the
+    class prefix encodes the interface contract. Siblings in the same class are
+    the highest-fidelity style examples — same signature, same dispatch context.
+    Only triggered when stub_name contains '::' (class-qualified names).
+    """
+    if "::" not in stub_name:
+        return []
+    class_prefix = stub_name.split("::")[0] + "::"
+    rows = conn.execute(
+        "SELECT name, file_path, line_number FROM functions "
+        "WHERE name LIKE ? AND is_stub = 0 AND name != ? "
+        "ORDER BY line_number LIMIT ?",
+        (class_prefix + "%", stub_name, limit),
+    ).fetchall()
+    result = []
+    for name, fp, ln in rows:
+        body = _read_function_body(fp, ln) if fp and ln else ""
+        if not body:
+            continue
+        result.append({
+            "name": name,
+            "file": (fp or "").replace("\\", "/").rsplit("/", 1)[-1],
+            "body_preview": body[:400] if body else None,
+            "similarity": 1.0,  # same-class match is highest confidence
+        })
+    return result
+
+
 def _pattern_siblings(conn, file_path: str, stub_name: str,
                       limit: int = _SIBLING_CAP) -> list[dict]:
     """
     Find implemented functions with similar name patterns, corpus-wide.
 
-    Scores by difflib ratio on normalized names (verb-prefix stripped).
-    Only considers is_stub=0 functions — stubs have nothing to show.
-    Falls back to file-scoped _style_siblings() when no corpus match
-    exceeds _PATTERN_FLOOR, so the prompt always has something to work from.
+    Same-class siblings (shared ClassName:: prefix) are returned first —
+    they share the interface contract and are the highest-fidelity examples.
+    Falls back to corpus-wide difflib ratio on normalized names.
+    Falls back further to file-scoped _style_siblings() when nothing scores
+    above _PATTERN_FLOOR, so the prompt always has something to work from.
     """
+    # Same-class siblings first — highest priority for class-qualified names
+    same_class = _same_class_siblings(conn, stub_name, limit)
+    if len(same_class) >= limit:
+        return same_class[:limit]
+
     normalized_stub = _normalize_name(stub_name)
+    already = {s["name"] for s in same_class}
 
     # Load all implemented function names — names only, bodies fetched for top matches only
     rows = conn.execute(
@@ -263,6 +301,8 @@ def _pattern_siblings(conn, file_path: str, stub_name: str,
 
     scored = []
     for name, fp, ln in rows:
+        if name in already:
+            continue
         norm = _normalize_name(name)
         if not norm:
             continue
@@ -271,21 +311,22 @@ def _pattern_siblings(conn, file_path: str, stub_name: str,
             scored.append((ratio, name, fp, ln))
 
     scored.sort(reverse=True)
-    top = scored[:limit]
+    remaining = limit - len(same_class)
+    top = scored[:remaining]
 
-    if not top:
+    if not top and not same_class:
         return _style_siblings(conn, file_path, stub_name)
 
-    result = []
+    corpus_results = []
     for ratio, name, fp, ln in top:
         body = _read_function_body(fp, ln) if fp and ln else ""
-        result.append({
+        corpus_results.append({
             "name": name,
             "file": (fp or "").replace("\\", "/").rsplit("/", 1)[-1],
             "body_preview": body[:400] if body else None,
             "similarity": round(ratio, 2),
         })
-    return result
+    return same_class + corpus_results
 
 
 # ---------------------------------------------------------------------------
