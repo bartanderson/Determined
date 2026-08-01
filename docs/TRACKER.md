@@ -174,6 +174,28 @@ What it needs:
 
 All tiers corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any language.
 
+**GAP-5: graph_path can't traverse JS→HTTP→Python boundary** (2026-08-01)
+- `graph_path(TravelUI.resolveEncounter → _get_encounter_context)` returns no path.
+- Cross-boundary edges (http_fetch) are ingested (GAP-3 fix), but the edge connects
+  the JS function to a Flask *route string*, not directly to the Python handler.
+  BFS finds no registered-corpus node at the route string, so the path breaks.
+- Fix needed: either (a) create a synthetic "route stub" node that bridges the JS
+  http_fetch edge to the Python decorator edge, or (b) teach graph_path to resolve
+  route strings via the decorator edge table.
+- Impact: "trace the path from frontend to backend" questions return no path even
+  when both sides are ingested. Must mentally stitch the boundary manually.
+
+**GAP-6: ABC void detection has no intent signal** (2026-08-01)
+- `find_abc_gaps` on dj2 found 8 ABCs in phases.py with zero concrete subclasses.
+  All 8 are architecture scaffolds (AuthorityPhase, ConsequencePhase, etc.).
+- The tool correctly surfaces them — but can't distinguish "intentional future design"
+  from "abandoned interface." There is no signal in the corpus for design intent on ABCs.
+- Fix needed: either (a) decisions.toml (RM76) lets the developer annotate intent, or
+  (b) find_abc_gaps adds a heuristic: if the ABC file has a design_note artifact,
+  flag as "likely intentional scaffold" rather than "architecture void."
+- Impact: analyst output may alarm on deliberate scaffolds, creating noise that
+  dilutes real gaps.
+
 ---
 
 ## RM68 — Remove subrace concept from dj2
