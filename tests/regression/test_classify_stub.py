@@ -842,6 +842,169 @@ def test_verify_candidate_v3_pass_for_non_dict_return_type():
     assert result["v3_score"] == 1.0
 
 
+# ---------------------------------------------------------------------------
+# _fsm_transition_context tests
+# ---------------------------------------------------------------------------
+
+def _write_fsm_json(tmp_path, definition):
+    import json, pathlib
+    p = pathlib.Path(tmp_path) / "test_fsm.json"
+    p.write_text(json.dumps(definition), encoding="utf-8")
+    return str(p)
+
+
+def test_fsm_transition_context_action_found(tmp_path):
+    from determined.agent.sketch_stub import _fsm_transition_context
+    defn = {
+        "name": "TestFSM",
+        "states": [{"name": "idle"}, {"name": "running", "final": True}],
+        "events": {
+            "start": {
+                "transitions": [{"from": "idle", "to": "running", "actions": ["do_work"]}]
+            }
+        },
+    }
+    path = _write_fsm_json(tmp_path, defn)
+    result = _fsm_transition_context(path, "TestFSM::action::do_work")
+    assert result is not None
+    assert result["kind"] == "action"
+    assert result["local_name"] == "do_work"
+    assert result["fsm_name"] == "TestFSM"
+    assert len(result["transitions"]) == 1
+    t = result["transitions"][0]
+    assert t["event"] == "start"
+    assert "idle" in t["from"]
+    assert t["to"] == "running"
+
+
+def test_fsm_transition_context_guard_found(tmp_path):
+    from determined.agent.sketch_stub import _fsm_transition_context
+    defn = {
+        "name": "TestFSM",
+        "states": [{"name": "a"}, {"name": "b"}],
+        "events": {
+            "go": {
+                "transitions": [{"from": "a", "to": "b", "cond": "can_go", "actions": ["do_it"]}]
+            }
+        },
+    }
+    path = _write_fsm_json(tmp_path, defn)
+    result = _fsm_transition_context(path, "TestFSM::guard::can_go")
+    assert result is not None
+    assert result["kind"] == "guard"
+    t = result["transitions"][0]
+    assert t["event"] == "go"
+    assert t["actions"] == ["do_it"]
+
+
+def test_fsm_transition_context_not_found_returns_none(tmp_path):
+    from determined.agent.sketch_stub import _fsm_transition_context
+    defn = {
+        "name": "TestFSM",
+        "states": [{"name": "a"}],
+        "events": {"go": {"transitions": [{"from": "a", "to": "a"}]}},
+    }
+    path = _write_fsm_json(tmp_path, defn)
+    result = _fsm_transition_context(path, "TestFSM::action::phantom")
+    assert result is None
+
+
+def test_fsm_transition_context_bad_file_returns_none(tmp_path):
+    from determined.agent.sketch_stub import _fsm_transition_context
+    result = _fsm_transition_context("/nonexistent/path.json", "X::action::y")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _fsm_builtin_siblings tests
+# ---------------------------------------------------------------------------
+
+def _make_db_with_fsm_files(tmp_path):
+    import pathlib
+    fsm_file = pathlib.Path(tmp_path) / "builtins.py"
+    fsm_file.write_text(
+        "def price_lt(instance, event_data):\n    return True\n\n"
+        "def add_gold(instance, event_data):\n    instance.context['gold'] += 1\n    return instance.context\n",
+        encoding="utf-8",
+    )
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE functions (
+            name TEXT, file_path TEXT, line_number INTEGER,
+            docstring TEXT, param_types_json TEXT, return_type TEXT,
+            is_stub INTEGER DEFAULT 0, is_tool INTEGER DEFAULT 0,
+            decorators_json TEXT, arguments_json TEXT
+        )
+    """)
+    fsm_path = str(fsm_file).replace("\\", "/")
+    conn.execute(
+        "INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("price_lt", fsm_path + "/fsm/builtins.py", 1, None, None, None, 0, 0, None, None),
+    )
+    conn.execute(
+        "INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("add_gold", fsm_path + "/fsm/builtins.py", 4, None, None, None, 0, 0, None, None),
+    )
+    conn.commit()
+    return conn, str(fsm_file)
+
+
+def test_fsm_builtin_siblings_returns_implemented(tmp_path):
+    from determined.agent.sketch_stub import _fsm_builtin_siblings
+    import pathlib
+    fsm_dir = pathlib.Path(tmp_path) / "fsm"
+    fsm_dir.mkdir()
+    builtins_file = fsm_dir / "builtins.py"
+    builtins_file.write_text(
+        "def price_lt(instance, event_data):\n    return True\n\n"
+        "def add_gold(instance, event_data):\n    pass\n",
+        encoding="utf-8",
+    )
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE functions (
+            name TEXT, file_path TEXT, line_number INTEGER,
+            docstring TEXT, param_types_json TEXT, return_type TEXT,
+            is_stub INTEGER DEFAULT 0, is_tool INTEGER DEFAULT 0,
+            decorators_json TEXT, arguments_json TEXT
+        )
+    """)
+    fp = str(builtins_file).replace("\\", "/")
+    conn.execute("INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                 ("price_lt", fp, 1, None, None, None, 0, 0, None, None))
+    conn.execute("INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                 ("add_gold", fp, 4, None, None, None, 0, 0, None, None))
+    conn.commit()
+    result = _fsm_builtin_siblings(conn, "SomeFSM::action::do_thing")
+    assert len(result) >= 1
+    names = [r["name"] for r in result]
+    assert "price_lt" in names or "add_gold" in names
+
+
+def test_fsm_builtin_siblings_excludes_stubs(tmp_path):
+    from determined.agent.sketch_stub import _fsm_builtin_siblings
+    import pathlib
+    fsm_dir = pathlib.Path(tmp_path) / "fsm"
+    fsm_dir.mkdir()
+    builtins_file = fsm_dir / "builtins.py"
+    builtins_file.write_text("def stub_fn(instance, event_data):\n    pass\n", encoding="utf-8")
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE functions (
+            name TEXT, file_path TEXT, line_number INTEGER,
+            docstring TEXT, param_types_json TEXT, return_type TEXT,
+            is_stub INTEGER DEFAULT 0, is_tool INTEGER DEFAULT 0,
+            decorators_json TEXT, arguments_json TEXT
+        )
+    """)
+    fp = str(builtins_file).replace("\\", "/")
+    conn.execute("INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                 ("stub_fn", fp, 1, None, None, None, 1, 0, None, None))
+    conn.commit()
+    result = _fsm_builtin_siblings(conn, "SomeFSM::action::other")
+    assert result == []
+
+
 def test_verify_candidate_v4_neutral_when_no_sibling():
     from determined.agent.sketch_stub import _verify_candidate
     conn = _make_db()

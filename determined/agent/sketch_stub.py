@@ -81,6 +81,87 @@ def _build_signature(name: str, param_types_json: str | None, return_type: str |
 
 
 _CALLER_BODY_CAP = 20  # lines of caller body to include in prompt
+_FSM_SIBLING_CAP = 3   # max FSM builtin siblings to include
+
+
+def _fsm_transition_context(json_path: str, symbol: str) -> dict | None:
+    """Read an FSM JSON config and return the transition(s) that use this action/guard.
+
+    Corpus-agnostic: works for any FSM whose config is a JSON file with the
+    {states, events: {name: {transitions: [{from, to, cond?, actions?}]}}} shape.
+    Returns None if the file is unreadable or the symbol is not found.
+    """
+    try:
+        with open(json_path, encoding="utf-8") as fh:
+            definition = json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+    local = symbol.rsplit("::", 1)[-1]
+    kind = (
+        "action" if "::action::" in symbol else
+        "guard"  if "::guard::"  in symbol else
+        "unknown"
+    )
+
+    transitions = []
+    for event_name, event_def in definition.get("events", {}).items():
+        for t in event_def.get("transitions", []):
+            froms = t["from"] if isinstance(t["from"], list) else [t["from"]]
+            if kind == "action" and local in t.get("actions", []):
+                transitions.append({
+                    "event": event_name,
+                    "from": froms,
+                    "to": t["to"],
+                    "cond": t.get("cond"),
+                })
+            elif kind == "guard" and t.get("cond") == local:
+                transitions.append({
+                    "event": event_name,
+                    "from": froms,
+                    "to": t["to"],
+                    "actions": t.get("actions", []),
+                })
+
+    if not transitions:
+        return None
+
+    return {
+        "fsm_name": definition.get("name", ""),
+        "kind": kind,
+        "local_name": local,
+        "transitions": transitions,
+        "states": [s["name"] for s in definition.get("states", [])],
+    }
+
+
+def _fsm_builtin_siblings(conn, stub_name: str, limit: int = _FSM_SIBLING_CAP) -> list[dict]:
+    """Find implemented FSM handler functions from corpus files whose path contains 'fsm'.
+
+    Corpus-agnostic: any language corpus with an fsm/ directory will produce matches.
+    Prefers same-kind (action vs guard) siblings when the name encodes the kind.
+    """
+    local = stub_name.rsplit("::", 1)[-1]
+    rows = conn.execute(
+        "SELECT name, file_path, line_number FROM functions "
+        "WHERE file_path LIKE '%fsm%' AND is_stub = 0 AND name != ? "
+        "ORDER BY line_number LIMIT ?",
+        (local, limit * 4),
+    ).fetchall()
+
+    result = []
+    for name, fp, ln in rows:
+        if len(result) >= limit:
+            break
+        body = _read_function_body(fp, ln, cap=_BODY_CAP) if fp and ln else ""
+        if not body:
+            continue
+        result.append({
+            "name": name,
+            "file": (fp or "").replace("\\", "/").rsplit("/", 1)[-1],
+            "body_preview": body[:400],
+        })
+    return result
 
 
 def _caller_context(conn, name: str, file_path: str, limit: int = 3) -> list[dict]:
@@ -590,6 +671,13 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
     type_names = _extract_type_names(signature, docstring)
     type_defs = _pull_type_defs(conn, type_names)
 
+    # FSM-specific context: JSON transition spec + implemented handler siblings
+    fsm_context = None
+    fsm_siblings: list[dict] = []
+    if signals.get("body_shape") == "config_declared" and file_path and file_path.endswith(".json"):
+        fsm_context = _fsm_transition_context(file_path, symbol)
+        fsm_siblings = _fsm_builtin_siblings(conn, symbol)
+
     return {
         "symbol":         symbol,
         "actionable":     True,
@@ -603,6 +691,8 @@ def build_brief(oracle: "DBOracle", symbol: str, class_name: str | None = None,
         "body_shape":     signals.get("body_shape"),
         "callers":        callers,
         "siblings":       siblings,
+        "fsm_context":    fsm_context,
+        "fsm_siblings":   fsm_siblings,
         "concepts":       signals.get("concept_presence", {}),
         "return_type":    return_type,
         "return_shape":   return_shape,
@@ -622,7 +712,15 @@ def _build_prompt(brief: dict) -> str:
     """
     parts = []
 
-    # Style examples — implemented siblings shown first
+    # Style examples — FSM builtin siblings first (when present), then pattern siblings
+    for s in brief.get("fsm_siblings", []):
+        body = s.get("body_preview", "")
+        parts.append(f"def {s['name']}(instance, event_data):")
+        if body:
+            for line in body.splitlines()[:8]:
+                parts.append(line)
+        parts.append("")
+
     for s in brief.get("siblings", []):
         body = s.get("body_preview", "")
         doc = f'    """{s["docstring"]}"""' if s.get("docstring") else ""
@@ -654,7 +752,21 @@ def _build_prompt(brief: dict) -> str:
     if brief.get("callers"):
         caller_names = ", ".join(c["name"] for c in brief["callers"])
         parts.append(f"# Called by: {caller_names}")
-    if brief.get("body_shape") == "config_declared":
+
+    # FSM transition spec — where this action/guard fits in the state machine
+    fc = brief.get("fsm_context")
+    if fc:
+        parts.append(f"# FSM: {fc['fsm_name']} ({fc['kind']} '{fc['local_name']}')")
+        for t in fc["transitions"]:
+            froms = ", ".join(t["from"])
+            if fc["kind"] == "action":
+                cond_note = f" [if {t['cond']}]" if t.get("cond") else ""
+                parts.append(f"#   event '{t['event']}': {froms} -> {t['to']}{cond_note}")
+            else:
+                acts = ", ".join(t.get("actions", [])) or "none"
+                parts.append(f"#   guards '{t['event']}': {froms} -> {t['to']} (actions: {acts})")
+        parts.append(f"#   states: {', '.join(fc['states'])}")
+    elif brief.get("body_shape") == "config_declared":
         parts.append("# FSM handler — implement the action/guard logic below")
 
     # Return-shape hint (STRONG or WEAK only; NONE omitted)
