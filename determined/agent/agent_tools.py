@@ -1901,12 +1901,15 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
             fp = (file_path or "").replace("\\", "/").split("/")[-1] if file_path else "?"
             decision = None
             if file_path:
-                norm = file_path.replace("\\", "/")
+                # Match on subject (logical key) OR content (may mention filename).
+                # Subjects are logical keys like 'phases_abstract_methods', not paths,
+                # so we match the basename against content as well.
+                fname = file_path.replace("\\", "/").split("/")[-1]
                 try:
                     decision = conn.execute(
                         "SELECT content FROM knowledge_artifacts "
-                        "WHERE kind = 'decision' AND subject LIKE ? LIMIT 1",
-                        (f"%{norm}%",),
+                        "WHERE kind = 'decision' AND (subject LIKE ? OR content LIKE ?) LIMIT 1",
+                        (f"%{fname}%", f"%{fname}%"),
                     ).fetchone()
                 except Exception:
                     pass
