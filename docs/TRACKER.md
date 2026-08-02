@@ -216,12 +216,25 @@ All tiers corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any languag
 - Impact: the headline number is confidently wrong for any feature whose symbols are
   mostly uncalled — which is precisely the frontier case Determined exists to surface.
   RM67 convergence requires probes answer "without confabulation"; this undercounts.
-- Fix options: (a) report both numbers — "N symbols in feature files, M reached from
-  entry points"; (b) seed the BFS with all local symbols, not just entry points, and keep
-  entry points as an annotation; (c) fire the all-local-symbols fallback whenever traced
-  coverage is below some fraction of the member set.
-- Decision needed: is feature_shape an inventory tool or a call-path tracer? The name and
-  docstring say tracer; the way it gets used in analysis says inventory.
+- FIXED 2026-08-02 (option b, Bart's call): BFS is seeded from every local symbol, not
+  from entry points. Entry points stay as an annotation ("which symbols is this feature
+  entered through"), and the old "no entry points -> use all local symbols" fallback is
+  gone -- that edge case is now the rule, so this is a simplification not an addition.
+- Second half of the same gap: symbols in no edge at all were counted but appeared in no
+  section, so the total silently disagreed with the listing. Added an "Uncalled within
+  this feature" section. An uncalled symbol is a finding, not something to omit.
+- dj2 encounter, before: "Symbols: 1 total, Completeness: 25%", zero blocking stubs shown.
+  After: "28 total, 22 implemented, 6 stub, Completeness: 65%" with all 5 EncounterFSM
+  stubs + check_parley surfaced -- matching what list_stubs and decisions.toml already
+  said independently. feature_shape no longer needs a second tool to be trustworthy.
+- One existing test (test_feature_shape_external_excluded_from_completeness) asserted
+  combat completeness == 100%. That premise was wrong: the fixture's combat contains the
+  stub 'defend', and 100% was only reachable while the old BFS hid uncalled symbols. The
+  test now asserts its real invariant (external calls stay out of local-missing).
+- Known limitation, pre-existing, not addressed: local_symbols is a dict keyed by symbol
+  name, so same-named symbols in different files within one feature collapse (28 counted
+  vs 34 rows on dj2 encounter -- __init__/to_dict/from_dict collide). Affects directory
+  mode identically. Worth its own item if per-file identity ever matters.
 
 **GAP-6: ABC void detection has no intent signal** (2026-08-01)
 - `find_abc_gaps` on dj2 found 8 ABCs in phases.py with zero concrete subclasses.

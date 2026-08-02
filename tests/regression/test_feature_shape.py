@@ -260,6 +260,8 @@ def _seed_scattered_db(conn):
         INSERT INTO functions VALUES ('resolve_encounter',   'resolver/encounter_resolver.py',1, NULL, NULL);
         INSERT INTO functions VALUES ('start_travel',        'world/travel.py',               0, NULL, NULL);
         INSERT INTO functions VALUES ('main',                'main.py',                       0, NULL, NULL);
+        -- isolated: no caller anywhere, no outgoing edges
+        INSERT INTO functions VALUES ('roll_loot',           'world/loot_table.py',           0, NULL, NULL);
         INSERT INTO graph_edges VALUES ('main',               'start_travel',       'static', 1);
         INSERT INTO graph_edges VALUES ('start_travel',       'generate_encounter', 'static', 1);
         INSERT INTO graph_edges VALUES ('generate_encounter', 'EncounterState',     'static', 1);
@@ -320,6 +322,56 @@ def test_feature_shape_directory_takes_precedence_over_keyword():
     oracle = _make_oracle(conn)
     result = feature_shape(oracle, {"feature_path": "combat"})
     assert "Matched by filename" not in result
+
+
+def test_feature_shape_counts_uncalled_symbols():
+    """
+    GAP-8: 'combat' has one entry point (log_hit, called from loot). Seeding the
+    trace from entry points alone hid Attack and defend entirely -- and defend is
+    a stub, exactly what this tool exists to surface.
+    """
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "combat"})
+    assert "Attack" in result
+    assert "defend" in result
+    assert "Blocking stubs" in result
+
+
+def test_feature_shape_counts_all_scattered_symbols():
+    """The encounter models have no callers; they must still be counted."""
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "encounter"})
+    # PointState is called by nothing at all
+    assert "PointState" in result
+    assert "Symbols: 4 total" in result
+
+
+def test_feature_shape_entry_points_remain_an_annotation():
+    """Seeding from all symbols must not turn every symbol into an entry point."""
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "encounter"})
+    # split on the section header, not the "Entry points: N" summary field
+    ep_block = result.split("\nEntry points:\n")[1].split("\n\n")[0]
+    assert "generate_encounter" in ep_block
+    # PointState is never called from outside the feature
+    assert "PointState" not in ep_block
+
+
+def test_feature_shape_reports_when_no_external_callers():
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    # loot_table.py holds one symbol that nothing anywhere calls
+    result = feature_shape(oracle, {"feature_path": "loot_table"})
+    assert "no external callers" in result
+    assert "roll_loot" in result
+    assert "Uncalled within this feature" in result
 
 
 def test_feature_shape_unknown_keyword_reports_what_was_tried():
@@ -604,9 +656,14 @@ def test_feature_shape_external_excluded_from_completeness():
     _seed_abs_db(conn)
     oracle = _make_oracle(conn)
     result = feature_shape(oracle, {"feature_path": "combat"})
-    # json.loads is called by Attack — external, must not drag completeness down
-    # combat has no stubs and no local-missing, so completeness should be 100%
-    assert "100%" in result
+    # json.loads is called by Attack — external, must not drag completeness down.
+    # The invariant is that it lands in the 'external' bucket and leaves
+    # local-missing at zero, NOT that completeness is 100%: combat contains the
+    # stub 'defend' (is_stub=1 in the fixture), so 100% was only ever reachable
+    # while the entry-point-seeded BFS hid uncalled symbols entirely (GAP-8).
+    assert "(external)" in result
+    assert "json.loads" in result
+    assert "0 local-missing" in result
 
 
 # --- development_priorities with absolute paths ---

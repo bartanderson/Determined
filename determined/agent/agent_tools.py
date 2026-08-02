@@ -6798,6 +6798,11 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
       - local-missing: callee has no functions row and looks like a local name (no '.')
       - external: callee has no functions row and is a dotted external call
     Completeness = implemented / (implemented + stub + local-missing).
+
+    Every symbol in the matched files is counted, including symbols nothing calls.
+    `Entry points` is an annotation (which symbols the feature is entered through),
+    not the set the trace is built from -- an uncalled symbol is a finding, not a
+    reason to omit it.
     """
     feature_path = args.get("feature_path", "").strip().replace("\\", "/").rstrip("/")
     if not feature_path:
@@ -6879,13 +6884,16 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
         if caller_row is None or caller_row[0] not in member_files:
             entry_points.add(callee)
 
-    if not entry_points:
-        entry_points = set(local_symbols.keys())
-        ep_note = " (no external callers; showing all local symbols as roots)"
-    else:
-        ep_note = ""
+    ep_note = "" if entry_points else " (no external callers)"
 
-    # Forward BFS from entry points
+    # Forward BFS seeded from EVERY local symbol, not just the entry points (GAP-8).
+    # Seeding from entry points alone counted only call-reachable symbols, so a
+    # feature whose symbols are mostly uncalled reported a near-empty inventory and
+    # a completeness figure computed over that reachable subset -- exactly the
+    # frontier case this tool exists to surface. One incidental test caller was
+    # enough to suppress the old "no entry points -> use all local symbols" fallback
+    # and hide the rest. Entry points stay as an annotation: the symbols the feature
+    # is entered through.
     from collections import deque
 
     visited_nodes: set[str] = set()
@@ -6893,10 +6901,10 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
     cross_feature_edges: list[tuple] = []
     internal_edges: list[tuple] = []
 
-    queue: deque = deque(entry_points)
-    for ep in entry_points:
-        visited_nodes.add(ep)
-        node_status[ep] = "stub" if local_symbols[ep]["is_stub"] else "implemented"
+    queue: deque = deque(sorted(local_symbols))
+    for sym in local_symbols:
+        visited_nodes.add(sym)
+        node_status[sym] = "stub" if local_symbols[sym]["is_stub"] else "implemented"
 
     while queue:
         node = queue.popleft()
@@ -6937,8 +6945,11 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
     lines.append("")
 
     lines.append("Entry points:")
-    for ep in sorted(entry_points):
-        lines.append(f"  [{node_status.get(ep, '?')}] {ep}")
+    if entry_points:
+        for ep in sorted(entry_points):
+            lines.append(f"  [{node_status.get(ep, '?')}] {ep}")
+    else:
+        lines.append("  (none -- no symbol in this feature is called from outside it)")
 
     if internal_edges:
         lines.append("")
@@ -6951,6 +6962,22 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
         lines.append("Cross-feature / external edges:")
         for src, dst, kind in sorted(cross_feature_edges):
             lines.append(f"  {src} -> {dst}  ({kind})")
+
+    # Symbols in no edge at all: counted above but otherwise absent from every
+    # section. An uncalled symbol is a finding, so name it rather than leave the
+    # reader to infer it from a total that does not match the listing (GAP-8).
+    listed = set(entry_points)
+    for src, dst in internal_edges:
+        listed.add(src)
+        listed.add(dst)
+    for src, _dst, _kind in cross_feature_edges:
+        listed.add(src)
+    isolated = sorted(n for n in node_status if n not in listed)
+    if isolated:
+        lines.append("")
+        lines.append(f"Uncalled within this feature ({len(isolated)}):")
+        for n in isolated:
+            lines.append(f"  [{node_status[n]}] {n}")
 
     stubs = [n for n, s in node_status.items() if s == "stub"]
     if stubs:
