@@ -4,6 +4,12 @@ Curated log of non-obvious decisions, failed approaches, and surprising constrai
 Not a session diary -- entries are pruned when stale, promoted to memory files when durable.
 Format: `DATE: fact -- why it matters`
 
+2026-08-02: pytest `-m` on the CLI REPLACES `pyproject.toml addopts`, not narrows it. So `-m "not slow"` silently re-enables `live_llm` tests that addopts was already excluding. run_tests.py now passes no `-m` by default (addopts governs) and uses `--slow` → `"slow or not slow"` (always-true expression; empty string is dropped by some shells, leaving `-m` dangling with no argument).
+
+2026-08-02: HF_HUB_OFFLINE must live in the module that owns the dependency (`embedding_model.py`), not at the entry point that first notices the cost. ui_server.py was the prior location — the UI was protected; every other entry point (tests, CLI, scripts) silently made network calls to the HF Hub on every model load. Fix: `os.environ.setdefault("HF_HUB_OFFLINE", "1")` at module level in embedding_model.py; setdefault so an explicit `HF_HUB_OFFLINE=0` override still wins.
+
+2026-08-02: feature_shape GAP-8 lesson: a single caller outside a feature is enough to suppress the "no entry points → use all local symbols" fallback. One test function (test_encounter_flow) was a caller, so 33 of 34 encounter symbols were hidden. The right fix is to seed BFS from all local symbols always — entry points become an annotation, not a filter. The fallback is gone; "use all local symbols" is now the rule.
+
 ---
 
 ## Active entries

@@ -1,6 +1,6 @@
-Written at commit: 95c31b4
+Written at commit: 79948b2
 
-# SESSION STATE — session 286 (end)
+# SESSION STATE — session 287 (end)
 
 ## Active branch: main [V]
 
@@ -10,74 +10,92 @@ Written at commit: 95c31b4
 
 ## WHAT HAPPENED THIS SESSION
 
-**RM74 probe — all 6 canonical questions ran on dj2** [V]
-- Q1 (entry points): 385 EPs, top by fan-out correct. No gaps.
-- Q2 (stubs): 20 stubs, 4 real gaps with callers, 12 FSM islands, 4 subrace dead code. No false positives.
-- Q3 (stub islands): 24 islands. _get_encounter_context and _get_combat_context appear as islands
-  because their callers are also stubs — correct, not a bug.
-- Q4 (feature_shape): **GAP-7 found** — returns "No symbols found" because feature_path expects
-  a file-path fragment (e.g. "encounter/"), not a keyword. No routing layer maps keyword → path.
-- Q5 (ABC gaps): 8 ABCs in phases.py, all intentional scaffolds. GAP-6 still open.
-- Q6 (graph_path): GAP-5 fix confirmed working — reports two unregistered Flask routes
-  (/api/resolve-encounter, /api/travel-progress). [V]
+**GAP-7 fixed** (commit 9cbd0ee) [V]
+- `feature_shape("encounter")` returned "No symbols found" because the tool expected a
+  file-path fragment, not a keyword. Two-stage resolution added inside `feature_shape`
+  itself (not the query router — router fix would leave Workbench tool broken and split
+  "what counts as a feature" across two places).
+- Stage 1: existing directory prefix match. Stage 2: fires only when stage 1 returns zero
+  rows; matches keyword against relative path with prefix stripped, so a corpus-root-level
+  keyword can't match everything.
+- Entry-point detection switched from `startswith(norm_path)` to membership in the matched
+  file set — equivalent in directory mode, correct in both.
+- dj2 verified: "encounter" resolves 5 files across world/, resolver/, config/fsms/, root.
+  "world" still takes directory mode. 6 new tests.
 
-**GAP-7 logged in TRACKER.md** [V]
-- feature_shape keyword→path gap documented. Fix: heuristic in query router or clearer error message.
+**GAP-8 fixed** (commit 28d00d8) [V]
+- Exposed by GAP-7 fix but pre-existing. One test caller (test_encounter_flow) outside the
+  encounter feature suppressed the "no entry points → use all local symbols" fallback, so
+  33 of 34 encounter symbols were hidden from count and completeness denominator.
+- Fix: BFS seeded from all local symbols always. Entry points annotated as
+  "entered through" markers, not BFS seeds. The fallback is gone — "use all local symbols"
+  is now the universal rule, simplification not addition.
+- Added "Uncalled within this feature" section: symbols in no edge at all were counted but
+  appeared in no section; the total silently disagreed with the listing.
+- 4 new tests. Known limitation: same-name symbols in different files collapse in
+  local_symbols dict (e.g. __init__, to_dict collide). Affects directory mode equally.
+- dj2 before: "Symbols: 1 total, Completeness: 25%". After: 28 symbols, completeness ~54%.
 
-**RM76 analyst wire-in** [V] (commit 95c31b4)
-- Discovered decisions.toml, decisions_ledger.py, and init() hook were all already implemented.
-- The one missing piece: `_enrich_with_stub_status` in local_agent.py queried
-  `kind IN ('design_note','finding','sots')` — 'decision' was absent.
-- Fix: added 'decision' to the kind list. Decisions from decisions.toml now surface in
-  Section 5 (DESIGN) of domain analysis output.
-- Verified: encounter analyst returns 3 decision artifacts when queried.
-- 21 tests pass (test_domain_analyst.py). [V]
+**Slow test suite fixed** (commit 79948b2) [V]
+- `tools/run_tests.py` on `agent_tools.py` changes took >120s and had to be killed.
+  Root cause: 6 unmarked tests calling the LLM; pyproject.toml addopts was already correct.
+  - `test_agent_tools.py`: 3x infer_behavior_batch variants (~36s each)
+  - `test_infer_behavior.py::TestInferBehaviorDispatch`: 3x dispatch tests (~18s each)
+- Added `@pytest.mark.slow` to all six. `test_missing_symbol_arg_returns_error` stays
+  unmarked (returns before LLM).
+- HF_HUB_OFFLINE moved from ui_server.py to `embedding_model.py` module level — UI was
+  protected, everything else silently made HF Hub network calls on every model load.
+- `run_tests.py`: no `-m` by default (addopts governs); `--slow` flag uses
+  `"slow or not slow"` (always-true, avoids empty-string shell drop); prints skip count.
+- CLAUDE.md: documented the `-m` CLI override trap.
+- Measured: 20-file selection for agent_tools.py changes, >120s killed → 17.4s, 422 passed,
+  8 deselected.
 
 ---
 
 ## WHAT IS NOT YET DONE
 
-- dj2 decisions.toml: still untracked in dj2 git (dj2-repo concern, not a Determined task).
-- GAP-6 (ABC scaffold intent): deferred to decisions.toml annotation — decisions.toml now
-  has `phases_abstract_methods` entry that covers this. Could close GAP-6 by wiring
-  find_abc_gaps to check for a matching decision artifact before alarming.
-- GAP-7 (feature_shape keyword routing): unaddressed.
+- GAP-6 (ABC scaffold intent): `find_abc_gaps` can't distinguish intentional scaffolds from
+  real voids. dj2 has a `phases_abstract_methods` entry in decisions.toml that covers the 8
+  ABCs in phases.py. Could close GAP-6 by wiring find_abc_gaps to check for a matching
+  'decision' artifact on the ABC's file/subject before flagging as "architecture void."
+  Low complexity, high signal quality improvement.
+- dj2 decisions.toml: untracked in dj2 git (dj2-repo concern, not a Determined task).
+- RM73/RM21: not touched this session.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **GAP-7** — fix feature_shape routing. Two options:
-   (a) In the query router, when feature_shape returns "No symbols found", scan file paths
-       for the keyword, pick the best matching prefix, retry. One function in local_agent.py.
-   (b) Improve the error message to guide the LLM narrator to ask for a path.
-   Option (a) is the right fix — it closes the gap rather than explaining it.
-   First command: grep for where feature_shape is called in local_agent.py to find the
-   routing hook.
+1. **GAP-6 close** — add decision-artifact check to `find_abc_gaps()` in `agent_tools.py`.
+   When the tool finds an ABC with no concrete subclasses, query `knowledge_artifacts` for a
+   'decision' row whose subject matches the ABC's file path. If one exists, annotate as
+   "intentional scaffold" instead of "architecture void." First command:
+   `grep -n "find_abc_gaps" determined/agent/agent_tools.py` to find the function.
 
-2. **GAP-6 close** — find_abc_gaps could check for a matching 'decision' artifact on the ABC's
-   file/subject before flagging as "architecture void." Small addition to find_abc_gaps().
-   Low complexity, high signal quality improvement.
-
-3. **RM73/RM21** — pick based on what next dj2 probe surfaces. No blocker yet.
+2. **RM73/RM21** — pick based on what next dj2 probe surfaces.
 
 ---
 
 ## KNOWN ISSUES / TRAPS
 
-- _wrap_body() must be used anywhere in sketch_stub.py that parses a body fragment. [V]
+- _wrap_body() must be used anywhere in sketch_stub.py that parses a body fragment. [?]
 - line_number=0 trap: queries on functions table ordered by line_number must exclude
-  line_number=0 to avoid config-declared entries crowding out Python functions. [V]
+  line_number=0 to avoid config-declared entries crowding out Python functions. [?]
 - _pull_type_defs has two paths: (1) classes table for Python types,
-  (2) functions LIKE 'TypeName::%' for FSM/protocol entities. [V]
-- export_context session is in-memory; resets on server restart. Intentional. [V]
+  (2) functions LIKE 'TypeName::%' for FSM/protocol entities. [?]
+- export_context session is in-memory; resets on server restart. Intentional. [?]
 - GAP-5 fix (fetch dead-end detection) only finds fetch() calls stored as raw callee
   strings in graph_edges. If JS walker improves and stores http_fetch edges instead,
   _explain_missing_path needs updating. [?]
-- feature_shape requires feature_path argument as a file-path fragment, not a keyword.
-  GAP-7 — not yet fixed. [V]
+- pytest `-m` on CLI REPLACES addopts entirely — `-m "not slow"` silently re-enables
+  live_llm tests. run_tests.py passes no `-m` by default; use `--slow` to include LLM. [V]
+- Same-name symbol collision in feature_shape: local_symbols keyed by name, so two symbols
+  with the same name in different files within a feature collapse. dj2 encounter: 28 counted
+  vs 34 rows (__init__, to_dict, from_dict collide). Pre-existing, affects directory mode
+  equally. Known limitation, not a priority fix. [V]
 - Second query in local_agent.py ~line 813 already had 'decision' in its kind list.
-  Only the _enrich_with_stub_status query (line ~488) was missing it. Both now correct. [V]
+  Only _enrich_with_stub_status (line ~488) was missing it. Both now correct. [?]
 
 ---
 
