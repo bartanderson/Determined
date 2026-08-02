@@ -4,9 +4,20 @@
 # Lazy-loads on first use — no startup cost unless embeddings are needed.
 # Normalized embeddings means cosine similarity = dot product.
 
+import os
 import threading
 
 import numpy as np
+
+# all-MiniLM-L6-v2 is a local, already-downloaded artifact. Passing a bare repo id
+# makes SentenceTransformer resolve it against the HF Hub on every load: a network
+# round-trip on a path that is required to work offline, with unbounded latency when
+# the network is slow or the Hub is unreachable.
+# This lives here, with the component that owns the ambient dependency, rather than at
+# a call site. ui_server.py set HF_HUB_OFFLINE, so the UI was protected and every other
+# entry point -- tests, CLI, scripts -- silently was not.
+# setdefault, so an explicit HF_HUB_OFFLINE=0 in the environment still wins.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 _model = None
 _model_lock = threading.Lock()

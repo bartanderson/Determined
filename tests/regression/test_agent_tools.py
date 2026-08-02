@@ -2,7 +2,11 @@
 #
 # Regression tests for agent/agent_tools.py (DESIGN.md section 8).
 # All 12 tools tested against a controlled in-memory fixture.
-# No dependency on world_corpus.db, LLM, or network.
+# No dependency on world_corpus.db or network.
+# EXCEPTION: the @pytest.mark.slow tests DO call the LLM -- infer_behavior_batch
+# runs evaluate() per function against llama-server (~18s a call). Keep that mark
+# on anything reaching evaluate() or llm_client, or `-m "not slow"` stops meaning
+# "fast" and every targeted run touching agent_tools.py pays two minutes.
 
 import os
 import sqlite3
@@ -1064,6 +1068,7 @@ def test_infer_behavior_batch_unknown_module():
     assert "no functions found" in result.lower()
 
 
+@pytest.mark.slow
 def test_infer_behavior_batch_processes_module():
     from determined.agent.agent_tools import infer_behavior_batch
     oracle = _make_batch_fixture()
@@ -1079,6 +1084,7 @@ def test_infer_behavior_batch_processes_module():
     assert "other_fn" not in result
 
 
+@pytest.mark.slow
 def test_infer_behavior_batch_stores_role_inference_artifacts():
     from determined.agent.agent_tools import infer_behavior_batch
     oracle = _make_batch_fixture()
@@ -1092,6 +1098,7 @@ def test_infer_behavior_batch_stores_role_inference_artifacts():
     assert "save_state" in subjects
 
 
+@pytest.mark.slow
 def test_infer_behavior_batch_skips_cached():
     from determined.agent.agent_tools import infer_behavior_batch
     oracle = _make_batch_fixture()

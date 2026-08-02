@@ -337,6 +337,24 @@ def build_targets(
     return targets
 
 
+def count_slow(targets: list[str]) -> int:
+    """
+    How many of the selected tests carry @pytest.mark.slow or @pytest.mark.live_llm
+    (the two markers pyproject.toml's addopts deselects by default). Reported so the
+    skip is never silent. Returns -1 if the count could not be determined;
+    collection is cheap (~0.5s).
+    """
+    try:
+        out = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-header",
+             "-m", "slow or live_llm"] + targets,
+            cwd=ROOT, capture_output=True, text=True, timeout=120,
+        )
+        return sum(1 for line in out.stdout.splitlines() if "::" in line)
+    except Exception:
+        return -1
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description="Targeted test runner — runs only tests related to changed files."
@@ -352,6 +370,8 @@ def main() -> int:
                    help="Print targets without running pytest")
     p.add_argument("--full-files", action="store_true",
                    help="Run whole test files instead of specific functions")
+    p.add_argument("--slow", action="store_true",
+                   help="Include @pytest.mark.slow (LLM) tests; they are skipped by default")
     args = p.parse_args()
 
     if args.files:
@@ -382,11 +402,29 @@ def main() -> int:
     if args.list_only:
         return 0
 
+    # No -m by default: pyproject.toml's addopts already carries
+    # "-m 'not slow and not live_llm'", and a -m here would OVERRIDE it rather than
+    # add to it -- passing "-m 'not slow'" silently re-enables the live_llm tests.
+    # --slow overrides it with an always-true expression (not an empty string, which
+    # some shells drop, leaving -m dangling).
+    cmd = [sys.executable, "-m", "pytest", "-x", "-q", "--no-header"]
+    if args.slow:
+        cmd += ["-m", "slow or not slow"]
+    else:
+        n = count_slow(targets)
+        if n > 0:
+            print(f"\n!! Skipping {n} slow/live_llm test(s) -- re-run with --slow to include them.")
+        elif n < 0:
+            print("\n!! Skipping slow/live_llm tests (count unavailable) -- --slow includes them.")
+
     print()
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-x", "-q", "--no-header"] + targets,
-        cwd=ROOT,
-    )
+    result = subprocess.run(cmd + targets, cwd=ROOT)
+
+    # pytest exits 5 when nothing was collected. If we filtered everything out, that
+    # is "no fast tests here", not a failure -- but say so rather than exit 0 silently.
+    if result.returncode == 5 and not args.slow:
+        print("\nAll selected tests are marked slow; none ran. Use --slow to run them.")
+        return 0
     return result.returncode
 
 

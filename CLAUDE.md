@@ -141,7 +141,12 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
   .venv\Scripts\python tools\run_tests.py                # changed vs HEAD
   .venv\Scripts\python tools\run_tests.py --last-commit  # verify after commit
   .venv\Scripts\python tools\run_tests.py --list         # preview without running
+  .venv\Scripts\python tools\run_tests.py --slow         # include LLM tests too
   ```
+  Slow/live_llm tests are deselected by default (pyproject.toml `addopts`), and the
+  runner prints how many it skipped. Do NOT pass `-m` to pytest by hand: a command-line
+  `-m` REPLACES the addopts filter rather than narrowing it, so `-m "not slow"` silently
+  re-enables the `live_llm` tests. Use `--slow`, or no marker flag at all.
 - **NEVER run the full suite with `pytest tests/regression/`.** It overloads the system.
 - **NEVER launch pytest as a background task.** All test runs are foreground only.
 - **Always use a short timeout** (30s max for targeted runs). If targeted tests

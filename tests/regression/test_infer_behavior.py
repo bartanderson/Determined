@@ -184,6 +184,7 @@ class TestInferBehaviorDispatch:
         assert "ERROR" in result
         assert isinstance(result, str)
 
+    @pytest.mark.slow
     def test_seeds_pattern_library_on_first_call(self):
         oracle = _make_oracle()
         assessor = FakeAssessor(oracle)
@@ -198,6 +199,7 @@ class TestInferBehaviorDispatch:
         ).fetchone()[0]
         assert after == len(_ROLE_PATTERNS)
 
+    @pytest.mark.slow
     def test_unknown_symbol_returns_string_not_exception(self):
         oracle = _make_oracle()
         assessor = FakeAssessor(oracle)
@@ -206,6 +208,7 @@ class TestInferBehaviorDispatch:
         # Either "no evidence found" message or an LLM result — never a crash
         assert "INFER BEHAVIOR" in result or "no match" in result.lower() or "evidence" in result.lower()
 
+    @pytest.mark.slow
     def test_result_contains_symbol_name(self):
         oracle = _make_oracle()
         assessor = FakeAssessor(oracle)
