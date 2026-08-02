@@ -63,7 +63,7 @@ probe loop. Goal: finish the tool cleanly enough to get back to building the gam
 | Corpus | Target | Status |
 |--------|--------|--------|
 | Determined (Python) | Full convergence | probe 2026-07-31 (self-model check): 12 stubs total — 2 real gaps (pattern_executor.__init__, contract_drift_classifier.__init__), 1 known accepted (suggest_tags), 9 test mocks; 0 false positives; 95.6% unresolved edges (external-lib ceiling, accepted); 1426/2147 inferred EPs (framework-caller ceiling, accepted); docstring health 62.1% missing (test files dominant; assessor.py notable) |
-| dj2 (Python+JS) | Full convergence | probe 2026-07-31 (post re-ingest): 25 stubs; 12 FSM stubs (encounter/trade/barter JSON, 0 callers — design-complete islands); 5 subrace stubs (dnd_data.py, delete when dj2 coding starts, accepted); 4 real gaps with callers (_get_encounter_context, _get_combat_context, _register_world_tools, on_arc_completed — each 1 caller); process_consequences now 0 callers (orphaned, not a blocker); 3 test stubs (check_parley, get_player_by_session×4, test_encounter_parley_failure — accepted); unresolved edge ratio 87.6% (world/ ceiling, accepted); 66 JS cross-boundary edges (33 http_fetch + 33 cross_language); 594 design_notes; 9 decisions; docstring health 56.7% (804/1419 missing) |
+| dj2 (Python+JS) | Full convergence | probe 2026-08-02: 25 stubs; 12 FSM stubs (encounter/trade/barter JSON — design-complete islands, accepted); 3 test stubs (check_parley, get_player_by_session, test_encounter_parley_failure — accepted); 10 real gaps: _get_encounter_context, _get_combat_context, process_consequences, _register_world_tools, on_arc_completed, get_race_for_subrace, get_subraces_for_race, semantic_match_fighting_style, semantic_match_subrace, subraces (dnd_data.py stubs are delete candidates); 8 phases.py ABCs correctly classified as intentional scaffolds (GAP-6 fix — decision artifact matched); unresolved edge ratio 87.9% (accepted ceiling); 10 decisions; 594 design_notes; docstring health 56.0% (809/1444 missing) |
 | Commonplace (Python) | Full convergence | 1 stub (suggest_tags); classified: frontier stub, waits for LLM_ENDPOINT design decision |
 | rotjs (TS) | Probe-passes | 6 stubs; lib/src dual-rep known |
 | dungeoncrawler (TS) | Probe-passes | 0 stubs; clean |
@@ -314,7 +314,7 @@ ingest with `tools/ingest_lang_corpus.py`, run RM67 probe after each.
 | ebiten | Go | github.com/hajimehoshi/ebiten | [x] clone [x] ingest [x] probe — 6367 sym / 45073 edges; 50 stubs = proprietary platform SDK stubs (Nintendo/PS5), correctly unimplementable |
 | batteries | Lua | github.com/1bardesign/batteries | [x] clone [x] ingest [x] probe — 451 sym / 706 edges; 0 stubs; clean |
 
-**Status: all four ingested and probed 2026-07-28. Update RM67 probe table next session.**
+**Status: all four ingested and probed 2026-07-28. RM67 probe table updated 2026-08-02.**
 
 ---
 
