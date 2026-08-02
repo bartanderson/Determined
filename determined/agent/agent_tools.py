@@ -2614,6 +2614,126 @@ def find_orphaned_impls(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_pure_functions(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_pure_functions(scope?, min_callers?) - find implemented functions in files
+    that have no recorded mutations (no state writes detected during ingestion).
+
+    These are candidates for memoization or safe parallelisation. Functions called
+    from multiple places are flagged as memoization candidates.
+
+    Args:
+        scope: optional file path fragment to narrow results
+        min_callers: minimum resolved caller count to include (default 0)
+    """
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+    min_callers = int(args.get("min_callers", 0))
+
+    scope_clause = " AND f.file_path LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
+
+    # Files that have at least one recorded mutation
+    mutating_files = {
+        r[0] for r in conn.execute("SELECT DISTINCT file_path FROM mutations").fetchall()
+    }
+
+    rows = conn.execute(
+        "SELECT f.name, f.file_path, f.line_number "
+        "FROM functions f "
+        "WHERE f.is_stub = 0" + scope_clause + " "
+        "ORDER BY f.file_path, f.line_number",
+        scope_param,
+    ).fetchall()
+
+    # Resolved caller count per function name
+    caller_counts: dict[str, int] = {}
+    for r in conn.execute(
+        "SELECT callee, COUNT(DISTINCT caller) FROM graph_edges WHERE resolved = 1 GROUP BY callee"
+    ).fetchall():
+        caller_counts[r[0]] = r[1]
+
+    pure_rows = []
+    for name, file_path, line_no in rows:
+        if file_path in mutating_files:
+            continue
+        callers = caller_counts.get(name, 0)
+        if callers < min_callers:
+            continue
+        pure_rows.append((name, file_path, line_no, callers))
+
+    if not pure_rows:
+        return "No pure-file functions found matching criteria."
+
+    lines = [
+        f"Pure-file functions ({len(pure_rows)} found — files with zero recorded mutations):",
+        "  [memo] = called from 2+ places, safe memoization candidate",
+        "",
+    ]
+    prev_fp = None
+    for name, file_path, line_no, callers in pure_rows:
+        fp_short = (file_path or "").replace("\\", "/").split("/")[-1]
+        if fp_short != prev_fp:
+            lines.append(f"  {fp_short}")
+            prev_fp = fp_short
+        memo = " [memo]" if callers >= 2 else ""
+        lines.append(f"    {name}  line {line_no}  ({callers} callers){memo}")
+    return "\n".join(lines)
+
+
+def find_hot_callers(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_hot_callers(limit?, scope?) - find implemented functions with the highest
+    incoming resolved-edge count. These are load-bearing utilities: called from many
+    places, high blast radius if broken or slow.
+
+    Only counts resolved edges (callee matched a real project function) to exclude
+    unresolved stdlib/external references.
+
+    Args:
+        limit: max results, default 20
+        scope: optional file path fragment to narrow results
+    """
+    conn = oracle.conn
+    limit = int(args.get("limit", 20))
+    scope = (args.get("scope") or "").strip()
+
+    scope_join = " AND f.file_path LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
+
+    rows = conn.execute(
+        """
+        SELECT f.name, f.file_path, f.line_number,
+               COUNT(DISTINCT ge.caller) AS caller_count,
+               COUNT(*) AS call_site_count
+        FROM functions f
+        JOIN graph_edges ge ON ge.callee = f.name AND ge.resolved = 1
+        WHERE f.is_stub = 0
+        """ + scope_join + """
+        GROUP BY f.name, f.file_path
+        ORDER BY caller_count DESC, call_site_count DESC
+        LIMIT ?
+        """,
+        scope_param + [limit],
+    ).fetchall()
+
+    if not rows:
+        return "No resolved call edges found — corpus may need re-ingestion."
+
+    lines = [
+        f"Hot callers — top {len(rows)} by resolved incoming edge count:",
+        "  caller_count = distinct caller functions; call_sites = total call locations",
+        "",
+    ]
+    for name, file_path, line_no, caller_count, call_site_count in rows:
+        fp_short = (file_path or "").replace("\\", "/").split("/")[-1]
+        lines.append(
+            f"  {caller_count:3d} callers  {call_site_count:3d} sites  "
+            f"{name}  ({fp_short}:{line_no})"
+        )
+    return "\n".join(lines)
+
+
 def find_conditional_stubs(oracle: "DBOracle", args: dict) -> str:
     """
     find_conditional_stubs(limit?) - find implemented functions that contain
@@ -7979,6 +8099,8 @@ TOOLS = {
     "detect_topology":      (detect_topology,       "oracle"),
     "frontier_coverage":    (frontier_coverage,     "oracle"),
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
+    "find_pure_functions":      (find_pure_functions,       "oracle"),
+    "find_hot_callers":         (find_hot_callers,          "oracle"),
     "frontier_priority":        (frontier_priority,         "oracle"),
     "implementation_order":     (implementation_order,      "oracle"),
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),

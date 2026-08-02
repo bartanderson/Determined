@@ -295,6 +295,14 @@ _PATTERNS = [
     (re.compile(r"(?:imports?\s+of|what\s+does\s+['\"]?(.+?)['\"]?\s+import|dependencies\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "list_import_deps", "file_path", None),  # special: multi-group
 
+    # "pure functions" / "memoization candidates" / "pure functions in X"
+    (re.compile(r"(?:pure\s+functions?|memoiz(?:ation\s+)?candidates?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+     "find_pure_functions", "scope", 1),
+
+    # "hot callers" / "most called" / "load bearing" / "hot callers in X"
+    (re.compile(r"(?:hot\s+callers?|most\s+called|load.bearing\s+functions?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+     "find_hot_callers", "scope", 1),
+
     # "search <query>" / "find <query>" - fallback to search_symbols
     (re.compile(r"(?:search|find)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "search_symbols", "query", 1),

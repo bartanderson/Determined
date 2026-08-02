@@ -601,6 +601,9 @@ def test_dispatch_all_tools_registered():
         "find_stub_islands",
         # GAP-2: chain context synthesis
         "chain_context",
+        # RM-Perf static tier
+        "find_pure_functions",
+        "find_hot_callers",
     }
 
     assert set(TOOLS.keys()) == expected

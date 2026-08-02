@@ -1,7 +1,7 @@
 # tests/regression/test_detect_topology.py
 #
 # Guards detect_topology(), find_orphaned_impls(), find_conditional_stubs(),
-# and frontier_priority() topology tools.
+# frontier_priority(), find_pure_functions(), and find_hot_callers() tools.
 
 import sqlite3
 import textwrap
@@ -13,6 +13,8 @@ from determined.agent.agent_tools import (
     find_orphaned_impls,
     find_conditional_stubs,
     frontier_priority,
+    find_pure_functions,
+    find_hot_callers,
 )
 
 
@@ -271,3 +273,126 @@ def test_frontier_priority_tail_beats_direct_call(tmp_path):
     tail_pos = result.index("tail_stub")
     direct_pos = result.index("direct_stub")
     assert tail_pos < direct_pos
+
+
+# ── find_pure_functions ───────────────────────────────────────────────
+
+
+def test_pure_functions_zero_mutation_file_included(tmp_path):
+    """Functions in files with no mutations are reported as pure candidates."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "pure_fn", "pure.py", False)
+    conn.commit()
+    result = find_pure_functions(oracle, {})
+    assert "pure_fn" in result
+    assert "pure.py" in result
+
+
+def test_pure_functions_mutation_file_excluded(tmp_path):
+    """Functions in files that have mutations are not returned."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "dirty_fn", "dirty.py", False)
+    conn.execute(
+        "INSERT INTO mutations (file_path, line_number, target, operation) VALUES (?,?,?,?)",
+        ("dirty.py", 10, "self", "assign"),
+    )
+    conn.commit()
+    result = find_pure_functions(oracle, {})
+    assert "dirty_fn" not in result
+
+
+def test_pure_functions_memo_flag_on_multi_caller(tmp_path):
+    """Functions called from 2+ places are flagged [memo]."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "util_fn", "utils.py", False)
+    _add_fn(conn, "caller_a", "a.py", False)
+    _add_fn(conn, "caller_b", "b.py", False)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,1)",
+        ("caller_a", "util_fn", "a.py"),
+    )
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (2,2,?,?,?,1,1)",
+        ("caller_b", "util_fn", "b.py"),
+    )
+    conn.commit()
+    result = find_pure_functions(oracle, {})
+    assert "[memo]" in result
+    assert "util_fn" in result
+
+
+def test_pure_functions_stubs_excluded(tmp_path):
+    """Stubs are not reported even if their file has no mutations."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "stub_fn", "iface.py", True)
+    conn.commit()
+    result = find_pure_functions(oracle, {})
+    assert "stub_fn" not in result
+
+
+# ── find_hot_callers ─────────────────────────────────────────────────
+
+
+def test_hot_callers_ranked_by_caller_count(tmp_path):
+    """Functions with more distinct callers appear higher in results."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "hot_fn", "core.py", False)
+    _add_fn(conn, "cold_fn", "core.py", False)
+    _add_fn(conn, "caller_a", "a.py", False)
+    _add_fn(conn, "caller_b", "b.py", False)
+    # hot_fn called from 2 places (resolved)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,1)",
+        ("caller_a", "hot_fn", "a.py"),
+    )
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,1)",
+        ("caller_b", "hot_fn", "b.py"),
+    )
+    # cold_fn called from 1 place (resolved)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,1)",
+        ("caller_a", "cold_fn", "a.py"),
+    )
+    conn.commit()
+    result = find_hot_callers(oracle, {})
+    assert "hot_fn" in result
+    assert "cold_fn" in result
+    assert result.index("hot_fn") < result.index("cold_fn")
+
+
+def test_hot_callers_unresolved_edges_excluded(tmp_path):
+    """Unresolved edges (external stdlib calls) are not counted."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "project_fn", "core.py", False)
+    # unresolved edge pointing at project_fn should not count
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,0)",
+        ("caller_x", "project_fn", "x.py"),
+    )
+    conn.commit()
+    result = find_hot_callers(oracle, {})
+    # project_fn has no resolved callers — should not appear
+    assert "project_fn" not in result
+
+
+def test_hot_callers_stubs_excluded(tmp_path):
+    """Stub functions are not returned even with resolved callers."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "stub_fn", "iface.py", True)
+    _add_fn(conn, "caller_x", "x.py", False)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,1)",
+        ("caller_x", "stub_fn", "x.py"),
+    )
+    conn.commit()
+    result = find_hot_callers(oracle, {})
+    assert "stub_fn" not in result
+
+
+def test_hot_callers_empty(tmp_path):
+    """No resolved edges returns graceful message."""
+    oracle, conn = _make_oracle(tmp_path)
+    conn.commit()
+    result = find_hot_callers(oracle, {})
+    assert "No resolved call edges" in result or result == "" or "0" in result

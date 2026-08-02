@@ -583,6 +583,28 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to find implementations waiting for callers — useful before writing new stubs (the implementation may already exist).",
         "category": "knowledge",
     },
+    "find_pure_functions": {
+        "purpose": "Find implemented functions in files with no recorded mutations (no state writes). These are safe memoization or parallelisation candidates. Functions called from 2+ places are flagged [memo].",
+        "args": {
+            "scope": "(optional) file path fragment to narrow results",
+            "min_callers": "(optional) minimum resolved caller count, default 0",
+        },
+        "output": "Per-file list of pure-file functions with caller counts and [memo] flag for memoization candidates",
+        "feeds": ["find_hot_callers", "symbol_context"],
+        "use_when": "You want to identify functions that are safe to cache or parallelise — no mutation side-effects detected in their file.",
+        "category": "knowledge",
+    },
+    "find_hot_callers": {
+        "purpose": "Find implemented functions with the most incoming resolved call edges — load-bearing utilities with high blast radius if broken or slow.",
+        "args": {
+            "limit": "(optional) max results, default 20",
+            "scope": "(optional) file path fragment to narrow results",
+        },
+        "output": "Ranked list: distinct caller count, call-site count, function name, file and line",
+        "feeds": ["symbol_context", "blast_radius", "find_pure_functions"],
+        "use_when": "You want to know which functions are called from the most places — the highest-leverage targets for optimisation or the highest-risk targets for change.",
+        "category": "knowledge",
+    },
     "detect_topology": {
         "purpose": "Inventory the incompleteness shapes present in the corpus: direct-call stubs, ABC-interface gaps, stub chains, orphaned implementations, and disconnected stubs. Returns counts per shape and identifies the dominant pattern.",
         "args": {},
