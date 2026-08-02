@@ -330,6 +330,18 @@ def test_pure_functions_stubs_excluded(tmp_path):
     assert "stub_fn" not in result
 
 
+def test_pure_functions_json_entries_excluded(tmp_path):
+    """FSM state/event nodes stored under .json paths are not returned."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "TradeFSM::state::completed", "config/fsms/trade.json", False)
+    _add_fn(conn, "real_fn", "utils.py", False)
+    conn.commit()
+    result = find_pure_functions(oracle, {})
+    assert "TradeFSM" not in result
+    assert "trade.json" not in result
+    assert "real_fn" in result
+
+
 # ── find_hot_callers ─────────────────────────────────────────────────
 
 
@@ -396,3 +408,18 @@ def test_hot_callers_empty(tmp_path):
     conn.commit()
     result = find_hot_callers(oracle, {})
     assert "No resolved call edges" in result or result == "" or "0" in result
+
+
+def test_hot_callers_json_entries_excluded(tmp_path):
+    """FSM state nodes in .json paths are not returned even with resolved callers."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fn(conn, "EncounterFSM::state::completed", "config/fsms/encounter.json", False)
+    _add_fn(conn, "caller_a", "resolver.py", False)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved) VALUES (1,2,?,?,?,1,1)",
+        ("caller_a", "EncounterFSM::state::completed", "resolver.py"),
+    )
+    conn.commit()
+    result = find_hot_callers(oracle, {})
+    assert "EncounterFSM" not in result
+    assert "encounter.json" not in result

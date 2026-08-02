@@ -2641,7 +2641,7 @@ def find_pure_functions(oracle: "DBOracle", args: dict) -> str:
     rows = conn.execute(
         "SELECT f.name, f.file_path, f.line_number "
         "FROM functions f "
-        "WHERE f.is_stub = 0" + scope_clause + " "
+        "WHERE f.is_stub = 0 AND f.file_path NOT LIKE '%.json'" + scope_clause + " "
         "ORDER BY f.file_path, f.line_number",
         scope_param,
     ).fetchall()
@@ -2708,7 +2708,7 @@ def find_hot_callers(oracle: "DBOracle", args: dict) -> str:
                COUNT(*) AS call_site_count
         FROM functions f
         JOIN graph_edges ge ON ge.callee = f.name AND ge.resolved = 1
-        WHERE f.is_stub = 0
+        WHERE f.is_stub = 0 AND f.file_path NOT LIKE '%.json'
         """ + scope_join + """
         GROUP BY f.name, f.file_path
         ORDER BY caller_count DESC, call_site_count DESC
