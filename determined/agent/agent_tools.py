@@ -1891,22 +1891,54 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
 
     lines = []
     if unimplemented_interfaces:
-        lines.append(
-            f"UNIMPLEMENTED INTERFACES — {len(unimplemented_interfaces)} ABC class(es) with NO concrete subclass anywhere:"
-        )
-        lines.append("  (These are architecture voids: the interface exists but nothing implements it.)")
-        lines.append("")
+        scaffolds = []
+        voids = []
         for abc_name in sorted(unimplemented_interfaces):
-            # Find file
             row = conn.execute(
                 "SELECT file_path FROM classes WHERE name = ? LIMIT 1", (abc_name,)
             ).fetchone()
-            fp = (row[0] or "").replace("\\", "/").split("/")[-1] if row else "?"
+            file_path = row[0] if row else None
+            fp = (file_path or "").replace("\\", "/").split("/")[-1] if file_path else "?"
+            decision = None
+            if file_path:
+                norm = file_path.replace("\\", "/")
+                try:
+                    decision = conn.execute(
+                        "SELECT content FROM knowledge_artifacts "
+                        "WHERE kind = 'decision' AND subject LIKE ? LIMIT 1",
+                        (f"%{norm}%",),
+                    ).fetchone()
+                except Exception:
+                    pass
             methods = sorted(unimplemented_interfaces[abc_name])
-            lines.append(f"  {abc_name}  ({fp})")
-            for m in methods:
-                lines.append(f"    {m}  [no implementation exists]")
-        lines.append("")
+            if decision:
+                scaffolds.append((abc_name, fp, methods, decision[0]))
+            else:
+                voids.append((abc_name, fp, methods))
+
+        if voids:
+            lines.append(
+                f"UNIMPLEMENTED INTERFACES — {len(voids)} ABC class(es) with NO concrete subclass anywhere:"
+            )
+            lines.append("  (These are architecture voids: the interface exists but nothing implements it.)")
+            lines.append("")
+            for abc_name, fp, methods in voids:
+                lines.append(f"  {abc_name}  ({fp})")
+                for m in methods:
+                    lines.append(f"    {m}  [no implementation exists]")
+            lines.append("")
+
+        if scaffolds:
+            lines.append(
+                f"INTENTIONAL SCAFFOLDS — {len(scaffolds)} ABC class(es) with decision artifacts (no concrete subclass by design):"
+            )
+            lines.append("")
+            for abc_name, fp, methods, decision_content in scaffolds:
+                lines.append(f"  {abc_name}  ({fp})")
+                lines.append(f"    decision: {decision_content[:120]}")
+                for m in methods:
+                    lines.append(f"    {m}  [intentional scaffold]")
+            lines.append("")
 
     if not concrete_gaps and not unimplemented_interfaces:
         return "All ABC stub methods have at least one non-stub override in the corpus."

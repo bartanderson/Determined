@@ -25,6 +25,11 @@ def _make_db():
         "line_number INTEGER, return_type TEXT, arguments_json TEXT, docstring TEXT, "
         "is_stub INTEGER DEFAULT 0, param_types_json TEXT, decorators_json TEXT)"
     )
+    conn.execute(
+        "CREATE TABLE knowledge_artifacts (id INTEGER PRIMARY KEY, subject TEXT, "
+        "kind TEXT, content TEXT, provenance TEXT, created_at TEXT, file_hash TEXT, "
+        "needs_review INTEGER DEFAULT 0)"
+    )
     return conn
 
 
@@ -104,6 +109,21 @@ def test_no_subclasses_returns_arch_void():
     assert "UNIMPLEMENTED INTERFACES" in result
     assert "IFoo" in result
     assert "do_thing" in result
+
+
+def test_no_subclasses_with_decision_is_scaffold():
+    """ABC with no subclasses but a matching decision artifact is labeled intentional scaffold."""
+    conn = _make_db()
+    _add_abc_base(conn, "phases.py", "IPhase", ["execute"])
+    conn.execute(
+        "INSERT INTO knowledge_artifacts (subject, kind, content) VALUES (?, ?, ?)",
+        ("phases.py", "decision", "ABCs in phases.py are intentional scaffolds for extension."),
+    )
+    oracle = _FakeOracle(conn)
+    result = find_abc_gaps(oracle, {})
+    assert "INTENTIONAL SCAFFOLD" in result
+    assert "IPhase" in result
+    assert "UNIMPLEMENTED INTERFACES" not in result
 
 
 def test_non_abstract_method_on_abc_not_reported():
