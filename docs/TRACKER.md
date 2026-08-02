@@ -192,10 +192,36 @@ All tiers corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any languag
   subsystem name to a valid feature_path prefix.
 - Impact: Ask bar question "what does the encounter feature look like?" cannot be
   answered by feature_shape; analyst must fall back to domain_analysis or raw SQL.
-- Fix needed: either (a) add keyword→path heuristic in the query router (scan file
-  paths for the keyword, pick the best matching prefix), or (b) expose the
-  path-matching requirement clearly in the tool's error message so the LLM narrator
-  knows to ask for a path.
+- FIXED 2026-08-01: two-stage resolution inside `feature_shape` itself (not the query
+  router — a router-side fix would leave the Workbench tool registration still broken
+  and split "what counts as a feature" across two places). Stage 1 is the existing
+  directory prefix match; stage 2 fires only when stage 1 returns zero rows and matches
+  the keyword against the *relative* file path (prefix stripped, so a keyword naming a
+  corpus-root segment can't match the whole corpus). The output announces filename mode
+  and lists the matched files. Entry-point detection switched from `startswith(norm_path)`
+  to membership in the matched file set — equivalent in directory mode, correct in both.
+- dj2 verified: `feature_shape("encounter")` now resolves 5 files across world/, resolver/,
+  config/fsms/ and the repo root. `"world"` still takes directory mode. 6 new tests.
+
+**GAP-8: feature_shape reports reachability, not inventory** (2026-08-01)
+- Exposed by the GAP-7 fix, but pre-existing and applies to directory mode too.
+- `feature_shape("encounter")` on dj2 matches 5 files containing ~34 symbols, then reports
+  "Symbols: 1 total, Completeness: 25%". Only symbols reachable by forward BFS *from an
+  entry point* enter node_status; an entry point requires a caller outside the feature.
+  The 15 encounter_models.py classes and 14 encounter.json FSM stubs have no callers, so
+  they are silently excluded from both the count and the completeness denominator.
+- The `if not entry_points` fallback ("showing all local symbols as roots") does not fire
+  here, because exactly one entry point (test_encounter_flow) was found — one test caller
+  is enough to suppress the fallback and hide the other 33 symbols.
+- Impact: the headline number is confidently wrong for any feature whose symbols are
+  mostly uncalled — which is precisely the frontier case Determined exists to surface.
+  RM67 convergence requires probes answer "without confabulation"; this undercounts.
+- Fix options: (a) report both numbers — "N symbols in feature files, M reached from
+  entry points"; (b) seed the BFS with all local symbols, not just entry points, and keep
+  entry points as an annotation; (c) fire the all-local-symbols fallback whenever traced
+  coverage is below some fraction of the member set.
+- Decision needed: is feature_shape an inventory tool or a call-path tracer? The name and
+  docstring say tracer; the way it gets used in analysis says inventory.
 
 **GAP-6: ABC void detection has no intent signal** (2026-08-01)
 - `find_abc_gaps` on dj2 found 8 ABCs in phases.py with zero concrete subclasses.

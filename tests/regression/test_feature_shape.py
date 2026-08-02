@@ -226,6 +226,112 @@ def test_feature_shape_combat_entry_point_is_log_hit():
 
 
 # ---------------------------------------------------------------------------
+# GAP-7: feature_path resolves as a keyword when no such directory exists
+# ---------------------------------------------------------------------------
+
+def _seed_scattered_db(conn):
+    """
+    Mirrors the dj2 shape that exposed GAP-7: an 'encounter' feature scattered
+    across world/ and resolver/ with no 'encounter/' directory anywhere.
+
+      world/encounter_models.py    -> EncounterState, PointState
+      world/encounter_generator.py -> generate_encounter
+      resolver/encounter_resolver.py -> resolve_encounter (stub)
+      world/travel.py              -> start_travel   (caller outside the feature)
+      main.py                      -> main
+    """
+    conn.executescript("""
+        CREATE TABLE functions (
+            name TEXT PRIMARY KEY,
+            file_path TEXT,
+            is_stub INTEGER DEFAULT 0,
+            docstring TEXT,
+            param_types_json TEXT
+        );
+        CREATE TABLE graph_edges (
+            caller TEXT,
+            callee TEXT,
+            edge_type TEXT DEFAULT 'static',
+            resolved INTEGER DEFAULT 1
+        );
+        INSERT INTO functions VALUES ('EncounterState',      'world/encounter_models.py',     0, NULL, NULL);
+        INSERT INTO functions VALUES ('PointState',          'world/encounter_models.py',     0, NULL, NULL);
+        INSERT INTO functions VALUES ('generate_encounter',  'world/encounter_generator.py',  0, NULL, NULL);
+        INSERT INTO functions VALUES ('resolve_encounter',   'resolver/encounter_resolver.py',1, NULL, NULL);
+        INSERT INTO functions VALUES ('start_travel',        'world/travel.py',               0, NULL, NULL);
+        INSERT INTO functions VALUES ('main',                'main.py',                       0, NULL, NULL);
+        INSERT INTO graph_edges VALUES ('main',               'start_travel',       'static', 1);
+        INSERT INTO graph_edges VALUES ('start_travel',       'generate_encounter', 'static', 1);
+        INSERT INTO graph_edges VALUES ('generate_encounter', 'EncounterState',     'static', 1);
+        INSERT INTO graph_edges VALUES ('generate_encounter', 'resolve_encounter',  'static', 1);
+    """)
+
+
+def test_feature_shape_keyword_matches_files_across_directories():
+    """GAP-7: 'encounter' is not a directory but names files in world/ and resolver/."""
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "encounter"})
+    assert "No symbols found" not in result
+    assert "generate_encounter" in result
+    assert "resolve_encounter" in result
+
+
+def test_feature_shape_keyword_fallback_is_announced():
+    """The fallback must not silently change semantics -- it says so in the output."""
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "encounter"})
+    assert "Matched by filename" in result
+    assert "world/encounter_models.py" in result
+    assert "resolver/encounter_resolver.py" in result
+
+
+def test_feature_shape_keyword_finds_entry_point_from_outside_caller():
+    """start_travel (world/travel.py) is outside the feature, so its callee is an EP."""
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "encounter"})
+    assert "Entry points" in result
+    assert "generate_encounter" in result
+    # travel.py is not part of the encounter feature
+    assert "world/travel.py" not in result
+
+
+def test_feature_shape_keyword_flags_blocking_stub():
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "encounter"})
+    assert "Blocking stubs" in result
+    assert "resolve_encounter" in result
+
+
+def test_feature_shape_directory_takes_precedence_over_keyword():
+    """
+    Bounded blast radius: when the directory exists, the keyword path must not fire.
+    'combat' is a real directory in the standard fixture.
+    """
+    conn = sqlite3.connect(":memory:")
+    _seed_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "combat"})
+    assert "Matched by filename" not in result
+
+
+def test_feature_shape_unknown_keyword_reports_what_was_tried():
+    conn = sqlite3.connect(":memory:")
+    _seed_scattered_db(conn)
+    oracle = _make_oracle(conn)
+    result = feature_shape(oracle, {"feature_path": "nonexistent"})
+    assert "No symbols found" in result
+    assert "list_features" in result
+
+
+# ---------------------------------------------------------------------------
 # development_priorities tests
 # ---------------------------------------------------------------------------
 

@@ -6783,7 +6783,12 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
     """
     feature_shape(feature_path[, prefix]) - trace the call path through a feature.
 
-    `feature_path` is a relative directory path (e.g. 'determined/agent' or 'combat').
+    `feature_path` resolves in two stages:
+      1. directory — a relative directory path (e.g. 'determined/agent' or 'combat')
+      2. filename  — if no such directory exists, `feature_path` is treated as a
+         keyword and matched against relative file paths, so 'encounter' finds
+         world/encounter_models.py + resolver/encounter_resolver.py even though no
+         'encounter/' directory exists. The output says when this happened.
     If the corpus stores absolute paths, supply `prefix` (or let it be auto-detected)
     to strip the root before matching.
 
@@ -6816,24 +6821,48 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
         abs_feature = feature_path
     norm_path = abs_feature + "/"
 
-    # All local symbols (match by absolute path)
+    # Stage 1: treat feature_path as a directory and match by path prefix.
     local_rows = conn.execute(
         "SELECT name, is_stub, REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp "
         "FROM functions WHERE REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') LIKE ?",
         (norm_path + "%",),
     ).fetchall()
+    match_mode = "directory"
+
+    # Stage 2: no such directory — treat feature_path as a keyword and match it
+    # against the relative file path. A feature is not always a directory:
+    # 'encounter' can live in world/encounter_models.py, resolver/encounter_resolver.py
+    # and config/fsms/encounter.json without any 'encounter/' directory existing.
+    # Matching the relative path (prefix stripped) not the absolute one, so a keyword
+    # that happens to name a corpus-root segment doesn't match the whole corpus.
+    if not local_rows:
+        kw = feature_path.lower()
+        local_rows = [
+            r for r in conn.execute(
+                "SELECT name, is_stub, REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp "
+                "FROM functions"
+            ).fetchall()
+            if kw in _strip_prefix(r[2], prefix).lower()
+        ]
+        match_mode = "filename"
 
     if not local_rows:
-        return f"No symbols found under '{feature_path}'."
+        return (
+            f"No symbols found under '{feature_path}'.\n"
+            f"  Tried: directory '{feature_path}/', then filenames containing '{feature_path}'.\n"
+            f"  Run list_features() to see the feature directories in this corpus."
+        )
 
     local_symbols: dict[str, dict] = {}
+    member_files: set[str] = set()
     for name, is_stub, fp in local_rows:
         local_symbols[name] = {"is_stub": bool(is_stub), "file": _strip_prefix(fp, prefix)}
+        member_files.add(fp)
 
     # All symbol names in the entire corpus
     all_known = {r[0] for r in conn.execute("SELECT name FROM functions").fetchall()}
 
-    # Entry points: local symbols called by callers outside this directory
+    # Entry points: local symbols called by callers outside this feature
     entry_points: set[str] = set()
     caller_rows = conn.execute(
         "SELECT caller, callee FROM graph_edges WHERE callee IN ({})".format(
@@ -6847,7 +6876,7 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
             "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') FROM functions WHERE name = ?",
             (caller,),
         ).fetchone()
-        if caller_row is None or not caller_row[0].startswith(norm_path):
+        if caller_row is None or caller_row[0] not in member_files:
             entry_points.add(callee)
 
     if not entry_points:
@@ -6895,6 +6924,13 @@ def feature_shape(oracle: "DBOracle", args: dict) -> str:
     completeness = f"{impl_count / denom * 100:.0f}%" if denom else "N/A"
 
     lines = [f"Feature shape: {feature_path}{ep_note}"]
+    if match_mode == "filename":
+        rel_files = sorted(_strip_prefix(f, prefix) for f in member_files)
+        shown = ", ".join(rel_files[:8])
+        if len(rel_files) > 8:
+            shown += f", +{len(rel_files) - 8} more"
+        lines.append(f"  Matched by filename — no '{feature_path}/' directory exists. "
+                     f"{len(rel_files)} file(s): {shown}")
     lines.append(f"  Symbols: {len(node_status)} total, {impl_count} implemented, "
                  f"{stub_count} stub, {local_missing_count} local-missing")
     lines.append(f"  Completeness: {completeness}  |  Entry points: {len(entry_points)}")
