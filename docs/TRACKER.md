@@ -185,6 +185,18 @@ All tiers corpus-agnostic. Same pipeline on dj2, Commonplace, rotjs, any languag
   — no Flask handler registered for this route. Implement the route and re-ingest."
 - commit: (this session)
 
+**GAP-7: feature_shape has no keyword→path routing** (2026-08-01)
+- `feature_shape(oracle, {"feature_path": "encounter"})` returns "No symbols found
+  under 'encounter'" — the tool expects a file-path fragment (e.g. "encounter/"),
+  not a subsystem keyword. There is no routing layer that maps a natural-language
+  subsystem name to a valid feature_path prefix.
+- Impact: Ask bar question "what does the encounter feature look like?" cannot be
+  answered by feature_shape; analyst must fall back to domain_analysis or raw SQL.
+- Fix needed: either (a) add keyword→path heuristic in the query router (scan file
+  paths for the keyword, pick the best matching prefix), or (b) expose the
+  path-matching requirement clearly in the tool's error message so the LLM narrator
+  knows to ask for a path.
+
 **GAP-6: ABC void detection has no intent signal** (2026-08-01)
 - `find_abc_gaps` on dj2 found 8 ABCs in phases.py with zero concrete subclasses.
   All 8 are architecture scaffolds (AuthorityPhase, ConsequencePhase, etc.).
@@ -338,7 +350,7 @@ could ship earlier as a standalone tool.
 
 ---
 
-## RM76 — Decision ledger for target projects (IMPLEMENTED 2026-07-31)
+## RM76 — Decision ledger for target projects (IMPLEMENTED 2026-07-31, analyst wire-in 2026-08-01)
 
 A persistent human layer for architectural commitments that survives corpus rebuilds.
 

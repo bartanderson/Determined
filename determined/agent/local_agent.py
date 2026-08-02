@@ -485,7 +485,7 @@ def _enrich_with_stub_status(facts: list[dict], oracle, subsystem: str = "") -> 
         try:
             rows = conn.execute(
                 "SELECT kind, content FROM knowledge_artifacts "
-                "WHERE (subject LIKE ? OR content LIKE ?) AND kind IN ('design_note','finding','sots') "
+                "WHERE (subject LIKE ? OR content LIKE ?) AND kind IN ('design_note','finding','sots','decision') "
                 "LIMIT 3",
                 (f"%{term}%", f"%{term}%")
             ).fetchall()
