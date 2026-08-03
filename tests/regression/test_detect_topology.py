@@ -1,7 +1,8 @@
 # tests/regression/test_detect_topology.py
 #
 # Guards detect_topology(), find_orphaned_impls(), find_conditional_stubs(),
-# frontier_priority(), find_pure_functions(), and find_hot_callers() tools.
+# frontier_priority(), find_pure_functions(), find_hot_callers(),
+# find_large_files(), and find_fetch_calls() tools.
 
 import sqlite3
 import textwrap
@@ -423,3 +424,177 @@ def test_hot_callers_json_entries_excluded(tmp_path):
     result = find_hot_callers(oracle, {})
     assert "EncounterFSM" not in result
     assert "encounter.json" not in result
+
+
+# ── find_large_files ──────────────────────────────────────────────────
+
+
+from determined.agent.agent_tools import find_large_files, find_fetch_calls
+
+
+def _add_mutation(conn, file_path, line_no=10):
+    conn.execute(
+        "INSERT INTO mutations (file_path, line_number, target, operation) VALUES (?,?,?,?)",
+        (file_path, line_no, "self.x", "assign"),
+    )
+
+
+def test_large_files_basic(tmp_path):
+    """Files with 5+ functions appear; smaller files are omitted."""
+    oracle, conn = _make_oracle(tmp_path)
+    for i in range(6):
+        _add_fn(conn, f"fn_{i}", "big.py", False)
+    _add_fn(conn, "lone_fn", "tiny.py", False)
+    conn.commit()
+    result = find_large_files(oracle, {})
+    assert "big.py" in result
+    assert "tiny.py" not in result
+
+
+def test_large_files_test_files_excluded(tmp_path):
+    """Files with 'test' in their path are excluded."""
+    oracle, conn = _make_oracle(tmp_path)
+    for i in range(6):
+        _add_fn(conn, f"fn_{i}", "tests/test_app.py", False)
+    for i in range(6):
+        _add_fn(conn, f"real_{i}", "app.py", False)
+    conn.commit()
+    result = find_large_files(oracle, {})
+    assert "test_app.py" not in result
+    assert "app.py" in result
+
+
+def test_large_files_json_excluded(tmp_path):
+    """JSON files are not reported even with many functions."""
+    oracle, conn = _make_oracle(tmp_path)
+    for i in range(8):
+        _add_fn(conn, f"FSM::state::{i}", "config.json", False)
+    conn.commit()
+    result = find_large_files(oracle, {})
+    assert "config.json" not in result
+
+
+def test_large_files_stub_count_correct(tmp_path):
+    """Stub count is not inflated by mutation count (CTE aggregation check)."""
+    oracle, conn = _make_oracle(tmp_path)
+    for i in range(5):
+        _add_fn(conn, f"real_{i}", "mixed.py", False)
+    _add_fn(conn, "stub_a", "mixed.py", True)
+    # Many mutations in same file — must not multiply stub count
+    for ln in range(50):
+        _add_mutation(conn, "mixed.py", ln)
+    conn.commit()
+    result = find_large_files(oracle, {})
+    # stub count should show 1, not 50
+    assert "1 stubs" in result
+
+
+def test_large_files_sort_by_mutations(tmp_path):
+    """sort_by=mutations puts high-mutation file above high-function file."""
+    oracle, conn = _make_oracle(tmp_path)
+    # many_fns.py: 10 functions, 0 mutations
+    for i in range(10):
+        _add_fn(conn, f"fn_{i}", "many_fns.py", False)
+    # dense.py: 6 functions, 20 mutations
+    for i in range(6):
+        _add_fn(conn, f"d_{i}", "dense.py", False)
+    for ln in range(20):
+        _add_mutation(conn, "dense.py", ln)
+    conn.commit()
+    result = find_large_files(oracle, {"sort_by": "mutations"})
+    assert result.index("dense.py") < result.index("many_fns.py")
+
+
+def test_large_files_scope_filters(tmp_path):
+    """scope parameter limits results to matching file paths."""
+    oracle, conn = _make_oracle(tmp_path)
+    for i in range(6):
+        _add_fn(conn, f"a_{i}", "world/world_app.py", False)
+    for i in range(6):
+        _add_fn(conn, f"b_{i}", "dungeon/dungeon_app.py", False)
+    conn.commit()
+    result = find_large_files(oracle, {"scope": "world"})
+    assert "world_app.py" in result
+    assert "dungeon_app.py" not in result
+
+
+# ── find_fetch_calls ──────────────────────────────────────────────────
+
+
+def _add_fetch_edge(conn, caller_file, caller, endpoint, method="POST"):
+    if method == "GET":
+        callee = f"fetch('{endpoint}').then"
+    else:
+        callee = f"fetch('{endpoint}', {{method: '{method}', headers: {{'Content-Type': 'application/json'}}}}).then"
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved)"
+        " VALUES (1,2,?,?,?,1,0)",
+        (caller, callee, caller_file),
+    )
+
+
+def test_fetch_calls_basic(tmp_path):
+    """JS fetch() calls are found and endpoint/method extracted."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fetch_edge(conn, "app.js", "app.loadData", "/api/data", "GET")
+    _add_fetch_edge(conn, "app.js", "app.saveData", "/api/save", "POST")
+    conn.commit()
+    result = find_fetch_calls(oracle, {})
+    assert "/api/data" in result
+    assert "GET" in result
+    assert "/api/save" in result
+    assert "POST" in result
+    assert "app.loadData" in result
+    assert "app.saveData" in result
+
+
+def test_fetch_calls_python_files_excluded(tmp_path):
+    """Python file edges are not returned even if callee looks like a fetch."""
+    oracle, conn = _make_oracle(tmp_path)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved)"
+        " VALUES (1,2,?,?,?,1,0)",
+        ("py_fn", "fetch('/api/data')", "server.py"),
+    )
+    conn.commit()
+    result = find_fetch_calls(oracle, {})
+    assert "server.py" not in result
+    assert "No JS fetch" in result
+
+
+def test_fetch_calls_deduplication(tmp_path):
+    """Same caller+url+method from multiple .then variants counts as one call."""
+    oracle, conn = _make_oracle(tmp_path)
+    # Walker stores three edge variants for a single fetch: .then, .then(...).then, full chain
+    for variant in [
+        "fetch('/api/x', {method: 'POST'}).then",
+        "fetch('/api/x', {method: 'POST'}).then(r=>r.json()).then",
+        "fetch('/api/x', {method: 'POST'}).then(r=>r.json()).then(data=>{})",
+    ]:
+        conn.execute(
+            "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, line_number, resolved)"
+            " VALUES (1,2,?,?,?,1,0)",
+            ("app.doThing", variant, "app.js"),
+        )
+    conn.commit()
+    result = find_fetch_calls(oracle, {})
+    assert result.count("/api/x") == 1
+
+
+def test_fetch_calls_scope_filters(tmp_path):
+    """scope limits results to matching caller files."""
+    oracle, conn = _make_oracle(tmp_path)
+    _add_fetch_edge(conn, "world.js", "world.load", "/api/world", "GET")
+    _add_fetch_edge(conn, "dungeon.js", "dungeon.enter", "/api/enter", "POST")
+    conn.commit()
+    result = find_fetch_calls(oracle, {"scope": "dungeon"})
+    assert "dungeon.js" in result
+    assert "world.js" not in result
+
+
+def test_fetch_calls_empty(tmp_path):
+    """No fetch edges returns graceful message."""
+    oracle, conn = _make_oracle(tmp_path)
+    conn.commit()
+    result = find_fetch_calls(oracle, {})
+    assert "No JS fetch" in result

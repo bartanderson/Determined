@@ -604,6 +604,9 @@ def test_dispatch_all_tools_registered():
         # RM-Perf static tier
         "find_pure_functions",
         "find_hot_callers",
+        # RM-Perf: refactoring + HTMX migration tools
+        "find_large_files",
+        "find_fetch_calls",
     }
 
     assert set(TOOLS.keys()) == expected

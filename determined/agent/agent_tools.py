@@ -2734,6 +2734,152 @@ def find_hot_callers(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_large_files(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_large_files(limit?, scope?, sort_by?) - find files with the most
+    functions, ranked by function count (default) or mutation count.
+
+    Large function count signals a file doing too many things — the primary
+    refactoring target. Mutation count is a complexity proxy: many state writes
+    packed into one file. Stubs are shown separately so you can tell whether
+    a large file is designed but unbuilt vs. fully implemented and bloated.
+
+    Args:
+        limit: max results, default 15
+        scope: optional file path fragment to narrow results
+        sort_by: "functions" (default) or "mutations"
+    """
+    conn = oracle.conn
+    limit = int(args.get("limit", 15))
+    scope = (args.get("scope") or "").strip()
+    sort_by = (args.get("sort_by") or "functions").strip().lower()
+
+    scope_clause = " AND file_path LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
+    order_col = (
+        "mut_count DESC, fn_count DESC"
+        if sort_by == "mutations"
+        else "fn_count DESC, mut_count DESC"
+    )
+
+    # Two-stage aggregation: compute function/stub stats separately from mutation
+    # counts to avoid multiplication when LEFT JOIN inflates rows.
+    rows = conn.execute(
+        "WITH fn_stats AS ("
+        "  SELECT file_path,"
+        "         COUNT(DISTINCT name) AS fn_count,"
+        "         SUM(is_stub) AS stub_count"
+        "  FROM functions"
+        "  WHERE file_path NOT LIKE '%test%'"
+        "    AND file_path NOT LIKE '%.json'"
+        + scope_clause
+        + "  GROUP BY file_path"
+        "),"
+        "mut_stats AS ("
+        "  SELECT file_path, COUNT(*) AS mut_count"
+        "  FROM mutations"
+        "  GROUP BY file_path"
+        ")"
+        "SELECT fs.file_path, fs.fn_count, fs.stub_count,"
+        "       COALESCE(ms.mut_count, 0) AS mut_count"
+        " FROM fn_stats fs"
+        " LEFT JOIN mut_stats ms ON ms.file_path = fs.file_path"
+        " WHERE fs.fn_count >= 5"
+        f" ORDER BY {order_col}"
+        " LIMIT ?",
+        scope_param + [limit],
+    ).fetchall()
+
+    if not rows:
+        return "No files with 5+ functions found matching criteria."
+
+    lines = [
+        f"Largest files — top {len(rows)} by {sort_by} count:",
+        "  fns = total functions  stubs = not-yet-implemented  muts = recorded state writes",
+        "",
+    ]
+    for file_path, fn_count, stub_count, mut_count in rows:
+        fp_short = (file_path or "").replace("\\", "/").split("/")[-1]
+        stub_note = f"  {int(stub_count or 0)} stubs" if stub_count else ""
+        lines.append(
+            f"  {fn_count:4d} fns  {mut_count:6d} muts{stub_note:10s}  {fp_short}"
+        )
+    return "\n".join(lines)
+
+
+def find_fetch_calls(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_fetch_calls(scope?) - find JS/TS functions that make HTTP fetch() calls,
+    grouped by file.
+
+    Each row shows: HTTP method, endpoint URL, and the JS function responsible.
+    These are direct HTMX migration candidates: replace the fetch+JSON chain with
+    an hx-get/hx-post attribute and server-rendered HTML fragments.
+
+    Args:
+        scope: optional file path fragment to narrow results (e.g. "dungeon.js")
+    """
+    import re
+
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+
+    scope_clause = " AND ge.caller_file LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
+
+    rows = conn.execute(
+        "SELECT ge.caller_file, ge.caller, ge.callee"
+        " FROM graph_edges ge"
+        " WHERE (ge.caller_file LIKE '%.js' OR ge.caller_file LIKE '%.ts')"
+        "   AND ge.callee LIKE 'fetch(%'"
+        + scope_clause
+        + " ORDER BY ge.caller_file, ge.caller",
+        scope_param,
+    ).fetchall()
+
+    if not rows:
+        return "No JS fetch() calls found in corpus."
+
+    # Parse URL and method from stored callee expression.
+    # Walker stores the full fetch(...).then... chain as the callee string.
+    url_re = re.compile(r"""fetch\(['" `]([^'" `\s,\)]+)""")
+    method_re = re.compile(r"method\s*:\s*['\"]([A-Z]+)['\"]", re.I)
+    tmpl_re = re.compile(r"\$\{[^}]+\}")  # strip ${...} from template literals
+
+    seen: set = set()
+    calls: list = []
+    for caller_file, caller, callee in rows:
+        url_m = url_re.search(callee or "")
+        if not url_m:
+            continue
+        url = tmpl_re.sub("...", url_m.group(1))
+        method_m = method_re.search(callee or "")
+        method = method_m.group(1).upper() if method_m else "GET"
+        key = (caller_file, caller or "", url, method)
+        if key not in seen:
+            seen.add(key)
+            calls.append((caller_file, caller or "", url, method))
+
+    if not calls:
+        return "No parseable fetch() calls found."
+
+    file_count = len({c[0] for c in calls})
+    lines = [
+        f"JS fetch() calls — {len(calls)} distinct calls across {file_count} file(s):",
+        "  HTMX target: replace each entry with hx-get/hx-post + server-rendered fragment.",
+        "",
+    ]
+    prev_fp = None
+    for caller_file, caller, url, method in calls:
+        fp_short = (caller_file or "").replace("\\", "/").split("/")[-1]
+        if fp_short != prev_fp:
+            lines.append(f"  {fp_short}")
+            prev_fp = fp_short
+        caller_label = caller if caller else "(anonymous)"
+        lines.append(f"    {method:<6}  {url:<40}  <- {caller_label}")
+    return "\n".join(lines)
+
+
 def find_conditional_stubs(oracle: "DBOracle", args: dict) -> str:
     """
     find_conditional_stubs(limit?) - find implemented functions that contain
@@ -8101,6 +8247,8 @@ TOOLS = {
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
     "find_pure_functions":      (find_pure_functions,       "oracle"),
     "find_hot_callers":         (find_hot_callers,          "oracle"),
+    "find_large_files":         (find_large_files,          "oracle"),
+    "find_fetch_calls":         (find_fetch_calls,          "oracle"),
     "frontier_priority":        (frontier_priority,         "oracle"),
     "implementation_order":     (implementation_order,      "oracle"),
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),

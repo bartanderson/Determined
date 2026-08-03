@@ -605,6 +605,28 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to know which functions are called from the most places — the highest-leverage targets for optimisation or the highest-risk targets for change.",
         "category": "knowledge",
     },
+    "find_large_files": {
+        "purpose": "Find files with the most functions or mutations — the primary refactoring targets. High function count signals a file doing too many things; high mutation count signals dense state management.",
+        "args": {
+            "limit": "(optional) max results, default 15",
+            "scope": "(optional) file path fragment to narrow results",
+            "sort_by": "(optional) 'functions' (default) or 'mutations'",
+        },
+        "output": "Per-file table: function count, mutation count, stub count, file name",
+        "feeds": ["blast_radius", "find_hot_callers", "feature_shape"],
+        "use_when": "You want to identify which files are candidates for splitting or restructuring.",
+        "category": "knowledge",
+    },
+    "find_fetch_calls": {
+        "purpose": "Find JS/TS functions that make HTTP fetch() calls. Groups by file and shows endpoint URL and HTTP method. Each entry is a direct HTMX migration candidate.",
+        "args": {
+            "scope": "(optional) file path fragment to narrow results, e.g. 'dungeon.js'",
+        },
+        "output": "Per-JS-file list: HTTP method, endpoint URL, caller function name",
+        "feeds": ["find_large_files", "blast_radius"],
+        "use_when": "You want to identify JS fetch() calls that could be replaced with HTMX attributes and server-rendered HTML fragments.",
+        "category": "knowledge",
+    },
     "detect_topology": {
         "purpose": "Inventory the incompleteness shapes present in the corpus: direct-call stubs, ABC-interface gaps, stub chains, orphaned implementations, and disconnected stubs. Returns counts per shape and identifies the dominant pattern.",
         "args": {},
