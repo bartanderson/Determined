@@ -2,7 +2,7 @@
 #
 # Guards detect_topology(), find_orphaned_impls(), find_conditional_stubs(),
 # frontier_priority(), find_pure_functions(), find_hot_callers(),
-# find_large_files(), and find_fetch_calls() tools.
+# find_large_files(), find_fetch_calls(), and find_cross_language_calls() tools.
 
 import sqlite3
 import textwrap
@@ -429,7 +429,7 @@ def test_hot_callers_json_entries_excluded(tmp_path):
 # ── find_large_files ──────────────────────────────────────────────────
 
 
-from determined.agent.agent_tools import find_large_files, find_fetch_calls
+from determined.agent.agent_tools import find_large_files, find_fetch_calls, find_cross_language_calls
 
 
 def _add_mutation(conn, file_path, line_no=10):
@@ -598,3 +598,83 @@ def test_fetch_calls_empty(tmp_path):
     conn.commit()
     result = find_fetch_calls(oracle, {})
     assert "No JS fetch" in result
+
+
+# ── find_cross_language_calls ──────────────────────────────────────────────
+
+def _insert_cross_language_edge(conn, caller, callee, edge_type="cross_language"):
+    """Insert a graph_edges row for cross-language testing."""
+    from determined.identity.edge_identity import edge_identity
+    src_id, tgt_id = edge_identity(caller, callee)
+    conn.execute(
+        "INSERT OR IGNORE INTO graph_edges "
+        "(source_id, target_id, caller, callee, edge_type, resolved) "
+        "VALUES (?, ?, ?, ?, ?, 1)",
+        (src_id, tgt_id, caller, callee, edge_type),
+    )
+
+
+def test_find_cross_language_calls_empty(tmp_path):
+    """No cross-language edges returns graceful message."""
+    oracle, conn = _make_oracle(tmp_path)
+    conn.commit()
+    result = find_cross_language_calls(oracle, {})
+    assert "No cross-language" in result
+
+
+def test_find_cross_language_calls_fetch(tmp_path):
+    """JS fetch→Python handler edges appear under fetch section."""
+    oracle, conn = _make_oracle(tmp_path)
+    _insert_cross_language_edge(conn, "world.sendWorldCommand", "handle_command")
+    _insert_cross_language_edge(conn, "dungeon.enterIntegratedMode", "dungeon_enter")
+    conn.commit()
+    result = find_cross_language_calls(oracle, {})
+    assert "world.sendWorldCommand" in result
+    assert "handle_command" in result
+    assert "dungeon.enterIntegratedMode" in result
+    assert "JS fetch" in result
+
+
+def test_find_cross_language_calls_htmx(tmp_path):
+    """HTMX edges appear under HTMX section."""
+    oracle, conn = _make_oracle(tmp_path)
+    _insert_cross_language_edge(conn, "__htmx__", "get_game_date")
+    _insert_cross_language_edge(conn, "__htmx__", "get_player_name")
+    conn.commit()
+    result = find_cross_language_calls(oracle, {})
+    assert "HTMX" in result
+    assert "get_game_date" in result
+    assert "get_player_name" in result
+
+
+def test_find_cross_language_calls_socket(tmp_path):
+    """socket.emit edges appear under socket section."""
+    oracle, conn = _make_oracle(tmp_path)
+    _insert_cross_language_edge(conn, "__js_client__", "handle_player_register")
+    conn.commit()
+    # Also add a decorator edge so Python @socketio.on handlers appear
+    _insert_cross_language_edge(conn, "__js_client__", "handle_player_register", "decorator")
+    conn.commit()
+    result = find_cross_language_calls(oracle, {})
+    assert "socket" in result.lower()
+    assert "handle_player_register" in result
+
+
+def test_find_cross_language_calls_scope(tmp_path):
+    """Scope filter narrows results by caller name."""
+    oracle, conn = _make_oracle(tmp_path)
+    _insert_cross_language_edge(conn, "world.sendWorldCommand", "handle_command")
+    _insert_cross_language_edge(conn, "dungeon.enterIntegratedMode", "dungeon_enter")
+    conn.commit()
+    result = find_cross_language_calls(oracle, {"scope": "world"})
+    assert "world.sendWorldCommand" in result
+    assert "dungeon" not in result
+
+
+def test_find_cross_language_calls_http_fetch_type(tmp_path):
+    """http_fetch edge_type is also surfaced."""
+    oracle, conn = _make_oracle(tmp_path)
+    _insert_cross_language_edge(conn, "__htmx__", "inventory_list_html", "http_fetch")
+    conn.commit()
+    result = find_cross_language_calls(oracle, {})
+    assert "inventory_list_html" in result

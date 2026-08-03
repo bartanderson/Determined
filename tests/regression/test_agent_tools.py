@@ -607,6 +607,7 @@ def test_dispatch_all_tools_registered():
         # RM-Perf: refactoring + HTMX migration tools
         "find_large_files",
         "find_fetch_calls",
+        "find_cross_language_calls",
     }
 
     assert set(TOOLS.keys()) == expected

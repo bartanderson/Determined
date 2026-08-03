@@ -307,9 +307,13 @@ _PATTERNS = [
     (re.compile(r"(?:large\s+files?|biggest?\s+files?|god\s+(?:files?|objects?)|files?\s+to\s+refactor|most\s+functions?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_large_files", "scope", 1),
 
-    # "fetch calls" / "htmx candidates" / "js to python" / "fetch endpoints"
-    (re.compile(r"(?:fetch\s+calls?|htmx\s+candidates?|js\s+to\s+python|fetch\s+endpoints?|javascript\s+http\s+calls?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+    # "fetch calls" / "htmx candidates" / "fetch endpoints" (raw fetch strings)
+    (re.compile(r"(?:fetch\s+calls?|htmx\s+candidates?|fetch\s+endpoints?|javascript\s+http\s+calls?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_fetch_calls", "scope", 1),
+
+    # "cross language" / "js to python" / "socket" / "cross layer" calls
+    (re.compile(r"(?:cross.?language\s+calls?|cross.?layer\s+calls?|js\s+to\s+python|socket(?:\.io)?\s+(?:calls?|handlers?)|htmx\s+routes?)(?:\s+(?:for|in|involving)\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+     "find_cross_language_calls", "scope", 1),
 
     # "search <query>" / "find <query>" - fallback to search_symbols
     (re.compile(r"(?:search|find)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),

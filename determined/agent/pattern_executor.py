@@ -469,41 +469,32 @@ class PatternExecutor:
         """
         js_func = subject[0] if subject and subject[0] else None
         js_file = subject[1] if subject and len(subject) > 1 else None
-        # Scope find_fetch_calls to the JS file if known, else the object prefix
+        # Scope to the JS file if known, else the object prefix (e.g. "world" from "world.sendCmd")
         scope = js_file or (js_func.split(".")[0] if js_func and "." in js_func else js_func) or ""
 
+        # Resolved cross-language edges (fetch + socket.emit → Python handler)
+        cross_result = dispatch("find_cross_language_calls", {"scope": scope}, oracle, None)
+
+        # Raw fetch() call strings as fallback detail
         fetch_result = dispatch("find_fetch_calls", {"scope": scope}, oracle, None)
 
-        # Get Python HTTP routes directly from the DB
-        try:
-            route_rows = oracle.conn.execute(
-                "SELECT name, file_path, http_route FROM functions "
-                "WHERE http_route IS NOT NULL AND http_route != '' ORDER BY name LIMIT 50"
-            ).fetchall()
-            routes_text = "\n".join(
-                f"  {r[0]} in {r[1].replace(chr(92), '/').split('/')[-1]} → {r[2]}"
-                for r in route_rows
-            ) or "(no HTTP routes found)"
-        except Exception as e:
-            routes_text = f"(route query failed: {e})"
-
         if verbose:
-            print(f"\n[js-to-python] scope={scope!r} fetch_result={fetch_result[:100]}", flush=True)
+            print(f"\n[js-to-python] scope={scope!r} cross={cross_result[:100]}", flush=True)
 
         msgs = [
             {"role": "system", "content": (
                 "You are a codebase analysis assistant tracing a JavaScript-to-Python call. "
-                "Match the JS fetch() URL to the Python route handler. "
-                "State: the JS function name, the fetch() URL it calls, the HTTP method, "
-                "and the Python function name that handles that route. "
-                "If the specific function is not in the fetch list, say so — do not invent a path."
+                "Use the resolved cross-language call graph to find the path. "
+                "State: the JS function name, how it calls Python (fetch/HTMX/socket.emit), "
+                "and the Python function name that handles the request. "
+                "If the specific function is not in the call graph, say so explicitly — do not invent a path."
             )},
             {"role": "user", "content": (
                 f"Question: {question}\n\n"
-                f"JS fetch() calls (from {scope or 'JS files'}):\n{fetch_result[:2000]}\n\n"
-                f"Python HTTP route handlers:\n{routes_text}\n\n"
-                "Identify which fetch() call is made by the JS function mentioned, "
-                "and which Python route handles it. Be specific about URL and handler name."
+                f"Resolved JS→Python call graph (scope: {scope or 'all'}):\n{cross_result[:2500]}\n\n"
+                f"Raw fetch() call strings (for URL detail):\n{fetch_result[:1000]}\n\n"
+                "Find the JS function mentioned, identify which Python function it calls, "
+                "and state the communication mechanism (HTTP fetch, HTMX, or socket.emit)."
             )},
         ]
         return self._call_llm(msgs, label="js-to-python-synthesis", verbose=verbose)

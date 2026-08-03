@@ -627,6 +627,16 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to catalog JS HTTP calls — which functions call which endpoints, with what method. Informs server-side migration decisions (HTMX, tRPC, etc.) or API surface audits.",
         "category": "knowledge",
     },
+    "find_cross_language_calls": {
+        "purpose": "List all resolved JS→Python call paths: JS fetch/XHR/axios → Flask handler, HTMX attribute → Flask handler, socket.emit → @socketio.on handler. Also shows Python @socketio.on registrations. Uses linker-resolved edges (callee is the actual Python handler, not a raw URL string).",
+        "args": {
+            "scope": "(optional) name fragment to narrow results, e.g. 'world', 'dungeon', 'command'",
+        },
+        "output": "Grouped table: fetch calls, HTMX calls, socket.emit calls, Python socket handlers",
+        "feeds": ["blast_radius", "find_fetch_calls"],
+        "use_when": "You want to trace JS→Python communication paths, audit the full cross-layer call graph, or understand which socket events are handled. More complete than find_fetch_calls (uses resolved edges, includes HTMX and socket.io).",
+        "category": "knowledge",
+    },
     "detect_topology": {
         "purpose": "Inventory the incompleteness shapes present in the corpus: direct-call stubs, ABC-interface gaps, stub chains, orphaned implementations, and disconnected stubs. Returns counts per shape and identifies the dominant pattern.",
         "args": {},

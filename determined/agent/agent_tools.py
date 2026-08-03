@@ -2880,6 +2880,98 @@ def find_fetch_calls(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_cross_language_calls(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_cross_language_calls(scope?) - list all resolved JS→Python call paths.
+
+    Shows every JS caller→Python handler connection, grouped by communication
+    type. Covers three patterns tracked by the ingestion layer:
+      fetch/XHR/axios - JS fetch() call matched to a Flask route handler
+      htmx            - hx-get/hx-post attribute matched to a Flask route handler
+      socket.emit     - JS socket.emit("event") matched to @socketio.on("event")
+
+    Also lists Python @socketio.on handlers registered in the codebase so you
+    can see which socket events have server-side handlers.
+
+    Args:
+        scope: optional name fragment to narrow (e.g. "world", "dungeon", "command")
+    """
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+
+    scope_clause = " AND (ge.caller LIKE ? OR ge.callee LIKE ?)" if scope else ""
+    scope_params = [f"%{scope}%", f"%{scope}%"] if scope else []
+
+    # Resolved cross_language edges: caller=JS fn / __htmx__ / __js_client__, callee=Python handler
+    rows = conn.execute(
+        "SELECT ge.caller, ge.callee, ge.edge_type, f.file_path"
+        " FROM graph_edges ge"
+        " LEFT JOIN functions f ON f.name = ge.caller"
+        " WHERE ge.edge_type IN ('http_fetch', 'cross_language')"
+        + scope_clause
+        + " ORDER BY ge.caller, ge.callee",
+        scope_params,
+    ).fetchall()
+
+    seen: set = set()
+    htmx_calls: list = []
+    fetch_calls: list = []
+    socket_calls: list = []
+
+    for caller, callee, edge_type, file_path in rows:
+        key = (caller, callee)
+        if key in seen:
+            continue
+        seen.add(key)
+        if caller == "__htmx__":
+            htmx_calls.append((callee, file_path))
+        elif caller == "__js_client__":
+            socket_calls.append((caller, callee, file_path))
+        else:
+            fetch_calls.append((caller, callee, file_path))
+
+    # Python @socketio.on handlers (decorator edges with caller=__js_client__)
+    sock_rows = conn.execute(
+        "SELECT ge.callee, f.file_path"
+        " FROM graph_edges ge"
+        " LEFT JOIN functions f ON f.name = ge.callee"
+        " WHERE ge.edge_type = 'decorator' AND ge.caller = '__js_client__'"
+        + (" AND ge.callee LIKE ?" if scope else ""),
+        ([f"%{scope}%"] if scope else []),
+    ).fetchall()
+
+    if not rows and not sock_rows:
+        return "No cross-language call edges found."
+
+    lines = [f"Cross-language call graph — {len(seen)} resolved edges:"]
+
+    if fetch_calls:
+        lines.append(f"\n  JS fetch → Python handler ({len(fetch_calls)})")
+        lines.append("  caller (JS)                             -> handler (Python)  [file]")
+        for caller, callee, fp in sorted(fetch_calls, key=lambda r: r[0]):
+            fp_short = (fp or "").replace("\\", "/").split("/")[-1] or "?"
+            lines.append(f"    {caller:<40} -> {callee}  [{fp_short}]")
+
+    if htmx_calls:
+        lines.append(f"\n  HTMX → Python handler ({len(htmx_calls)})")
+        for callee, _ in sorted(htmx_calls, key=lambda r: r[0]):
+            lines.append(f"    __htmx__ -> {callee}")
+
+    if socket_calls:
+        lines.append(f"\n  socket.emit → Python handler ({len(socket_calls)})")
+        for caller, callee, fp in sorted(socket_calls, key=lambda r: r[0]):
+            fp_short = (fp or "").replace("\\", "/").split("/")[-1] or "?"
+            lines.append(f"    {caller:<40} -> {callee}  [{fp_short}]")
+
+    if sock_rows:
+        lines.append(f"\n  Python @socketio.on handlers ({len(sock_rows)})")
+        for callee, fp in sorted(sock_rows, key=lambda r: r[0]):
+            fp_short = (fp or "").replace("\\", "/").split("/")[-1] or "?"
+            lines.append(f"    @socketio.on -> {callee}  [{fp_short}]")
+
+    return "\n".join(lines)
+
+
 def find_conditional_stubs(oracle: "DBOracle", args: dict) -> str:
     """
     find_conditional_stubs(limit?) - find implemented functions that contain
@@ -8249,6 +8341,7 @@ TOOLS = {
     "find_hot_callers":         (find_hot_callers,          "oracle"),
     "find_large_files":         (find_large_files,          "oracle"),
     "find_fetch_calls":         (find_fetch_calls,          "oracle"),
+    "find_cross_language_calls":(find_cross_language_calls, "oracle"),
     "frontier_priority":        (frontier_priority,         "oracle"),
     "implementation_order":     (implementation_order,      "oracle"),
     "find_conditional_stubs":   (find_conditional_stubs,    "oracle"),
