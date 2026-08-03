@@ -760,6 +760,10 @@
             <div class="shape-card-hdr">Concept ghost map <span class="shape-hint">concepts referenced but absent</span></div>
             <pre class="shape-pre" id="shape-ghost-pre">—</pre>
           </div>
+          <div class="shape-card" id="shape-large-files" style="grid-column:1/-1">
+            <div class="shape-card-hdr">Largest files <span class="shape-hint">function count · mutation count · refactoring targets</span></div>
+            <pre class="shape-pre" id="shape-large-files-pre">—</pre>
+          </div>
         </div>
       </div>
 
@@ -5010,6 +5014,7 @@ const _shapePres = {
   subsystem_shape: document.getElementById("shape-subsystem-pre"),
   prereq_map:      document.getElementById("shape-prereq-pre"),
   ghost_map:       document.getElementById("shape-ghost-pre"),
+  large_files:     document.getElementById("shape-large-files-pre"),
 };
 const shapeRunBtn  = document.getElementById("shape-run-btn");
 const shapeRunning = document.getElementById("shape-running");
@@ -5090,6 +5095,7 @@ socket.on("shape_result", data => {
   _shapePres.subsystem_shape.innerHTML = _colorizeShape(r.subsystem_shape || "no data");
   _shapePres.prereq_map.innerHTML      = _colorizeShape(r.prereq_map      || "no data");
   _shapePres.ghost_map.innerHTML       = _colorizeShape(r.ghost_map       || "no data");
+  _shapePres.large_files.innerHTML     = _colorizeShape(r.large_files     || "no data");
   const scope = data.scope ? ` (scope: ${escHtml(data.scope)})` : "";
   shapeStatus.textContent = `Loaded${scope}`;
 });

@@ -3467,6 +3467,7 @@ def handle_shape_run(data):
                 ("subsystem_shape","stub_subsystem_shape"),
                 ("prereq_map",     "stub_prerequisite_map"),
                 ("ghost_map",      "stub_concept_ghost_map"),
+                ("large_files",    "find_large_files"),
             ]:
                 results[key] = dispatch(tool_name, args, _oracle, _assessor)
 
@@ -3484,6 +3485,24 @@ def handle_shape_run(data):
                     short = "/".join(fp_norm.split("/")[-2:])
                     files_index[short] = fp_norm
                 symbols.append(name)
+
+            # Also index large files (5+ functions) so they are clickable in the
+            # large_files shape card — these are typically stub-free and would
+            # otherwise be absent from the navigation index.
+            large_scope = [f"%{scope}%"] if scope else []
+            large_scope_sql = " AND file_path LIKE ?" if scope else ""
+            for (fp,) in conn.execute(
+                "SELECT DISTINCT file_path FROM functions"
+                " WHERE file_path NOT LIKE '%test%'"
+                "   AND file_path NOT LIKE '%.json'"
+                + large_scope_sql +
+                " GROUP BY file_path HAVING COUNT(DISTINCT name) >= 5",
+                large_scope,
+            ).fetchall():
+                if fp:
+                    fp_norm = fp.replace("\\", "/")
+                    short = "/".join(fp_norm.split("/")[-2:])
+                    files_index[short] = fp_norm
 
             socketio.emit("shape_result", {
                 "ok": True,

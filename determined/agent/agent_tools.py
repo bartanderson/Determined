@@ -2866,7 +2866,7 @@ def find_fetch_calls(oracle: "DBOracle", args: dict) -> str:
     file_count = len({c[0] for c in calls})
     lines = [
         f"JS fetch() calls — {len(calls)} distinct calls across {file_count} file(s):",
-        "  HTMX target: replace each entry with hx-get/hx-post + server-rendered fragment.",
+        "  method  endpoint  <- caller function",
         "",
     ]
     prev_fp = None

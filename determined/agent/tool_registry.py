@@ -624,7 +624,7 @@ REGISTRY: dict[str, dict] = {
         },
         "output": "Per-JS-file list: HTTP method, endpoint URL, caller function name",
         "feeds": ["find_large_files", "blast_radius"],
-        "use_when": "You want to identify JS fetch() calls that could be replaced with HTMX attributes and server-rendered HTML fragments.",
+        "use_when": "You want to catalog JS HTTP calls — which functions call which endpoints, with what method. Informs server-side migration decisions (HTMX, tRPC, etc.) or API surface audits.",
         "category": "knowledge",
     },
     "detect_topology": {
