@@ -1,103 +1,145 @@
-Written at commit: 337605a
+Written at commit: 79d0abc
 
-# SESSION STATE — session 288 (start)
+# SESSION STATE — session 289 handoff
 
 ## Active branch: main [V]
-
-## Working tree: clean [V]
-
----
-
-## WHAT HAPPENED (since session 287 handoff)
-
-**GAP-6 fixed** (commits 6f3b094, 54c62fd) [V]
-- `find_abc_gaps` now checks `knowledge_artifacts` for a 'decision' row whose
-  subject matches the ABC's file path before flagging as "architecture void."
-  Commit 54c62fd added content-match fallback when subject is a logical key
-  (e.g., "phases_abstract_methods") rather than a file path.
-- dj2 dj2 result: 8 phases.py ABCs correctly classified as intentional scaffolds.
-
-**RM74 closed** (commit 39901bd) [V]
-- All 8 analyst workflow gaps (GAP-1 through GAP-8) confirmed fixed.
-- Both RM74 entries removed from TRACKER.md.
-
-**RM67 probe table updated** (commit 15b3dc6) [V]
-- dj2 probe as of 2026-08-02: 25 stubs, 10 real gaps, 8 phases.py ABCs classified
-  correctly as intentional scaffolds. See TRACKER.md RM67 for full per-corpus table.
-
-**RM-Perf static tier shipped** (commit 337605a) [V]
-- `find_pure_functions`: reports implemented functions in files with zero recorded
-  mutations. Multi-caller functions flagged [memo] as memoization candidates.
-- `find_hot_callers`: ranks implemented functions by resolved incoming edge count.
-  Load-bearing utilities with highest blast radius.
-- Both wired to TOOL_DISPATCH, TOOL_REGISTRY, and `_PATTERNS` in agent_resolver.
-- 9 new tests; 409 pass total.
-- OptimizationOracle wrapper skipped — profile-grounded tier not yet being built.
+## Working tree: clean, no commits this session [V]
 
 ---
 
-## WHAT IS NOT YET DONE
+## WHAT HAPPENED THIS SESSION
 
-- **RM-Perf profile-grounded tier**: requires cProfile instrumentation hook producing
-  a `call_samples` table. Corpus-agnostic normalization maps profiler output to FQDNs.
-  Estimated 2-3 sessions. Gate: static tier proves insufficient for a real perf question.
+**Exploratory UI testing against dj2 corpus** [V]
+Goal: exercise the full Workbench UI as if doing real dj2 work,
+document all friction/missing/broken behavior before fixing anything.
+Server was live at localhost:5050 throughout.
 
-- **RM21 remaining techniques**: Technique 2 (constrained decoding via outlines),
-  4 (MCTS over evaluate), 5 (speculative verification), 6 (large-model fallback).
-  Gate: current tier fails on a real multi-hop query. Don't build ahead of failure.
+No code was written or committed this session.
 
-- **RM73** (walker dispatch resolution, per-language edge ceilings): Go interface
-  dispatch, Rust dyn Trait, Zig struct methods, Lua stdlib aliases, C function pointers,
-  C++ virtual. Future, no gate yet.
+---
 
-- **RM68** (dj2 subrace removal): dj2-session-only task. Not a Determined task.
+## EXPLORATORY FINDINGS (18 items)
 
-- **RM77** (export_context back-channel): future, requires external LLM observability.
+### CRITICAL — blocks navigation
+
+**F18** [V]: Frontier canvas has no `pointer-events: none` when its tab is not active.
+The canvas overlays the *entire* tab bar and content area of adjacent tabs.
+All tab clicks and Editor symbol clicks register on the hidden canvas instead.
+`document.elementFromPoint` returns `CANVAS#` at tab bar coordinates while on Frontier.
+Fix: add `pointer-events: none` to the Frontier canvas when tab is inactive,
+or ensure the tab hide path uses `display:none` rather than `visibility:hidden`/opacity.
+
+### HIGH — broken features
+
+**F17** [V]: Editor left symbol list unreachable via mouse (root cause: F18).
+Click at (196,188) screen-coords hits Frontier canvas at viewport (451,433).
+
+**F3** [V]: Hyperlinked function names in Ask answers are dead (no Editor navigation).
+
+**F1** [V]: Largest-files card file names are not clickable.
+
+**F11** [V]: Call tree callee names not clickable (no re-root, no Editor navigation).
+
+### MEDIUM — wrong behavior or missing output
+
+**F13** [V]: Resolver pattern miss for `find_hot_callers`.
+Pattern `most\s+called` disallows trailing nouns: "most called functions" fails.
+"which functions are called most frequently" fails (different word order).
+Pipeline trace confirmed: `decompose → llm` → "The facts do not specify."
+
+**F4** [V]: Resolver pattern miss for `find_fetch_calls`.
+Pattern requires exact `javascript\s+http\s+calls?` — misses "JS functions make HTTP calls".
+
+**F6** [V]: Workbench output area (`#wb-output-wrap`) sits ~2000px below tool cards.
+User runs a tool and sees nothing. Only `scrollIntoView` via JS reveals output.
+
+**F5** [V]: Qwen3 chain-of-thought leaks raw reasoning text into Ask answers.
+Visible: "the rule says: 'If the facts say No direct callers found', say so…"
+
+**F2** [V]: Ask LLM response truncates mid-sentence with no visible indicator.
+
+**F7** [V]: Blast radius extended impact includes builtins (Flask, SocketIO, forEach,
+catch, str, print). 69 symbols shown; most are noise.
+
+**F15** [V]: Map "to symbol" field doesn't reliably receive focus when clicked.
+Both type sequences went into "from symbol". Path-finding itself works once fields set.
+
+### LOW — friction, not broken
+
+**F9** [V]: 5 tools missing from Workbench: `find_large_files`, `find_fetch_calls`,
+`find_cross_language_calls`, `find_pure_functions`, `find_hot_callers`.
+Tool registry entries already exist; just no card rendered in the HTML.
+
+**F8** [V]: No PERFORMANCE or ARCHITECTURE sections in Workbench for new tools.
+
+**F10** [V]: Call tree shows anonymous fetch callbacks as raw multi-line code blocks.
+
+**F12** [V]: Call tree has no breadcrumb/back after re-rooting on a callee.
+
+**F14** [V]: Map graph nodes have no hover tooltip and no click behavior.
+Symbol search + Map button works; node click alone does nothing.
+
+**F16** [V]: Left nav entry point clicks only work in Call tree tab; no-op elsewhere.
+
+---
+
+## WHAT WORKS WELL (confirmed this session)
+
+- Map: symbol highlight search; from→to path finder (2-hop confirmed) [V]
+- Map Imports: file-level import graph, hierarchical, 123 files · 261 edges [V]
+- Map Topology: text breakdown — stub counts, orphaned-impl (941), ABC gaps (39) [V]
+- Call tree: named callee display; ▶ re-roots; left nav loads tree [V]
+- Editor: Open ↵ opens files by path; syntax highlighting; read-only [V]
+- Knowledge: Artifacts/Pins/Bag/Doc health filters; design notes display [V]
+- Workbench: blast_radius, classify_stub, walk_call_chain, feature_shape run correctly [V]
+- Ask: routing works for file_size_analysis (pattern hit confirmed via pipeline trace) [V]
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-Options (pick based on what next dj2 probe surfaces):
+Fix in priority order — F18 first (unblocks F17 and restores all tab nav).
 
-1. **Run RM67 probe on dj2** — use the new find_pure_functions and find_hot_callers
-   on dj2 to see if they surface actionable signal. First command:
-   `python -c "from determined.agent.agent_tools import find_hot_callers; from determined.agent.db_oracle import DBOracle; o=DBOracle('C_Users_bartl_dev_dj2.db'); print(find_hot_callers(o, top_n=10))"`
-   (run from repo root with venv active; adjust DB path as needed)
+**1. Fix F18 — Frontier canvas pointer-events (start here)**
+Find the canvas in the Frontier tab template/JS.
+When Frontier tab is inactive: `canvas.style.pointerEvents = 'none'`
+or hide with `display:none` not just opacity/visibility.
+Verify: `document.elementFromPoint` at tab bar coords returns tab button, not canvas.
 
-2. **RM-Perf profile-grounded tier** — if a concrete perf question on dj2 can't be
-   answered from the static tools alone, start the instrumentation hook.
-   Entry point: design `call_samples` table schema and cProfile normalization pass.
+**2. Fix F6 — Workbench output scroll**
+After any Run button fires, scroll `#wb-output-wrap` into view.
+Or render output inline just below the triggering tool card.
 
-3. **RM21 Technique 2** — if a real multi-hop query fails due to schema mismatch
-   in LLM output (not confabulation), constrained decoding is the fix. Gate: observe failure.
+**3. Fix F9/F8 — Add 5 missing tools to Workbench**
+Add PERFORMANCE and ARCHITECTURE sections to Workbench HTML.
+Render cards for: find_large_files, find_fetch_calls, find_cross_language_calls,
+find_pure_functions, find_hot_callers. Tool registry entries already exist.
 
----
+**4. Fix F13/F4 — Broaden resolver patterns**
+find_hot_callers: allow trailing `\s+functions?` and "called most frequently" phrasing.
+find_fetch_calls: allow "JS functions.*HTTP" / "javascript.*fetch" variations.
+find_pure_functions: allow "functions with no side effects", "stateless functions".
+Test with `socket.emit('query', {q: '...'})` in browser console.
 
-## KNOWN ISSUES / TRAPS
-
-- _wrap_body() must be used anywhere in sketch_stub.py that parses a body fragment. [?]
-- line_number=0 trap: queries on functions table ordered by line_number must exclude
-  line_number=0 to avoid config-declared entries crowding out Python functions. [?]
-- _pull_type_defs has two paths: (1) classes table for Python types,
-  (2) functions LIKE 'TypeName::%' for FSM/protocol entities. [?]
-- export_context session is in-memory; resets on server restart. Intentional. [?]
-- GAP-5 fix (fetch dead-end detection) only finds fetch() calls stored as raw callee
-  strings in graph_edges. If JS walker improves and stores http_fetch edges instead,
-  _explain_missing_path needs updating. [?]
-- pytest `-m` on CLI REPLACES addopts entirely — `-m "not slow"` silently re-enables
-  live_llm tests. run_tests.py passes no `-m` by default; use `--slow` to include LLM. [V]
-- Same-name symbol collision in feature_shape: local_symbols keyed by name, so two symbols
-  with the same name in different files within a feature collapse. Pre-existing, dir mode too. [V]
-- Second query in local_agent.py ~line 813 already had 'decision' in its kind list.
-  Only _enrich_with_stub_status (line ~488) was missing it. Both now correct. [?]
+**5. Fix F5 — suppress Qwen3 chain-of-thought**
+Find LLM call for Ask answers (local_agent.py or pattern_executor.py).
+Add `/no_think` token or `thinking: false` param to suppress raw reasoning output.
 
 ---
+
+## KNOWN TRAPS (carried forward)
+
+- `_wrap_body()` must be in sketch_stub.py wherever body fragments are parsed. [?]
+- `line_number=0` trap: exclude from ORDER BY queries on functions table. [?]
+- `_pull_type_defs`: two paths — classes table + functions LIKE 'TypeName::%'. [?]
+- export_context session in-memory; resets on server restart. Intentional. [?]
+- GAP-5 fix: fetch dead-end detection only finds raw callee strings in graph_edges. [?]
+- pytest `-m` on CLI REPLACES addopts — never pass `-m` by hand. [V]
+- Same-name symbol collision in feature_shape (local_symbols keyed by name). [?]
 
 ## RESOURCE / PROCESS RULES [V]
 
-- llama-server: stateless, no reason to kill between UI restarts.
-- Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"` — find PID, kill it.
-- UI server restart: kill PID on 5050, then `preview_start {name: "Determined UI"}`, navigate.
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
-- Baseline runner: `.venv\Scripts\python.exe tools\rm70_baseline.py` — llama-server must be up first.
+- UI server restart: kill PID on 5050, then preview_start {name: "Determined UI"}.
+- llama-server: stateless, no need to kill between UI restarts.
+- Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"`.
