@@ -2808,11 +2808,13 @@ def find_large_files(oracle: "DBOracle", args: dict) -> str:
         "  fns = total functions  stubs = not-yet-implemented  muts = recorded state writes",
         "",
     ]
+    root = (oracle.get_project_root() or "").replace("\\", "/").rstrip("/") + "/"
     for file_path, fn_count, stub_count, mut_count in rows:
-        fp_short = (file_path or "").replace("\\", "/").split("/")[-1]
+        fp_fwd = (file_path or "").replace("\\", "/")
+        fp_rel = fp_fwd[len(root):] if fp_fwd.startswith(root) else fp_fwd.split("/")[-1]
         stub_note = f"  {int(stub_count or 0)} stubs" if stub_count else ""
         lines.append(
-            f"  {fn_count:4d} fns  {mut_count:6d} muts{stub_note:10s}  {fp_short}"
+            f"  {fn_count:4d} fns  {mut_count:6d} muts{stub_note:10s}  {fp_rel}"
         )
     return "\n".join(lines)
 
