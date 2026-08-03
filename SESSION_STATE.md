@@ -47,9 +47,10 @@ All verified present in live Workbench palette after server restart.
 
 ## REMAINING OPEN ITEMS (from F1-F18 list)
 
-**F17**: Editor left symbol list — was caused by F18 (canvas overlay). Now that F18
-is fixed, re-test: click Editor tab, click a symbol in the left pane. If still broken,
-investigate the symbol click handler independently.
+**F17 DONE** [V]: Verified — clicking add_overlay (line 400) scrolled editor to pos 427.
+F18 fix was the root cause. Navigation works.
+New side-effect found: each symbol appears twice in the sym list (duplicate rendering).
+Logged as F19 below.
 
 **F3** [V still open]: Hyperlinked function names in Ask answers are dead (no navigation).
 Look for anchor/span click handlers in local_agent.py output formatting or console.html
@@ -72,6 +73,10 @@ in agent_tools.py — skip callers/callees where file_path is None or is a stdli
 
 **F15** [V still open]: Map "to symbol" field focus unreliable. Look at click handler
 for the "to" input — may be sharing focus with "from" input.
+
+**F19** [V]: Editor sym list renders each symbol twice (duplicate entries). Observed
+when opening world/dm_tools.py — 5 distinct symbols shown as 10 rows. Investigate
+the socket handler that populates #ed-sym-list; likely double-appending on re-render.
 
 **F10** [?]: Call tree anonymous fetch callbacks shown as raw code blocks.
 **F12** [?]: Call tree no breadcrumb/back after re-rooting.
