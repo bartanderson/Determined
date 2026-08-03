@@ -38,6 +38,10 @@ shape-nav-file colorization uses relative paths as keys (_shapeIndex.files). Fil
 the project root (e.g. world_app.py) correctly show as just their filename; subdirectory
 files (e.g. world/world_controller.py) need the prefix. Fix: compute fp_rel from root.
 
+2026-08-03 (s291): F10 — JS fetch() calls stored verbatim in graph_edges.callee include
+multi-line option objects as the callee "name." Guard: `"\n" in callee` skips them in
+handle_call_tree_expand. Same check applied to the callers (up) path.
+
 2026-08-03 (s291): F14/F16 were already fixed by the F18 canvas overlay fix (s290).
 The cytoscape canvas was intercepting all clicks in the Map tab area; once the canvas
 was contained, node clicks and corpus-map entry-point clicks both work correctly.
