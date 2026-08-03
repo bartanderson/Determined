@@ -194,9 +194,19 @@ def blast_radius(oracle: "DBOracle", args: dict) -> str:
                 suffix = f" (×{info['count']})" if info["count"] > 1 else ""
                 lines.append(f"  {name}{suffix}")
 
-        # Extended impact via subgraph
+        # Extended impact via subgraph — project symbols only (skip builtins)
         sg = _graph_subgraph_raw(oracle, target, radius=2)
-        extended = sorted(set(sg.get("nodes", [])) - {target})
+        raw_extended = sorted(set(sg.get("nodes", [])) - {target})
+        if raw_extended:
+            ph = ",".join("?" * len(raw_extended))
+            project_syms = {r[0] for r in oracle.conn.execute(
+                f"SELECT name FROM functions WHERE name IN ({ph})"
+                f" UNION SELECT name FROM classes WHERE name IN ({ph})",
+                raw_extended + raw_extended
+            ).fetchall()}
+            extended = [s for s in raw_extended if s in project_syms]
+        else:
+            extended = []
         if extended:
             lines.append(f"Extended impact ({len(extended)} symbols):")
             for sym in extended:
