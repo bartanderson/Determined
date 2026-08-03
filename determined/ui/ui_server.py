@@ -2082,7 +2082,7 @@ def handle_call_tree_expand(data):
             seen: dict[str, dict] = {}
             for callee, fp, ln in rows:
                 bare = (callee or "").rsplit(".", 1)[-1]
-                if not bare or bare in dir(_bi):
+                if not bare or bare in dir(_bi) or "\n" in (callee or ""):
                     continue
                 if callee not in seen:
                     file_short = (fp or "").replace("\\", "/").split("/")[-1]
@@ -2103,7 +2103,7 @@ def handle_call_tree_expand(data):
             seen2: dict[str, dict] = {}
             for caller, fp, ln in rows:
                 bare = (caller or "").rsplit(".", 1)[-1]
-                if not bare or bare in dir(_bi):
+                if not bare or bare in dir(_bi) or "\n" in (caller or ""):
                     continue
                 if caller not in seen2:
                     file_short = (fp or "").replace("\\", "/").split("/")[-1]
