@@ -1,6 +1,6 @@
-Written at commit: d885222
+Written at commit: 15ad109
 
-# SESSION STATE — session 290 handoff
+# SESSION STATE — session 291 handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,108 +9,92 @@ Written at commit: d885222
 
 ## WHAT HAPPENED THIS SESSION
 
-Fixed 8 of the 18 F-items from session 289 exploratory findings. [V]
-One substantive commit (54793f7) + two SESSION_STATE/HISTORY commits. [V]
-77 targeted regression tests pass. [V]
+Fixed 5 of the remaining F-items. Verified 4 others already working. [V]
+3 commits: F19+F2+F3 (92dda64), F7 (ef13686), F1 (15ad109). [V]
+450 regression tests pass after agent_tools changes. [V]
 
 ---
 
 ## FIXES SHIPPED (verified in browser)
 
-**F18 DONE** [V]: Cytoscape canvas was positioned relative to `.tab-content` (nearest
-positioned ancestor) instead of its own container, placing the canvas at the top of
-the content area and intercepting all tab bar clicks. Fix: `position:relative;
-overflow:hidden` on `#fg-cy`, `#gx-cy`, `#ig-cy`. Verified with `document.elementFromPoint`
-returning `BUTTON#` at tab center (was `CANVAS#`).
+**F19 DONE** [V]: Editor sym list duplicated symbols because two files share the same
+filename (dungeon_neo/dm_tools.py + world/dm_tools.py) and `LIKE '%dm_tools.py'` hit
+both. Fixed in `handle_open_file` in ui_server.py:2287-2296 — use exact equality
+`replace(file_path,'\\','/') = fp_fwd` instead of LIKE.
 
-**F17 DONE** [V]: Verified this session — was blocked by F18. Opened world/dm_tools.py,
-clicked `add_overlay` (line 400), editor scrolled to pos 427. Symbol navigation works.
+**F2 DONE** [V]: `LLM_MAX_TOKENS` bumped 400 → 1200 in llm_client.py:38. Ask answers
+no longer truncate mid-sentence.
 
-**F6 DONE** [V]: Added `wrap.scrollIntoView({behavior:"smooth",block:"nearest"})` in
-`wbRunTool()` in console.html immediately after the output wrap becomes visible.
+**F3 DONE** [V]: `fp-link` elements (file paths in backtick spans from Ask answers)
+had no click handler. Added in `attachSymbolHandlers()` in console.html:2770-2773 —
+calls `edOpenFile(el.textContent.trim()); activateTab("editor")`.
 
-**F9/F8 DONE** [V]: Added 5 tools to `_WORKBENCH_TOOLS` in ui_server.py:
-- Performance: find_large_files, find_fetch_calls, find_hot_callers
-- Architecture: find_cross_language_calls, find_pure_functions
-All 5 confirmed present in live Workbench palette.
+**F7 DONE** [V]: Blast radius extended impact included builtins (str, print, Flask,
+forEach). Fixed in `blast_radius()` in agent_tools.py:197-208 — filter raw_extended
+through `SELECT name FROM functions/classes WHERE name IN (...)` to keep project
+symbols only.
 
-**F13/F4 DONE** [V]: Broadened agent_resolver.py patterns (77 tests pass):
-- find_hot_callers: now matches "most called functions", "called most frequently"
-- find_fetch_calls: now matches "JS functions make HTTP calls", "js http requests"
-- find_pure_functions: now matches "no side effects", "stateless functions"
-
-**F5 DONE** [V]: llm_client.py — added `_THINK_RE` to strip `<think>...</think>` from
-chat() content; removed `reasoning_content` fallback (was the main leak path).
+**F1 DONE** [V]: Largest-files card filenames were basename-only; _shapeIndex.files
+uses relative paths as keys so colorization never matched. Fixed in `find_large_files()`
+in agent_tools.py:2811-2816 — compute `fp_rel` from project root via `oracle.get_project_root()`.
 
 ---
 
-## NEW FINDING THIS SESSION
+## VERIFIED ALREADY WORKING (no code change)
 
-**F19** [V]: Editor sym list renders each symbol twice. Opened world/dm_tools.py —
-5 distinct symbols shown as 10 rows. Root cause likely in the socket handler that
-populates `#ed-sym-list` — double-append on re-render or duplicate socket event fire.
-Investigate the `editor_open` or equivalent socket.on handler in console.html.
+**F11** [V]: ct-sym name click re-roots call tree; ct-meta file:line click calls
+`edOpenFile` which includes `activateTab("editor")`. Both work correctly.
+
+**F14** [V]: ForceGraph `onNodeClick` handler at console.html:1902 calls `_fgSelect`
+which calls `openMapPanel`. Node click + panel open confirmed in browser.
+
+**F16** [V]: Corpus map sym-link click opens popover (openPopover) in all tabs.
+Was blocked by F18 canvas overlay in s290; no code change needed this session.
 
 ---
 
 ## REMAINING OPEN ITEMS
 
-**F2** [V still open]: Ask LLM response truncates mid-sentence.
-`LLM_MAX_TOKENS = 400` in llm_client.py. local_agent.py calls `_llm_chat` with no
-override so uses the 400-token default. Bump to 1200. Quick fix.
-
-**F3** [V still open]: Hyperlinked function names in Ask answers do nothing when clicked.
-Find `socket.on("ask_result"` or equivalent in console.html. Links render (as `<a>` or
-`.ed-sym-link` spans) but have no click listener attached. Add listener to fire
-`activateTab("editor")` + editor open for the symbol name.
-
-**F1** [V still open]: Largest-files card file names not clickable (Shape tab).
-Find the corpus_projections socket handler that renders the card. Add click→editor nav.
-
-**F11** [V still open]: Call tree callee names not clickable (no re-root via name, no
-editor nav). Search console.html for `tr-line` — the callee row class. Click handler
-missing or broken; ▶ re-root button works but the name text itself doesn't.
-
-**F7** [V still open]: Blast radius extended impact includes builtins (Flask, SocketIO,
-forEach, catch, str, print). 69 symbols shown; most are noise. Filter in blast_radius
-in agent_tools.py — skip where file_path is None or is an external lib path.
-
-**F15** [?]: Map "to symbol" field doesn't reliably receive focus.
 **F10** [?]: Call tree anonymous fetch callbacks shown as raw multi-line code blocks.
-**F12** [?]: Call tree no breadcrumb/back after re-rooting on a callee.
-**F14** [?]: Map graph node click does nothing (hover + click have no handler).
-**F16** [?]: Left nav entry point clicks only work in Call tree tab; no-op elsewhere.
+Occurs when the callee name is a JS anonymous function `function(data){...}`. The
+name text becomes the full function body rendered in the ct-sym span.
+
+**F12** [?]: Call tree no breadcrumb/back after re-rooting on a callee. ct-sym click
+re-roots to the callee, but there's no history stack to go back to the previous root.
+Would need a `_ctHistory` array pushed/popped with re-root.
+
+**F15** [?]: Map "to symbol" field (#gx-dst) doesn't reliably receive focus. Possibly
+a timing issue when the graph canvas captures click events before the input can focus.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**1. Fix F19** — duplicate sym list entries (quick, high visibility).
-   In console.html find where `#ed-sym-list` is populated. Look for the event that
-   fires it — likely `socket.on("editor_symbols"` or similar. Check if it appends
-   without clearing first, or if the event fires twice.
+**1. Fix F10** — anonymous callbacks in call tree.
+   The call tree `data.children[].symbol` for JS anonymous functions is the full
+   function source code. Truncate or replace with `<anonymous>` when symbol contains
+   `{` or newlines. Look at how `c.symbol` is built server-side in
+   `handle_call_tree_expand` in ui_server.py.
 
-**2. Fix F2** — bump Ask token limit (one-liner).
-   `llm_client.py` line: `LLM_MAX_TOKENS = 400` → `LLM_MAX_TOKENS = 1200`
-   Or add `LLM_ASK_MAX_TOKENS = 1200` and pass it from local_agent._call_llm.
+**2. Fix F12** — call tree back button.
+   In `ctTrace(symbol)` (console.html:1630), push the current root to a history array
+   before clearing. Add a ← back button to the call-tree toolbar that pops from history
+   and re-traces. One-level back is enough for now.
 
-**3. Fix F3** — Ask answer hyperlinks.
-   Find the ask_result handler in console.html. Symbols appear as clickable spans
-   already — check if click listeners are attached after `innerHTML` replaces the
-   content (listeners on replaced nodes are lost). Use event delegation on the
-   output container instead.
-
-**4. Fix F11** — call tree callee name click.
-   Grep console.html for `tr-line`. Should add click → `activateTab("editor")` +
-   open symbol in editor.
+**3. Fix F15** — Map path "to symbol" input focus.
+   In the gx-path-go click handler and the gx-src keydown handler, explicitly call
+   `gxDst.focus()` after setting `gxSrc.value`. Also check whether the ForceGraph
+   canvas is stealing focus on background clicks.
 
 ---
 
 ## KNOWN TRAPS (carried forward)
 
 - Cytoscape containers need `position:relative;overflow:hidden` — otherwise canvases
-  escape to nearest positioned ancestor and overlay the UI. [V this session]
-- `llm_client.chat()` reasoning_content fallback removed — don't re-add it. [V]
+  escape to nearest positioned ancestor and overlay the UI. [V s290]
+- `llm_client.chat()` reasoning_content fallback removed — don't re-add it. [V s290]
+- Editor sym list: use exact path equality, not LIKE basename, in DB queries. [V this session]
+- `find_large_files` outputs relative paths from project root (not basename-only). [V this session]
 - `_wrap_body()` must be in sketch_stub.py wherever body fragments are parsed. [?]
 - `line_number=0` trap: exclude from ORDER BY queries on functions table. [?]
 - `_pull_type_defs`: two paths — classes table + functions LIKE 'TypeName::%'. [?]

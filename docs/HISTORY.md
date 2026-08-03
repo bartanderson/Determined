@@ -28,6 +28,20 @@ inference paths. Fix: strip `_THINK_RE` from content, drop the fallback entirely
 
 ## Active entries
 
+2026-08-03 (s291): F19 root cause was two files with the same name in different directories
+(dungeon_neo/dm_tools.py and world/dm_tools.py) both matched `LIKE '%dm_tools.py'`. The
+fix is to use exact equality `replace(file_path,'\\','/') = ?` instead of LIKE in
+handle_open_file. Symptom: every symbol appeared twice in the editor sym list.
+
+2026-08-03 (s291): find_large_files outputs basename-only paths (split("/")[-1]) but
+shape-nav-file colorization uses relative paths as keys (_shapeIndex.files). Files at
+the project root (e.g. world_app.py) correctly show as just their filename; subdirectory
+files (e.g. world/world_controller.py) need the prefix. Fix: compute fp_rel from root.
+
+2026-08-03 (s291): F14/F16 were already fixed by the F18 canvas overlay fix (s290).
+The cytoscape canvas was intercepting all clicks in the Map tab area; once the canvas
+was contained, node clicks and corpus-map entry-point clicks both work correctly.
+
 2026-08-01 (s283): _wrap_body() must be applied consistently across sketch_stub.py.
 It exists to handle indented body fragments that ast.parse() rejects with SyntaxError.
 Used in _verify_candidate and _ast_node_sequence but was missing from _infer_return_shape,
