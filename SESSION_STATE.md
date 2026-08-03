@@ -1,129 +1,107 @@
-Written at commit: 79d0abc
+Written at commit: 54793f7
 
-# SESSION STATE — session 289 handoff
+# SESSION STATE — session 290 handoff
 
 ## Active branch: main [V]
-## Working tree: clean, no commits this session [V]
+## Working tree: clean, 1 commit this session [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**Exploratory UI testing against dj2 corpus** [V]
-Goal: exercise the full Workbench UI as if doing real dj2 work,
-document all friction/missing/broken behavior before fixing anything.
-Server was live at localhost:5050 throughout.
-
-No code was written or committed this session.
+**Fixed 7 of the 18 F-items from session 289 exploratory findings** [V]
+All fixes committed in one shot (54793f7). 77 targeted tests pass. [V]
 
 ---
 
-## EXPLORATORY FINDINGS (18 items)
+## FIXES SHIPPED (verified in browser)
 
-### CRITICAL — blocks navigation
+**F18 DONE** [V]: Root cause was `position:relative` missing from cytoscape containers.
+Cytoscape canvases (`position:absolute`) were positioned relative to `.tab-content`
+(the nearest positioned ancestor), not their immediate container — so `top:0,left:0`
+placed them at the top of the content area, covering the tab bar.
+Fix: added `position:relative;overflow:hidden` to `#fg-cy`, `#gx-cy`, `#ig-cy`.
+Verified: `document.elementFromPoint` at tab center returns `BUTTON#` (was `CANVAS#`).
+Tab switching works: Editor tab activates, Frontier panel goes `display:none`.
 
-**F18** [V]: Frontier canvas has no `pointer-events: none` when its tab is not active.
-The canvas overlays the *entire* tab bar and content area of adjacent tabs.
-All tab clicks and Editor symbol clicks register on the hidden canvas instead.
-`document.elementFromPoint` returns `CANVAS#` at tab bar coordinates while on Frontier.
-Fix: add `pointer-events: none` to the Frontier canvas when tab is inactive,
-or ensure the tab hide path uses `display:none` rather than `visibility:hidden`/opacity.
+**F6 DONE** [V]: Added `wrap.scrollIntoView({behavior:"smooth",block:"nearest"})`
+in `wbRunTool()` (console.html:5724) immediately after making the output wrap visible.
 
-### HIGH — broken features
+**F9/F8 DONE** [V]: Added 5 tools to `_WORKBENCH_TOOLS` in ui_server.py:
+- Performance category: find_large_files, find_fetch_calls, find_hot_callers
+- Architecture category: find_cross_language_calls, find_pure_functions
+All verified present in live Workbench palette after server restart.
 
-**F17** [V]: Editor left symbol list unreachable via mouse (root cause: F18).
-Click at (196,188) screen-coords hits Frontier canvas at viewport (451,433).
+**F13/F4 DONE** [V]: Broadened agent_resolver.py patterns:
+- find_hot_callers: now matches "most called functions", "called most frequently"
+- find_fetch_calls: now matches "JS functions make HTTP calls", "js http requests"
+- find_pure_functions: now matches "no side effects", "stateless functions"
+77 regression tests pass including test_agent_resolver.py.
 
-**F3** [V]: Hyperlinked function names in Ask answers are dead (no Editor navigation).
-
-**F1** [V]: Largest-files card file names are not clickable.
-
-**F11** [V]: Call tree callee names not clickable (no re-root, no Editor navigation).
-
-### MEDIUM — wrong behavior or missing output
-
-**F13** [V]: Resolver pattern miss for `find_hot_callers`.
-Pattern `most\s+called` disallows trailing nouns: "most called functions" fails.
-"which functions are called most frequently" fails (different word order).
-Pipeline trace confirmed: `decompose → llm` → "The facts do not specify."
-
-**F4** [V]: Resolver pattern miss for `find_fetch_calls`.
-Pattern requires exact `javascript\s+http\s+calls?` — misses "JS functions make HTTP calls".
-
-**F6** [V]: Workbench output area (`#wb-output-wrap`) sits ~2000px below tool cards.
-User runs a tool and sees nothing. Only `scrollIntoView` via JS reveals output.
-
-**F5** [V]: Qwen3 chain-of-thought leaks raw reasoning text into Ask answers.
-Visible: "the rule says: 'If the facts say No direct callers found', say so…"
-
-**F2** [V]: Ask LLM response truncates mid-sentence with no visible indicator.
-
-**F7** [V]: Blast radius extended impact includes builtins (Flask, SocketIO, forEach,
-catch, str, print). 69 symbols shown; most are noise.
-
-**F15** [V]: Map "to symbol" field doesn't reliably receive focus when clicked.
-Both type sequences went into "from symbol". Path-finding itself works once fields set.
-
-### LOW — friction, not broken
-
-**F9** [V]: 5 tools missing from Workbench: `find_large_files`, `find_fetch_calls`,
-`find_cross_language_calls`, `find_pure_functions`, `find_hot_callers`.
-Tool registry entries already exist; just no card rendered in the HTML.
-
-**F8** [V]: No PERFORMANCE or ARCHITECTURE sections in Workbench for new tools.
-
-**F10** [V]: Call tree shows anonymous fetch callbacks as raw multi-line code blocks.
-
-**F12** [V]: Call tree has no breadcrumb/back after re-rooting on a callee.
-
-**F14** [V]: Map graph nodes have no hover tooltip and no click behavior.
-Symbol search + Map button works; node click alone does nothing.
-
-**F16** [V]: Left nav entry point clicks only work in Call tree tab; no-op elsewhere.
+**F5 DONE** [V]: Fixed llm_client.py:
+- Added `_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL|re.IGNORECASE)`
+- Applied to content in `chat()`: `content = _THINK_RE.sub("", ...).strip()`
+- Removed `reasoning_content` fallback (was the main leak path when content empty)
 
 ---
 
-## WHAT WORKS WELL (confirmed this session)
+## REMAINING OPEN ITEMS (from F1-F18 list)
 
-- Map: symbol highlight search; from→to path finder (2-hop confirmed) [V]
-- Map Imports: file-level import graph, hierarchical, 123 files · 261 edges [V]
-- Map Topology: text breakdown — stub counts, orphaned-impl (941), ABC gaps (39) [V]
-- Call tree: named callee display; ▶ re-roots; left nav loads tree [V]
-- Editor: Open ↵ opens files by path; syntax highlighting; read-only [V]
-- Knowledge: Artifacts/Pins/Bag/Doc health filters; design notes display [V]
-- Workbench: blast_radius, classify_stub, walk_call_chain, feature_shape run correctly [V]
-- Ask: routing works for file_size_analysis (pattern hit confirmed via pipeline trace) [V]
+**F17**: Editor left symbol list — was caused by F18 (canvas overlay). Now that F18
+is fixed, re-test: click Editor tab, click a symbol in the left pane. If still broken,
+investigate the symbol click handler independently.
+
+**F3** [V still open]: Hyperlinked function names in Ask answers are dead (no navigation).
+Look for anchor/span click handlers in local_agent.py output formatting or console.html
+`socket.on("ask_result")` handler. Links render but have no click listener.
+
+**F1** [V still open]: Largest-files card file names not clickable.
+Find the card renderer for "Largest files" in the Shape tab — probably in the
+corpus_projections socket handler. Add click→editor navigation.
+
+**F11** [V still open]: Call tree callee names not clickable.
+The ▶ re-root works; the name itself has no click. Look in the call tree node
+renderer (search for `tr-line` or `call-tree` in console.html).
+
+**F2** [V still open]: Ask LLM response truncates mid-sentence.
+LLM_MAX_TOKENS = 400 in llm_client.py — increase to 800 or 1200 for Ask answers.
+Check if local_agent.py passes a separate max_tokens to _llm_chat.
+
+**F7** [V still open]: Blast radius includes builtins. Filter in blast_radius tool
+in agent_tools.py — skip callers/callees where file_path is None or is a stdlib path.
+
+**F15** [V still open]: Map "to symbol" field focus unreliable. Look at click handler
+for the "to" input — may be sharing focus with "from" input.
+
+**F10** [?]: Call tree anonymous fetch callbacks shown as raw code blocks.
+**F12** [?]: Call tree no breadcrumb/back after re-rooting.
+**F14** [?]: Map graph node click does nothing.
+**F16** [?]: Left nav entry point clicks only work in Call tree tab.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-Fix in priority order — F18 first (unblocks F17 and restores all tab nav).
+Start with F17 verification (should be fixed by F18), then F2 (quick token limit bump),
+then F3 (Ask link navigation), then F11 (call tree name clicks).
 
-**1. Fix F18 — Frontier canvas pointer-events (start here)**
-Find the canvas in the Frontier tab template/JS.
-When Frontier tab is inactive: `canvas.style.pointerEvents = 'none'`
-or hide with `display:none` not just opacity/visibility.
-Verify: `document.elementFromPoint` at tab bar coords returns tab button, not canvas.
+**1. Verify F17** — open Editor tab, click a symbol in the left symbol pane.
+If it now works (F18 fix was the root cause), mark done and move on.
 
-**2. Fix F6 — Workbench output scroll**
-After any Run button fires, scroll `#wb-output-wrap` into view.
-Or render output inline just below the triggering tool card.
+**2. Fix F2** — increase Ask answer token limit.
+In llm_client.py, `LLM_MAX_TOKENS = 400`. The Ask path in local_agent.py calls
+`_llm_chat(messages, timeout=_LLM_TIMEOUT)` with no max_tokens override, so it
+uses the default 400. Change to 1200 (or add a separate constant for Ask).
 
-**3. Fix F9/F8 — Add 5 missing tools to Workbench**
-Add PERFORMANCE and ARCHITECTURE sections to Workbench HTML.
-Render cards for: find_large_files, find_fetch_calls, find_cross_language_calls,
-find_pure_functions, find_hot_callers. Tool registry entries already exist.
+**3. Fix F3** — Ask answer hyperlinks dead.
+Find `socket.on("ask_result"` or equivalent in console.html. The response text
+has symbol names as hyperlinks (`<a>` or `<span class="ed-sym-link">`). A click
+listener must fire `activateTab("editor")` + editor open. Check if the listener
+is attached after the response renders or if innerHTML kills it.
 
-**4. Fix F13/F4 — Broaden resolver patterns**
-find_hot_callers: allow trailing `\s+functions?` and "called most frequently" phrasing.
-find_fetch_calls: allow "JS functions.*HTTP" / "javascript.*fetch" variations.
-find_pure_functions: allow "functions with no side effects", "stateless functions".
-Test with `socket.emit('query', {q: '...'})` in browser console.
-
-**5. Fix F5 — suppress Qwen3 chain-of-thought**
-Find LLM call for Ask answers (local_agent.py or pattern_executor.py).
-Add `/no_think` token or `thinking: false` param to suppress raw reasoning output.
+**4. Fix F11** — Call tree callee name click.
+Search console.html for `tr-line` — that's the callee name row class. Should have
+a click handler to open the symbol in Editor. Likely missing or broken.
 
 ---
 
