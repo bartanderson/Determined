@@ -1150,6 +1150,10 @@ def _answer(
             answer = build_chain_answer(user_input, oracle)
         elif pattern_name == "trace_call_chain":
             answer = executor.run_traversal(user_input, oracle, verbose=verbose)
+        elif pattern_name == "js_to_python_trace":
+            answer = executor.run_js_to_python_trace(subject, user_input, oracle, verbose=verbose)
+        elif pattern_name == "file_size_analysis":
+            answer = executor.run_file_size_analysis(subject, user_input, oracle, assessor, verbose=verbose)
         else:
             answer = executor.run(pattern_name, subject, user_input, oracle, assessor, verbose=verbose)
         if _trace is not None:

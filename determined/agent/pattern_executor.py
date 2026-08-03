@@ -38,6 +38,23 @@ from determined.agent.agent_tools import dispatch
 # ------------------------------------------------------------------
 
 _DETECT_RULES: list[tuple] = [
+    # file_size_analysis — "why is X.py so big" / "what to pull out of X.py"
+    # Must be FIRST so these specific-file questions don't fall through to orient_to_codebase
+    (re.compile(
+        r"why\s+is\s+['\"]?([A-Za-z_][\w/]*\.py)['\"]?\s+(?:so\s+)?(?:big|large|huge|fat|bloated)|"
+        r"what\s+should\s+I\s+(?:pull|extract|factor|move|split)\s+out\s+(?:of|from)\s+['\"]?([A-Za-z_][\w/]*\.py)['\"]?",
+        re.I,
+    ), "file_size_analysis", (1, 2)),
+
+    # js_to_python_trace — JS function → Python handler cross-language trace
+    # Must come before wiring_chain/trace_call_chain to intercept JS→Python questions
+    (re.compile(
+        r"trace\s+(?:the\s+)?(?:call\s+from\s+)?([A-Za-z_][\w.]+)"
+        r"(?:\s+in\s+['\"]?([A-Za-z_][\w./]*\.(?:js|ts))['\"]?)?"
+        r"\s+to\s+(?:the\s+)?(?:python\s+)?(?:handler|endpoint|server|backend|route)",
+        re.I,
+    ), "js_to_python_trace", (1, 2)),
+
     # orient_to_codebase - must come before understand_symbol/explain/describe rules
     # to prevent "explain this codebase" from being captured as understand_symbol("this")
     (re.compile(
@@ -437,6 +454,103 @@ class PatternExecutor:
             )},
         ]
         return self._call_llm(synthesis_msgs, label="trace-synthesis", verbose=verbose)
+
+    def run_js_to_python_trace(
+        self,
+        subject: object,
+        question: str,
+        oracle: "DBOracle",
+        verbose: bool = False,
+    ) -> str:
+        """
+        Trace a JS function → Python HTTP handler path.
+        Uses find_fetch_calls to get fetch() URLs, matches to Python routes.
+        One LLM synthesis call — no orient/orient overhead.
+        """
+        js_func = subject[0] if subject and subject[0] else None
+        js_file = subject[1] if subject and len(subject) > 1 else None
+        # Scope find_fetch_calls to the JS file if known, else the object prefix
+        scope = js_file or (js_func.split(".")[0] if js_func and "." in js_func else js_func) or ""
+
+        fetch_result = dispatch("find_fetch_calls", {"scope": scope}, oracle, None)
+
+        # Get Python HTTP routes directly from the DB
+        try:
+            route_rows = oracle.conn.execute(
+                "SELECT name, file_path, http_route FROM functions "
+                "WHERE http_route IS NOT NULL AND http_route != '' ORDER BY name LIMIT 50"
+            ).fetchall()
+            routes_text = "\n".join(
+                f"  {r[0]} in {r[1].replace(chr(92), '/').split('/')[-1]} → {r[2]}"
+                for r in route_rows
+            ) or "(no HTTP routes found)"
+        except Exception as e:
+            routes_text = f"(route query failed: {e})"
+
+        if verbose:
+            print(f"\n[js-to-python] scope={scope!r} fetch_result={fetch_result[:100]}", flush=True)
+
+        msgs = [
+            {"role": "system", "content": (
+                "You are a codebase analysis assistant tracing a JavaScript-to-Python call. "
+                "Match the JS fetch() URL to the Python route handler. "
+                "State: the JS function name, the fetch() URL it calls, the HTTP method, "
+                "and the Python function name that handles that route. "
+                "If the specific function is not in the fetch list, say so — do not invent a path."
+            )},
+            {"role": "user", "content": (
+                f"Question: {question}\n\n"
+                f"JS fetch() calls (from {scope or 'JS files'}):\n{fetch_result[:2000]}\n\n"
+                f"Python HTTP route handlers:\n{routes_text}\n\n"
+                "Identify which fetch() call is made by the JS function mentioned, "
+                "and which Python route handles it. Be specific about URL and handler name."
+            )},
+        ]
+        return self._call_llm(msgs, label="js-to-python-synthesis", verbose=verbose)
+
+    def run_file_size_analysis(
+        self,
+        subject: object,
+        question: str,
+        oracle: "DBOracle",
+        assessor: "Assessor",
+        verbose: bool = False,
+    ) -> str:
+        """
+        Explain why a specific file is large and what to extract from it.
+        Pulls symbols, coupling, and large-files context.
+        One LLM synthesis call — no orient overhead.
+        """
+        file_path = (subject[0] if subject and subject[0] else None) or (
+            subject[1] if subject and len(subject) > 1 else None
+        )
+        if not file_path:
+            return "Could not identify which file to analyze from the question."
+
+        sym_result  = dispatch("symbols_in_file", {"file_path": file_path}, oracle, assessor)
+        large_result = dispatch("find_large_files", {}, oracle, assessor)
+        cluster_result = dispatch("graph_clusters", {}, oracle, assessor)
+
+        if verbose:
+            print(f"\n[file-size] analyzing {file_path}", flush=True)
+
+        msgs = [
+            {"role": "system", "content": (
+                "You are a codebase analysis assistant. "
+                "Explain why a file is large and name 2-3 concrete things that could be extracted "
+                "into separate modules. Base every claim on the facts. "
+                "Name actual function groups from the symbol list — do not speculate."
+            )},
+            {"role": "user", "content": (
+                f"Question: {question}\n\n"
+                f"File: {file_path}\n\n"
+                f"Symbols in file (first 2000 chars):\n{sym_result[:2000]}\n\n"
+                f"Large-files ranking:\n{large_result[:600]}\n\n"
+                f"File coupling (entangled pairs):\n{cluster_result[:800]}\n\n"
+                "Why is this file so large? What specific function groups should be extracted?"
+            )},
+        ]
+        return self._call_llm(msgs, label="file-size-synthesis", verbose=verbose)
 
     def run_no_llm(
         self,
