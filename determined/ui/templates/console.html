@@ -397,6 +397,7 @@
       </div>
       <div class="tab-panel" id="panel-call_tree">
         <div class="call-tree-toolbar">
+          <button id="ct-back" class="send-btn" title="Back" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);padding:3px 8px" disabled>←</button>
           <input id="ct-input" class="path-input" placeholder="Symbol to trace" style="flex:1">
           <button class="send-btn" id="ct-go">Trace ↵</button>
           <label style="color:var(--text2);font-size:.85em;display:flex;align-items:center;gap:.3rem">
@@ -1622,18 +1623,32 @@ document.querySelectorAll(".sidebar-item[data-tab]").forEach(el => {
 
 
 // ── call tree ─────────────────────────────────────────────
-const ctInput  = document.getElementById("ct-input");
-const ctGo     = document.getElementById("ct-go");
-const ctUp     = document.getElementById("ct-up");
-const ctPanel  = document.getElementById("tab-call_tree");
+const ctInput   = document.getElementById("ct-input");
+const ctGo      = document.getElementById("ct-go");
+const ctUp      = document.getElementById("ct-up");
+const ctBackBtn = document.getElementById("ct-back");
+const ctPanel   = document.getElementById("tab-call_tree");
 
-function ctTrace(symbol) {
-  if (!symbol) return;
+let _ctHistory     = [];
+let _ctCurrentRoot = null;
+
+function _ctRender(symbol) {
   ctPanel.innerHTML = "";
   const dir = ctUp.checked ? "up" : "down";
   const root = ctMakeNode(symbol, dir, 0);
   ctPanel.appendChild(root);
   ctExpand(root, symbol, dir);
+}
+
+function ctTrace(symbol) {
+  if (!symbol) return;
+  if (_ctCurrentRoot && _ctCurrentRoot !== symbol) {
+    _ctHistory.push(_ctCurrentRoot);
+    ctBackBtn.disabled = false;
+  }
+  _ctCurrentRoot = symbol;
+  ctInput.value = symbol;
+  _ctRender(symbol);
 }
 
 function ctMakeNode(symbol, dir, depth) {
@@ -1708,6 +1723,14 @@ socket.on("call_tree_result", data => {
 
 ctGo.addEventListener("click", () => ctTrace(ctInput.value.trim()));
 ctInput.addEventListener("keydown", e => { if (e.key === "Enter") ctTrace(ctInput.value.trim()); });
+ctBackBtn.addEventListener("click", () => {
+  if (!_ctHistory.length) return;
+  const prev = _ctHistory.pop();
+  _ctCurrentRoot = prev;
+  ctBackBtn.disabled = _ctHistory.length === 0;
+  ctInput.value = prev;
+  _ctRender(prev);
+});
 // clicking a symbol in any panel seeds the call-tree input
 document.addEventListener("click", e => {
   const el = e.target.closest(".sym-link, .spotlight-sym-link");
@@ -3148,6 +3171,7 @@ function _mnpButtons(data) {
     { label: "↗ callees", fn: () => { ctUp.checked = false; ctTrace(sym); activateTab("call_tree"); }},
     { label: "remap",     fn: () => { gxInput.value = sym; gxMap(sym); }},
     { label: "spotlight", fn: () => openSpotlight(sym) },
+    { label: "path from", fn: () => { gxSrc.value = sym; gxDst.focus(); }},
   ];
   // pick 2 primary actions by node character
   let pri;
