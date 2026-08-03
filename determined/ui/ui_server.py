@@ -3376,6 +3376,53 @@ _WORKBENCH_TOOLS = [
         "category": "Design",
         "args": {},
     },
+    # ── Performance ───────────────────────────────────────────
+    {
+        "id": "find_large_files",
+        "label": "Largest files",
+        "tool": "find_large_files",
+        "description": "Files with the most functions — refactoring targets by size",
+        "category": "Performance",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
+    {
+        "id": "find_fetch_calls",
+        "label": "Fetch calls",
+        "tool": "find_fetch_calls",
+        "description": "JS/TS functions that make HTTP fetch() calls — network boundary map",
+        "category": "Performance",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
+    {
+        "id": "find_hot_callers",
+        "label": "Hot callers",
+        "tool": "find_hot_callers",
+        "description": "Implemented functions with the highest caller count — change-risk hotspots",
+        "category": "Performance",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
+    # ── Architecture ──────────────────────────────────────────
+    {
+        "id": "find_cross_language_calls",
+        "label": "Cross-language calls",
+        "tool": "find_cross_language_calls",
+        "description": "All resolved JS→Python call paths — cross-language boundary map",
+        "category": "Architecture",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
+    {
+        "id": "find_pure_functions",
+        "label": "Pure functions",
+        "tool": "find_pure_functions",
+        "description": "Implemented functions with no side effects — safe to cache or parallelize",
+        "category": "Architecture",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
 ]
 
 

@@ -19,12 +19,15 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import threading
 import time
 from pathlib import Path
 
 import requests
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +109,7 @@ def chat(messages: list[dict], timeout: int = LLM_TIMEOUT, max_tokens: int = LLM
         )
         resp.raise_for_status()
         data = resp.json()["choices"][0]["message"]
-        content = data.get("content", "").strip()
-        if not content:
-            content = data.get("reasoning_content", "").strip()
+        content = _THINK_RE.sub("", data.get("content", "")).strip()
         return content or None
     except Exception as exc:
         logger.warning("llm_client.chat failed: %s", exc)

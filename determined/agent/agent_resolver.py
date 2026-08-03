@@ -295,20 +295,20 @@ _PATTERNS = [
     (re.compile(r"(?:imports?\s+of|what\s+does\s+['\"]?(.+?)['\"]?\s+import|dependencies\s+of)\s+['\"]?([^'\"]+?)['\"]?\s*$", re.I),
      "list_import_deps", "file_path", None),  # special: multi-group
 
-    # "pure functions" / "memoization candidates" / "pure functions in X"
-    (re.compile(r"(?:pure\s+functions?|memoiz(?:ation\s+)?candidates?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+    # "pure functions" / "memoization candidates" / "no side effects" / "stateless"
+    (re.compile(r"(?:pure\s+functions?|memoiz(?:ation\s+)?candidates?|(?:functions?\s+with\s+)?no\s+side\s+effects?|stateless\s+functions?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_pure_functions", "scope", 1),
 
-    # "hot callers" / "most called" / "load bearing" / "hot callers in X"
-    (re.compile(r"(?:hot\s+callers?|most\s+called|load.bearing\s+functions?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+    # "hot callers" / "most called [functions]" / "called most frequently" / "load bearing"
+    (re.compile(r"(?:hot\s+callers?|most\s+called(?:\s+functions?)?|(?:functions?\s+)?called\s+(?:the\s+)?most(?:\s+frequently)?|load.bearing\s+functions?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_hot_callers", "scope", 1),
 
     # "large files" / "biggest files" / "god files" / "files to refactor"
     (re.compile(r"(?:large\s+files?|biggest?\s+files?|god\s+(?:files?|objects?)|files?\s+to\s+refactor|most\s+functions?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_large_files", "scope", 1),
 
-    # "fetch calls" / "htmx candidates" / "fetch endpoints" (raw fetch strings)
-    (re.compile(r"(?:fetch\s+calls?|htmx\s+candidates?|fetch\s+endpoints?|javascript\s+http\s+calls?)(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
+    # "fetch calls" / "js functions make http calls" / "javascript fetch" / "http requests from js"
+    (re.compile(r"(?:fetch\s+calls?|htmx\s+candidates?|fetch\s+endpoints?|javascript\s+http\s+calls?|js(?:avascript)?\s+(?:functions?\s+(?:that\s+)?(?:make|use)\s+)?(?:http|fetch|ajax)\s+(?:calls?|requests?))(?:\s+in\s+['\"]?([^'\"]*?)['\"]?)?\s*$", re.I),
      "find_fetch_calls", "scope", 1),
 
     # "cross language" / "js to python" / "socket" / "cross layer" calls
