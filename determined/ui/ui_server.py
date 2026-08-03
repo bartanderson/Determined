@@ -2282,17 +2282,17 @@ def handle_open_file(data):
             else:
                 emit("file_content", {"error": f"not found: {path}"}); return
         content = fp.read_text(encoding="utf-8", errors="replace")
-        # symbols from DB, keyed by filename suffix match
-        name_pat = f"%{fp.name}"
+        # exact path match (normalized to forward slashes to match DB storage)
+        fp_fwd = str(fp).replace("\\", "/")
         fns = _oracle.conn.execute(
             "SELECT name, line_number, docstring FROM functions "
-            "WHERE replace(file_path,'\\\\','/') LIKE ? OR file_path LIKE ? ORDER BY line_number",
-            (name_pat, name_pat)
+            "WHERE replace(file_path,'\\\\','/') = ? ORDER BY line_number",
+            (fp_fwd,)
         ).fetchall()
         cls = _oracle.conn.execute(
             "SELECT name, line_number, docstring FROM classes "
-            "WHERE replace(file_path,'\\\\','/') LIKE ? OR file_path LIKE ? ORDER BY line_number",
-            (name_pat, name_pat)
+            "WHERE replace(file_path,'\\\\','/') = ? ORDER BY line_number",
+            (fp_fwd,)
         ).fetchall()
         symbols = sorted(
             [{"name": n, "line": ln, "kind": "fn", "has_doc": bool(doc)} for n, ln, doc in fns] +

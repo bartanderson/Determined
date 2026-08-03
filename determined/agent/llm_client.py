@@ -35,7 +35,7 @@ LLM_BASE_URL     = "http://localhost:8081"
 LLM_DISPLAY_NAME = "Qwen3-VL-8B"
 LLM_TIMEOUT      = 600
 LLM_COLD_TIMEOUT = 10
-LLM_MAX_TOKENS   = 400
+LLM_MAX_TOKENS   = 1200
 
 # Server launch config — used by start_server() / stop_server()
 LLM_SERVER_EXE   = r"C:\Users\bartl\models\llama-server\llama-server.exe"

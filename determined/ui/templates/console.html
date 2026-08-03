@@ -2769,6 +2769,8 @@ function attachSymbolHandlers(container) {
   });
   container.querySelectorAll(".fp").forEach(el => {
     el.className = "fp-link";
+    el.title = "Open in editor";
+    el.addEventListener("click", e => { e.stopPropagation(); edOpenFile(el.textContent.trim()); activateTab("editor"); });
   });
   container.querySelectorAll(".sym-link").forEach(el => {
     el.addEventListener("mouseenter", onSymHover);
