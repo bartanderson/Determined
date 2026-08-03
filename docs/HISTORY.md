@@ -12,6 +12,20 @@ Format: `DATE: fact -- why it matters`
 
 ---
 
+2026-08-03 (s290): Cytoscape canvas escape trap. Any cytoscape container that lacks
+`position:relative` causes cytoscape's `position:absolute` canvases to be positioned
+relative to the nearest positioned ancestor higher in the DOM (`.tab-content` here),
+not the container itself. Result: canvas top:0,left:0 is at the top of the content
+area, visually covering the tab bar and intercepting all mouse events there. Fix:
+add `position:relative;overflow:hidden` to every cytoscape container element.
+Applies to #fg-cy (Frontier), #gx-cy (Map graph), #ig-cy (Map imports).
+
+2026-08-03 (s290): llm_client.chat() `reasoning_content` fallback leak. When Qwen3
+returned empty `content` (CoT suppression partial failure), the fallback to
+`reasoning_content` served raw chain-of-thought to callers. Also: even with
+`/no_think` prepended, `<think>...</think>` blocks can appear in `content` on some
+inference paths. Fix: strip `_THINK_RE` from content, drop the fallback entirely.
+
 ## Active entries
 
 2026-08-01 (s283): _wrap_body() must be applied consistently across sketch_stub.py.

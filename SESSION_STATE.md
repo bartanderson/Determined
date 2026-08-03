@@ -1,124 +1,121 @@
-Written at commit: 54793f7
+Written at commit: d885222
 
 # SESSION STATE — session 290 handoff
 
 ## Active branch: main [V]
-## Working tree: clean, 1 commit this session [V]
+## Working tree: clean [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-**Fixed 7 of the 18 F-items from session 289 exploratory findings** [V]
-All fixes committed in one shot (54793f7). 77 targeted tests pass. [V]
+Fixed 8 of the 18 F-items from session 289 exploratory findings. [V]
+One substantive commit (54793f7) + two SESSION_STATE/HISTORY commits. [V]
+77 targeted regression tests pass. [V]
 
 ---
 
 ## FIXES SHIPPED (verified in browser)
 
-**F18 DONE** [V]: Root cause was `position:relative` missing from cytoscape containers.
-Cytoscape canvases (`position:absolute`) were positioned relative to `.tab-content`
-(the nearest positioned ancestor), not their immediate container — so `top:0,left:0`
-placed them at the top of the content area, covering the tab bar.
-Fix: added `position:relative;overflow:hidden` to `#fg-cy`, `#gx-cy`, `#ig-cy`.
-Verified: `document.elementFromPoint` at tab center returns `BUTTON#` (was `CANVAS#`).
-Tab switching works: Editor tab activates, Frontier panel goes `display:none`.
+**F18 DONE** [V]: Cytoscape canvas was positioned relative to `.tab-content` (nearest
+positioned ancestor) instead of its own container, placing the canvas at the top of
+the content area and intercepting all tab bar clicks. Fix: `position:relative;
+overflow:hidden` on `#fg-cy`, `#gx-cy`, `#ig-cy`. Verified with `document.elementFromPoint`
+returning `BUTTON#` at tab center (was `CANVAS#`).
 
-**F6 DONE** [V]: Added `wrap.scrollIntoView({behavior:"smooth",block:"nearest"})`
-in `wbRunTool()` (console.html:5724) immediately after making the output wrap visible.
+**F17 DONE** [V]: Verified this session — was blocked by F18. Opened world/dm_tools.py,
+clicked `add_overlay` (line 400), editor scrolled to pos 427. Symbol navigation works.
+
+**F6 DONE** [V]: Added `wrap.scrollIntoView({behavior:"smooth",block:"nearest"})` in
+`wbRunTool()` in console.html immediately after the output wrap becomes visible.
 
 **F9/F8 DONE** [V]: Added 5 tools to `_WORKBENCH_TOOLS` in ui_server.py:
-- Performance category: find_large_files, find_fetch_calls, find_hot_callers
-- Architecture category: find_cross_language_calls, find_pure_functions
-All verified present in live Workbench palette after server restart.
+- Performance: find_large_files, find_fetch_calls, find_hot_callers
+- Architecture: find_cross_language_calls, find_pure_functions
+All 5 confirmed present in live Workbench palette.
 
-**F13/F4 DONE** [V]: Broadened agent_resolver.py patterns:
+**F13/F4 DONE** [V]: Broadened agent_resolver.py patterns (77 tests pass):
 - find_hot_callers: now matches "most called functions", "called most frequently"
 - find_fetch_calls: now matches "JS functions make HTTP calls", "js http requests"
 - find_pure_functions: now matches "no side effects", "stateless functions"
-77 regression tests pass including test_agent_resolver.py.
 
-**F5 DONE** [V]: Fixed llm_client.py:
-- Added `_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL|re.IGNORECASE)`
-- Applied to content in `chat()`: `content = _THINK_RE.sub("", ...).strip()`
-- Removed `reasoning_content` fallback (was the main leak path when content empty)
+**F5 DONE** [V]: llm_client.py — added `_THINK_RE` to strip `<think>...</think>` from
+chat() content; removed `reasoning_content` fallback (was the main leak path).
 
 ---
 
-## REMAINING OPEN ITEMS (from F1-F18 list)
+## NEW FINDING THIS SESSION
 
-**F17 DONE** [V]: Verified — clicking add_overlay (line 400) scrolled editor to pos 427.
-F18 fix was the root cause. Navigation works.
-New side-effect found: each symbol appears twice in the sym list (duplicate rendering).
-Logged as F19 below.
+**F19** [V]: Editor sym list renders each symbol twice. Opened world/dm_tools.py —
+5 distinct symbols shown as 10 rows. Root cause likely in the socket handler that
+populates `#ed-sym-list` — double-append on re-render or duplicate socket event fire.
+Investigate the `editor_open` or equivalent socket.on handler in console.html.
 
-**F3** [V still open]: Hyperlinked function names in Ask answers are dead (no navigation).
-Look for anchor/span click handlers in local_agent.py output formatting or console.html
-`socket.on("ask_result")` handler. Links render but have no click listener.
+---
 
-**F1** [V still open]: Largest-files card file names not clickable.
-Find the card renderer for "Largest files" in the Shape tab — probably in the
-corpus_projections socket handler. Add click→editor navigation.
-
-**F11** [V still open]: Call tree callee names not clickable.
-The ▶ re-root works; the name itself has no click. Look in the call tree node
-renderer (search for `tr-line` or `call-tree` in console.html).
+## REMAINING OPEN ITEMS
 
 **F2** [V still open]: Ask LLM response truncates mid-sentence.
-LLM_MAX_TOKENS = 400 in llm_client.py — increase to 800 or 1200 for Ask answers.
-Check if local_agent.py passes a separate max_tokens to _llm_chat.
+`LLM_MAX_TOKENS = 400` in llm_client.py. local_agent.py calls `_llm_chat` with no
+override so uses the 400-token default. Bump to 1200. Quick fix.
 
-**F7** [V still open]: Blast radius includes builtins. Filter in blast_radius tool
-in agent_tools.py — skip callers/callees where file_path is None or is a stdlib path.
+**F3** [V still open]: Hyperlinked function names in Ask answers do nothing when clicked.
+Find `socket.on("ask_result"` or equivalent in console.html. Links render (as `<a>` or
+`.ed-sym-link` spans) but have no click listener attached. Add listener to fire
+`activateTab("editor")` + editor open for the symbol name.
 
-**F15** [V still open]: Map "to symbol" field focus unreliable. Look at click handler
-for the "to" input — may be sharing focus with "from" input.
+**F1** [V still open]: Largest-files card file names not clickable (Shape tab).
+Find the corpus_projections socket handler that renders the card. Add click→editor nav.
 
-**F19** [V]: Editor sym list renders each symbol twice (duplicate entries). Observed
-when opening world/dm_tools.py — 5 distinct symbols shown as 10 rows. Investigate
-the socket handler that populates #ed-sym-list; likely double-appending on re-render.
+**F11** [V still open]: Call tree callee names not clickable (no re-root via name, no
+editor nav). Search console.html for `tr-line` — the callee row class. Click handler
+missing or broken; ▶ re-root button works but the name text itself doesn't.
 
-**F10** [?]: Call tree anonymous fetch callbacks shown as raw code blocks.
-**F12** [?]: Call tree no breadcrumb/back after re-rooting.
-**F14** [?]: Map graph node click does nothing.
-**F16** [?]: Left nav entry point clicks only work in Call tree tab.
+**F7** [V still open]: Blast radius extended impact includes builtins (Flask, SocketIO,
+forEach, catch, str, print). 69 symbols shown; most are noise. Filter in blast_radius
+in agent_tools.py — skip where file_path is None or is an external lib path.
+
+**F15** [?]: Map "to symbol" field doesn't reliably receive focus.
+**F10** [?]: Call tree anonymous fetch callbacks shown as raw multi-line code blocks.
+**F12** [?]: Call tree no breadcrumb/back after re-rooting on a callee.
+**F14** [?]: Map graph node click does nothing (hover + click have no handler).
+**F16** [?]: Left nav entry point clicks only work in Call tree tab; no-op elsewhere.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-Start with F17 verification (should be fixed by F18), then F2 (quick token limit bump),
-then F3 (Ask link navigation), then F11 (call tree name clicks).
+**1. Fix F19** — duplicate sym list entries (quick, high visibility).
+   In console.html find where `#ed-sym-list` is populated. Look for the event that
+   fires it — likely `socket.on("editor_symbols"` or similar. Check if it appends
+   without clearing first, or if the event fires twice.
 
-**1. Verify F17** — open Editor tab, click a symbol in the left symbol pane.
-If it now works (F18 fix was the root cause), mark done and move on.
+**2. Fix F2** — bump Ask token limit (one-liner).
+   `llm_client.py` line: `LLM_MAX_TOKENS = 400` → `LLM_MAX_TOKENS = 1200`
+   Or add `LLM_ASK_MAX_TOKENS = 1200` and pass it from local_agent._call_llm.
 
-**2. Fix F2** — increase Ask answer token limit.
-In llm_client.py, `LLM_MAX_TOKENS = 400`. The Ask path in local_agent.py calls
-`_llm_chat(messages, timeout=_LLM_TIMEOUT)` with no max_tokens override, so it
-uses the default 400. Change to 1200 (or add a separate constant for Ask).
+**3. Fix F3** — Ask answer hyperlinks.
+   Find the ask_result handler in console.html. Symbols appear as clickable spans
+   already — check if click listeners are attached after `innerHTML` replaces the
+   content (listeners on replaced nodes are lost). Use event delegation on the
+   output container instead.
 
-**3. Fix F3** — Ask answer hyperlinks dead.
-Find `socket.on("ask_result"` or equivalent in console.html. The response text
-has symbol names as hyperlinks (`<a>` or `<span class="ed-sym-link">`). A click
-listener must fire `activateTab("editor")` + editor open. Check if the listener
-is attached after the response renders or if innerHTML kills it.
-
-**4. Fix F11** — Call tree callee name click.
-Search console.html for `tr-line` — that's the callee name row class. Should have
-a click handler to open the symbol in Editor. Likely missing or broken.
+**4. Fix F11** — call tree callee name click.
+   Grep console.html for `tr-line`. Should add click → `activateTab("editor")` +
+   open symbol in editor.
 
 ---
 
 ## KNOWN TRAPS (carried forward)
 
+- Cytoscape containers need `position:relative;overflow:hidden` — otherwise canvases
+  escape to nearest positioned ancestor and overlay the UI. [V this session]
+- `llm_client.chat()` reasoning_content fallback removed — don't re-add it. [V]
 - `_wrap_body()` must be in sketch_stub.py wherever body fragments are parsed. [?]
 - `line_number=0` trap: exclude from ORDER BY queries on functions table. [?]
 - `_pull_type_defs`: two paths — classes table + functions LIKE 'TypeName::%'. [?]
 - export_context session in-memory; resets on server restart. Intentional. [?]
-- GAP-5 fix: fetch dead-end detection only finds raw callee strings in graph_edges. [?]
 - pytest `-m` on CLI REPLACES addopts — never pass `-m` by hand. [V]
-- Same-name symbol collision in feature_shape (local_symbols keyed by name). [?]
 
 ## RESOURCE / PROCESS RULES [V]
 
