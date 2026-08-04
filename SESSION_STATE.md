@@ -1,6 +1,6 @@
-Written at commit: c99b33a
+Written at commit: d04ad84
 
-# SESSION STATE — session 296 handoff
+# SESSION STATE — session 297 handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,63 +9,56 @@ Written at commit: c99b33a
 
 ## WHAT HAPPENED THIS SESSION
 
-**All 4 DELTA_LOG gaps from session 295 implemented and closed** [V]
+**Delta loop ran 3 passes against dj2; 4 more gaps found and closed** [V]
 
-Bart's instruction: "I don't see them, you do. You are acting in my stead so that a
-programmer can use the tool without relying on you." All 4 NEEDS_FIX gaps from the
-2026-08-04 evaluation run were implemented without further confirmation.
+Gaps 5-8 implemented:
+- **Gap 5 (detect_topology):** ABC-interface moved to own action queue line with
+  find_abc_gaps() pointer. "39 — run find_abc_gaps() to classify; some may be
+  accepted scaffolds."
+- **Gap 6 (list_stubs):** 0-caller/0-depth stubs now labeled "isolated" not "tail."
+  "tail" incorrectly implied a chain exists above a disconnected stub.
+- **Gap 7 (list_features):** "Wired-but-incomplete" detection added (ep >= 20 AND
+  stubs >= 5). Fires for dj2: world (10 stubs, 164 EPs) and config (12 stubs, 60 EPs).
+- **Gap 8 (list_stubs):** Footer note added explaining caller count includes unresolved
+  edges; direct to frontier_priority for resolved-functional-caller ranking.
+
+All 8 gaps across sessions 296-297 are now FIXED in DELTA_LOG.md. 459 tests pass.
 
 ---
 
-## WHAT WAS FIXED (verify by running tools against dj2)
+## CURRENT TOOL OUTPUT FOR dj2 (verified at d04ad84)
 
-**Gap 1 — detect_topology: synthesis on orphan-dominant corpus** [V]
-Added Synthesis line when orphaned_impl >= 3x total_stubs AND >= 50.
-Fires for dj2: "primary gap is CONNECTIVITY (941) not IMPLEMENTATION (25). Wire existing
-code into entry points before adding new stubs."
+After all fixes, running the 5 tools against dj2 produces:
 
-**Gap 1b — frontier_coverage: matching connectivity note** [V]
-Added Synthesis line when no_callers >= 3x stub_gated AND >= 50.
-Fires for dj2: "468 functions have no callers at all vs 0 stub-gated. Primary gap is
-CONNECTIVITY."
+**detect_topology:** Synthesis fires — "CONNECTIVITY (941) not IMPLEMENTATION (25)." ABC
+action queue points to find_abc_gaps(). Shape table + synthesis is complete.
 
-**Gap 2 — frontier_priority: test-file tagging** [V]
-Added [test] tag per stub when file is a test file. Added note when ALL priority stubs
-are in test files.
-Fires for dj2: get_player_by_session tagged [test], note "game/application logic has no
-stub-blocked paths."
+**frontier_coverage:** LOW stub pressure + connectivity synthesis. "468 no callers vs 0
+stub-gated." Complete.
 
-**Gap 3 — list_stubs: FSM stub section** [V]
-FSM stubs (name contains ::action:: or ::guard::, or .json source) separated into own
-section with explanation: "caller count is 0 due to string dispatch, not disconnection."
-Fires for dj2: 12 FSM stubs (EncounterFSM, BarterFSM, TradeFSM) shown separately.
-Added helper _is_fsm_stub(name, fp) inline.
+**frontier_priority:** 1 result (get_player_by_session, test stub, tagged [test]). Note:
+"all priority stubs are in test files." Complete.
 
-**Gap 4 — list_features: built-but-not-integrated signal** [V]
-Added detection: completeness >= 85% AND ep_ratio <= 8% AND sym_count >= 20.
-Fires for dj2: dungeon_neo (141 symbols, 0% stubs, 6 entry points) flagged.
+**list_stubs:** 10 regular stubs (5 with 1 caller/tail, 5 with 0 callers/isolated) + 12
+FSM stubs in separate section. Footer note on unresolved-edge semantics. Complete.
 
-**Also added** [V]
-`_is_test_path(fp)` helper near `_is_test_feature` — used by frontier_priority.
-
-459 tests passed. DELTA_LOG.md updated: all 4 gaps marked FIXED with session note.
+**list_features:** Table + "Built-but-not-integrated: dungeon_neo" + "Wired-but-incomplete:
+world, config." Complete.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Run the delta loop again.** Run all 5 tools against dj2 and check whether the tool
-   output now matches what a developer needs to know. Look for NEW gaps — things the
-   tool still doesn't say that Claude would add.
-2. **Consider frontier_priority for FSM stubs.** Currently FSM stubs show 0 in
-   frontier_priority (they're disconnected, not in any chain). Should they get a
-   bonus score since they're real unimplemented mechanics? Or is the list_stubs FSM
-   section sufficient?
-3. **ABC-interface count (39) in detect_topology** — this is high and likely includes
-   phases.py intentional scaffolds (classified as accepted in RM67). Does detect_topology
-   need to exclude or tag accepted ABC gaps? Worth a look.
-4. **RM67 convergence probe** — dj2 last probed 2026-08-02. After these fixes, consider
-   whether the probe output changes enough to warrant an update to TRACKER.md.
+1. **Run the delta loop again.** Another pass against dj2. Are there remaining gaps where
+   the tool output still doesn't match what a developer needs to know?
+2. **Check other corpora.** Run detect_topology + list_features against at least one other
+   corpus (e.g., commonplace, rotjs) to verify the new synthesis signals don't misfire on
+   clean corpora or produce false positives.
+3. **ABC-interface classification.** The 39 ABC gaps in dj2 — run find_abc_gaps() and
+   check how many are real vs. accepted phases.py scaffolds. Does find_abc_gaps() output
+   need its own synthesis signal?
+4. **Convergence assessment.** After 8 gap fixes, does dj2 now reach RM67 convergence?
+   Check the probe acceptance criteria in TRACKER.md.
 
 ---
 
@@ -89,7 +82,8 @@ See memory/feedback_core_job.md.
 - Old corpus DBs may lack `http_route`/`is_tool`/`is_stub` columns — handle gracefully. [V s293]
 - FSM stubs have 0 static callers (string dispatch) — don't treat as low-priority. [V s295]
 - RM-Perf profile tier deferred — trigger is "something feels slow in real use." [V s295]
-- frontier_priority [test] tag uses _is_test_path() helper — keep in sync with _is_test_feature(). [V s296]
+- frontier_priority [test] tag uses _is_test_path() — keep in sync with _is_test_feature(). [V s296]
+- list_stubs caller count = ALL edges (resolved + unresolved); frontier_priority = resolved only. [V s297]
 
 ## RESOURCE / PROCESS RULES [V]
 
