@@ -1809,6 +1809,11 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
             fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
             lines.append(f"    {name}  ({fp})")
 
+    lines.append("")
+    lines.append(
+        "  Note: caller count includes all graph edges (resolved + unresolved)."
+        " Use frontier_priority for resolved-functional-caller ranking."
+    )
     return "\n".join(lines)
 
 

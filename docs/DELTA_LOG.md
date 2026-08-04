@@ -124,3 +124,16 @@ All 4 gaps from the 2026-08-04 evaluation run were implemented in `determined/ag
 detect_topology reports 39 ABC-interface gaps. frontier_priority shows 1 result (a test stub). No connection between them in the output. Developer has to know to run find_abc_gaps() separately. This is covered by the fix to detect_topology (Gap 5 above).
 
 **Outcome:** COVERED_BY_GAP5
+
+---
+
+## 2026-08-04 — Third evaluation run against dj2 (session 297)
+
+### Tool: list_stubs vs frontier_priority — caller count inconsistency
+**Local AI output:** list_stubs shows `_get_encounter_context (1 callers, tail)`, `_get_combat_context (1 callers, tail)`, etc. frontier_priority doesn't list them.
+
+**Delta:** list_stubs caller count uses a LEFT JOIN on ALL graph_edges — it includes unresolved callers (functions not in the functions table). frontier_priority requires caller to be a resolved implemented function (JOIN functions WHERE is_stub=0). A stub with 1 unresolved caller appears as "1 callers, tail" in list_stubs but zero in frontier_priority. Developer reads "this has a real caller, implement it" but the caller may be noise. The count semantics are different and there's no note explaining the discrepancy.
+
+**Fix needed:** list_stubs footer note: "Caller count includes all graph edges; unresolved callers (external/missing functions) may inflate counts. Use frontier_priority for resolved-caller-only ranking."
+
+**Outcome:** FIXED — note added to list_stubs output.
