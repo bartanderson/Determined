@@ -161,3 +161,22 @@ detect_topology reports 39 ABC-interface gaps. frontier_priority shows 1 result 
 **Fix needed:** For stubs with <= 3 callers, fetch and append the caller name(s) inline, annotated as (unresolved), (stub), or bare name for implemented callers.
 
 **Outcome:** FIXED — caller names shown with resolution status. Revealed: ALL 5 "tail" stubs in dj2 have unresolved callers (e.g., "ContextBuilder.build (unresolved)"). These are phantom edges — the callers don't exist in the corpus. Developer now correctly treats these as lower priority than frontier_priority would suggest.
+
+---
+
+## 2026-08-04 — Session 299: analyze_corpus developer entry point
+
+### New tool: analyze_corpus()
+**Purpose:** Developer entry point — run first on any unfamiliar corpus. Produces CORPUS ANALYSIS (counts), SHAPE (dominant problem pattern), WHAT TO DO NOW (ordered steps), JUDGMENT CALLS (human decisions required), and SUGGESTED NEXT TOOLS.
+
+**dj2 output (verified):**
+- SHAPE: Connectivity-dominant (66% orphaned vs 25 stubs) — correct
+- WHAT TO DO NOW: (1) wired subsystems — world/ 10 stubs; (2) wire isolated — dungeon_neo/ + static/; correct priority order
+- JUDGMENT CALLS: FSM mechanics (12), isolated stubs (5), test stubs (1), ABC gaps (39) — all correct
+- SUGGESTED NEXT TOOLS: list_stubs, feature_shape, find_abc_gaps — appropriate
+
+**False positive caught and fixed (commonplace):** analyze_corpus labeled commonplace "Connectivity-dominant" (42 orphaned, 71%) even though it's a 60-function Flask app where HTTP routes aren't in the static graph. Fix: added `orphaned_impl >= 50` floor to connectivity-dominant threshold (matches detect_topology and frontier_coverage floors).
+
+**rotjs (library):** SHAPE "unclear" — correct. No false positives.
+
+**Outcome:** FIXED — analyze_corpus ships. False positive corrected. 391 tests pass.

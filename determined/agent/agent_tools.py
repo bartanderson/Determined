@@ -2248,27 +2248,46 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         f"  FSM-dispatch           {fsm_disconnected:>5}  stubs with string-dispatch callers (0 static edges)",
         f"  Disconnected           {disconnected:>5}  stubs with no graph connections [possibly dead]",
         "",
-        "  Action queues:",
-        f"    Implement now:  chain-tail ({chain_tail}) > direct-call ({direct_call}) > chain-head ({chain_head})",
-        f"    ABC-interface:  {abc_gap_count} abstract methods unimplemented — run find_abc_gaps() to classify (some may be accepted scaffolds)",
-        f"    FSM mechanics:  {fsm_disconnected} stubs with string dispatch — real work, not dead code; see list_stubs",
-        f"    Write callers:  orphaned-impl ({orphaned_impl})",
-        f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})",
     ]
 
-    # Synthesis: flag when connectivity gap dominates the stub gap
-    if total_stubs > 0 and orphaned_impl >= 3 * total_stubs and orphaned_impl >= 50:
-        lines.append("")
-        lines.append(
-            f"  Synthesis: primary gap is CONNECTIVITY ({orphaned_impl} unconnected implementations)"
-            f" not IMPLEMENTATION ({total_stubs} stubs)."
-            f" Wire existing code into entry points before adding new stubs."
+    action_lines = ["  Action queues:"]
+    action_lines.append(
+        f"    Implement now:  chain-tail ({chain_tail}) > direct-call ({direct_call}) > chain-head ({chain_head})"
+    )
+    if abc_gap_count > 0:
+        action_lines.append(
+            f"    ABC-interface:  {abc_gap_count} abstract methods unimplemented"
+            f" — run find_abc_gaps() to classify (some may be accepted scaffolds)"
         )
-    elif total_stubs == 0 and orphaned_impl >= 50:
+    if fsm_disconnected > 0:
+        action_lines.append(
+            f"    FSM mechanics:  {fsm_disconnected} stubs with string dispatch"
+            f" — real work, not dead code; see list_stubs"
+        )
+    action_lines.append(f"    Write callers:  orphaned-impl ({orphaned_impl})")
+    action_lines.append(f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})")
+    lines.extend(action_lines)
+
+    # Synthesis: flag when connectivity gap dominates the stub gap.
+    # Only fire when orphaned fraction of the corpus is high (>=50%) to avoid misfiring
+    # on libraries or corpora where high orphan counts are accepted analysis ceilings.
+    orphaned_fraction = orphaned_impl / total_non_stub if total_non_stub else 0
+    if total_stubs > 0 and orphaned_impl >= 3 * total_stubs and orphaned_impl >= 50 and orphaned_fraction >= 0.5:
         lines.append("")
         lines.append(
-            f"  Synthesis: no stubs found — corpus is fully implemented."
-            f" {orphaned_impl} functions have no functional callers; the gap is wiring, not coding."
+            f"  Synthesis: primary gap is CONNECTIVITY ({orphaned_impl} unconnected implementations,"
+            f" {orphaned_fraction:.0%} of corpus) not IMPLEMENTATION ({total_stubs} stubs)."
+            f" Wire existing code into entry points before adding new stubs."
+            f" (Note: libraries and interface-dispatch-heavy corpora may show high orphan counts"
+            f" as an accepted analysis ceiling — verify before acting.)"
+        )
+    elif total_stubs == 0 and orphaned_impl >= 50 and orphaned_fraction >= 0.5:
+        lines.append("")
+        lines.append(
+            f"  Synthesis: no stubs — corpus is fully implemented."
+            f" {orphaned_impl} functions ({orphaned_fraction:.0%}) have no functional callers."
+            f" If this is an app/game, the gap is wiring, not coding."
+            f" If this is a library, high orphan counts are expected (external callers not in corpus)."
         )
 
     return "\n".join(lines)
@@ -7547,13 +7566,15 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
                 )
                 break
 
-    # Built-but-not-integrated: high completeness, very few entry points relative to symbol count
+    # Built-but-not-integrated: high completeness, very few entry points relative to symbol count.
+    # Threshold: sym_count >= 30 (avoids small main/entry packages), ep_count >= 2 (avoids
+    # single-EP program mains), ep_ratio <= 0.08.
     isolated = []
     for feat in features:
         sym_count = len(feat_symbols[feat])
         stub_count = feat_stubs[feat]
         ep_count = feat_entry_points[feat]
-        if sym_count < 20:
+        if sym_count < 30 or ep_count < 2:
             continue
         completeness = 1.0 - (stub_count / sym_count)
         ep_ratio = ep_count / sym_count
@@ -7563,6 +7584,7 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     if isolated:
         lines.append("")
         lines.append("  Built-but-not-integrated (complete subsystems with few external callers):")
+        lines.append("  Note: libraries may show here — external callers are outside the corpus.")
         for feat, syms, stubs, eps in isolated:
             stub_pct = int((stubs / syms) * 100) if syms else 0
             lines.append(
@@ -8824,6 +8846,270 @@ TOOLS = {
     # Design Oracle
     "design_oracle":                    (design_oracle,                    "assessor"),
 }
+
+
+def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
+    """
+    analyze_corpus() - developer entry point. Run this first.
+
+    Runs detect_topology, frontier_priority, list_features, and list_stubs in
+    sequence, synthesizes the results into a plain-language report, and tells
+    you exactly what to do next — including where you need to make a judgment
+    call vs. where the tool has a clear answer.
+    """
+    conn = oracle.conn
+
+    # --- Gather raw data ---
+    total_stubs = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 1").fetchone()[0]
+    total_impl  = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 0").fetchone()[0]
+
+    if total_stubs + total_impl == 0:
+        return "No functions found in corpus. Has the corpus been ingested?"
+
+    # Topology (reuse the function)
+    topo_text = detect_topology(oracle, {})
+
+    # Stubs with resolved callers (real direct-call stubs)
+    real_priority_stubs = conn.execute(
+        """
+        SELECT f.name, f.file_path, COUNT(DISTINCT ge.caller) AS callers
+        FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller AND caller_fn.is_stub = 0
+        WHERE f.is_stub = 1
+          AND f.file_path NOT LIKE '%/test_%'
+          AND f.file_path NOT LIKE '%\\test_%'
+          AND f.file_path NOT LIKE '%/tests/%'
+          AND f.file_path NOT LIKE '%\\tests\\%'
+        GROUP BY f.name, f.file_path
+        ORDER BY callers DESC
+        LIMIT 5
+        """
+    ).fetchall()
+
+    # Test-file stubs with functional callers (false-priority)
+    test_stubs = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+        JOIN functions caller_fn ON caller_fn.name = ge.caller AND caller_fn.is_stub = 0
+        WHERE f.is_stub = 1
+          AND (f.file_path LIKE '%/test_%' OR f.file_path LIKE '%\\test_%'
+               OR f.file_path LIKE '%/tests/%' OR f.file_path LIKE '%\\tests\\%')
+        """
+    ).fetchone()[0]
+
+    # FSM stubs
+    fsm_stubs = conn.execute(
+        """
+        SELECT f.name, f.file_path FROM functions f
+        WHERE f.is_stub = 1
+          AND (f.name LIKE '%::action::%' OR f.name LIKE '%::guard::%')
+        """
+    ).fetchall()
+
+    # Isolated stubs (no callers at all, not FSM, not test)
+    isolated_stubs = conn.execute(
+        """
+        SELECT f.name, f.file_path FROM functions f
+        WHERE f.is_stub = 1
+          AND f.file_path NOT LIKE '%/test_%'
+          AND f.file_path NOT LIKE '%\\test_%'
+          AND NOT (f.name LIKE '%::action::%' OR f.name LIKE '%::guard::%')
+          AND NOT EXISTS (
+            SELECT 1 FROM graph_edges ge
+            WHERE ge.callee = f.name OR ge.callee LIKE '%.' || f.name
+          )
+        """
+    ).fetchall()
+
+    # Orphaned implementations (connectivity gap)
+    orphaned_impl = conn.execute(
+        """
+        SELECT COUNT(DISTINCT f.name)
+        FROM functions f
+        WHERE f.is_stub = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM graph_edges ge
+            JOIN functions caller_fn ON caller_fn.name = ge.caller
+            WHERE (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
+              AND caller_fn.is_stub = 0
+          )
+        """
+    ).fetchone()[0]
+
+    # Built-but-not-integrated subsystems
+    from collections import defaultdict
+    fps = conn.execute(
+        "SELECT REPLACE(REPLACE(file_path, '\\', '/'), '\\\\', '/') as fp, name, is_stub FROM functions"
+    ).fetchall()
+    prefix = _detect_prefix([r[0] for r in fps])
+    dir_key = _dir_key_fn(1, prefix)
+    feat_symbols: dict = defaultdict(set)
+    feat_stubs: dict = defaultdict(int)
+    for fp, name, is_stub in fps:
+        key = dir_key(_fp_norm(fp))
+        if _is_test_feature(key):
+            continue
+        feat_symbols[key].add(name)
+        if is_stub:
+            feat_stubs[key] += 1
+
+    feat_entry_points: dict = defaultdict(int)
+    callee_feat_map: dict = defaultdict(set)
+    for feat, syms in feat_symbols.items():
+        for sym in syms:
+            callee_feat_map[sym].add(feat)
+    caller_fp_map = {name: _fp_norm(fp) for fp, name, _ in fps}
+    for caller, callee in conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
+        caller_fp = caller_fp_map.get(caller, "")
+        caller_k = dir_key(caller_fp) if caller_fp else ""
+        for feat in callee_feat_map.get(callee, set()):
+            if caller_k != feat:
+                feat_entry_points[feat] += 1
+
+    built_isolated = [
+        (f, len(feat_symbols[f]), feat_stubs[f], feat_entry_points[f])
+        for f in feat_symbols
+        if len(feat_symbols[f]) >= 30
+        and feat_entry_points[f] >= 2
+        and (1.0 - feat_stubs[f] / len(feat_symbols[f])) >= 0.85
+        and (feat_entry_points[f] / len(feat_symbols[f])) <= 0.08
+    ]
+    wired_incomplete = [
+        (f, len(feat_symbols[f]), feat_stubs[f], feat_entry_points[f])
+        for f in feat_symbols
+        if feat_entry_points[f] >= 20 and feat_stubs[f] >= 5
+    ]
+
+    # --- Build the report ---
+    lines = [
+        "CORPUS ANALYSIS",
+        "=" * 60,
+        f"  {total_impl} implemented functions  |  {total_stubs} stubs",
+        "",
+    ]
+
+    # 1. What kind of problem does this corpus have?
+    orphaned_pct = int(orphaned_impl / total_impl * 100) if total_impl else 0
+    if total_stubs == 0:
+        lines.append("SHAPE: Complete — no stubs.")
+        if orphaned_impl > 50:
+            lines.append(f"  {orphaned_pct}% of implemented functions have no callers.")
+            lines.append("  Primary gap: CONNECTIVITY — wire existing code into entry points.")
+    elif orphaned_impl >= 50 and orphaned_impl >= 3 * total_stubs and orphaned_pct >= 50:
+        lines.append(f"SHAPE: Connectivity-dominant — {orphaned_pct}% orphaned vs {total_stubs} stubs.")
+        lines.append("  Primary gap: CONNECTIVITY — wire existing code, not stub completion.")
+    elif real_priority_stubs:
+        lines.append(f"SHAPE: Stub-blocked — {len(real_priority_stubs)} stubs block real callers.")
+        lines.append("  Primary gap: IMPLEMENTATION — implement the stubs listed below.")
+    else:
+        lines.append(f"SHAPE: {total_stubs} stubs present, none with verified callers.")
+        lines.append("  Primary gap: unclear — see stub breakdown below.")
+
+    lines.append("")
+
+    # 2. What to do now (ordered, concrete)
+    lines.append("WHAT TO DO NOW")
+    lines.append("-" * 40)
+
+    step = 1
+
+    if wired_incomplete:
+        lines.append(f"  {step}. Implement stubs in wired subsystems (these block real callers):")
+        for feat, syms, stubs, eps in sorted(wired_incomplete, key=lambda x: -x[3]):
+            stub_pct = int(stubs / syms * 100) if syms else 0
+            lines.append(f"       {feat}/  — {stubs} stubs ({stub_pct}%), {eps} entry points")
+        step += 1
+
+    if built_isolated:
+        lines.append(f"  {step}. Wire complete-but-isolated subsystems into the application:")
+        for feat, syms, stubs, eps in sorted(built_isolated, key=lambda x: -x[1]):
+            lines.append(f"       {feat}/  — {syms} symbols, {eps} internal entry points")
+        step += 1
+
+    if real_priority_stubs:
+        lines.append(f"  {step}. Stubs with verified real callers (implement these):")
+        for name, fp, callers in real_priority_stubs:
+            fn = (fp or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"       {name}  ({fn}, {callers} callers)")
+        step += 1
+
+    if not wired_incomplete and not built_isolated and not real_priority_stubs:
+        if total_stubs == 0:
+            lines.append(f"  {step}. No implementation work — use blast_radius or feature_shape")
+            lines.append("       to explore what's wired vs. isolated.")
+            step += 1
+        else:
+            lines.append(f"  {step}. No stubs have verified callers. See JUDGMENT CALLS below.")
+            step += 1
+
+    lines.append("")
+
+    # 3. Where you need to make a judgment call
+    lines.append("JUDGMENT CALLS (tool can't answer these)")
+    lines.append("-" * 40)
+    judgment_needed = False
+
+    if fsm_stubs:
+        judgment_needed = True
+        fsm_names = sorted({n.split("::")[0] for n, _ in fsm_stubs})
+        lines.append(f"  FSM mechanics ({len(fsm_stubs)} stubs across: {', '.join(fsm_names)}):")
+        lines.append("    These are real unimplemented game mechanics. Static analysis can't")
+        lines.append("    prioritize them — you decide which scenarios to implement first.")
+        lines.append("    Run: list_stubs   to see the full list.")
+
+    if isolated_stubs:
+        judgment_needed = True
+        lines.append(f"  Isolated stubs ({len(isolated_stubs)}) — no callers, not in FSM:")
+        for name, fp in isolated_stubs[:5]:
+            fn = (fp or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"    {name}  ({fn})")
+        lines.append("    Decide: implement, delete, or leave. Run blast_radius on each to check impact.")
+
+    if test_stubs > 0:
+        judgment_needed = True
+        lines.append(f"  Test-file stubs ({test_stubs}): decide whether to implement or ignore.")
+        lines.append("    Run: frontier_priority  to see them listed with [test] tags.")
+
+    abc_count = conn.execute(
+        "SELECT COUNT(DISTINCT f.name) FROM functions f WHERE f.is_stub = 1 AND f.name LIKE '%abstract%'"
+    ).fetchone()[0]
+    total_abc = len(_get_abc_gap_set(conn))
+    if total_abc > 0:
+        judgment_needed = True
+        lines.append(f"  ABC-interface gaps ({total_abc}): some may be accepted scaffolds, some real gaps.")
+        lines.append("    Run: find_abc_gaps()  to classify each one.")
+
+    if not judgment_needed:
+        lines.append("  None at this time.")
+
+    lines.append("")
+
+    # 4. What to run next
+    lines.append("SUGGESTED NEXT TOOLS")
+    lines.append("-" * 40)
+    if wired_incomplete:
+        feat = wired_incomplete[0][0]
+        lines.append(f"  list_stubs(limit=20)           — full stub list with caller context")
+        lines.append(f"  feature_shape({feat!r})  — trace call paths through the incomplete subsystem")
+    if built_isolated:
+        feat = built_isolated[0][0]
+        lines.append(f"  feature_shape({feat!r})  — see what's in the isolated subsystem")
+        lines.append(f"  blast_radius({feat!r})   — find what calling code would activate it")
+    if fsm_stubs:
+        lines.append(f"  list_stubs(limit=30)           — see FSM stub section for full mechanic list")
+    if total_abc > 0:
+        lines.append(f"  find_abc_gaps()                — classify the {total_abc} ABC-interface gaps")
+    if not (wired_incomplete or built_isolated or fsm_stubs or total_abc):
+        lines.append("  detect_topology()              — full topology breakdown")
+        lines.append("  frontier_coverage()            — stub pressure measurement")
+
+    return "\n".join(lines)
+
+
+TOOLS["analyze_corpus"] = (analyze_corpus, "oracle")
 
 
 def feature_work_plan(assessor: "Assessor", args: dict) -> str:

@@ -1324,6 +1324,14 @@ REGISTRY: dict[str, dict] = {
         "use_when": "After identify a stub or gap — understand what calls it and what it calls before deciding implementation order.",
         "category": "frontier",
     },
+    "analyze_corpus": {
+        "purpose": "Developer entry point: run this first on any corpus. Produces a structured orientation — what kind of problem the corpus has (connectivity-dominant, stub-blocked, or complete), what to do now in priority order, which judgment calls require human input, and which tools to run next.",
+        "args": {},
+        "output": "CORPUS ANALYSIS (counts), SHAPE (dominant pattern), WHAT TO DO NOW (ordered steps), JUDGMENT CALLS (FSM/isolated/ABC stubs), SUGGESTED NEXT TOOLS",
+        "feeds": ["detect_topology", "list_stubs", "list_features", "frontier_priority", "frontier_coverage"],
+        "use_when": "Starting work on a new or unfamiliar corpus. Run before any other tool to orient on what kind of work is needed.",
+        "category": "knowledge",
+    },
 }
 
 

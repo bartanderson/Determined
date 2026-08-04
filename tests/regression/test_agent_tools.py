@@ -610,6 +610,8 @@ def test_dispatch_all_tools_registered():
         "find_large_files",
         "find_fetch_calls",
         "find_cross_language_calls",
+        # RM67: developer entry point
+        "analyze_corpus",
     }
 
     assert set(TOOLS.keys()) == expected
