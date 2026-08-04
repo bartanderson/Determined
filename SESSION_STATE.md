@@ -1,65 +1,88 @@
-Written at commit: 7b86ecf
+Written at commit: 624d8b2
 
-# SESSION STATE — session 294 handoff
+# SESSION STATE — session 295 handoff
 
 ## Active branch: main [V]
-## Working tree: one unstaged edit (TRACKER.md — RM-Perf static tier note)
+## Working tree: clean [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-RM-Perf static tier complete. Both remaining items shipped. [V]
+**RM-Perf profile tier: correctly deferred** [V]
+Profile-grounded tier requires runnable corpus code. dj2 has incomplete stubs.
+Profiling incomplete code gives noise. The TRACKER said "Gated on analysis/code-gen
+arc complete" — we had already gated it correctly. Deferred as late-stage tool;
+trigger is "something feels slow in real use." TRACKER.md updated.
+
+**Standing job clarified (critical)** [V]
+Bart surfaced a core process failure: over many sessions, Claude was told to run
+Determined on dj2, log the delta between what the tool says and what Claude adds,
+and fix the tool to close that gap. This was never done systematically. Claude was
+acting as the synthesis layer without logging or fixing.
+
+**Delta log methodology established** [V]
+- `docs/DELTA_LOG.md` created — persistent gap log in the repo
+- `memory/feedback_core_job.md` saved — standing job in memory for future sessions
+- First evaluation run against dj2 completed; 4 gaps logged (see below)
 
 ---
 
-## DONE THIS SESSION
+## DELTA LOG — gaps found in first evaluation run [V]
 
-**`find_stable_layouts`** (commit bf478f8) [V]:
-AST-based. Queries `classes` table, reads source files, walks `__init__` and
-all other methods, collects `self.attr` assignments. Classes where no init attr
-is mutated elsewhere = stable layout = `__slots__`/frozen-dataclass candidate.
-- `_is_self_attr` / `_collect_self_attrs` helpers (scope-aware, don't cross nested defs)
-- `_fp_label` module-level helper (last 2 path components, shared by both tools)
-- On Determined: 47/57 stable, 10 mutable. `BagStore`, `ClassificationContract`, etc.
-  flagged `[slot]`. `Assessor`, `DBOracle`, `Visitor` correctly mutable.
-- TOOL_REGISTRY + tool_registry.py REGISTRY + Workbench "Architecture" tile
-- 5 tests pass [V]
+All data from running detect_topology, frontier_priority, list_stubs, list_features,
+frontier_coverage against `C_Users_bartl_dev_dj2.db`.
 
-**`find_dead_event_handlers`** (commit 7b86ecf) [V]:
-Queries `function_reference` edges (Thread/kwarg callbacks; filters dotted-name
-noise like `judgment.verdict` by requiring bare callee names) and `decorator`
-edges (`__js_client__`/`__http_client__` synthetic callers from parse_ast.py
-for Socket.IO/Flask). Subtracts functions that also have any non-callback edge.
-Tags `[dec]` (decorator-registered) vs `[ref]` (argument-passed).
-- On Determined: 58 results — all 50+ socket.io `handle_*` and Flask routes
-  (`[dec]`), plus `_run`, `_auto_orient`, `_start_llm_server` Thread targets (`[ref]`)
-- Prereq (`function_reference` + `decorator` edge types) was already in DB from a prior session
-- TOOL_REGISTRY + tool_registry.py REGISTRY + Workbench "Architecture" tile
-- 4 tests pass [V]
+**Gap 1 — detect_topology / frontier_coverage: no synthesis on orphan-dominant corpus**
+Tool reports 941 orphaned-impls correctly but draws no conclusion. A developer needs
+to know: this is a wiring problem, not a stub problem. Fix: emit synthesis line when
+orphaned-impl count dominates stub count by large margin.
 
-TRACKER.md RM-Perf section updated: static tier marked DONE 2026-08-04. [?] (not committed yet)
+**Gap 2 — frontier_priority: doesn't flag test-file stubs**
+#1 priority stub (`get_player_by_session`) is in `test_economy.py`. Game logic has
+zero stub-blocked paths. Tool doesn't distinguish game code from test code in priority
+output. Fix: tag test-file stubs; note when ALL direct-call stubs are in test files.
 
----
+**Gap 3 — list_stubs: FSM stubs falsely ranked 0-priority**
+FSM stubs (EncounterFSM, BarterFSM actions/guards) show 0 callers because FSMs
+dispatch by string name. `resolve_parley`, `resolve_flee` etc. are real unimplemented
+game mechanics but rank below a test fixture. Fix: detect FSM stubs (`.json` source,
+`::action::` / `::guard::` naming), tag them separately, note caller count is 0 due
+to dispatch not disconnection.
 
-## REMAINING OPEN ITEMS
+**Gap 4 — list_features: no "implemented-but-isolated" signal**
+`dungeon_neo/`: 141 symbols, 0 stubs, 6 entry points. Fully implemented but barely
+wired. `config/`: 73% complete, 0 entry points. Tool shows numbers but draws no
+conclusion. Fix: flag directories where completeness is high but entry points are low
+relative to symbol count — "built but not integrated" pattern.
 
-**RM-Perf profile-grounded tier** (next for RM-Perf): hot-path dominance,
-repeated recomputation on hot edges. Requires cProfile instrumentation hook
-producing `call_samples` table. No design yet. Estimated 2-3 sessions.
-
-**RM21** — gated on real multi-hop failure. Don't start.
-**RM76** — gated on Bart saying "record this decision." Don't start.
-**RM73, RM77** — FUTURE.
+**What dj2 actually looks like (Claude synthesis for reference):**
+dj2 is not stub-blocked. 98% implemented. Primary gap is integration — dungeon_neo
+is a complete subsystem sitting in isolation. config/ is the only subsystem with
+real stub incompleteness (12/45 stubs). FSM mechanics (encounter/barter) have
+unimplemented actions the static tool can't prioritize due to dispatch pattern.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. Commit the TRACKER.md edit (or fold into the session wrap commit).
-2. Ask Bart: start profile-grounded tier (cProfile hook), or different priority?
-   If profile-grounded: first step is designing `call_samples` table schema and
-   a cProfile injection wrapper, likely a new `determined/profiling/` module.
+1. **Ask Bart:** do the 4 logged gaps match what he's seen? Any other walls?
+2. **Implement the fixes** (if Bart confirms):
+   - Gap 1: synthesis line in detect_topology / frontier_coverage
+   - Gap 2: test-file tagging in frontier_priority
+   - Gap 3: FSM stub detection and tagging in list_stubs / frontier_priority
+   - Gap 4: "built-but-isolated" signal in list_features
+3. Re-run evaluation after fixes; log new deltas or close gaps.
+4. Repeat until gaps are small enough that Bart can use the tool without Claude.
+
+---
+
+## PROCESS RULE (new, standing) [V]
+
+The job in every session: run Determined on dj2, compare tool output to what Claude
+would say, log the delta in DELTA_LOG.md, fix the tool. Never synthesize the delta
+yourself without logging and fixing. "Good enough is good enough" — check with Bart
+on judgment calls. See memory/feedback_core_job.md.
 
 ---
 
@@ -68,18 +91,13 @@ producing `call_samples` table. No design yet. Estimated 2-3 sessions.
 - Cytoscape containers need `position:relative;overflow:hidden`. [V s290]
 - `llm_client.chat()` reasoning_content fallback removed — don't re-add it. [V s290]
 - Editor sym list: exact path equality in DB query, not LIKE basename. [V s291]
-- Call tree: filter callees/callers whose name contains `\n` (raw JS code). [V s291]
+- Call tree: filter callees/callers whose name contains `\n`. [V s291]
 - `_wrap_body()` must be in sketch_stub.py wherever body fragments are parsed. [?]
 - `line_number=0` trap: exclude from ORDER BY queries on functions table. [?]
 - pytest `-m` on CLI REPLACES addopts — never pass `-m` by hand. [V]
 - Old corpus DBs may lack `http_route`/`is_tool`/`is_stub` columns — handle gracefully. [V s293]
-- `find_dead_event_handlers`: dotted callee names (e.g. `judgment.verdict`) are
-  false positives from dict-literal detection in `_extract_function_references`
-  in parse_ast.py. Filtered at query time by `'.' not in callee`. The source-level
-  visitor remains noisy — tighten in a future session if needed. [V s294]
-- `classes` DB table has duplicate rows for the same class in some files (e.g.
-  commonplace `extractor.py` appears 3x). `find_stable_layouts` deduplicates by
-  name per file (first-occurrence wins). [V s294]
+- FSM stubs have 0 static callers (string dispatch) — don't treat as low-priority. [V s295]
+- RM-Perf profile tier deferred — trigger is "something feels slow in real use." [V s295]
 
 ## RESOURCE / PROCESS RULES [V]
 
