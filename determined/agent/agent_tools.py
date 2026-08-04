@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import ast
+import json
 import os
 import re
 import sqlite3
@@ -2688,6 +2690,157 @@ def find_pure_functions(oracle: "DBOracle", args: dict) -> str:
             prev_fp = fp_short
         memo = " [memo]" if callers >= 2 else ""
         lines.append(f"    {name}  line {line_no}  ({callers} callers){memo}")
+    return "\n".join(lines)
+
+
+def _is_self_attr(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+    )
+
+
+def _collect_self_attrs(stmts: list, result: set) -> None:
+    """Walk a statement list collecting self.X assignments, not crossing nested defs."""
+    for stmt in stmts:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(stmt, ast.Assign):
+            for t in stmt.targets:
+                if _is_self_attr(t):
+                    result.add(t.attr)
+        elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+            if _is_self_attr(stmt.target):
+                result.add(stmt.target.attr)
+        for _fld, val in ast.iter_fields(stmt):
+            if isinstance(val, list):
+                _collect_self_attrs(val, result)
+
+
+def find_stable_layouts(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_stable_layouts(scope?) - find Python classes whose __init__ attributes
+    are never reassigned in other methods (stable object layout).
+
+    A class has a stable layout when every attribute assigned in __init__ is not
+    mutated by any other method. These are candidates for __slots__, frozen
+    dataclasses, or NamedTuple.
+
+    Args:
+        scope: optional file path fragment to narrow results
+    """
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+
+    scope_clause = " AND c.file_path LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
+
+    rows = conn.execute(
+        "SELECT c.name, c.file_path, c.line_number, c.methods_json "
+        "FROM classes c "
+        "WHERE c.file_path LIKE '%.py'" + scope_clause + " "
+        "ORDER BY c.file_path, c.line_number",
+        scope_param,
+    ).fetchall()
+
+    if not rows:
+        return "No Python classes found matching criteria."
+
+    by_file: dict[str, list] = {}
+    for name, fp, ln, mj in rows:
+        methods = json.loads(mj) if mj else []
+        if "__init__" not in methods:
+            continue
+        seen_names = {n for n, _ in by_file.get(fp, [])}
+        if name not in seen_names:
+            by_file.setdefault(fp, []).append((name, ln))
+
+    if not by_file:
+        return "No Python classes with explicit __init__ found."
+
+    stable: list[tuple] = []
+    mutable: list[tuple] = []
+    errors: list[str] = []
+
+    for fp, class_list in sorted(by_file.items()):
+        try:
+            source = Path(fp).read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError) as exc:
+            errors.append(f"  {fp}: {exc}")
+            continue
+
+        class_nodes: dict[str, ast.ClassDef] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                class_nodes[node.name] = node
+
+        for class_name, class_ln in class_list:
+            class_node = class_nodes.get(class_name)
+            if class_node is None:
+                continue
+
+            init_attrs: set[str] = set()
+            other_attrs: set[str] = set()
+
+            for item in class_node.body:
+                if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                bucket: set[str] = set()
+                _collect_self_attrs(item.body, bucket)
+                if item.name == "__init__":
+                    init_attrs = bucket
+                else:
+                    other_attrs |= bucket
+
+            if not init_attrs:
+                continue
+
+            mutated = init_attrs & other_attrs
+            if not mutated:
+                stable.append((class_name, fp, class_ln, sorted(init_attrs)))
+            else:
+                mutable.append((class_name, fp, class_ln, sorted(mutated)))
+
+    total = len(stable) + len(mutable)
+    if total == 0:
+        return "No Python classes with __init__ attributes could be analyzed."
+
+    lines = [
+        f"Stable object layouts: {len(stable)}/{total} classes "
+        f"have no post-__init__ attribute mutations.",
+        "  [slot] = ≤6 attrs, good __slots__ candidate",
+        "",
+    ]
+
+    def _fp_label(fp: str) -> str:
+        parts = fp.replace("\\", "/").split("/")
+        return "/".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
+
+    prev_fp = None
+    for class_name, fp, ln, attrs in stable:
+        if fp != prev_fp:
+            lines.append(f"  {_fp_label(fp)}")
+            prev_fp = fp
+        slot_tag = " [slot]" if len(attrs) <= 6 else ""
+        attr_preview = ", ".join(attrs[:8])
+        if len(attrs) > 8:
+            attr_preview += f", +{len(attrs) - 8} more"
+        lines.append(f"    {class_name}  line {ln}  ({len(attrs)} attrs: {attr_preview}){slot_tag}")
+
+    if mutable:
+        lines += ["", f"Mutable ({len(mutable)} classes — attrs reassigned after __init__):"]
+        prev_fp = None
+        for class_name, fp, ln, mutated in mutable:
+            if fp != prev_fp:
+                lines.append(f"  {_fp_label(fp)}")
+                prev_fp = fp
+            lines.append(f"    {class_name}  line {ln}  mutates: {', '.join(mutated[:5])}")
+
+    if errors:
+        lines += ["", "Parse errors (skipped):"] + errors
+
     return "\n".join(lines)
 
 
@@ -8364,6 +8517,7 @@ TOOLS = {
     "frontier_coverage":    (frontier_coverage,     "oracle"),
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
     "find_pure_functions":      (find_pure_functions,       "oracle"),
+    "find_stable_layouts":      (find_stable_layouts,       "oracle"),
     "find_hot_callers":         (find_hot_callers,          "oracle"),
     "find_large_files":         (find_large_files,          "oracle"),
     "find_fetch_calls":         (find_fetch_calls,          "oracle"),

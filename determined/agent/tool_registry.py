@@ -594,6 +594,16 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to identify functions that are safe to cache or parallelise — no mutation side-effects detected in their file.",
         "category": "knowledge",
     },
+    "find_stable_layouts": {
+        "purpose": "Find Python classes whose __init__ attributes are never reassigned in other methods (stable object layout). These are candidates for __slots__, frozen dataclasses, or NamedTuple.",
+        "args": {
+            "scope": "(optional) file path fragment to narrow results",
+        },
+        "output": "Per-file list of stable classes with attribute names and [slot] flag for ≤6-attribute candidates. Followed by mutable classes and which attrs they reassign.",
+        "feeds": ["symbol_context", "find_pure_functions"],
+        "use_when": "You want to identify classes that never mutate their own attributes after construction — stable layouts safe for __slots__ or frozen dataclass conversion.",
+        "category": "knowledge",
+    },
     "find_hot_callers": {
         "purpose": "Find implemented functions with the most incoming resolved call edges — load-bearing utilities with high blast radius if broken or slow.",
         "args": {

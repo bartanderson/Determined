@@ -603,6 +603,7 @@ def test_dispatch_all_tools_registered():
         "chain_context",
         # RM-Perf static tier
         "find_pure_functions",
+        "find_stable_layouts",
         "find_hot_callers",
         # RM-Perf: refactoring + HTMX migration tools
         "find_large_files",
@@ -1013,6 +1014,107 @@ def test_list_callers_single_file_tag():
     result = list_callers(oracle, {"symbol": "generate_encounter"})
     assert "engine.py" in result
     assert "handle_movement" in result
+
+
+# ------------------------------------------------------------------
+# find_stable_layouts
+# ------------------------------------------------------------------
+
+def _make_stable_fixture(tmp_path):
+    """
+    Two temp Python files + in-memory DB.
+
+    stable.py: Point class — only assigns x, y in __init__, never touches them again.
+    mutable.py: Counter class — assigns count in __init__, increments in increment().
+    """
+    stable_src = tmp_path / "stable.py"
+    stable_src.write_text(
+        "class Point:\n"
+        "    def __init__(self, x, y):\n"
+        "        self.x = x\n"
+        "        self.y = y\n"
+        "    def distance(self, other):\n"
+        "        return ((self.x - other.x)**2 + (self.y - other.y)**2)**0.5\n",
+        encoding="utf-8",
+    )
+
+    mutable_src = tmp_path / "mutable.py"
+    mutable_src.write_text(
+        "class Counter:\n"
+        "    def __init__(self):\n"
+        "        self.count = 0\n"
+        "    def increment(self):\n"
+        "        self.count += 1\n",
+        encoding="utf-8",
+    )
+
+    import json
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    from determined.persistence.persistence_engine import ensure_schema
+    ensure_schema(conn)
+
+    fp_stable = str(stable_src)
+    fp_mutable = str(mutable_src)
+
+    conn.execute(
+        "INSERT INTO classes (file_path, name, line_number, methods_json, base_classes_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (fp_stable, "Point", 1, json.dumps(["__init__", "distance"]), "[]"),
+    )
+    conn.execute(
+        "INSERT INTO classes (file_path, name, line_number, methods_json, base_classes_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (fp_mutable, "Counter", 1, json.dumps(["__init__", "increment"]), "[]"),
+    )
+    conn.commit()
+
+    oracle = FakeOracle(conn)
+    return oracle
+
+
+def test_find_stable_layouts_detects_stable_class(tmp_path):
+    oracle = _make_stable_fixture(tmp_path)
+    from determined.agent.agent_tools import find_stable_layouts
+    result = find_stable_layouts(oracle, {})
+    assert "Point" in result
+    assert "stable" in result.lower() or "1/" in result or "Stable" in result
+
+
+def test_find_stable_layouts_detects_mutable_class(tmp_path):
+    oracle = _make_stable_fixture(tmp_path)
+    from determined.agent.agent_tools import find_stable_layouts
+    result = find_stable_layouts(oracle, {})
+    assert "Counter" in result
+    assert "count" in result
+
+
+def test_find_stable_layouts_scope_filter(tmp_path):
+    oracle = _make_stable_fixture(tmp_path)
+    from determined.agent.agent_tools import find_stable_layouts
+    # Use filename "stable.py" as scope — specific enough to exclude mutable.py
+    result = find_stable_layouts(oracle, {"scope": "stable.py"})
+    assert "Point" in result
+    assert "Counter" not in result
+
+
+def test_find_stable_layouts_slot_tag(tmp_path):
+    oracle = _make_stable_fixture(tmp_path)
+    from determined.agent.agent_tools import find_stable_layouts
+    result = find_stable_layouts(oracle, {})
+    # Point has 2 attrs (x, y) — qualifies for [slot]
+    assert "[slot]" in result
+
+
+def test_find_stable_layouts_empty_db():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    from determined.persistence.persistence_engine import ensure_schema
+    ensure_schema(conn)
+    oracle = FakeOracle(conn)
+    from determined.agent.agent_tools import find_stable_layouts
+    result = find_stable_layouts(oracle, {})
+    assert "No Python classes" in result
 
 
 # ------------------------------------------------------------------

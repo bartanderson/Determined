@@ -3423,6 +3423,15 @@ _WORKBENCH_TOOLS = [
         "args": {},
         "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
     },
+    {
+        "id": "find_stable_layouts",
+        "label": "Stable object layouts",
+        "tool": "find_stable_layouts",
+        "description": "Classes whose __init__ attrs are never reassigned — candidates for __slots__ or frozen dataclass",
+        "category": "Architecture",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
     # ── Cross-corpus ──────────────────────────────────────────
     {
         "id": "corpus_chain_survey",
