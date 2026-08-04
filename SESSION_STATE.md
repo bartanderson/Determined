@@ -1,6 +1,6 @@
-Written at commit: 237886b
+Written at commit: 1bccda2
 
-# SESSION STATE — session 298 handoff
+# SESSION STATE — session 299 handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,67 +9,70 @@ Written at commit: 237886b
 
 ## WHAT HAPPENED THIS SESSION
 
-**Delta loop ran 1 pass against dj2; 2 more gaps found and closed** [V]
+**Session goal shift:** Bart said "the remaining gap is in me — you know how to use the tool, I don't. Show me through development." New direction: build a developer entry point that tells a developer what to run, in order, what the output means, and when to make a judgment call vs. when the tool has a clear answer.
 
-**Gap 9 (detect_topology):** FSM stubs were counted in "Disconnected — Decide" (18 total).
-12 of those are FSM stubs — real unimplemented game mechanics, not "possibly dead" code.
-Fixed: FSM-dispatch row added to shape table; Disconnected drops from 18 to 6.
-Action queue now: "FSM mechanics: 12 stubs with string dispatch — real work, not dead code."
+**analyze_corpus() shipped (1bccda2)** [V]
 
-**Gap 10 (list_stubs):** Stubs with 1-3 callers showed counts without names, making it
-impossible to verify if the caller was real. Fixed: caller names shown inline.
-Extended: also annotate caller as (unresolved)/(stub)/bare depending on resolution status.
-Key finding: ALL 5 "tail" stubs in dj2 have unresolved callers — phantom edges, not real
-call paths. "ContextBuilder.build (unresolved)" etc. These stubs are effectively as isolated
-as the 0-caller stubs, despite appearing connected in the raw graph.
+New developer entry point tool. Run this first on any corpus. Produces:
+- CORPUS ANALYSIS: counts (impl / stubs)
+- SHAPE: connectivity-dominant / stub-blocked / complete
+- WHAT TO DO NOW: ordered concrete steps (wired subsystems first, then isolated, then stubs with verified callers)
+- JUDGMENT CALLS: FSM mechanics, isolated stubs, test stubs, ABC gaps — places where human decides
+- SUGGESTED NEXT TOOLS: context-aware (points to list_stubs, feature_shape, find_abc_gaps based on what's present)
 
-459 tests passed. 10 total gaps closed across sessions 296-298.
+**dj2 output (verified)** [V]:
+```
+SHAPE: Connectivity-dominant — 66% orphaned vs 25 stubs.
+WHAT TO DO NOW:
+  1. Implement wired subsystems — world/ (10 stubs, 164 EPs)
+  2. Wire isolated — dungeon_neo/ (141 syms), static/ (75 syms)
+JUDGMENT CALLS: FSM 12, isolated 5, test 1, ABC 39
+```
+Matches what Claude would say. No synthesis needed.
+
+**False positive caught and fixed** [V]: commonplace (60 functions) was labeled
+"Connectivity-dominant" because HTTP routes aren't statically resolved. Fix: added
+`orphaned_impl >= 50` floor to the connectivity-dominant threshold.
+
+**All corpora checked** [V]:
+- dj2: connectivity-dominant, correct
+- commonplace: "unclear" (1 stub, small app) — correct after fix
+- rotjs: "unclear" (6 method stubs, library) — correct
+
+391 tests pass [V].
 
 ---
 
-## CURRENT TOOL STATE FOR dj2 (verified at 237886b)
+## CURRENT TOOL STATE (verified at 1bccda2)
 
-**detect_topology:** Synthesis fires. FSM-dispatch: 12 / Disconnected: 6. Action queues
-cover FSM mechanics, ABC classify pointer, orphaned-impl. Complete.
+**analyze_corpus:** Ships. Registered in TOOLS, REGISTRY, test expected set. [V]
 
-**frontier_coverage:** LOW stub pressure + connectivity synthesis. Complete.
-
-**frontier_priority:** 1 result (test stub, tagged [test]) + "all test files" note. Complete.
-
-**list_stubs:** Regular stubs with caller names+resolution. FSM section. Footer note.
-Key output: all "tail" stubs have unresolved callers — developer knows not to chase them.
-
-**list_features:** Built-but-not-integrated (dungeon_neo) + Wired-but-incomplete
-(world, config). Complete.
-
----
-
-## CONVERGENCE ASSESSMENT
-
-After 10 gap fixes, the tool output for dj2 now says — without Claude synthesis:
-1. Primary gap is connectivity (941 orphaned impls), not stubs (25)
-2. The only production priority stub is a test fixture
-3. FSM stubs are real work but not statically resolvable
-4. dungeon_neo is complete but unwired; config/world are wired but incomplete
-5. All "tail" stubs have phantom callers — lower priority than their label suggests
-
-This matches what Claude would say. Next question: does dj2 now reach RM67 convergence?
-Check the probe acceptance criteria in TRACKER.md before declaring it.
+**All gaps 1-10 remain closed** (from sessions 296-298). [?]
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Check other corpora for false positives.** The new signals (FSM-dispatch, wired-but-
-   incomplete, built-but-not-integrated, connectivity synthesis) must not misfire on clean
-   corpora. Run detect_topology + list_features against commonplace and rotjs.
-2. **RM67 convergence assessment for dj2.** Read TRACKER.md RM67 criteria. Has dj2 met
-   all 3 convergence criteria? If yes, update probe table and mark dj2 probed.
-3. **find_abc_gaps() on dj2.** 39 ABC-interface gaps shown in detect_topology. Run
-   find_abc_gaps() and count real vs. accepted scaffolds. Does the tool output explain
-   the breakdown clearly enough?
-4. **Consider: delta loop on Determined itself.** Run the 5 tools against the Determined
-   corpus — does the tool correctly diagnose its own shape?
+1. **Run analyze_corpus as the opening move.** Don't run detect_topology manually first —
+   run `analyze_corpus()` and show Bart what a fresh developer would see. The tool is now
+   the teacher. See: `determined/agent/agent_tools.py:analyze_corpus`.
+
+2. **RM67 convergence assessment for dj2.** Read TRACKER.md RM67 criteria. dj2 now outputs
+   everything needed without Claude synthesis — does that meet the convergence probe criteria?
+   If yes, update the probe table. Command: read TRACKER.md, look for RM67 section.
+
+3. **find_abc_gaps() on dj2.** analyze_corpus shows 39 ABC gaps. Run find_abc_gaps() and
+   check: does the output explain which are accepted scaffolds vs real gaps? If not, that's
+   the next delta log entry.
+
+4. **config/ missing from wired_incomplete in analyze_corpus.** [?] config has 12 stubs and
+   60 entry points but didn't appear in the WHAT TO DO NOW step 1. Needs investigation —
+   may be a query path issue in analyze_corpus vs list_features (dir_key mapping).
+   Start with: run list_features() and compare config/ numbers.
+
+5. **static/ false positive in analyze_corpus.** static/ (75 symbols, 6 EPs) appears as
+   "built-but-isolated" — but it's web assets (JS/CSS), not Python code to wire. May need
+   an `_is_test_feature`-style filter for static directories.
 
 ---
 
@@ -96,6 +99,7 @@ See memory/feedback_core_job.md.
 - frontier_priority [test] tag uses _is_test_path() — keep in sync with _is_test_feature(). [V s296]
 - list_stubs caller count = ALL edges (resolved + unresolved); frontier_priority = resolved only. [V s297]
 - dj2 "tail" stubs ALL have unresolved callers — phantom edges, not real call paths. [V s298]
+- analyze_corpus connectivity-dominant threshold requires orphaned_impl >= 50 (small apps / HTTP routing). [V s299]
 
 ## RESOURCE / PROCESS RULES [V]
 
