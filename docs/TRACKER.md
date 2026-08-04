@@ -385,6 +385,6 @@ Bart says "I want to record this decision."
 
 Walkers all done (C, C++, Zig, Lua, Rust). See DESIGN.md for rationale and design.
 
-- [ ] `target_lang` param in `project_stub` — multi-language emission routing
-- [ ] `runtime_locator.py` shim — snippet compilation/verification for Zig/Lua/C
-- [ ] Corpus chain UI — surface shape comparison across language family in browser
+- [x] `target_lang` param in `project_stub` — auto-detect from file ext; explicit override via `lang` arg (2026-08-03)
+- [x] `runtime_locator.py` shim — check_snippet() / check_projection(); Python via ast.parse always; C/Zig/Lua via tool when on PATH else ok=None (2026-08-03)
+- [x] Corpus chain UI — `survey_corpus_chain()` + `format_corpus_chain()` in graph_utils; Workbench "Cross-Corpus" tool, oracle-independent; 22 corpora surveyed, grouped by language family (2026-08-03)
