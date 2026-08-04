@@ -1,6 +1,6 @@
-Written at commit: 624d8b2
+Written at commit: c99b33a
 
-# SESSION STATE — session 295 handoff
+# SESSION STATE — session 296 handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,80 +9,71 @@ Written at commit: 624d8b2
 
 ## WHAT HAPPENED THIS SESSION
 
-**RM-Perf profile tier: correctly deferred** [V]
-Profile-grounded tier requires runnable corpus code. dj2 has incomplete stubs.
-Profiling incomplete code gives noise. The TRACKER said "Gated on analysis/code-gen
-arc complete" — we had already gated it correctly. Deferred as late-stage tool;
-trigger is "something feels slow in real use." TRACKER.md updated.
+**All 4 DELTA_LOG gaps from session 295 implemented and closed** [V]
 
-**Standing job clarified (critical)** [V]
-Bart surfaced a core process failure: over many sessions, Claude was told to run
-Determined on dj2, log the delta between what the tool says and what Claude adds,
-and fix the tool to close that gap. This was never done systematically. Claude was
-acting as the synthesis layer without logging or fixing.
-
-**Delta log methodology established** [V]
-- `docs/DELTA_LOG.md` created — persistent gap log in the repo
-- `memory/feedback_core_job.md` saved — standing job in memory for future sessions
-- First evaluation run against dj2 completed; 4 gaps logged (see below)
+Bart's instruction: "I don't see them, you do. You are acting in my stead so that a
+programmer can use the tool without relying on you." All 4 NEEDS_FIX gaps from the
+2026-08-04 evaluation run were implemented without further confirmation.
 
 ---
 
-## DELTA LOG — gaps found in first evaluation run [V]
+## WHAT WAS FIXED (verify by running tools against dj2)
 
-All data from running detect_topology, frontier_priority, list_stubs, list_features,
-frontier_coverage against `C_Users_bartl_dev_dj2.db`.
+**Gap 1 — detect_topology: synthesis on orphan-dominant corpus** [V]
+Added Synthesis line when orphaned_impl >= 3x total_stubs AND >= 50.
+Fires for dj2: "primary gap is CONNECTIVITY (941) not IMPLEMENTATION (25). Wire existing
+code into entry points before adding new stubs."
 
-**Gap 1 — detect_topology / frontier_coverage: no synthesis on orphan-dominant corpus**
-Tool reports 941 orphaned-impls correctly but draws no conclusion. A developer needs
-to know: this is a wiring problem, not a stub problem. Fix: emit synthesis line when
-orphaned-impl count dominates stub count by large margin.
+**Gap 1b — frontier_coverage: matching connectivity note** [V]
+Added Synthesis line when no_callers >= 3x stub_gated AND >= 50.
+Fires for dj2: "468 functions have no callers at all vs 0 stub-gated. Primary gap is
+CONNECTIVITY."
 
-**Gap 2 — frontier_priority: doesn't flag test-file stubs**
-#1 priority stub (`get_player_by_session`) is in `test_economy.py`. Game logic has
-zero stub-blocked paths. Tool doesn't distinguish game code from test code in priority
-output. Fix: tag test-file stubs; note when ALL direct-call stubs are in test files.
+**Gap 2 — frontier_priority: test-file tagging** [V]
+Added [test] tag per stub when file is a test file. Added note when ALL priority stubs
+are in test files.
+Fires for dj2: get_player_by_session tagged [test], note "game/application logic has no
+stub-blocked paths."
 
-**Gap 3 — list_stubs: FSM stubs falsely ranked 0-priority**
-FSM stubs (EncounterFSM, BarterFSM actions/guards) show 0 callers because FSMs
-dispatch by string name. `resolve_parley`, `resolve_flee` etc. are real unimplemented
-game mechanics but rank below a test fixture. Fix: detect FSM stubs (`.json` source,
-`::action::` / `::guard::` naming), tag them separately, note caller count is 0 due
-to dispatch not disconnection.
+**Gap 3 — list_stubs: FSM stub section** [V]
+FSM stubs (name contains ::action:: or ::guard::, or .json source) separated into own
+section with explanation: "caller count is 0 due to string dispatch, not disconnection."
+Fires for dj2: 12 FSM stubs (EncounterFSM, BarterFSM, TradeFSM) shown separately.
+Added helper _is_fsm_stub(name, fp) inline.
 
-**Gap 4 — list_features: no "implemented-but-isolated" signal**
-`dungeon_neo/`: 141 symbols, 0 stubs, 6 entry points. Fully implemented but barely
-wired. `config/`: 73% complete, 0 entry points. Tool shows numbers but draws no
-conclusion. Fix: flag directories where completeness is high but entry points are low
-relative to symbol count — "built but not integrated" pattern.
+**Gap 4 — list_features: built-but-not-integrated signal** [V]
+Added detection: completeness >= 85% AND ep_ratio <= 8% AND sym_count >= 20.
+Fires for dj2: dungeon_neo (141 symbols, 0% stubs, 6 entry points) flagged.
 
-**What dj2 actually looks like (Claude synthesis for reference):**
-dj2 is not stub-blocked. 98% implemented. Primary gap is integration — dungeon_neo
-is a complete subsystem sitting in isolation. config/ is the only subsystem with
-real stub incompleteness (12/45 stubs). FSM mechanics (encounter/barter) have
-unimplemented actions the static tool can't prioritize due to dispatch pattern.
+**Also added** [V]
+`_is_test_path(fp)` helper near `_is_test_feature` — used by frontier_priority.
+
+459 tests passed. DELTA_LOG.md updated: all 4 gaps marked FIXED with session note.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Ask Bart:** do the 4 logged gaps match what he's seen? Any other walls?
-2. **Implement the fixes** (if Bart confirms):
-   - Gap 1: synthesis line in detect_topology / frontier_coverage
-   - Gap 2: test-file tagging in frontier_priority
-   - Gap 3: FSM stub detection and tagging in list_stubs / frontier_priority
-   - Gap 4: "built-but-isolated" signal in list_features
-3. Re-run evaluation after fixes; log new deltas or close gaps.
-4. Repeat until gaps are small enough that Bart can use the tool without Claude.
+1. **Run the delta loop again.** Run all 5 tools against dj2 and check whether the tool
+   output now matches what a developer needs to know. Look for NEW gaps — things the
+   tool still doesn't say that Claude would add.
+2. **Consider frontier_priority for FSM stubs.** Currently FSM stubs show 0 in
+   frontier_priority (they're disconnected, not in any chain). Should they get a
+   bonus score since they're real unimplemented mechanics? Or is the list_stubs FSM
+   section sufficient?
+3. **ABC-interface count (39) in detect_topology** — this is high and likely includes
+   phases.py intentional scaffolds (classified as accepted in RM67). Does detect_topology
+   need to exclude or tag accepted ABC gaps? Worth a look.
+4. **RM67 convergence probe** — dj2 last probed 2026-08-02. After these fixes, consider
+   whether the probe output changes enough to warrant an update to TRACKER.md.
 
 ---
 
-## PROCESS RULE (new, standing) [V]
+## PROCESS RULE (standing) [V]
 
-The job in every session: run Determined on dj2, compare tool output to what Claude
-would say, log the delta in DELTA_LOG.md, fix the tool. Never synthesize the delta
-yourself without logging and fixing. "Good enough is good enough" — check with Bart
-on judgment calls. See memory/feedback_core_job.md.
+Every session: run Determined on dj2, compare tool output to what Claude would say,
+log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
+See memory/feedback_core_job.md.
 
 ---
 
@@ -98,6 +89,7 @@ on judgment calls. See memory/feedback_core_job.md.
 - Old corpus DBs may lack `http_route`/`is_tool`/`is_stub` columns — handle gracefully. [V s293]
 - FSM stubs have 0 static callers (string dispatch) — don't treat as low-priority. [V s295]
 - RM-Perf profile tier deferred — trigger is "something feels slow in real use." [V s295]
+- frontier_priority [test] tag uses _is_test_path() helper — keep in sync with _is_test_feature(). [V s296]
 
 ## RESOURCE / PROCESS RULES [V]
 
