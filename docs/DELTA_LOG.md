@@ -82,3 +82,45 @@ All 4 gaps from the 2026-08-04 evaluation run were implemented in `determined/ag
 - **Gap 4 (list_features):** Built-but-not-integrated detection (completeness >= 85%, ep_ratio <= 8%). Fires for dj2: dungeon_neo (141 syms, 0 stubs, 6 EPs).
 
 459 tests passed. Verified against C_Users_bartl_dev_dj2.db.
+
+---
+
+## 2026-08-04 — Second evaluation run against dj2 (session 297)
+
+### Tool: detect_topology
+**Local AI output:** ABC-interface: 39 listed in "Implement now" queue. No pointer to find_abc_gaps(). No note that some may be accepted scaffolds.
+
+**Delta:** Developer reads "39 ABC interfaces to implement" but the actual number is lower — RM67 accepted 8 phases.py scaffolds. The action queue line gives no path to classify them. A developer needs: "run find_abc_gaps() to see per-gap classification before treating all 39 as work."
+
+**Fix needed:** Action queue line for abc-interface should append "— run find_abc_gaps() to classify; some may be accepted scaffolds."
+
+**Outcome:** FIXED — ABC-interface moved to own action queue line with find_abc_gaps() pointer.
+
+---
+
+### Tool: list_stubs
+**Local AI output:** Stubs with 0 callers labeled "tail."
+
+**Delta:** "tail" implies "implement me first to unblock the chain above" — but if callers=0 there is no chain above. These stubs are isolated, not chain-tails. A developer misreads 0-caller stubs as chain leaves (high priority) when they're actually disconnected (decide priority). The correct label is "isolated."
+
+**Fix needed:** In list_stubs output, when callers=0 and depth=0, use "isolated" not "tail."
+
+**Outcome:** FIXED — 0-caller/0-depth stubs now labeled "isolated."
+
+---
+
+### Tool: list_features
+**Local AI output:** config (45 symbols, 12 stubs, 60 entry points) shown in table. No conclusion drawn.
+
+**Delta:** config is the inverse pattern of dungeon_neo: heavily wired (60 entry points) but meaningfully incomplete (12/45 stubs = 27%). That's the "wired-but-incomplete" pattern — these stubs actually block real callers. The table shows the numbers but says nothing. A developer should know: "config stubs matter; they're connected to the live call graph."
+
+**Fix needed:** list_features should flag directories where entry_points >= 20 AND stub_count >= 5 as "wired-but-incomplete" — the actionable counterpart to built-but-not-integrated.
+
+**Outcome:** FIXED — "Wired-but-incomplete" section added. Fires for dj2: world (10 stubs, 164 EPs) and config (12 stubs, 60 EPs).
+
+---
+
+### Observation: no bridge from detect_topology ABC count to frontier_priority
+detect_topology reports 39 ABC-interface gaps. frontier_priority shows 1 result (a test stub). No connection between them in the output. Developer has to know to run find_abc_gaps() separately. This is covered by the fix to detect_topology (Gap 5 above).
+
+**Outcome:** COVERED_BY_GAP5

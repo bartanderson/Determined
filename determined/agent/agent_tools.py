@@ -1791,7 +1791,12 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
         callers = callers or 0
         depth = _chain_depth(name)
-        depth_tag = f"depth={depth}" if depth > 0 else "tail"
+        if callers == 0 and depth == 0:
+            depth_tag = "isolated"
+        elif depth > 0:
+            depth_tag = f"depth={depth}"
+        else:
+            depth_tag = "tail"
         lines.append(f"  {name} in {fp}  ({callers} callers, {depth_tag})")
 
     if fsm_rows:
@@ -2206,7 +2211,8 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         f"  Disconnected           {disconnected:>5}  stubs with no graph connections",
         "",
         "  Action queues:",
-        f"    Implement now:  chain-tail ({chain_tail}) > direct-call ({direct_call}) > abc-interface ({abc_gap_count}) > chain-head ({chain_head})",
+        f"    Implement now:  chain-tail ({chain_tail}) > direct-call ({direct_call}) > chain-head ({chain_head})",
+        f"    ABC-interface:  {abc_gap_count} abstract methods unimplemented — run find_abc_gaps() to classify (some may be accepted scaffolds)",
         f"    Write callers:  orphaned-impl ({orphaned_impl})",
         f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})",
     ]
@@ -7523,6 +7529,25 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
             lines.append(
                 f"    {feat}  —  {syms} symbols, {stub_pct}% stubs, {eps} entry points"
                 f"  →  implemented but barely wired; consider integrating before expanding"
+            )
+
+    # Wired-but-incomplete: many entry points but meaningful stub count — stubs actually block real callers
+    wired_incomplete = []
+    for feat in features:
+        sym_count = len(feat_symbols[feat])
+        stub_count = feat_stubs[feat]
+        ep_count = feat_entry_points[feat]
+        if ep_count >= 20 and stub_count >= 5:
+            wired_incomplete.append((feat, sym_count, stub_count, ep_count))
+
+    if wired_incomplete:
+        lines.append("")
+        lines.append("  Wired-but-incomplete (subsystems with live callers AND unimplemented stubs):")
+        for feat, syms, stubs, eps in wired_incomplete:
+            stub_pct = int((stubs / syms) * 100) if syms else 0
+            lines.append(
+                f"    {feat}  —  {syms} symbols, {stub_pct}% stubs, {eps} entry points"
+                f"  →  stubs here block real callers; prioritize over isolated subsystems"
             )
 
     return "\n".join(lines)
