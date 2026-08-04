@@ -1786,6 +1786,28 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     regular_rows = [(r[0], r[1], r[2]) for r in rows if not _is_fsm_stub(r[0], r[1])]
     fsm_rows     = [(r[0], r[1], r[2]) for r in rows if     _is_fsm_stub(r[0], r[1])]
 
+    def _caller_names(stub_name: str, limit: int = 3) -> list:
+        rows_ = conn.execute(
+            """
+            SELECT DISTINCT ge.caller,
+                   EXISTS(SELECT 1 FROM functions f2 WHERE f2.name = ge.caller) as resolved,
+                   COALESCE((SELECT f2.is_stub FROM functions f2 WHERE f2.name = ge.caller LIMIT 1), -1) as is_stub
+            FROM graph_edges ge
+            WHERE ge.callee = ? OR ge.callee LIKE '%.' || ?
+            LIMIT ?
+            """,
+            (stub_name, stub_name, limit),
+        ).fetchall()
+        result = []
+        for caller, resolved, is_stub in rows_:
+            if not resolved:
+                result.append(f"{caller} (unresolved)")
+            elif is_stub == 1:
+                result.append(f"{caller} (stub)")
+            else:
+                result.append(caller)
+        return result
+
     lines = [f"Stub functions ({len(rows)} shown, ranked by caller count):"]
     for name, fp_raw, callers in regular_rows:
         fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
@@ -1797,7 +1819,12 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
             depth_tag = f"depth={depth}"
         else:
             depth_tag = "tail"
-        lines.append(f"  {name} in {fp}  ({callers} callers, {depth_tag})")
+        if 1 <= callers <= 3:
+            caller_names = _caller_names(name)
+            caller_str = ", ".join(caller_names) if caller_names else "?"
+            lines.append(f"  {name} in {fp}  ({callers} callers [{caller_str}], {depth_tag})")
+        else:
+            lines.append(f"  {name} in {fp}  ({callers} callers, {depth_tag})")
 
     if fsm_rows:
         lines.append("")
@@ -2196,7 +2223,12 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         """
     ).fetchall()
     entry_point_stubs = sum(1 for name, fp in all_disconnected if _is_entry_point_hint(fp, name))
-    disconnected = len(all_disconnected) - entry_point_stubs
+    fsm_disconnected = sum(
+        1 for name, fp in all_disconnected
+        if not _is_entry_point_hint(fp, name)
+        and ("::action::" in name or "::guard::" in name or (fp or "").endswith(".json"))
+    )
+    disconnected = len(all_disconnected) - entry_point_stubs - fsm_disconnected
 
     total_stubs = conn.execute("SELECT COUNT(*) FROM functions WHERE is_stub = 1").fetchone()[0]
 
@@ -2213,11 +2245,13 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         f"  Chain-tail             {chain_tail:>5}  stubs: stub callers only [implement first]",
         f"  Orphaned-impl          {orphaned_impl:>5}  implementations with no functional callers",
         f"  Entry-point            {entry_point_stubs:>5}  stubs in route/handler/cli files [external trigger]",
-        f"  Disconnected           {disconnected:>5}  stubs with no graph connections",
+        f"  FSM-dispatch           {fsm_disconnected:>5}  stubs with string-dispatch callers (0 static edges)",
+        f"  Disconnected           {disconnected:>5}  stubs with no graph connections [possibly dead]",
         "",
         "  Action queues:",
         f"    Implement now:  chain-tail ({chain_tail}) > direct-call ({direct_call}) > chain-head ({chain_head})",
         f"    ABC-interface:  {abc_gap_count} abstract methods unimplemented — run find_abc_gaps() to classify (some may be accepted scaffolds)",
+        f"    FSM mechanics:  {fsm_disconnected} stubs with string dispatch — real work, not dead code; see list_stubs",
         f"    Write callers:  orphaned-impl ({orphaned_impl})",
         f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})",
     ]

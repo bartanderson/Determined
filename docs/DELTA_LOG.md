@@ -137,3 +137,27 @@ detect_topology reports 39 ABC-interface gaps. frontier_priority shows 1 result 
 **Fix needed:** list_stubs footer note: "Caller count includes all graph edges; unresolved callers (external/missing functions) may inflate counts. Use frontier_priority for resolved-caller-only ranking."
 
 **Outcome:** FIXED — note added to list_stubs output.
+
+---
+
+## 2026-08-04 — Fourth evaluation run against dj2 (session 298)
+
+### Tool: detect_topology — FSM stubs misclassified as "Disconnected — Decide"
+**Local AI output:** "Disconnected: 18 stubs with no graph connections" in Decide queue.
+
+**Delta:** 12 of those 18 are FSM stubs (already identified in list_stubs as real unimplemented game mechanics). detect_topology puts them in the same "Decide" bucket as potentially-dead disconnected stubs. A developer reads "18 disconnected, decide if dead" when 12 are definitively real work. list_stubs already separates them; detect_topology should too.
+
+**Fix needed:** In detect_topology, detect FSM stubs (::action::, ::guard:: in name, or .json path) among the disconnected set and report them separately. Subtract from "Disconnected" count and add "FSM-dispatch" row.
+
+**Outcome:** FIXED — FSM-dispatch: 12 row added; Disconnected drops from 18 to 6. Action queue: "FSM mechanics: 12 stubs with string dispatch — real work, not dead code; see list_stubs."
+
+---
+
+### Tool: list_stubs — caller names not shown for low-caller stubs
+**Local AI output:** "_get_encounter_context (1 callers, tail)" — who is that caller?
+
+**Delta:** Footer says caller count may include unresolved edges. Developer can't verify if the 1 caller is real without a separate query. For stubs with 1-3 callers, showing the actual caller name(s) lets the developer immediately assess if it's real or noise. Extended fix: also annotate whether the caller resolves to a known function (real/stub/unresolved).
+
+**Fix needed:** For stubs with <= 3 callers, fetch and append the caller name(s) inline, annotated as (unresolved), (stub), or bare name for implemented callers.
+
+**Outcome:** FIXED — caller names shown with resolution status. Revealed: ALL 5 "tail" stubs in dj2 have unresolved callers (e.g., "ContextBuilder.build (unresolved)"). These are phantom edges — the callers don't exist in the corpus. Developer now correctly treats these as lower priority than frontier_priority would suggest.
