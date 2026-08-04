@@ -1780,13 +1780,30 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         except Exception:
             return 0
 
+    def _is_fsm_stub(name: str, fp: str) -> bool:
+        return "::action::" in name or "::guard::" in name or (fp or "").endswith(".json")
+
+    regular_rows = [(r[0], r[1], r[2]) for r in rows if not _is_fsm_stub(r[0], r[1])]
+    fsm_rows     = [(r[0], r[1], r[2]) for r in rows if     _is_fsm_stub(r[0], r[1])]
+
     lines = [f"Stub functions ({len(rows)} shown, ranked by caller count):"]
-    for r in rows:
-        fp = (r[1] or "").replace("\\", "/").split("/")[-1]
-        callers = r[2] or 0
-        depth = _chain_depth(r[0])
+    for name, fp_raw, callers in regular_rows:
+        fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
+        callers = callers or 0
+        depth = _chain_depth(name)
         depth_tag = f"depth={depth}" if depth > 0 else "tail"
-        lines.append(f"  {r[0]} in {fp}  ({callers} callers, {depth_tag})")
+        lines.append(f"  {name} in {fp}  ({callers} callers, {depth_tag})")
+
+    if fsm_rows:
+        lines.append("")
+        lines.append(
+            f"  FSM stubs ({len(fsm_rows)}) — caller count is 0 due to string dispatch, not disconnection."
+            f" These are real unimplemented game mechanics:"
+        )
+        for name, fp_raw, _ in fsm_rows:
+            fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"    {name}  ({fp})")
+
     return "\n".join(lines)
 
 
@@ -2193,6 +2210,22 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
         f"    Write callers:  orphaned-impl ({orphaned_impl})",
         f"    Decide:         disconnected ({disconnected}) | entry-point ({entry_point_stubs})",
     ]
+
+    # Synthesis: flag when connectivity gap dominates the stub gap
+    if total_stubs > 0 and orphaned_impl >= 3 * total_stubs and orphaned_impl >= 50:
+        lines.append("")
+        lines.append(
+            f"  Synthesis: primary gap is CONNECTIVITY ({orphaned_impl} unconnected implementations)"
+            f" not IMPLEMENTATION ({total_stubs} stubs)."
+            f" Wire existing code into entry points before adding new stubs."
+        )
+    elif total_stubs == 0 and orphaned_impl >= 50:
+        lines.append("")
+        lines.append(
+            f"  Synthesis: no stubs found — corpus is fully implemented."
+            f" {orphaned_impl} functions have no functional callers; the gap is wiring, not coding."
+        )
+
     return "\n".join(lines)
 
 
@@ -2296,6 +2329,14 @@ def frontier_coverage(oracle: "DBOracle", args: dict) -> str:
     else:
         lines.append("  Signal: LOW stub pressure — most implemented code is reachable.")
 
+    # Connectivity synthesis: when no_callers dwarfs stub_gated, the gap is wiring not stubs
+    if no_callers >= 3 * max(stub_gated, 1) and no_callers >= 50:
+        lines.append(
+            f"  Synthesis: {no_callers} functions have no callers at all vs {stub_gated} stub-gated."
+            f" Primary gap is CONNECTIVITY (wire existing code in), not stub completion."
+            f" Run detect_topology for a breakdown."
+        )
+
     lines.append("  Note: 1-hop approximation. Multi-hop chains reported by detect_topology.")
     return "\n".join(lines)
 
@@ -2396,10 +2437,20 @@ def frontier_priority(oracle: "DBOracle", args: dict) -> str:
         "  Score  Callers  Shapes           Name",
         "  ──────────────────────────────────────────────────────────────",
     ]
+    all_test = bool(scored) and all(_is_test_path(fp) for _, _, _, fp, _ in scored)
     for score, callers, name, file_path, shapes in scored:
         fp = (file_path or "").replace("\\", "/").split("/")[-1]
         shape_str = "+".join(shapes) if shapes else "chain-only"
-        lines.append(f"  {score:>5}  {callers:>7}  {shape_str:<16}  {name}  ({fp})")
+        test_tag = "  [test]" if _is_test_path(file_path) else ""
+        lines.append(f"  {score:>5}  {callers:>7}  {shape_str:<16}  {name}  ({fp}){test_tag}")
+
+    if all_test:
+        lines.append("")
+        lines.append(
+            "  Note: all priority stubs are in test files — game/application logic has no"
+            " stub-blocked paths. These are test fixtures, not production gaps."
+        )
+
     return "\n".join(lines)
 
 
@@ -7325,6 +7376,19 @@ def _is_test_feature(key: str) -> bool:
     return base in _TEST_DIR_NAMES or base.startswith("test_") or base.startswith("spec_")
 
 
+def _is_test_path(fp: str) -> bool:
+    """True if the file path looks like a test file or is inside a test directory."""
+    norm = (fp or "").replace("\\", "/").lower()
+    parts = norm.split("/")
+    filename = parts[-1] if parts else ""
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return (
+        base.startswith("test_")
+        or base.endswith("_test")
+        or any(seg in _TEST_DIR_NAMES for seg in parts[:-1])
+    )
+
+
 def _is_external_callee(name: str, builtins: frozenset = frozenset()) -> bool:
     """
     True if the callee name looks like an external library call rather than a
@@ -7437,6 +7501,29 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
                     f"For architecture analysis use: scope=src"
                 )
                 break
+
+    # Built-but-not-integrated: high completeness, very few entry points relative to symbol count
+    isolated = []
+    for feat in features:
+        sym_count = len(feat_symbols[feat])
+        stub_count = feat_stubs[feat]
+        ep_count = feat_entry_points[feat]
+        if sym_count < 20:
+            continue
+        completeness = 1.0 - (stub_count / sym_count)
+        ep_ratio = ep_count / sym_count
+        if completeness >= 0.85 and ep_ratio <= 0.08:
+            isolated.append((feat, sym_count, stub_count, ep_count))
+
+    if isolated:
+        lines.append("")
+        lines.append("  Built-but-not-integrated (complete subsystems with few external callers):")
+        for feat, syms, stubs, eps in isolated:
+            stub_pct = int((stubs / syms) * 100) if syms else 0
+            lines.append(
+                f"    {feat}  —  {syms} symbols, {stub_pct}% stubs, {eps} entry points"
+                f"  →  implemented but barely wired; consider integrating before expanding"
+            )
 
     return "\n".join(lines)
 

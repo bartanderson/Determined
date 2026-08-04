@@ -23,7 +23,7 @@ conscious "good enough" decision.
 
 **Fix needed:** detect_topology and frontier_coverage should emit a synthesis line when orphaned-impl count dominates — something like: "Primary gap is connectivity (N functions unconnected), not implementation (M stubs). Focus: wire existing code into entry points before adding new stubs."
 
-**Outcome:** NEEDS_FIX
+**Outcome:** FIXED
 
 ---
 
@@ -34,7 +34,7 @@ conscious "good enough" decision.
 
 **Fix needed:** frontier_priority should tag which file each stub lives in (already does filename, but doesn't flag test files) and — more importantly — should note when ALL direct-call stubs are in test files, meaning game logic has zero stub-blocked paths.
 
-**Outcome:** NEEDS_FIX
+**Outcome:** FIXED
 
 ---
 
@@ -45,7 +45,7 @@ conscious "good enough" decision.
 
 **Fix needed:** FSM stubs (identified by `::action::` or `::guard::` in name, or `file_path` ending in `.json`) should get a special tag noting their caller count is zero due to dispatch, not because they're unwired. Could promote them in priority since they represent actual game features.
 
-**Outcome:** NEEDS_FIX
+**Outcome:** FIXED
 
 ---
 
@@ -58,7 +58,7 @@ conscious "good enough" decision.
 
 **Fix needed:** list_features should flag directories where completeness is high but entry points are very low relative to symbol count — that pattern means "implemented but not wired in."
 
-**Outcome:** NEEDS_FIX
+**Outcome:** FIXED
 
 ---
 
@@ -68,3 +68,17 @@ The tool correctly reports the numbers. What it doesn't say:
 dj2 is **not stub-blocked**. The game code is 98% implemented. The actual gap is integration: `dungeon_neo/` (141 symbols, 0 stubs) has 6 external entry points — it's a complete dungeon system sitting in isolation. `config/` (12 stubs) is the only subsystem with meaningful incompleteness. The FSM mechanics (encounter/barter) have unimplemented actions/guards that the static tool can't prioritize because FSMs dispatch by name.
 
 **What a developer needs to know:** Wire dungeon_neo into the game loop. Implement config stubs. Then implement FSM actions for encounter and barter resolution. The tool has all the data to say this but doesn't.
+
+---
+
+## 2026-08-04 — Session 296 fixes (all 4 gaps closed)
+
+All 4 gaps from the 2026-08-04 evaluation run were implemented in `determined/agent/agent_tools.py`:
+
+- **Gap 1 (detect_topology):** Added Synthesis line when orphaned_impl >= 3x total_stubs and >= 50. Fires for dj2: "primary gap is CONNECTIVITY (941) not IMPLEMENTATION (25)."
+- **Gap 1b (frontier_coverage):** Added matching Synthesis line when no_callers >= 3x stub_gated and >= 50.
+- **Gap 2 (frontier_priority):** Added `[test]` tag per stub + note when all priority stubs are in test files. Fires for dj2 (get_player_by_session).
+- **Gap 3 (list_stubs):** FSM stubs separated into own section with "0 callers due to string dispatch" explanation. Fires for dj2 (12 FSM stubs: EncounterFSM, BarterFSM, TradeFSM).
+- **Gap 4 (list_features):** Built-but-not-integrated detection (completeness >= 85%, ep_ratio <= 8%). Fires for dj2: dungeon_neo (141 syms, 0 stubs, 6 EPs).
+
+459 tests passed. Verified against C_Users_bartl_dev_dj2.db.
