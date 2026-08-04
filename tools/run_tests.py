@@ -88,7 +88,10 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_classify_stub.py",
         "tests/regression/test_corpus_projections.py"],
     "determined/agent/stub_projector.py": [
-        "tests/regression/test_scaffold_from_pattern.py"],
+        "tests/regression/test_scaffold_from_pattern.py",
+        "tests/regression/test_runtime_locator.py"],
+    "determined/agent/runtime_locator.py": [
+        "tests/regression/test_runtime_locator.py"],
     "determined/agent/tool_registry.py": [
         "tests/regression/test_agent_tools.py"],
     # determined/api/

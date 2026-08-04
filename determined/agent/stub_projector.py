@@ -242,20 +242,60 @@ _CLASSIFICATION_FRAMING = {
     ),
 }
 
+# Map file extension → (language label, fence hint, body instruction)
+_EXT_LANG: dict[str, tuple[str, str, str]] = {
+    ".py":   ("Python",     "python", "Return ONLY the function body as valid Python (no def line, no markdown)."),
+    ".pyi":  ("Python",     "python", "Return ONLY the function body as valid Python (no def line, no markdown)."),
+    ".c":    ("C",          "c",      "Return ONLY the function body as valid C (no signature line, no markdown). Include opening and closing braces."),
+    ".h":    ("C",          "c",      "Return ONLY the function body as valid C (no signature line, no markdown). Include opening and closing braces."),
+    ".cpp":  ("C++",        "cpp",    "Return ONLY the function body as valid C++ (no signature line, no markdown). Include opening and closing braces."),
+    ".hpp":  ("C++",        "cpp",    "Return ONLY the function body as valid C++ (no signature line, no markdown). Include opening and closing braces."),
+    ".cc":   ("C++",        "cpp",    "Return ONLY the function body as valid C++ (no signature line, no markdown). Include opening and closing braces."),
+    ".zig":  ("Zig",        "zig",    "Return ONLY the function body as valid Zig (no fn line, no markdown). Include opening and closing braces."),
+    ".lua":  ("Lua",        "lua",    "Return ONLY the function body as valid Lua (no function line, no markdown). End with 'end'."),
+    ".rs":   ("Rust",       "rust",   "Return ONLY the function body as valid Rust (no fn line, no markdown). Include opening and closing braces."),
+    ".go":   ("Go",         "go",     "Return ONLY the function body as valid Go (no func line, no markdown). Include opening and closing braces."),
+    ".ts":   ("TypeScript", "ts",     "Return ONLY the function body as valid TypeScript (no function line, no markdown). Include opening and closing braces."),
+    ".js":   ("JavaScript", "js",     "Return ONLY the function body as valid JavaScript (no function line, no markdown). Include opening and closing braces."),
+}
+_DEFAULT_LANG = ("Python", "python", "Return ONLY the function body (no signature line, no markdown).")
 
-def _build_prompt(ctx: dict, classification: Optional[str] = None) -> str:
+
+def _detect_lang(file_path: str) -> tuple[str, str, str]:
+    ext = Path(file_path).suffix.lower()
+    return _EXT_LANG.get(ext, _DEFAULT_LANG)
+
+
+def _build_prompt(ctx: dict, classification: Optional[str] = None, target_lang: Optional[str] = None) -> str:
     stub = ctx["stub"]
     args = json.loads(stub["arguments_json"] or "[]")
-    sig = f"def {stub['name']}({', '.join(args)})"
-    if stub["return_type"]:
-        sig += f" -> {stub['return_type']}"
+
+    # Language routing: explicit override → file-extension detection → Python default
+    if target_lang:
+        # Caller supplied explicit lang name; find matching entry or fall back
+        for _, (lang, fence, body_instr) in _EXT_LANG.items():
+            if lang.lower() == target_lang.lower():
+                break
+        else:
+            lang, fence, body_instr = _DEFAULT_LANG
+    else:
+        lang, fence, body_instr = _detect_lang(stub["file_path"])
+
+    # Signature: Python uses def, others use raw name+args (bare C-style)
+    if lang == "Python":
+        sig = f"def {stub['name']}({', '.join(args)})"
+        if stub["return_type"]:
+            sig += f" -> {stub['return_type']}"
+    else:
+        ret = stub["return_type"] or ""
+        sig = f"{ret} {stub['name']}({', '.join(args)})".strip()
 
     framing = _CLASSIFICATION_FRAMING.get(classification or "", "")
 
     lines = [
-        "You are a Python developer. Implement the following stub function.",
-        "Return ONLY the function body as valid Python (no def line, no markdown).",
-        "Use only what is available in the context below. Do not import new modules.",
+        f"You are a {lang} developer. Implement the following stub function.",
+        body_instr,
+        "Use only what is available in the context below.",
     ]
     if framing:
         lines += ["", f"CLASSIFICATION GUIDANCE: {framing}"]
@@ -291,14 +331,14 @@ def _build_prompt(ctx: dict, classification: Optional[str] = None) -> str:
 
     if ctx["source_snippet"]:
         lines += ["", "SURROUNDING SOURCE CONTEXT:"]
-        lines.append("```python")
+        lines.append(f"```{fence}")
         lines.append(ctx["source_snippet"])
         lines.append("```")
 
-    lines += [
-        "",
-        "Write only the indented function body. No def line. No explanation.",
-    ]
+    if lang == "Python":
+        lines += ["", "Write only the indented function body. No def line. No explanation."]
+    else:
+        lines += ["", f"Write only the {lang} function body. No signature line. No explanation."]
 
     return "\n".join(lines)
 
@@ -317,14 +357,24 @@ def _call_llm(prompt: str) -> str:
 # Public API
 # ------------------------------------------------------------------
 
-def project_stub(db_path: str, stub_name: str, *, classification: Optional[str] = None, verbose: bool = False) -> dict:
+def project_stub(
+    db_path: str,
+    stub_name: str,
+    *,
+    classification: Optional[str] = None,
+    target_lang: Optional[str] = None,
+    verbose: bool = False,
+) -> dict:
     """
     Return a projection dict for one stub:
-      { stub_name, file_path, line_number, suggested_body, context_summary }
+      { stub_name, file_path, line_number, suggested_body, context_summary, lang }
 
     classification: one of design-intent-stated | blocked-on-prerequisite |
                     concept-not-applicable | genuinely-unknown.
                     Frames the LLM prompt accordingly.
+
+    target_lang: override language detection (e.g. "C", "Zig", "Lua").
+                 Defaults to auto-detect from file extension.
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -335,20 +385,27 @@ def project_stub(db_path: str, stub_name: str, *, classification: Optional[str] 
     if ctx is None:
         return {"stub_name": stub_name, "error": "not found or not a stub"}
 
+    lang, _, _ = (
+        next((v for _, v in _EXT_LANG.items() if v[0].lower() == target_lang.lower()), _DEFAULT_LANG)
+        if target_lang
+        else _detect_lang(ctx["stub"]["file_path"])
+    )
+
     if verbose:
-        print(f"\nProjecting: {stub_name}")
+        print(f"\nProjecting: {stub_name}  [{lang}]")
         print(f"  classification: {classification}")
         print(f"  callers: {[c['caller'] for c in ctx['callers']]}")
         print(f"  contracts: {[c['function_name'] for c in ctx['contracts']]}")
         print(f"  sibling callees: {ctx['sibling_callees']}")
 
-    prompt = _build_prompt(ctx, classification=classification)
+    prompt = _build_prompt(ctx, classification=classification, target_lang=target_lang)
     body = _call_llm(prompt)
 
     return {
         "stub_name": stub_name,
         "file_path": ctx["stub"]["file_path"],
         "line_number": ctx["stub"]["line_number"],
+        "lang": lang,
         "suggested_body": _strip_fences(body),
         "context_summary": {
             "callers": len(ctx["callers"]),
@@ -358,7 +415,13 @@ def project_stub(db_path: str, stub_name: str, *, classification: Optional[str] 
     }
 
 
-def project_all_stubs(db_path: str, limit: int = 5, *, verbose: bool = False) -> list[dict]:
+def project_all_stubs(
+    db_path: str,
+    limit: int = 5,
+    *,
+    target_lang: Optional[str] = None,
+    verbose: bool = False,
+) -> list[dict]:
     conn = sqlite3.connect(db_path)
     stubs = conn.execute(
         "SELECT name FROM functions WHERE is_stub = 1 ORDER BY file_path, line_number LIMIT ?",
@@ -368,7 +431,7 @@ def project_all_stubs(db_path: str, limit: int = 5, *, verbose: bool = False) ->
 
     results = []
     for (name,) in stubs:
-        result = project_stub(db_path, name, verbose=verbose)
+        result = project_stub(db_path, name, target_lang=target_lang, verbose=verbose)
         results.append(result)
         if verbose:
             print(f"\n--- {name} ---")
@@ -388,15 +451,19 @@ if __name__ == "__main__":
     group.add_argument("function_name", nargs="?", help="Name of the stub function to project")
     group.add_argument("--all", action="store_true", help="Project all stubs in the corpus")
     parser.add_argument("--limit", type=int, default=5, help="Max stubs when using --all (default 5)")
+    parser.add_argument("--lang", dest="target_lang", default=None,
+                        help="Override language (e.g. C, Zig, Lua). Defaults to auto-detect from file extension.")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
     if args.all:
-        results = project_all_stubs(args.db_path, limit=args.limit, verbose=args.verbose)
+        results = project_all_stubs(args.db_path, limit=args.limit, target_lang=args.target_lang, verbose=args.verbose)
         for r in results:
-            print(f"\n=== {r['stub_name']} ({r.get('file_path','')}) ===")
+            lang_tag = f"  [{r.get('lang', '?')}]" if r.get("lang") else ""
+            print(f"\n=== {r['stub_name']} ({r.get('file_path','')}){lang_tag} ===")
             print(r.get("suggested_body", r.get("error", "")))
     else:
-        r = project_stub(args.db_path, args.function_name, verbose=args.verbose)
-        print(f"\n=== {r['stub_name']} ===")
+        r = project_stub(args.db_path, args.function_name, target_lang=args.target_lang, verbose=args.verbose)
+        lang_tag = f"  [{r.get('lang', '?')}]" if r.get("lang") else ""
+        print(f"\n=== {r['stub_name']}{lang_tag} ===")
         print(r.get("suggested_body", r.get("error", "")))

@@ -3423,6 +3423,15 @@ _WORKBENCH_TOOLS = [
         "args": {},
         "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
     },
+    # ── Cross-corpus ──────────────────────────────────────────
+    {
+        "id": "corpus_chain_survey",
+        "label": "Corpus chain",
+        "tool": "__corpus_chain_survey__",  # handled specially — no oracle needed
+        "description": "Shape comparison across all available corpora, grouped by language family",
+        "category": "Cross-Corpus",
+        "args": {},
+    },
 ]
 
 
@@ -3435,10 +3444,27 @@ def handle_get_workbench_tools(_data=None):
 @socketio.on("workbench_run_tool")
 def handle_workbench_run_tool(data):
     """Run a Workbench tool, store result as artifact, and emit workbench_tool_result."""
-    if _oracle is None:
-        emit("workbench_tool_result", {"error": "No corpus loaded.", "id": (data or {}).get("id", "")})
-        return
     tool_id = (data or {}).get("id", "")
+
+    # corpus_chain_survey is oracle-independent — handle before the corpus check
+    if tool_id == "corpus_chain_survey":
+        sid = request.sid
+
+        def _run_chain():
+            try:
+                from determined.agent.graph_utils import survey_corpus_chain, format_corpus_chain
+                rows = survey_corpus_chain()
+                result = format_corpus_chain(rows)
+                socketio.emit("workbench_tool_result", {"id": tool_id, "result": result, "stored": False}, to=sid)
+            except Exception as exc:
+                socketio.emit("workbench_tool_result", {"id": tool_id, "error": str(exc)}, to=sid)
+
+        threading.Thread(target=_run_chain, daemon=True).start()
+        return
+
+    if _oracle is None:
+        emit("workbench_tool_result", {"error": "No corpus loaded.", "id": tool_id})
+        return
     extra_args = (data or {}).get("args", {})
     tool_def = next((t for t in _WORKBENCH_TOOLS if t["id"] == tool_id), None)
     if tool_def is None:

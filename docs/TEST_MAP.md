@@ -27,7 +27,8 @@ pytest tests/regression/<file>  [<file2> ...]
 | sketch_stub.py | test_classify_stub.py test_agent_tools.py |
 | export_context.py | test_export_context.py test_agent_tools.py |
 | stub_classifier.py | test_classify_stub.py test_corpus_projections.py |
-| stub_projector.py | test_scaffold_from_pattern.py |
+| stub_projector.py | test_scaffold_from_pattern.py test_runtime_locator.py |
+| runtime_locator.py | test_runtime_locator.py |
 
 ## determined/api/
 

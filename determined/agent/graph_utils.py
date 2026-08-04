@@ -821,3 +821,219 @@ def chain_synthesis(oracle: "DBOracle", name: str, max_depth: int = 8) -> dict:
         "missing": missing,
         "is_island": is_island,
     }
+
+
+# ------------------------------------------------------------------
+# Corpus chain survey — multi-corpus shape comparison
+# ------------------------------------------------------------------
+
+# Extension → primary language label
+_EXT_TO_LANG: dict[str, str] = {
+    ".py": "Python", ".pyi": "Python",
+    ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript",
+    ".ts": "TypeScript", ".tsx": "TypeScript",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".c": "C", ".h": "C",
+    ".cpp": "C++", ".cc": "C++", ".cxx": "C++", ".hpp": "C++",
+    ".zig": "Zig",
+    ".lua": "Lua",
+    ".rb": "Ruby",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".cs": "C#",
+    ".swift": "Swift",
+}
+
+_LANG_FAMILY: dict[str, str] = {
+    "C": "Systems", "C++": "Systems", "Zig": "Systems", "Rust": "Systems",
+    "Python": "Scripting", "Lua": "Scripting", "Ruby": "Scripting",
+    "JavaScript": "Web", "TypeScript": "Web",
+    "Go": "Modern", "Kotlin": "Modern", "Swift": "Modern",
+    "Java": "JVM", "C#": ".NET",
+}
+
+
+def _primary_lang(conn) -> str:
+    """Return the language label for the most common source file extension in a DB."""
+    import sqlite3
+    try:
+        rows = conn.execute(
+            "SELECT file_path, COUNT(*) as cnt FROM files GROUP BY file_path"
+        ).fetchall()
+    except Exception:
+        rows = []
+    if not rows:
+        # fall back to functions table
+        try:
+            rows = conn.execute(
+                "SELECT file_path, COUNT(*) as cnt FROM functions GROUP BY file_path"
+            ).fetchall()
+        except Exception:
+            rows = []
+
+    ext_counts: dict[str, int] = {}
+    for row in rows:
+        fp = str(row[0] or "")
+        ext = fp[fp.rfind("."):].lower() if "." in fp else ""
+        if ext in _EXT_TO_LANG:
+            ext_counts[ext] = ext_counts.get(ext, 0) + (row[1] if len(row) > 1 else 1)
+
+    if not ext_counts:
+        return "Unknown"
+    top_ext = max(ext_counts, key=lambda e: ext_counts[e])
+    return _EXT_TO_LANG[top_ext]
+
+
+def _db_stats(db_path: str) -> dict:
+    """Query a single DB and return summary stats."""
+    import sqlite3
+    from pathlib import Path as _Path
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        lang = _primary_lang(conn)
+
+        fn_row = conn.execute(
+            "SELECT COUNT(*) as total, "
+            "SUM(CASE WHEN is_stub=1 THEN 1 ELSE 0 END) as stubs "
+            "FROM functions"
+        ).fetchone()
+        total_fns = fn_row["total"] if fn_row else 0
+        stubs = fn_row["stubs"] if fn_row else 0
+
+        edge_row = conn.execute(
+            "SELECT COUNT(*) as total, "
+            "SUM(CASE WHEN resolved=0 THEN 1 ELSE 0 END) as unresolved "
+            "FROM graph_edges"
+        ).fetchone()
+        total_edges = edge_row["total"] if edge_row else 0
+        unresolved = edge_row["unresolved"] if edge_row else 0
+        unresolved_pct = round(100.0 * unresolved / total_edges, 1) if total_edges else 0.0
+
+        try:
+            ep_row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM functions "
+                "WHERE (http_route IS NOT NULL AND http_route != '') OR is_tool=1"
+            ).fetchone()
+            explicit_eps = ep_row["cnt"] if ep_row else 0
+        except Exception:
+            try:
+                ep_row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM functions "
+                    "WHERE http_route IS NOT NULL AND http_route != ''"
+                ).fetchone()
+                explicit_eps = ep_row["cnt"] if ep_row else 0
+            except Exception:
+                explicit_eps = 0  # schema pre-dates http_route/is_tool columns
+
+    except Exception:
+        lang, total_fns, stubs, total_edges, unresolved_pct, explicit_eps = "Unknown", 0, 0, 0, 0.0, 0
+    finally:
+        conn.close()
+
+    # Human name: reverse the DB filename convention
+    stem = _Path(db_path).stem  # e.g. C_Users_bartl_dev_corpora_rotjs
+    # strip common prefix C_Users_<user>_dev_corpora_ or C_Users_<user>_dev_
+    parts = stem.split("_")
+    # find "dev" segment and take everything after
+    try:
+        dev_idx = next(i for i, p in enumerate(parts) if p == "dev")
+        tail = "_".join(parts[dev_idx + 1:])
+        # drop "corpora_" prefix if present
+        if tail.startswith("corpora_"):
+            tail = tail[len("corpora_"):]
+        # drop "Determined_examples_" prefix
+        if tail.startswith("Determined_examples_"):
+            tail = tail[len("Determined_examples_"):]
+        name = tail.replace("_", "/")
+    except StopIteration:
+        name = stem
+
+    return {
+        "name": name,
+        "db_path": db_path,
+        "lang": lang,
+        "family": _LANG_FAMILY.get(lang, "Other"),
+        "symbols": total_fns,
+        "stubs": stubs,
+        "edges": total_edges,
+        "unresolved_pct": unresolved_pct,
+        "explicit_eps": explicit_eps,
+    }
+
+
+def survey_corpus_chain(scan_dirs: list[str] | None = None) -> list[dict]:
+    """
+    Survey all available corpus DBs and return a list of summary dicts,
+    sorted by language family then symbol count (descending).
+
+    scan_dirs: directories to scan for *.db files.  Defaults to the standard
+               corpus locations on this machine.
+    """
+    import glob
+    from pathlib import Path as _Path
+
+    if scan_dirs is None:
+        # Default locations: the Determined working dir and the external corpora dir
+        repo_root = str(_Path(__file__).resolve().parents[2])
+        scan_dirs = [repo_root, str(_Path(repo_root).parent / "corpora")]
+
+    seen: set[str] = set()
+    results: list[dict] = []
+    for d in scan_dirs:
+        for db_path in glob.glob(str(_Path(d) / "*.db")):
+            norm = str(_Path(db_path).resolve())
+            if norm in seen:
+                continue
+            seen.add(norm)
+            stats = _db_stats(norm)
+            if stats["symbols"] > 0:  # skip empty / scratch DBs
+                results.append(stats)
+
+    # Sort: by family then symbol count descending
+    family_order = ["Systems", "Modern", "Scripting", "Web", "JVM", ".NET", "Other"]
+    results.sort(key=lambda r: (
+        family_order.index(r["family"]) if r["family"] in family_order else 99,
+        -r["symbols"],
+    ))
+    return results
+
+
+def format_corpus_chain(rows: list[dict]) -> str:
+    """Format survey_corpus_chain() results as a plain-text table."""
+    if not rows:
+        return "No corpus DBs found."
+
+    col_w = {
+        "name": max(len(r["name"]) for r in rows) + 2,
+        "lang": max(len(r["lang"]) for r in rows) + 2,
+        "family": max(len(r["family"]) for r in rows) + 2,
+    }
+
+    hdr = (
+        f"{'Corpus':<{col_w['name']}}"
+        f"{'Language':<{col_w['lang']}}"
+        f"{'Family':<{col_w['family']}}"
+        f"{'Symbols':>8}  {'Stubs':>6}  {'Edges':>7}  {'Unresolved':>11}  {'EPs':>4}"
+    )
+    sep = "-" * len(hdr)
+    lines = [hdr, sep]
+
+    current_family = None
+    for r in rows:
+        if r["family"] != current_family:
+            if current_family is not None:
+                lines.append("")
+            current_family = r["family"]
+        lines.append(
+            f"{r['name']:<{col_w['name']}}"
+            f"{r['lang']:<{col_w['lang']}}"
+            f"{r['family']:<{col_w['family']}}"
+            f"{r['symbols']:>8}  {r['stubs']:>6}  {r['edges']:>7}  "
+            f"{r['unresolved_pct']:>9.1f}%  {r['explicit_eps']:>4}"
+        )
+
+    lines += ["", f"Total: {len(rows)} corpora surveyed"]
+    return "\n".join(lines)

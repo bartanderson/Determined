@@ -3067,21 +3067,35 @@ def find_conditional_stubs(oracle: "DBOracle", args: dict) -> str:
 
 def project_stub(oracle: "DBOracle", args: dict) -> str:
     """
-    project_stub(symbol) - generate a concrete implementation for a stub function
+    project_stub(symbol[, lang]) - generate a concrete implementation for a stub function
     using its call-graph context, behavioral contracts, and sibling code.
+    lang: optional language override (e.g. "C", "Zig", "Lua"). Auto-detected from file
+    extension when omitted.
     Requires llama-server running. May take 20-40 seconds.
     """
     symbol = args.get("symbol", "").strip()
     if not symbol:
         return "ERROR: symbol argument required"
+    target_lang = args.get("lang", None)
     from determined.agent.stub_projector import project_stub as _proj
-    result = _proj(oracle.db_path, symbol)
+    from determined.agent.runtime_locator import check_projection
+    result = _proj(oracle.db_path, symbol, target_lang=target_lang)
     if "error" in result:
         return f"Cannot project '{symbol}': {result['error']}"
+    result = check_projection(result)
     ctx = result.get("context_summary", {})
+    lang_tag = f" [{result.get('lang', '?')}]" if result.get("lang") else ""
+    sc = result.get("syntax_check", {})
+    if sc.get("ok") is True:
+        syntax_line = f"Syntax check: PASS [{sc.get('tool','')}]"
+    elif sc.get("ok") is False:
+        syntax_line = f"Syntax check: FAIL [{sc.get('tool','')}] — {sc.get('error','')}"
+    else:
+        syntax_line = f"Syntax check: UNVERIFIED (no {result.get('lang','?')} tool on PATH)"
     lines = [
-        f"Stub projection for '{symbol}' ({result.get('file_path', '?')} line {result.get('line_number', '?')})",
+        f"Stub projection for '{symbol}'{lang_tag} ({result.get('file_path', '?')} line {result.get('line_number', '?')})",
         f"Context: {ctx.get('callers', 0)} callers · {ctx.get('contracts', 0)} contracts · {ctx.get('sibling_callees', 0)} sibling callees",
+        syntax_line,
         "",
         "Suggested implementation:",
         result.get("suggested_body", "(no suggestion)"),
