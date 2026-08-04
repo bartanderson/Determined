@@ -1,4 +1,4 @@
-Written at commit: 1e3ca94
+Written at commit: a9f60db
 
 # SESSION STATE — session 292 handoff
 
@@ -9,24 +9,24 @@ Written at commit: 1e3ca94
 
 ## WHAT HAPPENED THIS SESSION
 
-Fixed F12 and F15. 1 fix commit. [V]
+Fixed F12 and F15. Browser-verified both. 1 fix commit + 1 wrap commit. [V]
 
 ---
 
-## FIXES SHIPPED (all verified in browser)
+## FIXES SHIPPED (verified in browser this session)
 
 **F12 DONE** [V]: Call tree ← back button. Added `_ctHistory` stack +
 `_ctCurrentRoot` tracker. `ctTrace()` pushes prior root before re-rendering;
-`_ctRender()` factored out for back button to call without side effects.
-← button in `.call-tree-toolbar` (before ct-input); disabled until first
-re-root. Wire: `ctBackBtn.addEventListener("click", ...)` pops stack, re-renders,
-re-disables when empty. (console.html)
+`_ctRender()` factored out. ← button in `.call-tree-toolbar`; disabled until
+first re-root; re-disables when stack empties. (console.html)
+Browser test: re-rooted to `card.addEventListener`, ← re-enabled, click ←
+returned to `CharacterCreator.renderStep`, ← disabled. [V]
 
-**F15 DONE** [V]: Map "path from" button seeds `gxSrc.value` and explicitly
-calls `gxDst.focus()`. Added as final entry in `_mnpButtons` `all` array
-(console.html). Shows in secondary actions row of the map node popover.
-Bypasses ForceGraph canvas focus-steal because it fires from a button click,
-not a canvas interaction. Verified button renders with correct label in panel.
+**F15 DONE** [V]: Map "path from" button in node popover seeds `gxSrc.value`
+and calls `gxDst.focus()`. Added as final entry in `_mnpButtons` all array.
+(console.html)
+Browser test: opened map panel, clicked "path from" — `gx-src` = symbol,
+`document.activeElement.id === "gx-dst"` confirmed. [V]
 
 ---
 
@@ -39,20 +39,13 @@ F11, F14, F16 — verified already working. [V s291]
 
 ## REMAINING OPEN ITEMS
 
-None tracked. All F-series items are DONE. [V]
-
-Check TRACKER.md for any new items that may have been added.
+No F-series items remain. Check TRACKER.md for RM67 or new work. [V]
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**1. Check TRACKER.md** — all F-items are closed; look for RM67 or any new work.
-
-**2. Verify F12/F15 in real use** — the browser JS eval confirmed the mechanics
-work, but click through for real: open map tab, click a node, hit "path from",
-confirm gx-dst gets focus and is typeable. Then open call tree, trace a symbol,
-click a callee to re-root, confirm ← button is enabled and steps back correctly.
+**1. Read TRACKER.md** — all F-items closed; pick up RM67 or whatever is next.
 
 ---
 
