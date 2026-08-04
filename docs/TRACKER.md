@@ -208,28 +208,18 @@ specific technique. Don't build the next layer until the current one proves insu
 
 ---
 
-## RM-Perf — Optimization Oracle (TODO)
+## RM-Perf — Optimization Oracle (STATIC TIER DONE; PROFILE TIER DEFERRED)
 
-Build `OptimizationOracle` alongside `DBOracle` — answers performance questions
-(hot paths, repeated recomputation, cacheable traversals, pure/memoizable functions)
-rather than structural ones.
+**Static tier DONE 2026-08-04:** `find_pure_functions`, `find_stable_layouts`,
+`find_dead_event_handlers` — all three shipped, registered in TOOL_REGISTRY, Workbench tiles added.
 
-**Two tiers:**
-- **Statically inferable:** pure/memoizable functions (no shared-state writes, no I/O),
-  dead event handlers, stable object layouts. Answerable from existing DB today.
-  **Static tier DONE 2026-08-04:** `find_pure_functions` (prior), `find_stable_layouts`,
-  `find_dead_event_handlers` — all three shipped, registered in TOOL_REGISTRY, Workbench tiles added.
-- **Profile-grounded:** hot-path dominance, repeated recomputation on hot edges.
-  Requires instrumentation hook (cProfile injection) producing `call_samples` table.
-  Static tier ships first.
-
-**Fit:** `DBOracle` stays structural. `OptimizationOracle` wraps same DB + optional
-profiling DB. Corpus-agnostic — normalization maps any profiler output to existing FQDNs.
-
-**Prerequisite:** analysis/code-generation arc complete. Static purity sub-tier
-could ship earlier as a standalone tool.
-
-**Estimated effort:** static tier ~1 session; profile-grounded tier ~2-3 sessions.
+**Profile-grounded tier — DEFERRED (late-stage tool):**
+Hot-path dominance, repeated recomputation on hot edges. This tier is only meaningful
+when the corpus code runs end-to-end and something feels slow in real use. Profiling
+incomplete code (stubs, unimplemented paths) produces noise. Correct trigger: a specific
+performance complaint after significant development. At that point: cProfile injection
+producing `call_samples` table, joined to `functions`/`graph_edges` for hot-path + purity
+cross-reference.
 
 ---
 
