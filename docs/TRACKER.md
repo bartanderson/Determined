@@ -217,6 +217,8 @@ rather than structural ones.
 **Two tiers:**
 - **Statically inferable:** pure/memoizable functions (no shared-state writes, no I/O),
   dead event handlers, stable object layouts. Answerable from existing DB today.
+  **Static tier DONE 2026-08-04:** `find_pure_functions` (prior), `find_stable_layouts`,
+  `find_dead_event_handlers` — all three shipped, registered in TOOL_REGISTRY, Workbench tiles added.
 - **Profile-grounded:** hot-path dominance, repeated recomputation on hot edges.
   Requires instrumentation hook (cProfile injection) producing `call_samples` table.
   Static tier ships first.

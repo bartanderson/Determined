@@ -1,39 +1,52 @@
-Written at commit: 3f5cb91
+Written at commit: 7b86ecf
 
-# SESSION STATE — session 293 handoff
+# SESSION STATE — session 294 handoff
 
 ## Active branch: main [V]
-## Working tree: clean [V]
+## Working tree: one unstaged edit (TRACKER.md — RM-Perf static tier note)
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-RM67 probe clean. All 3 cross-language remaining tasks shipped. [V]
+RM-Perf static tier complete. Both remaining items shipped. [V]
 
 ---
 
 ## DONE THIS SESSION
 
-**RM67 probe** [V]: Clean. 12 Determined stubs (3 real, 9 test), 25 dj2 stubs — all match prior probes. No new issues.
+**`find_stable_layouts`** (commit bf478f8) [V]:
+AST-based. Queries `classes` table, reads source files, walks `__init__` and
+all other methods, collects `self.attr` assignments. Classes where no init attr
+is mutated elsewhere = stable layout = `__slots__`/frozen-dataclass candidate.
+- `_is_self_attr` / `_collect_self_attrs` helpers (scope-aware, don't cross nested defs)
+- `_fp_label` module-level helper (last 2 path components, shared by both tools)
+- On Determined: 47/57 stable, 10 mutable. `BagStore`, `ClassificationContract`, etc.
+  flagged `[slot]`. `Assessor`, `DBOracle`, `Visitor` correctly mutable.
+- TOOL_REGISTRY + tool_registry.py REGISTRY + Workbench "Architecture" tile
+- 5 tests pass [V]
 
-**Cross-language tasks — all 3 DONE** [V]:
+**`find_dead_event_handlers`** (commit 7b86ecf) [V]:
+Queries `function_reference` edges (Thread/kwarg callbacks; filters dotted-name
+noise like `judgment.verdict` by requiring bare callee names) and `decorator`
+edges (`__js_client__`/`__http_client__` synthetic callers from parse_ast.py
+for Socket.IO/Flask). Subtracts functions that also have any non-callback edge.
+Tags `[dec]` (decorator-registered) vs `[ref]` (argument-passed).
+- On Determined: 58 results — all 50+ socket.io `handle_*` and Flask routes
+  (`[dec]`), plus `_run`, `_auto_orient`, `_start_llm_server` Thread targets (`[ref]`)
+- Prereq (`function_reference` + `decorator` edge types) was already in DB from a prior session
+- TOOL_REGISTRY + tool_registry.py REGISTRY + Workbench "Architecture" tile
+- 4 tests pass [V]
 
-`target_lang` in stub_projector: auto-detect from file ext (.py/.c/.cpp/.zig/.lua/.rs/.go/.ts/.js); explicit override via `lang=` arg; language-specific prompt framing + signature format. `lang` field in result dict.
-
-`runtime_locator.py` (new module): `check_snippet(lang, snippet)` → `{ok, error, tool}`. `ok=None` = UNVERIFIED (no tool), not invalid. Python always via `ast.parse`. Others via gcc/zig/luac when on PATH (only rustc present on this machine). `check_projection()` wraps project_stub result. project_stub in agent_tools auto-runs check_projection and shows "Syntax check:" line. 18 tests in test_runtime_locator.py. [V]
-
-`survey_corpus_chain()` + `format_corpus_chain()` in graph_utils: scans all *.db files, detects primary language from file extensions, returns stats per corpus (symbols, stubs, edges, unresolved%, EPs), grouped by family (Systems/Modern/Scripting/Web). Handles old schemas (pre http_route/is_tool). 22 corpora surveyed correctly. Workbench "Cross-Corpus → Corpus chain" tool, oracle-independent. [V]
-
-TRACKER cross-language section updated to all [x]. [V]
+TRACKER.md RM-Perf section updated: static tier marked DONE 2026-08-04. [?] (not committed yet)
 
 ---
 
 ## REMAINING OPEN ITEMS
 
-**RM-Perf static tier** (next): `find_pure_functions` already covers purity. Two remaining:
-1. Stable object layouts — classes where `__init__` attrs never mutated. AST-only, no prereq. ~half session.
-2. Dead event handlers — functions registered as callbacks with no callee edges. Needs function-reference edge type in parse_ast.py first.
+**RM-Perf profile-grounded tier** (next for RM-Perf): hot-path dominance,
+repeated recomputation on hot edges. Requires cProfile instrumentation hook
+producing `call_samples` table. No design yet. Estimated 2-3 sessions.
 
 **RM21** — gated on real multi-hop failure. Don't start.
 **RM76** — gated on Bart saying "record this decision." Don't start.
@@ -43,8 +56,10 @@ TRACKER cross-language section updated to all [x]. [V]
 
 ## WHAT TO DO NEXT SESSION
 
-1. Read TRACKER.md — confirm RM-Perf is next, check for new items.
-2. Start RM-Perf static tier with stable object layouts (no prereq). Or ask Bart if different priority.
+1. Commit the TRACKER.md edit (or fold into the session wrap commit).
+2. Ask Bart: start profile-grounded tier (cProfile hook), or different priority?
+   If profile-grounded: first step is designing `call_samples` table schema and
+   a cProfile injection wrapper, likely a new `determined/profiling/` module.
 
 ---
 
@@ -58,6 +73,13 @@ TRACKER cross-language section updated to all [x]. [V]
 - `line_number=0` trap: exclude from ORDER BY queries on functions table. [?]
 - pytest `-m` on CLI REPLACES addopts — never pass `-m` by hand. [V]
 - Old corpus DBs may lack `http_route`/`is_tool`/`is_stub` columns — handle gracefully. [V s293]
+- `find_dead_event_handlers`: dotted callee names (e.g. `judgment.verdict`) are
+  false positives from dict-literal detection in `_extract_function_references`
+  in parse_ast.py. Filtered at query time by `'.' not in callee`. The source-level
+  visitor remains noisy — tighten in a future session if needed. [V s294]
+- `classes` DB table has duplicate rows for the same class in some files (e.g.
+  commonplace `extractor.py` appears 3x). `find_stable_layouts` deduplicates by
+  name per file (first-occurrence wins). [V s294]
 
 ## RESOURCE / PROCESS RULES [V]
 
