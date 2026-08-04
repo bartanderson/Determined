@@ -2693,6 +2693,12 @@ def find_pure_functions(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def _fp_label(fp: str) -> str:
+    """Return last 2 path components of fp for display."""
+    parts = fp.replace("\\", "/").split("/")
+    return "/".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
+
+
 def _is_self_attr(node: ast.AST) -> bool:
     return (
         isinstance(node, ast.Attribute)
@@ -2814,10 +2820,6 @@ def find_stable_layouts(oracle: "DBOracle", args: dict) -> str:
         "",
     ]
 
-    def _fp_label(fp: str) -> str:
-        parts = fp.replace("\\", "/").split("/")
-        return "/".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
-
     prev_fp = None
     for class_name, fp, ln, attrs in stable:
         if fp != prev_fp:
@@ -2840,6 +2842,94 @@ def find_stable_layouts(oracle: "DBOracle", args: dict) -> str:
 
     if errors:
         lines += ["", "Parse errors (skipped):"] + errors
+
+    return "\n".join(lines)
+
+
+def find_dead_event_handlers(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_dead_event_handlers(scope?) - find functions registered as callbacks or
+    event handlers that have no direct static callers.
+
+    These are callback-only functions — only reachable via event dispatch, Thread
+    invocation, or framework callbacks; never via direct calls. Sources:
+      - function_reference edges: Thread(target=fn), sorted(key=fn), obj.register(name, fn)
+      - decorator edges: @socketio.on, @app.route (synthetic callers __js_client__, __http_client__)
+
+    Useful for identifying orphaned handlers, framework entry points, and dead code
+    when the dispatching mechanism is removed.
+
+    Args:
+        scope: optional file path fragment to narrow results
+    """
+    conn = oracle.conn
+    scope = (args.get("scope") or "").strip()
+
+    scope_clause = " AND ge.caller_file LIKE ?" if scope else ""
+    scope_param = [f"%{scope}%"] if scope else []
+
+    # Collect callback targets from function_reference and decorator edges.
+    # Filter dotted names (e.g. judgment.verdict) — these are dict-literal noise.
+    callback_targets: dict[str, str] = {}  # callee -> caller_file
+    for row in conn.execute(
+        "SELECT ge.callee, ge.caller_file "
+        "FROM graph_edges ge "
+        "WHERE ge.edge_type IN ('function_reference', 'decorator')" + scope_clause,
+        scope_param,
+    ).fetchall():
+        callee, fp = row
+        if "." not in callee:
+            callback_targets.setdefault(callee, fp)
+
+    if not callback_targets:
+        return "No callback registrations found matching criteria."
+
+    # Functions that are called via any non-callback edge type.
+    direct_callee_names: set[str] = set(
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT callee FROM graph_edges "
+            "WHERE edge_type NOT IN ('function_reference', 'decorator')"
+        ).fetchall()
+    )
+
+    dead: list[tuple[str, str]] = [
+        (callee, fp)
+        for callee, fp in sorted(callback_targets.items(), key=lambda x: (x[1] or "", x[0]))
+        if callee not in direct_callee_names
+    ]
+
+    if not dead:
+        return "All registered callbacks have at least one direct (non-callback) caller."
+
+    # Group by file for display
+    by_file: dict[str, list[str]] = {}
+    for callee, fp in dead:
+        by_file.setdefault(fp or "<unknown>", []).append(callee)
+
+    lines = [
+        f"Callback-only functions ({len(dead)} found — registered as callbacks, no direct static callers):",
+        "  [dec] = registered via decorator (@socketio.on / @app.route)",
+        "  [ref] = passed as callback argument (Thread target, sorted key, etc.)",
+        "",
+    ]
+
+    # Decorator edge callee set for tagging
+    dec_callees: set[str] = set(
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT callee FROM graph_edges WHERE edge_type='decorator'"
+        ).fetchall()
+    )
+
+    prev_fp = None
+    for fp, names in sorted(by_file.items()):
+        if fp != prev_fp:
+            lines.append(f"  {_fp_label(fp)}")
+            prev_fp = fp
+        for name in sorted(names):
+            tag = "[dec]" if name in dec_callees else "[ref]"
+            lines.append(f"    {tag} {name}")
 
     return "\n".join(lines)
 
@@ -8518,6 +8608,7 @@ TOOLS = {
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),
     "find_pure_functions":      (find_pure_functions,       "oracle"),
     "find_stable_layouts":      (find_stable_layouts,       "oracle"),
+    "find_dead_event_handlers": (find_dead_event_handlers,  "oracle"),
     "find_hot_callers":         (find_hot_callers,          "oracle"),
     "find_large_files":         (find_large_files,          "oracle"),
     "find_fetch_calls":         (find_fetch_calls,          "oracle"),

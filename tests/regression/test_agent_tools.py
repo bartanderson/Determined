@@ -604,6 +604,7 @@ def test_dispatch_all_tools_registered():
         # RM-Perf static tier
         "find_pure_functions",
         "find_stable_layouts",
+        "find_dead_event_handlers",
         "find_hot_callers",
         # RM-Perf: refactoring + HTMX migration tools
         "find_large_files",
@@ -1115,6 +1116,85 @@ def test_find_stable_layouts_empty_db():
     from determined.agent.agent_tools import find_stable_layouts
     result = find_stable_layouts(oracle, {})
     assert "No Python classes" in result
+
+
+# ------------------------------------------------------------------
+# find_dead_event_handlers
+# ------------------------------------------------------------------
+
+def _make_dead_handler_fixture():
+    """
+    In-memory DB with three graph edges:
+    - function_reference: register_widget -> on_click (bare name, real callback)
+    - decorator:          __js_client__ -> handle_event (socket.io style)
+    - static:             run_loop -> on_click (direct caller — so on_click is NOT dead)
+
+    Expected: handle_event is dead (no static callers); on_click is NOT dead (has run_loop).
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    from determined.persistence.persistence_engine import ensure_schema
+    ensure_schema(conn)
+
+    fp = f"{PROJECT_ROOT}/world/ui.py"
+    for edge in [
+        ("register_widget", "on_click",     fp, "function_reference"),
+        ("__js_client__",   "handle_event", fp, "decorator"),
+        ("run_loop",        "on_click",     fp, "static"),
+    ]:
+        conn.execute(
+            "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, resolved, edge_type) "
+            "VALUES (?, ?, ?, ?, ?, 0, ?)",
+            (edge[0], edge[1], edge[0], edge[1], edge[2], edge[3]),
+        )
+    conn.commit()
+    return FakeOracle(conn)
+
+
+def test_find_dead_event_handlers_detects_dead():
+    oracle = _make_dead_handler_fixture()
+    from determined.agent.agent_tools import find_dead_event_handlers
+    result = find_dead_event_handlers(oracle, {})
+    assert "handle_event" in result
+    assert "[dec]" in result
+
+
+def test_find_dead_event_handlers_excludes_live():
+    oracle = _make_dead_handler_fixture()
+    from determined.agent.agent_tools import find_dead_event_handlers
+    result = find_dead_event_handlers(oracle, {})
+    # on_click has a static caller (run_loop) so it should NOT appear
+    assert "on_click" not in result
+
+
+def test_find_dead_event_handlers_empty_db():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    from determined.persistence.persistence_engine import ensure_schema
+    ensure_schema(conn)
+    oracle = FakeOracle(conn)
+    from determined.agent.agent_tools import find_dead_event_handlers
+    result = find_dead_event_handlers(oracle, {})
+    assert "No callback registrations" in result
+
+
+def test_find_dead_event_handlers_filters_dotted_noise():
+    """Dotted names like judgment.verdict should not appear as callback targets."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    from determined.persistence.persistence_engine import ensure_schema
+    ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, caller, callee, caller_file, resolved, edge_type) "
+        "VALUES (?, ?, ?, ?, ?, 0, ?)",
+        ("some_fn", "judgment.verdict", "some_fn", "judgment.verdict",
+         f"{PROJECT_ROOT}/x.py", "function_reference"),
+    )
+    conn.commit()
+    oracle = FakeOracle(conn)
+    from determined.agent.agent_tools import find_dead_event_handlers
+    result = find_dead_event_handlers(oracle, {})
+    assert "No callback registrations" in result
 
 
 # ------------------------------------------------------------------

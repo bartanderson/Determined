@@ -604,6 +604,16 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to identify classes that never mutate their own attributes after construction — stable layouts safe for __slots__ or frozen dataclass conversion.",
         "category": "knowledge",
     },
+    "find_dead_event_handlers": {
+        "purpose": "Find functions registered as callbacks or event handlers (via @decorator, Thread(target=fn), sorted(key=fn), etc.) that have no direct static callers — callback-only entry points.",
+        "args": {
+            "scope": "(optional) file path fragment to narrow results",
+        },
+        "output": "Per-file list of callback-only functions tagged [dec] (decorator-registered) or [ref] (passed as argument). These are framework-owned entry points or potential dead code.",
+        "feeds": ["symbol_context", "blast_radius"],
+        "use_when": "You want to find functions only reachable via event dispatch or callback invocation — framework entry points, orphaned handlers, or dead code when the dispatcher is removed.",
+        "category": "knowledge",
+    },
     "find_hot_callers": {
         "purpose": "Find implemented functions with the most incoming resolved call edges — load-bearing utilities with high blast radius if broken or slow.",
         "args": {

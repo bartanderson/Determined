@@ -3432,6 +3432,15 @@ _WORKBENCH_TOOLS = [
         "args": {},
         "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
     },
+    {
+        "id": "find_dead_event_handlers",
+        "label": "Dead event handlers",
+        "tool": "find_dead_event_handlers",
+        "description": "Callback-only functions (decorator or kwarg-registered) with no direct static callers",
+        "category": "Architecture",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
     # ── Cross-corpus ──────────────────────────────────────────
     {
         "id": "corpus_chain_survey",
