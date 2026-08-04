@@ -1,6 +1,6 @@
-Written at commit: a9f60db
+Written at commit: 3f5cb91
 
-# SESSION STATE — session 292 handoff
+# SESSION STATE — session 293 handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,43 +9,42 @@ Written at commit: a9f60db
 
 ## WHAT HAPPENED THIS SESSION
 
-Fixed F12 and F15. Browser-verified both. 1 fix commit + 1 wrap commit. [V]
+RM67 probe clean. All 3 cross-language remaining tasks shipped. [V]
 
 ---
 
-## FIXES SHIPPED (verified in browser this session)
+## DONE THIS SESSION
 
-**F12 DONE** [V]: Call tree ← back button. Added `_ctHistory` stack +
-`_ctCurrentRoot` tracker. `ctTrace()` pushes prior root before re-rendering;
-`_ctRender()` factored out. ← button in `.call-tree-toolbar`; disabled until
-first re-root; re-disables when stack empties. (console.html)
-Browser test: re-rooted to `card.addEventListener`, ← re-enabled, click ←
-returned to `CharacterCreator.renderStep`, ← disabled. [V]
+**RM67 probe** [V]: Clean. 12 Determined stubs (3 real, 9 test), 25 dj2 stubs — all match prior probes. No new issues.
 
-**F15 DONE** [V]: Map "path from" button in node popover seeds `gxSrc.value`
-and calls `gxDst.focus()`. Added as final entry in `_mnpButtons` all array.
-(console.html)
-Browser test: opened map panel, clicked "path from" — `gx-src` = symbol,
-`document.activeElement.id === "gx-dst"` confirmed. [V]
+**Cross-language tasks — all 3 DONE** [V]:
 
----
+`target_lang` in stub_projector: auto-detect from file ext (.py/.c/.cpp/.zig/.lua/.rs/.go/.ts/.js); explicit override via `lang=` arg; language-specific prompt framing + signature format. `lang` field in result dict.
 
-## PREVIOUSLY SHIPPED (carried from s291)
+`runtime_locator.py` (new module): `check_snippet(lang, snippet)` → `{ok, error, tool}`. `ok=None` = UNVERIFIED (no tool), not invalid. Python always via `ast.parse`. Others via gcc/zig/luac when on PATH (only rustc present on this machine). `check_projection()` wraps project_stub result. project_stub in agent_tools auto-runs check_projection and shows "Syntax check:" line. 18 tests in test_runtime_locator.py. [V]
 
-F19, F2, F3, F7, F1, F10 — all done. [V s291]
-F11, F14, F16 — verified already working. [V s291]
+`survey_corpus_chain()` + `format_corpus_chain()` in graph_utils: scans all *.db files, detects primary language from file extensions, returns stats per corpus (symbols, stubs, edges, unresolved%, EPs), grouped by family (Systems/Modern/Scripting/Web). Handles old schemas (pre http_route/is_tool). 22 corpora surveyed correctly. Workbench "Cross-Corpus → Corpus chain" tool, oracle-independent. [V]
+
+TRACKER cross-language section updated to all [x]. [V]
 
 ---
 
 ## REMAINING OPEN ITEMS
 
-No F-series items remain. Check TRACKER.md for RM67 or new work. [V]
+**RM-Perf static tier** (next): `find_pure_functions` already covers purity. Two remaining:
+1. Stable object layouts — classes where `__init__` attrs never mutated. AST-only, no prereq. ~half session.
+2. Dead event handlers — functions registered as callbacks with no callee edges. Needs function-reference edge type in parse_ast.py first.
+
+**RM21** — gated on real multi-hop failure. Don't start.
+**RM76** — gated on Bart saying "record this decision." Don't start.
+**RM73, RM77** — FUTURE.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**1. Read TRACKER.md** — all F-items closed; pick up RM67 or whatever is next.
+1. Read TRACKER.md — confirm RM-Perf is next, check for new items.
+2. Start RM-Perf static tier with stable object layouts (no prereq). Or ask Bart if different priority.
 
 ---
 
@@ -58,6 +57,7 @@ No F-series items remain. Check TRACKER.md for RM67 or new work. [V]
 - `_wrap_body()` must be in sketch_stub.py wherever body fragments are parsed. [?]
 - `line_number=0` trap: exclude from ORDER BY queries on functions table. [?]
 - pytest `-m` on CLI REPLACES addopts — never pass `-m` by hand. [V]
+- Old corpus DBs may lack `http_route`/`is_tool`/`is_stub` columns — handle gracefully. [V s293]
 
 ## RESOURCE / PROCESS RULES [V]
 
