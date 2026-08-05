@@ -26,12 +26,14 @@ class CleanupProcessor(EntryProcessor):
     """Strip trailing whitespace from title and content."""
 
     def process(self, entry: dict) -> dict:
+        """Strip leading/trailing whitespace from title and content; return modified entry."""
         entry = dict(entry)
         entry["title"] = (entry.get("title") or "").strip()
         entry["content"] = (entry.get("content") or "").strip()
         return entry
 
     def can_handle(self, entry: dict) -> bool:
+        """Always returns True; applies to every entry."""
         return True
 
 
@@ -39,12 +41,14 @@ class DeduplicateProcessor(EntryProcessor):
     """Collapse repeated whitespace in content."""
 
     def process(self, entry: dict) -> dict:
+        """Collapse repeated whitespace in content field; return modified entry."""
         import re
         entry = dict(entry)
         entry["content"] = re.sub(r"\s+", " ", entry.get("content") or "")
         return entry
 
     def can_handle(self, entry: dict) -> bool:
+        """Return True only if the entry has a non-empty content field."""
         return bool(entry.get("content"))
 
 
@@ -56,6 +60,7 @@ class EnrichmentProcessor(EntryProcessor):
     """
 
     def __init__(self, llm_endpoint=None, all_entries=None):
+        """Store LLM endpoint URL and all_entries list for enrichment calls."""
         self.llm_endpoint = llm_endpoint
         self.all_entries = all_entries or []
 

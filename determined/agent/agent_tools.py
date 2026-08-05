@@ -2059,6 +2059,7 @@ _STRUCTURAL_DECORATORS = {"property", "staticmethod", "classmethod"}
 
 
 def _has_framework_decorator(decorators_json) -> bool:
+    """Return True if any decorator is a non-structural (framework) decorator like @route."""
     if not decorators_json:
         return False
     import json as _json
@@ -2415,6 +2416,7 @@ def frontier_coverage(oracle: "DBOracle", args: dict) -> str:
 
 
 def _dominant_shape(direct: int, abc: int, chain: int, disconnected: int) -> str:
+    """Return a label for the dominant stub shape from category counts."""
     shapes = [("direct-call", direct), ("ABC-interface", abc), ("chain", chain), ("disconnected", disconnected)]
     shapes.sort(key=lambda x: x[1], reverse=True)
     top = shapes[0]
@@ -2824,6 +2826,7 @@ def _fp_label(fp: str) -> str:
 
 
 def _is_self_attr(node: ast.AST) -> bool:
+    """Return True if the AST node is a self.attribute access."""
     return (
         isinstance(node, ast.Attribute)
         and isinstance(node.value, ast.Name)
@@ -4170,6 +4173,7 @@ def extract_design_facts(assessor: "Assessor", args: dict) -> str:
 
 
 def _describe_tool_wrapper(oracle, args: dict) -> str:
+    """Thin wrapper delegating to describe_tool_fn in the tool registry."""
     from determined.agent.tool_registry import describe_tool_fn
     return describe_tool_fn(oracle, args)
 
@@ -8229,6 +8233,7 @@ def _build_classify_prompt(
     callers_b: list[str], callees_b: list[str],
     score: float,
 ) -> list[dict]:
+    """Build the LLM message list for classifying divergence between two symbols."""
     taxonomy_str = "\n".join(f"  {i+1}. {t}" for i, t in enumerate(_DIVERGENCE_TAXONOMY))
     callers_a_str = ", ".join(callers_a[:8]) or "none"
     callees_a_str = ", ".join(callees_a[:8]) or "none"

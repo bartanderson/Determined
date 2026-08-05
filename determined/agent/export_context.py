@@ -60,10 +60,12 @@ _sessions: dict[tuple[str, str], _ExportSession] = {}
 
 
 def _session_key(oracle: "DBOracle", symbol: str) -> tuple[str, str]:
+    """Return (db_path, symbol) tuple used as the key into _sessions."""
     return (getattr(oracle, "db_path", ""), symbol)
 
 
 def _get_session(oracle: "DBOracle", symbol: str) -> _ExportSession | None:
+    """Return the active export session for symbol, or None if none started."""
     return _sessions.get(_session_key(oracle, symbol))
 
 
@@ -151,6 +153,7 @@ def _complexity_score(brief: dict, oracle: "DBOracle") -> tuple[float, dict[str,
 
 
 def _tier_label(score: float) -> str:
+    """Map complexity score to a human-readable escalation tier recommendation."""
     if score >= _COMPLEXITY_THRESHOLD:
         return "TIER 2 (web LLM recommended — paste this packet)"
     return "TIER 1 (local LLM; escalate if output quality is low)"
@@ -221,6 +224,7 @@ _SIBLING_DISPLAY_CAP = 20  # lines of sibling body shown in packet
 
 
 def _section(title: str, lines: list[str]) -> str:
+    """Wrap lines in a titled section with a double-bar header."""
     bar = "=" * (len(title) + 4)
     return bar + "\n" + f"== {title} ==\n" + bar + "\n" + "\n".join(lines)
 
@@ -476,4 +480,5 @@ def export_context_dump(assessor: "Assessor", args: dict) -> str:
 
 
 def _fmt_args(args: dict) -> str:
+    """Format a tool-args dict as a compact 'k=v, ...' string for display."""
     return ", ".join(f"{k}={v!r}" for k, v in args.items()) if args else ""

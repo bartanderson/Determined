@@ -26,6 +26,7 @@ _STOP_WORDS = {
 
 
 def _word_set(text: str) -> set[str]:
+    """Tokenize text and return the set of meaningful words, minus stop words."""
     return set(re.findall(r'\w+', text.lower())) - _STOP_WORDS
 
 
@@ -170,6 +171,7 @@ _SYMBOL_RE = re.compile(r"[A-Za-z_][\w./\\]*")
 
 
 def _extract_blast_target(question: str) -> str | None:
+    """Extract the subject token following a removal/change verb in a question."""
     m = _REMOVAL_VERBS.search(question)
     if m:
         rest = question[m.end():].split()[0] if question[m.end():].split() else None
@@ -181,6 +183,7 @@ def _extract_blast_target(question: str) -> str | None:
 
 
 def _extract_last_symbol(question: str) -> str | None:
+    """Return the last non-noise symbol-like token in a question string."""
     tokens = _SYMBOL_RE.findall(question)
     # skip common noise words at the end
     noise = {"me", "it", "this", "that", "the", "a", "an"}
@@ -191,6 +194,7 @@ def _extract_last_symbol(question: str) -> str | None:
 
 
 def _extract_goal(question: str) -> str | None:
+    """Extract the goal clause following an add/build/implement verb."""
     m = _GOAL_VERBS.search(question)
     return m.group(1).strip() if m else None
 

@@ -58,6 +58,7 @@ class SemanticPipelineContract:
 
     @staticmethod
     def validate_bucket(bucket: str) -> None:
+        """Raise AssertionError if bucket is not in ALLOWED_BUCKETS."""
         if bucket not in SemanticPipelineContract.ALLOWED_BUCKETS:
             raise AssertionError(f"invalid bucket emitted: {bucket}")
 
@@ -72,12 +73,15 @@ class SemanticPipelineContract:
 
     @staticmethod
     def is_project(bucket: str) -> bool:
+        """Return True if bucket is 'project'."""
         return bucket == "project"
 
     @staticmethod
     def is_runtime(bucket: str) -> bool:
+        """Return True if bucket is 'runtime'."""
         return bucket == "runtime"
 
     @staticmethod
     def is_builtin(bucket: str) -> bool:
+        """Return True if bucket is 'builtin'."""
         return bucket == "builtin"

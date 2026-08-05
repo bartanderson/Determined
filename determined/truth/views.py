@@ -20,6 +20,7 @@ def _is_noise_symbol(name: str) -> bool:
 
 
 def build_structure_view(graph: Any, builtin_symbols: set = None) -> StructureView:
+    """Build a StructureView from a graph: edges, adjacency dict, and degree-ranked hotspots."""
     edges = [(e.caller, e.callee) for e in graph.edges]
 
     adjacency = {}
@@ -65,6 +66,7 @@ class StabilityView:
 
 
 def build_stability_view(contract_reports, drift_signals, lifecycle=None) -> StabilityView:
+    """Build a StabilityView from contract reports, drift signals, and optional lifecycle data."""
     stable = []
     unstable = []
 
@@ -124,6 +126,7 @@ class IntegrityView:
 # kept as [] so existing callers that don't pass anything keep exactly
 # the prior behavior.
 def build_integrity_view(validation_result, graph, db_mismatches=None) -> IntegrityView:
+    """Build an IntegrityView from a validation result and optional DB mismatches list."""
     return IntegrityView(
         errors=validation_result.errors,
         warnings=validation_result.warnings,
@@ -138,6 +141,7 @@ class SystemSummaryView:
 
 
 def build_system_summary_view(reduced, metrics, file_count: int) -> SystemSummaryView:
+    """Build a SystemSummaryView from reduced edge metrics and file count."""
     return SystemSummaryView(
         edge_count=reduced.get("edge_activity_total", 0),
         file_count=file_count,
@@ -171,6 +175,7 @@ class IntentView:
 
 
 def build_intent_view(conn) -> "IntentView":
+    """Build an IntentView from docstring and mutation data in the corpus DB."""
     import sqlite3
     cur = conn.cursor()
 

@@ -45,6 +45,7 @@ class ShapeFinding:
 # ---------------------------------------------------------------------------
 
 def _parse_structured(path: Path) -> dict | list | None:
+    """Parse a JSON/YAML/TOML file; return parsed object or None on failure."""
     suffix = path.suffix.lower()
     try:
         if suffix == ".json":
@@ -73,6 +74,7 @@ def _parse_structured(path: Path) -> dict | list | None:
 
 
 def _read_prose(path: Path) -> str | None:
+    """Read a text file and return its content, or None on OSError."""
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
@@ -280,6 +282,7 @@ _BULLET_LIST_RE = re.compile(r"^[ \t]*[-*]\s+\S", re.M)
 
 
 def _classify_prose(text: str) -> ShapeFinding | None:
+    """Run arrow/table/bullet passes on prose text; return ShapeFinding or None."""
     arrows  = _ARROW_RE.findall(text)
     tables  = _TABLE_ROW_RE.findall(text)
     bullets = _BULLET_LIST_RE.findall(text)
@@ -333,6 +336,7 @@ _SKIP_DIRS           = {
 
 
 def scan_file(path: Path) -> ShapeFinding | None:
+    """Scan a single file and return a ShapeFinding, or None if format not supported."""
     suffix = path.suffix.lower()
     if suffix in _STRUCTURED_SUFFIXES:
         obj = _parse_structured(path)
@@ -418,6 +422,7 @@ def scan_corpus(root: str | Path, conn: sqlite3.Connection) -> list[ShapeFinding
 # ---------------------------------------------------------------------------
 
 def summarize(findings: list[ShapeFinding]) -> str:
+    """Return a one-line ingest-status summary of shape findings."""
     if not findings:
         return "shape_scanner: no structure found outside code files."
 

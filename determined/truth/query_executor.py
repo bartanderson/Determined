@@ -97,11 +97,12 @@ def get_field(result: "QueryResult", name: str, default: Any = None) -> Any:
 class QueryExecutor:
 
     def __init__(self, views: dict, registry=None):
+        """Initialize with a view registry dict and optional validator registry."""
         self.views = views
         self.registry = registry
 
     def execute(self, query):
-
+        """Execute a query node, dispatching to _select or _combine."""
         if isinstance(query, Select):
             return self._select(query)
 
@@ -121,7 +122,7 @@ class QueryExecutor:
     # -------------------------
 
     def _select(self, q: Select):
-
+        """Project view to metric and apply optional filter; return QueryResult."""
         view = self.views[q.view]
 
         # CLAUDE-EDIT 2026-06-17: filter now applies AFTER projection, not
@@ -168,7 +169,7 @@ class QueryExecutor:
     # -------------------------
 
     def _combine(self, a, b):
-
+        """Wrap two query results in a CombineResult structural join."""
         # deterministic wrapper only
         return CombineResult(
             left=a,
@@ -180,7 +181,7 @@ class QueryExecutor:
     # -------------------------
 
     def _apply_filter(self, data, f: Filter):
-
+        """Apply a Filter descriptor to projected data (dict or list); return filtered result."""
         key, op, value = f.key, f.op, f.value
 
         if isinstance(data, dict):

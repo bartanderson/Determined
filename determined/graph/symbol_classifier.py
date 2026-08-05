@@ -44,16 +44,19 @@ SymbolClass = Literal[
 #     return name.replace("<module>.", "").strip()
 
 def external_root(name: str) -> str:
+    """Return the top-level module of a dotted name, or 'unknown' if no dot."""
     if "." not in name:
         return "unknown"
     return name.split(".")[0]
 
 
 def project_key(name: str) -> str:
+    """Return the leaf (last dotted component) of a symbol name."""
     return name.split(".")[-1]
 
 
 def module_key2(name: str) -> str:
+    """Return the first two dotted components of a name, or just the first if only one."""
     parts = name.split(".")
     return ".".join(parts[:2]) if len(parts) >= 2 else parts[0]
 
@@ -63,7 +66,7 @@ def module_key2(name: str) -> str:
 # ----------------------------
 
 def classify_symbol(identity: SemanticIdentity, env: SymbolEnvironment):
-    
+    """Classify a symbol into a SymbolClass bucket using hard rules in priority order."""
     leaf = identity.leaf
     fqdn = identity.fqdn or identity.surface
 

@@ -26,20 +26,24 @@ from determined.oracle.embedding_model import get_model as _get_embed_model
 
 
 def _embed(text: str) -> np.ndarray:
+    """Embed text using all-MiniLM-L6-v2; return normalized float32 vector."""
     model = _get_embed_model()
     vec = model.encode([text], normalize_embeddings=True)[0]
     return vec.astype(np.float32)
 
 
 def _to_blob(vec: np.ndarray) -> bytes:
+    """Serialize a float32 numpy array to bytes for SQLite blob storage."""
     return vec.tobytes()
 
 
 def _from_blob(blob: bytes) -> np.ndarray:
+    """Deserialize a SQLite blob back to a float32 numpy array."""
     return np.frombuffer(blob, dtype=np.float32)
 
 
 def ensure_semantic_cache_table(cursor: sqlite3.Cursor) -> None:
+    """Create the semantic_cache table and hash index if they do not exist."""
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS semantic_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
