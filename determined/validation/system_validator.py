@@ -20,6 +20,7 @@ from typing import Any
 # Assessor's reports with no visible error. Same "looks like a signal,
 # does nothing" shape as the drift_signals gap fixed 2026-06-17.
 def _field(v: Any, name: str, default: Any = None) -> Any:
+    """Read a named attribute from a dict or object, returning default if absent."""
     if isinstance(v, dict):
         return v.get(name, default)
     return getattr(v, name, default)
@@ -43,6 +44,7 @@ class SystemValidator:
     """
 
     def __init__(self, contract=None, strict: bool = False):
+        """Store the contract rules and strictness flag."""
         self.contract = contract
         self.strict = strict
 
@@ -55,7 +57,7 @@ class SystemValidator:
         graph,
         contract_report: Any,
     ) -> ValidationResult:
-
+        """Run all validation checks and return a ValidationResult."""
         errors = []
         warnings = []
 
@@ -76,6 +78,7 @@ class SystemValidator:
     # SYMBOL VALIDATION
     # --------------------------
     def _validate_symbol_integrity(self, analysis) -> list[str]:
+        """Return error strings for any invalid symbol references in the analysis."""
         errors = []
 
         if analysis.symbol_references is None:
@@ -95,6 +98,7 @@ class SystemValidator:
     # GRAPH VALIDATION
     # --------------------------
     def _validate_graph_integrity(self, graph) -> list[str]:
+        """Return error strings for structural problems in the graph."""
         errors = []
 
         if not hasattr(graph, "edges"):
@@ -110,6 +114,7 @@ class SystemValidator:
     # CONTRACT VALIDATION
     # --------------------------
     def _validate_contracts(self, report) -> list[str]:
+        """Return error strings for any contract violations of severity 'error'."""
         errors = []
 
         if not report:
@@ -132,6 +137,7 @@ class SystemValidator:
     # SHAPE SIGNALS (soft checks)
     # --------------------------
     def _validate_shape_signals(self, graph) -> list[str]:
+        """Return soft-warning strings for suspicious graph shape signals."""
         warnings = []
 
         edge_count = len(getattr(graph, "edges", []))

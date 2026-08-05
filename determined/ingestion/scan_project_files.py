@@ -61,6 +61,7 @@ def load_ignore_list(project_root: str | Path) -> set[str]:
 # FILE DISCOVERY
 # =========================================================
 def should_ignore_path(path: Path, ignored_directory_names: Iterable[str]) -> bool:
+    """Return True if any path segment is a hidden or ignored directory."""
     ignored = set(ignored_directory_names)
     # always skip dot-folders (hidden/tooling dirs)
     if any(part.startswith(".") for part in path.parts if part not in (".", "..")):
@@ -75,6 +76,7 @@ def discover_js_ts_files(
     project_root: str | Path,
     ignored_directory_names: Iterable[str] | None = None,
 ) -> List[Path]:
+    """Discover all JS/TS/Go/Rust/C/C++/Zig/Lua source files under project_root."""
     root = Path(project_root).resolve()
     ignored = (
         set(ignored_directory_names)
@@ -102,7 +104,7 @@ def discover_python_files(
     project_root: str | Path,
     ignored_directory_names: Iterable[str] | None = None,
 ) -> List[Path]:
-
+    """Discover all Python source files under project_root, excluding venv and cache dirs."""
     root = Path(project_root).resolve()
 
     ignored = (
@@ -137,7 +139,7 @@ def build_global_symbols(
     python_files: List[Path],
     repo_root: Path,
 ) -> set[str]:
-
+    """Collect the full set of fully-qualified symbol names across all Python files."""
     global_symbols: set[str] = set()
 
     for file_path in python_files:
@@ -190,7 +192,7 @@ def analyze_files(
     project_root: Path,
     stats: dict | None = None,
 ) -> Generator[FileAnalysis, None, None]:
-
+    """Yield a FileAnalysis for each parseable Python file using the global symbol set."""
     for file_path in python_files:
 
         normalized_path = normalize_file_path(file_path)
@@ -222,7 +224,7 @@ def scan_project_files(
     ignored_directory_names: Iterable[str] | None = None,
     stats: dict | None = None,
 ) -> Generator[FileAnalysis, None, None]:
-
+    """Run the two-pass discovery-then-analysis pipeline and yield FileAnalysis objects."""
     project_root = Path(project_root).resolve(strict=True)
     repo_root = Path(repo_root).resolve()
 

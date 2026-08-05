@@ -174,6 +174,7 @@ def _detect_heuristic_name(question: str) -> str:
 # ------------------------------------------------------------------
 
 def format_result(r: dict, show_facts: bool = True) -> str:
+    """Format a run_question result dict as a human-readable multi-line string."""
     lines = []
     lines.append(f"QUESTION: {r['question']}")
     if r.get("error"):
@@ -279,11 +280,13 @@ def auto_questions(
 # ------------------------------------------------------------------
 
 def cmd_ask(args, oracle, assessor):
+    """Run a single question through the pipeline and print the result."""
     result = run_question(args.question, oracle, assessor)
     print(format_result(result))
 
 
 def cmd_batch(args, oracle, assessor):
+    """Run all questions from a file and print results in order."""
     path = Path(args.file)
     if not path.exists():
         print(f"ERROR: file not found: {args.file}")
@@ -303,6 +306,7 @@ def cmd_batch(args, oracle, assessor):
 
 
 def cmd_auto(args, oracle, assessor):
+    """Auto-generate questions from corpus gaps and run them through the pipeline."""
     questions = auto_questions(oracle, assessor, args.mode, args.limit)
     if not questions:
         print(f"No questions generated for mode='{args.mode}'")
@@ -626,6 +630,7 @@ def cmd_adversarial(args, oracle, assessor):
 
 
 def cmd_store(args, oracle, assessor):
+    """Write a human-confirmed finding or workflow item to the assessor."""
     if args.workflow:
         # --workflow kind subject content
         kind, subject, content = args.workflow
@@ -650,6 +655,7 @@ def cmd_store(args, oracle, assessor):
 # ------------------------------------------------------------------
 
 def main():
+    """Parse CLI arguments and dispatch to the appropriate subcommand."""
     parser = argparse.ArgumentParser(
         description="Claude's non-interactive access path to the agent pipeline."
     )

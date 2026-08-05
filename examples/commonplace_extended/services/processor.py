@@ -28,12 +28,14 @@ class CleanupProcessor(EntryProcessor):
     """Strip trailing whitespace from title and content."""
 
     def process(self, entry: dict) -> dict:
+        """Strip leading/trailing whitespace from title and content fields."""
         entry = dict(entry)
         entry["title"] = (entry.get("title") or "").strip()
         entry["content"] = (entry.get("content") or "").strip()
         return entry
 
     def can_handle(self, entry: dict) -> bool:
+        """Always return True - cleanup applies to every entry."""
         return True
 
 
@@ -41,12 +43,14 @@ class DeduplicateProcessor(EntryProcessor):
     """Collapse repeated whitespace in content."""
 
     def process(self, entry: dict) -> dict:
+        """Collapse all runs of whitespace in content to a single space."""
         import re
         entry = dict(entry)
         entry["content"] = re.sub(r"\s+", " ", entry.get("content") or "")
         return entry
 
     def can_handle(self, entry: dict) -> bool:
+        """Return True if the entry has non-empty content."""
         return bool(entry.get("content"))
 
 
@@ -58,15 +62,18 @@ class EnrichmentProcessor(EntryProcessor):
     """
 
     def __init__(self, llm_endpoint=None):
+        """Store the optional LLM endpoint URL for tag suggestion calls."""
         self.llm_endpoint = llm_endpoint
 
     def process(self, entry: dict) -> dict:
+        """Call suggest_tags on the entry content and attach the resulting tags."""
         from services.tagger import suggest_tags
         entry = dict(entry)
         entry["tags"] = suggest_tags(entry.get("content", ""), endpoint=self.llm_endpoint)
         return entry
 
     def can_handle(self, entry: dict) -> bool:
+        """Return True if the entry has non-empty content."""
         return bool(entry.get("content"))
 
 

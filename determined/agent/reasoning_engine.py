@@ -157,6 +157,7 @@ def decompose(
 # ---------------------------------------------------------------------------
 
 def _db_caller_count(symbol: str, conn: sqlite3.Connection) -> Finding:
+    """Return a Finding with the number of distinct callers of the symbol."""
     row = conn.execute(
         "SELECT COUNT(DISTINCT caller) FROM graph_edges WHERE callee = ? OR callee LIKE '%.' || ?",
         (symbol, symbol),
@@ -171,6 +172,7 @@ def _db_caller_count(symbol: str, conn: sqlite3.Connection) -> Finding:
 
 
 def _db_callee_count(symbol: str, conn: sqlite3.Connection) -> Finding:
+    """Return a Finding with the number of distinct callees of the symbol."""
     row = conn.execute(
         "SELECT COUNT(DISTINCT callee) FROM graph_edges WHERE caller = ?", (symbol,)
     ).fetchone()
@@ -184,6 +186,7 @@ def _db_callee_count(symbol: str, conn: sqlite3.Connection) -> Finding:
 
 
 def _db_class_membership(symbol: str, conn: sqlite3.Connection) -> Finding:
+    """Return a Finding indicating whether the symbol is a class method."""
     row = conn.execute(
         "SELECT class_name FROM class_attributes WHERE attribute = ? LIMIT 1", (symbol,)
     ).fetchone()
@@ -200,6 +203,7 @@ def _db_class_membership(symbol: str, conn: sqlite3.Connection) -> Finding:
 
 
 def _db_sibling_pattern(symbol: str, conn: sqlite3.Connection) -> Finding:
+    """Return a Finding about how many siblings share the symbol's name prefix."""
     row = conn.execute(
         "SELECT file_path FROM functions WHERE name = ? LIMIT 1", (symbol,)
     ).fetchone()
@@ -229,6 +233,7 @@ def _db_sibling_pattern(symbol: str, conn: sqlite3.Connection) -> Finding:
 
 
 def _db_import_coupling(symbol: str, conn: sqlite3.Connection) -> Finding:
+    """Return a Finding with how many files import the module containing the symbol."""
     row = conn.execute(
         "SELECT file_path FROM functions WHERE name = ? LIMIT 1", (symbol,)
     ).fetchone()
@@ -254,6 +259,7 @@ def _db_import_coupling(symbol: str, conn: sqlite3.Connection) -> Finding:
 
 
 def _db_is_stub(symbol: str, conn: sqlite3.Connection) -> Finding:
+    """Return a Finding indicating whether the symbol is currently a stub."""
     row = conn.execute(
         "SELECT is_stub FROM functions WHERE name = ? LIMIT 1", (symbol,)
     ).fetchone()

@@ -34,6 +34,7 @@ class StructuralDiffResult:
 # -------------------------------------------------
 
 def load_db_file_counts(db_path: str) -> dict[str, int]:
+    """Return a mapping of file_path to symbol_reference count from the DB."""
     conn = sqlite3.connect(db_path)
 
     rows = conn.execute("""
@@ -47,6 +48,7 @@ def load_db_file_counts(db_path: str) -> dict[str, int]:
 
 
 def load_db_edges(db_path: str) -> set[tuple]:
+    """Return all (file_path, caller, callee, line_number) edge tuples from the DB."""
     conn = sqlite3.connect(db_path)
 
     rows = conn.execute("""
@@ -63,6 +65,7 @@ def load_db_edges(db_path: str) -> set[tuple]:
 # -------------------------------------------------
 
 def extract_engine_file_counts(file_analyses) -> dict[str, int]:
+    """Return a mapping of file_path to symbol_reference count from engine output."""
     result = {}
 
     for a in file_analyses:
@@ -72,6 +75,7 @@ def extract_engine_file_counts(file_analyses) -> dict[str, int]:
 
 
 def extract_engine_edges(file_analyses) -> set[tuple]:
+    """Return all (file_path, caller, callee, line_number) edge tuples from engine output."""
     edges = set()
 
     for a in file_analyses:
@@ -86,7 +90,7 @@ def extract_engine_edges(file_analyses) -> set[tuple]:
 # -------------------------------------------------
 
 def run_structural_diff(db_path: str, file_analyses) -> StructuralDiffResult:
-
+    """Compare engine-extracted symbol references against DB-stored ones, returning a diff."""
     db_counts = load_db_file_counts(db_path)
     db_edges = load_db_edges(db_path)
 
@@ -140,7 +144,7 @@ def run_structural_diff(db_path: str, file_analyses) -> StructuralDiffResult:
 # -------------------------------------------------
 
 def print_structural_diff(diff: StructuralDiffResult) -> None:
-
+    """Print a human-readable report of file-level and edge-level structural diffs."""
     print("\n=== FILE LEVEL DIFF ===")
     mismatched_files = [d for d in diff.file_diffs if d.mismatch]
 

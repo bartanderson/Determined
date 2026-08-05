@@ -69,6 +69,7 @@ class QuerySessionResult:
     self_model: Any = None
 
     def seed_explanation(self) -> str:
+        """Return a human-readable sentence describing how many seeds were matched."""
         if not self.seeds:
             return "No seeds found for query."
         return (
@@ -76,6 +77,7 @@ class QuerySessionResult:
             f"{', '.join(self.seeds[:5])}"
         )
     def expansion_explanation(self) -> str:
+        """Return a human-readable sentence describing how many symbols expansion added."""
         added = [s for s in self.expanded if s not in self.seeds]
         return (
             f"Expansion added {len(added)} symbol(s) via {self.intent} traversal. "
@@ -83,6 +85,7 @@ class QuerySessionResult:
         )
 
     def intent_mapping_trace(self) -> Dict[str, Any]:
+        """Return a dict tracing how the raw query mapped to intent and primitives."""
         return {
             "raw_query": self.raw_query,
             "detected_intent": self.intent,
@@ -105,6 +108,7 @@ class QuerySessionResult:
         return trace.get("node_reasons", {})
 
     def summary(self) -> Dict[str, Any]:
+        """Return a full summary dict of this query session's identity and results."""
         return {
             "session_id": self.session_id,
             "queried_at": self.queried_at,
@@ -139,6 +143,7 @@ class QuerySession:
     """
 
     def __init__(self, oracle, logger: Optional[Callable] = None):
+        """Bind oracle and optional logger; initialize the schema if needed."""
         self.oracle = oracle
         self.logger = logger
         self._graph = None
@@ -160,6 +165,7 @@ class QuerySession:
         return self._graph
 
     def run_query(self, text: str) -> QuerySessionResult:
+        """Route text through the oracle, build a QuerySessionResult, and persist it."""
         from determined.assessor.query_router import route_query
 
         route_result = route_query(text, self.oracle, logger=self.logger)

@@ -39,17 +39,20 @@ class SemanticRouteTrace(RouteTrace):
 
 class TraceCollector:
     def __init__(self, name: str):
+        """Initialize a new trace collector for the given symbol name."""
         self.trace = SemanticRouteTrace(input_raw=name)
 
     def record(self, key: str, value):
+        """Set a single attribute on the trace by key name."""
         setattr(self.trace, key, value)
 
     def snapshot(self, **kwargs):
+        """Set multiple trace attributes from keyword arguments."""
         for k, v in kwargs.items():
             setattr(self.trace, k, v)
 
     def snapshot_semantic_identity(self, **kwargs):
-
+        """Attach key-value metadata to the trace's semantic observation if present."""
         if not hasattr(self.trace, "semantic_observation"):
             return
 
@@ -70,6 +73,7 @@ class TraceCollector:
         module: str | None = None,
         binding_type: str | None = None,
     ):
+        """Append a resolved SemanticCandidate to the trace's candidates list."""
         candidate = SemanticCandidate(
             surface=surface,
             fqdn=fqdn,
@@ -82,4 +86,5 @@ class TraceCollector:
         self.trace.resolved_candidates.append(candidate)
 
     def get(self):
+        """Return the completed SemanticRouteTrace."""
         return self.trace
