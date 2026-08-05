@@ -1,6 +1,6 @@
-Written at commit: f31e611
+Written at commit: c2bd4ce
 
-# SESSION STATE — session 299 final handoff
+# SESSION STATE — session 300 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,42 +9,48 @@ Written at commit: f31e611
 
 ## WHAT HAPPENED THIS SESSION (full arc)
 
-**Session start:** analyze_corpus test fix (forward-reference trap). 391 tests pass.
+**Session start:** All three items from s299 SESSION_STATE completed.
 
-**Session pivot:** Bart redirected to examine the guided journey (GETTING_STARTED.md)
-and whether the tools stayed connected to the teaching vehicle (commonplace).
+**1. list_features bare-suffix FSM collision (4ff3ec9)** [V]
+In `callee_feat_map` build loop, `::` bare-suffix extraction mapped FSM-qualified
+names (e.g. `offer::handle`) to short suffixes (`handle`, `confirm`, `cancel`)
+that matched unrelated graph edge callees — inflating EP counts for wrong feature
+dirs. Fix: `if sep and '::' not in sym` guard before rsplit. config/ EPs: 60 → 0.
+File: `determined/agent/agent_tools.py` line 7539.
 
-**Finding:** Three-way drift:
-1. The journey taught visual UI only — Ask bar tools never introduced
-2. analyze_corpus said "unclear" on commonplace — useless for teaching
-3. static/ appeared as built-but-isolated (false positive), config/ appeared as
-   wired-but-incomplete in list_features (false positive from bare-suffix collision)
+**2. find_abc_gaps decision truncation + missing summary (471740a, 6cf4b4b)** [V]
+- Decision text hard-capped at 120 chars, cutting mid-sentence. Now 200 chars
+  word-boundary with `…` if truncated.
+- `scaffolds`/`voids` were scoped inside `if unimplemented_interfaces:` block —
+  hoisted to function scope so summary line can reference both.
+- Summary line added: "N intentional scaffold class(es) (N abstract methods),
+  N concrete gap class(es) (N missing overrides), N unclassified void(s) (N methods)"
+- Verified on dj2: 8 scaffold classes / 39 abstract methods, 0 gaps, 0 voids.
 
-**Fixes shipped:**
+**3. RM67 convergence confirmed (ff56994)** [V]
+All 3 criteria met for dj2 post-fix:
+- Structural: config/ EPs now 0, stubs correctly classified, ABC gaps clean
+- Probe: all 5 steps pass
+- Gap ceiling: all 25 stubs acknowledged (FSM/test/RM68/world/)
+TRACKER.md RM67 dj2 row updated to 2026-08-05.
 
-1. **analyze_corpus low-pressure shape** (e28e55e): "Low pressure - essentially complete"
-   for small near-complete corpora. Seed: "Complete - no stubs, 24 orphaned."
-   Complete: "Low pressure, 1 deferred stub, 43 orphaned."
+**4. _get_abc_gap_set no-subclass exclusion (59e534f)** [V]
+analyze_corpus was emitting a false JUDGMENT CALL for 39 ABC methods
+(phases.py intentional scaffolds) because `_get_abc_gap_set()` included
+ABCs with no concrete subclasses as "arch voids." Removed that block — the
+function now returns only concrete subclass violations. No-subclass ABCs
+belong to `find_abc_gaps` which has decision-artifact context to distinguish
+scaffold from void. HISTORY.md entry added (c2bd4ce) — explains the temptation
+to re-add and why not to.
 
-2. **GETTING_STARTED.md Ask bar section** (e28e55e): Brief pointer after skeleton load.
-   Full section after Phase 3 showing real analyze_corpus output, explaining each section
-   (SHAPE/WHAT TO DO NOW/JUDGMENT CALLS/SUGGESTED NEXT TOOLS), and "what this looks like
-   on a real project." Journey is now one continuous path.
-
-3. **_is_asset_dir() filter** (f31e611): static/ no longer appears as built-but-isolated
-   in analyze_corpus or list_features. Covers static, assets, public, dist, build, vendor,
-   node_modules, www, media.
-
-**Investigated but not fixed:**
-
-4. **list_features FSM EP false positive** (DELTA_LOG): config/ shows 60 EPs in
-   list_features because bare-suffix fallback maps FSM names (offer, confirm, cancel)
-   to unrelated callers. analyze_corpus correctly shows 0. Needs fix in list_features
-   bare-suffix logic to guard against "::" names.
-
-5. **find_abc_gaps on dj2** (DELTA_LOG): 39 intentional scaffolds, 0 real gaps, all from
-   engine/phases.py (8 phase ABCs). Two output gaps: decision text truncates mid-sentence,
-   no summary line. Logged NEEDS_FIX.
+**Session also covered (no code):**
+- Discussion of UI redesign: comprehensive redesign (Phases A-D) already complete
+  2026-07-19. Tweak-for-features is the right model now.
+- codebase-memory-mcp: Determined already is this concept. One idea worth
+  tracking: incremental file-watcher re-ingest for active development corpora.
+- Lilian Weng harness article: 3 applicable ideas — structured Ask bar context,
+  convergence stopping for classify_stub batch, component-level failure attribution
+  in DELTA_LOG.
 
 459 tests pass [V].
 
@@ -52,18 +58,19 @@ and whether the tools stayed connected to the teaching vehicle (commonplace).
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Fix list_features bare-suffix FSM collision.** In `list_features`, the callee_feat_map
-   bare-suffix fallback should skip names containing "::" (FSM-qualified names). Adding
-   `if "::" not in sym` guard before the rsplit. File:
-   `determined/agent/agent_tools.py`, `list_features`, callee_feat_map build loop (~line 7524).
+No carryover bugs from s299 remain open. Natural next moves:
 
-2. **Fix find_abc_gaps decision truncation + missing summary.** Two gaps:
-   - Decision text cuts off mid-sentence — check where the text is being stored/retrieved
-   - Add summary line at end: "N intentional scaffolds, N real gaps, N unclassified"
-   Run find_abc_gaps on dj2 after fix to verify.
+1. **RM67 probe on Determined itself (self-model).** Last probe 2026-07-31 — one
+   session old. Run the 5 probe steps on the Determined corpus DB. The 2 real gaps
+   (pattern_executor.__init__, contract_drift_classifier.__init__) may be closeable.
 
-3. **RM67 convergence assessment.** Read TRACKER.md RM67 section. dj2 output now matches
-   Claude synthesis end-to-end. Check if all 3 convergence probe criteria are met.
+2. **Sidebar panel collapse (deferred UI item).** UI_REDESIGN.md final section:
+   `.sb-section` flex fix + click-to-collapse per label. HTML/CSS only, no backend.
+   Files: `determined/ui/static/style.css`, `determined/ui/templates/console.html`.
+
+3. **Incremental re-ingest file-watcher (new idea).** For active dj2 development:
+   detect changed files, re-ingest only those symbols. Makes analysis stay current
+   without full re-run. No design chosen yet — surface as RM item before starting.
 
 ---
 
@@ -91,8 +98,9 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
   Forward references in dict literals cause NameError at import time. [V s299]
 - git commit messages: PowerShell @'...'@ here-strings fail on em-dashes and smart quotes.
   Use Git Bash (Bash tool) for commit messages containing special characters. [V s299]
-- list_features bare-suffix fallback inflates EP counts for FSM dirs (:: names match
-  unrelated callers). config/ shows 60 false EPs. analyze_corpus is unaffected. [V s299]
+- _get_abc_gap_set() excludes no-subclass ABCs by design -- they belong to find_abc_gaps.
+  Re-adding the no-subclass block causes false JUDGMENT CALLs in analyze_corpus for corpora
+  with intentional scaffolds. See HISTORY.md 2026-08-05. [V s300]
 
 ## RESOURCE / PROCESS RULES [V]
 
