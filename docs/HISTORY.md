@@ -26,6 +26,8 @@ returned empty `content` (CoT suppression partial failure), the fallback to
 `/no_think` prepended, `<think>...</think>` blocks can appear in `content` on some
 inference paths. Fix: strip `_THINK_RE` from content, drop the fallback entirely.
 
+2026-08-05: `_get_abc_gap_set()` deliberately excludes ABCs with no concrete subclasses. The temptation is to include them as "architecture voids" (an ABC nobody implements is a gap). Removed because: without checking `knowledge_artifacts` for a decision artifact, you can't tell scaffold from void — intentional phase interfaces look identical to forgotten abstractions. `_get_abc_gap_set()` only reports concrete subclass violations (a subclass exists but is missing an override). No-subclass ABCs belong exclusively to `find_abc_gaps`, which has the decision-artifact context to classify them. Re-adding the no-subclass block will cause `analyze_corpus` to emit false JUDGMENT CALLs on corpora with intentional scaffolds.
+
 ## Active entries
 
 2026-08-03 (s291): F19 root cause was two files with the same name in different directories
