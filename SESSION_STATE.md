@@ -1,72 +1,69 @@
-Written at commit: e28e55e
+Written at commit: f31e611
 
-# SESSION STATE — session 299 handoff (continued)
+# SESSION STATE — session 299 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
 
 ---
 
-## WHAT HAPPENED THIS SESSION
+## WHAT HAPPENED THIS SESSION (full arc)
 
-**Session goal: reconnect the tools to the teaching vehicle (GETTING_STARTED.md)**
+**Session start:** analyze_corpus test fix (forward-reference trap). 391 tests pass.
 
-Bart identified the drift: the delta loop work (sessions 296-299) made the tools
-sophisticated for dj2-scale projects, but the teaching corpus (commonplace) was left
-behind. The guided journey in GETTING_STARTED.md taught the visual UI but never
-introduced the Ask bar tools. analyze_corpus on commonplace said "unclear" — useless
-for teaching.
+**Session pivot:** Bart redirected to examine the guided journey (GETTING_STARTED.md)
+and whether the tools stayed connected to the teaching vehicle (commonplace).
 
-**Two fixes shipped (e28e55e):** [V]
+**Finding:** Three-way drift:
+1. The journey taught visual UI only — Ask bar tools never introduced
+2. analyze_corpus said "unclear" on commonplace — useless for teaching
+3. static/ appeared as built-but-isolated (false positive), config/ appeared as
+   wired-but-incomplete in list_features (false positive from bare-suffix collision)
 
-1. **Low-pressure shape in analyze_corpus.** When total_stubs <= 5 and no wired/isolated
-   patterns dominate, the tool now says "Low pressure - essentially complete" instead of
-   "unclear." Commonplace complete now reads: shape, 1 deferred stub, 43 orphaned impls,
-   nothing blocking. Seed reads: complete, 24 orphaned impls (Flask routes).
+**Fixes shipped:**
 
-2. **Ask bar section in GETTING_STARTED.md.** Two insertions:
-   - Brief pointer after "Loading the skeleton" — type analyze_corpus before exploring panels
-   - Full section "The Ask bar: from structure to action" after Phase 3 — shows actual
-     analyze_corpus output on complete corpus, explains each section (SHAPE/WHAT TO DO
-     NOW/JUDGMENT CALLS/SUGGESTED NEXT TOOLS), shows follow-on tools, closes with
-     "what this looks like on a real project" to bridge commonplace to dj2-scale work
+1. **analyze_corpus low-pressure shape** (e28e55e): "Low pressure - essentially complete"
+   for small near-complete corpora. Seed: "Complete - no stubs, 24 orphaned."
+   Complete: "Low pressure, 1 deferred stub, 43 orphaned."
 
-The journey is now one continuous path: visual UI panels + Ask bar tools. analyze_corpus
-is the handoff — it synthesizes what the panels show into a decision.
+2. **GETTING_STARTED.md Ask bar section** (e28e55e): Brief pointer after skeleton load.
+   Full section after Phase 3 showing real analyze_corpus output, explaining each section
+   (SHAPE/WHAT TO DO NOW/JUDGMENT CALLS/SUGGESTED NEXT TOOLS), and "what this looks like
+   on a real project." Journey is now one continuous path.
+
+3. **_is_asset_dir() filter** (f31e611): static/ no longer appears as built-but-isolated
+   in analyze_corpus or list_features. Covers static, assets, public, dist, build, vendor,
+   node_modules, www, media.
+
+**Investigated but not fixed:**
+
+4. **list_features FSM EP false positive** (DELTA_LOG): config/ shows 60 EPs in
+   list_features because bare-suffix fallback maps FSM names (offer, confirm, cancel)
+   to unrelated callers. analyze_corpus correctly shows 0. Needs fix in list_features
+   bare-suffix logic to guard against "::" names.
+
+5. **find_abc_gaps on dj2** (DELTA_LOG): 39 intentional scaffolds, 0 real gaps, all from
+   engine/phases.py (8 phase ABCs). Two output gaps: decision text truncates mid-sentence,
+   no summary line. Logged NEEDS_FIX.
 
 459 tests pass [V].
 
 ---
 
-## CURRENT STATE
+## WHAT TO DO NEXT SESSION
 
-**analyze_corpus shapes:**
-- Complete (0 stubs): "Complete - no stubs" + orphaned count [V]
-- Low pressure (<=5 stubs, none wired/isolated): "Low pressure - essentially complete" [V]
-- Connectivity-dominant (orphaned >= 50, >= 3x stubs, >= 50%): "Connectivity-dominant" [V]
-- Stub-blocked (stubs with real callers): "Stub-blocked" [V]
-- Unclear (stubs, none verified, corpus too large for low-pressure): "unclear" (rotjs) [V]
+1. **Fix list_features bare-suffix FSM collision.** In `list_features`, the callee_feat_map
+   bare-suffix fallback should skip names containing "::" (FSM-qualified names). Adding
+   `if "::" not in sym` guard before the rsplit. File:
+   `determined/agent/agent_tools.py`, `list_features`, callee_feat_map build loop (~line 7524).
 
-**GETTING_STARTED.md:** Complete through Ask bar section. Journey covers
-skeleton -> growing -> complete -> Ask bar -> what to do next. [V]
+2. **Fix find_abc_gaps decision truncation + missing summary.** Two gaps:
+   - Decision text cuts off mid-sentence — check where the text is being stored/retrieved
+   - Add summary line at end: "N intentional scaffolds, N real gaps, N unclassified"
+   Run find_abc_gaps on dj2 after fix to verify.
 
----
-
-## STILL OPEN
-
-1. **static/ false positive in analyze_corpus.** `static/` (web assets) appears as
-   "built-but-isolated" for dj2. Needs an `_is_test_feature`-style filter.
-   File: `determined/agent/agent_tools.py`, `analyze_corpus`, `built_isolated` list.
-
-2. **config/ missing from wired_incomplete in analyze_corpus.** config/ has 12 stubs and
-   60 entry points in dj2 but doesn't appear in WHAT TO DO NOW step 1. Investigate by
-   running `list_features()` and comparing dir_key mapping vs. analyze_corpus query.
-
-3. **RM67 convergence assessment for dj2.** Read TRACKER.md RM67 criteria. dj2 output
-   now matches Claude synthesis — does it meet the probe acceptance criteria?
-
-4. **find_abc_gaps() on dj2.** analyze_corpus shows 39 ABC gaps. Does the output explain
-   which are accepted scaffolds vs. real gaps?
+3. **RM67 convergence assessment.** Read TRACKER.md RM67 section. dj2 output now matches
+   Claude synthesis end-to-end. Check if all 3 convergence probe criteria are met.
 
 ---
 
@@ -90,10 +87,12 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - list_stubs caller count = ALL edges (resolved + unresolved); frontier_priority = resolved only. [V s297]
 - dj2 "tail" stubs ALL have unresolved callers -- phantom edges, not real call paths. [V s298]
 - analyze_corpus connectivity-dominant threshold requires orphaned_impl >= 50. [V s299]
-- New tools added to TOOLS dict must be registered AFTER function def, not inside the dict
-  literal -- forward references in dict literals cause NameError at import time. [V s299]
-- git commit message: strip em-dashes and smart quotes; PowerShell here-strings fail on them.
-  Use Git Bash for commit messages with special characters. [V s299]
+- New tools registered in TOOLS dict: add AFTER function def, not inside the dict literal.
+  Forward references in dict literals cause NameError at import time. [V s299]
+- git commit messages: PowerShell @'...'@ here-strings fail on em-dashes and smart quotes.
+  Use Git Bash (Bash tool) for commit messages containing special characters. [V s299]
+- list_features bare-suffix fallback inflates EP counts for FSM dirs (:: names match
+  unrelated callers). config/ shows 60 false EPs. analyze_corpus is unaffected. [V s299]
 
 ## RESOURCE / PROCESS RULES [V]
 
