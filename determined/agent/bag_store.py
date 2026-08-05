@@ -31,11 +31,13 @@ class BagStore:
     """
 
     def __init__(self, conn: sqlite3.Connection, corpus_path: str = ""):
+        """Connect to the corpus DB and ensure the bags schema exists."""
         self.conn = conn
         self.corpus_path = corpus_path
         self._init_schema()
 
     def _init_schema(self) -> None:
+        """Create bags and bag_items tables if they do not exist."""
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS bags (
                 bag_id       TEXT NOT NULL,
@@ -86,19 +88,23 @@ class BagStore:
             return False
 
     def add_edge(self, bag_id: str, edge: "EdgeRef") -> bool:
+        """Add a call-edge reference to a bag."""
         return self.add_item(bag_id, "edge", edge.to_dict(), key=edge.key())
 
     def add_symbol(self, bag_id: str, name: str, file_path: str, note: str | None = None) -> bool:
+        """Add a named symbol reference to a bag."""
         return self.add_item(bag_id, "symbol",
                              {"name": name, "file_path": file_path},
                              key=f"symbol::{name}", note=note)
 
     def add_file(self, bag_id: str, file_path: str, note: str | None = None) -> bool:
+        """Add a file reference to a bag."""
         return self.add_item(bag_id, "file",
                              {"file_path": file_path},
                              key=f"file::{file_path}", note=note)
 
     def set_label(self, bag_id: str, label: str) -> None:
+        """Set or update the human-readable label for a bag."""
         self.conn.execute(
             """INSERT INTO bags (bag_id, corpus_path, label)
                VALUES (?, ?, ?)
@@ -116,6 +122,7 @@ class BagStore:
         bag_id: str | None = None,
         item_type: str | None = None,
     ) -> list[dict]:
+        """Return bag items optionally filtered by bag_id and item_type."""
         q = ("SELECT bag_id, item_type, item_key, content, note, added_at "
              "FROM bag_items WHERE corpus_path = ?")
         params: list = [self.corpus_path]
@@ -155,6 +162,7 @@ class BagStore:
         return result
 
     def bag_labels(self) -> dict[str, str]:
+        """Return a dict of bag_id -> label for bags that have labels."""
         rows = self.conn.execute(
             "SELECT bag_id, label FROM bags WHERE corpus_path = ? AND label IS NOT NULL",
             (self.corpus_path,),
@@ -162,6 +170,7 @@ class BagStore:
         return {r[0]: r[1] for r in rows}
 
     def clear(self, bag_id: str) -> int:
+        """Delete all items from the specified bag and return the count removed."""
         c = self.conn.execute(
             "DELETE FROM bag_items WHERE bag_id = ? AND corpus_path = ?",
             (bag_id, self.corpus_path),

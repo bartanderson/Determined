@@ -39,6 +39,7 @@ from determined.graph.symbol_resolution_engine import resolve_symbol_type
 # ----------------------------
 
 def _safe_read_file(path: Path) -> Optional[str]:
+    """Read a file as UTF-8 text, returning None on any IO error."""
     try:
         return path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -48,6 +49,7 @@ def _safe_read_file(path: Path) -> Optional[str]:
 def _extract_imports(
     tree: ast.AST,
 ) -> tuple[List[ImportRepresentation], dict[str, str]]:
+    """Extract all import statements from the AST."""
     imports: List[ImportRepresentation] = []
     alias_map: dict[str, str] = {}
 
@@ -147,6 +149,7 @@ def _is_stub(node: ast.FunctionDef | ast.AsyncFunctionDef, in_protocol: bool = F
 
 
 def _is_protocol_class(class_node: ast.ClassDef) -> bool:
+    """Return True if a class node inherits from Protocol."""
     for base in class_node.bases:
         name = getattr(base, "id", None) or getattr(base, "attr", None)
         if name == "Protocol":
@@ -246,6 +249,7 @@ def _collect_comments(source: str) -> dict:
 
 
 def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> List[FunctionRepresentation]:
+    """Extract all top-level and class-level functions from the AST."""
     results: List[FunctionRepresentation]= []
 
     for node, in_protocol in _iter_top_level_functions(tree):
@@ -399,6 +403,7 @@ def _extract_class_attributes(tree: ast.AST) -> List[ClassAttribute]:
 
 
 def _extract_classes(tree: ast.AST) -> List[ClassRepresentation]:
+    """Extract all class definitions including their methods and base classes."""
     results: List[ClassRepresentation] = []
 
     for node in ast.walk(tree):
@@ -430,6 +435,7 @@ def _extract_symbol_references(
     param_type_map: dict[str, dict[str, str]] | None = None,
     class_attr_map: dict[str, dict[str, str]] | None = None,
 ) -> list[SymbolReference]:
+    """Extract call edges between known project symbols."""
 
     results = []
     local_symbol_map = {}
@@ -982,6 +988,7 @@ def _extract_function_references(tree: ast.AST) -> list[SymbolReference]:
 
 
 def _classify_role(path: Path, source: str) -> str:
+    """Classify a file's role (test, init, config, etc.) from its path and content."""
     import re as _re
     name = path.name
     parts = [p.lower() for p in path.parts]
@@ -1000,6 +1007,7 @@ def _classify_role(path: Path, source: str) -> str:
 
 
 def _extract_mutations(tree: ast.AST) -> List[MutationEvent]:
+    """Extract state-mutation events (assignments to non-local targets)."""
     # Build a map of (start_line, end_line) -> first docstring line for each
     # function, so each mutation can be annotated with the intent of the
     # function it lives in.
@@ -1167,7 +1175,7 @@ def parse_ast(
     global_known_symbols: set[str] | None = None,
     runtime_bindings: dict[str, str] | None = None,
     ) -> Optional[FileAnalysis]:
-
+    """Parse a Python source file and return a complete FileAnalysis."""
     runtime_bindings = runtime_bindings or {}
 
     path = Path(file_path)
@@ -1282,6 +1290,7 @@ def parse_ast(
     )
 
 def _extract_attribute_chains(tree: ast.AST):
+    """Collect attribute-access chains (a.b.c) as dotted strings."""
     chains = set()
 
     for node in ast.walk(tree):
@@ -1305,6 +1314,7 @@ def _extract_runtime_bindings(
     tree: ast.AST,
     alias_map: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Extract dynamic dispatch bindings (registry and dict-dispatch patterns)."""
     alias_map = alias_map or {}
 
     bindings = {}

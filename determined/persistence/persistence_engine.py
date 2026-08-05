@@ -12,6 +12,7 @@ from determined.core.pathing import normalize_file_path
 from determined.identity.edge_identity import edge_identity
 
 def ensure_schema(connection):
+    """Initialise schema and run migrations on the given connection."""
     initialize_database(connection)
     _migrate(connection)
 
@@ -61,6 +62,7 @@ def set_project_root(connection: sqlite3.Connection, project_root) -> None:
     connection.commit()
 
 def _insert_symbol(cursor, file_path, symbol_type, name, line_number, signature=""):
+    """Insert a symbol row using a canonical id as the deduplication key."""
     canonical_id = f"{file_path}:{symbol_type}:{name}:{line_number}"
 
     cursor.execute("""
@@ -92,6 +94,7 @@ def run_sql(connection: sqlite3.Connection, query: str):
     return cursor.fetchall()
 
 def initialize_database(connection: sqlite3.Connection) -> None:
+    """Create all core tables if they do not exist."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -309,6 +312,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
 
 def _ensure_bags_tables(cursor) -> None:
+    """Create bags and bag_items tables if they do not exist."""
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS bags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -376,6 +380,7 @@ def create_indexes(connection: sqlite3.Connection, include_composite: bool = Tru
 
 
 def _canonical_symbol(name: str) -> str:
+    """Strip module prefix from a qualified name, returning the bare symbol."""
     if not name:
         return name
     return name.split(".")[-1]
@@ -386,7 +391,7 @@ def persist_file_analysis(
     project_prefixes,
     logger=None
 ) -> None:
-
+    """Write a FileAnalysis object to all relevant corpus tables."""
     cursor = connection.cursor()
 
     analysis.file_path = normalize_file_path(analysis.file_path)
@@ -705,6 +710,7 @@ def persist_file_analysis(
     logger and logger.write("match:", db_count == len(analysis.symbol_references))
 
 def create_database(database_path: str | Path) -> sqlite3.Connection:
+    """Create a fresh corpus DB file and return an open connection."""
     database_path = Path(database_path)
 
     if database_path.exists():
@@ -1510,12 +1516,14 @@ def _recalculate_hot_files(connection):
 # ==================================================
 
 def make_canonical_id(file_path, symbol_type, name, line_number):
+    """Build the canonical symbol ID string from its four key fields."""
     return f"{file_path}:{symbol_type}:{name}:{line_number}"
 
 # ==================================================
 # FILE / SYMBOL PERSISTENCE (LEGACY BUT CONTAINED)
 # ==================================================
 def _persist_file_analysis(connection, file_analyses, project_prefixes):
+    """Legacy batch path: persist a list of FileAnalysis objects."""
     cursor = connection.cursor()
 
     for analysis in file_analyses:
@@ -1550,6 +1558,7 @@ def _persist_file_analysis(connection, file_analyses, project_prefixes):
 # GRAPH EDGE PERSISTENCE (TRUTH LAYER)
 # ==================================================
 def _persist_graph_edges(connection, graph):
+    """Write graph edges from a run into the graph_edges table."""
     cursor = connection.cursor()
 
     edges = getattr(graph, "edges", [])

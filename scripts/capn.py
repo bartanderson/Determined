@@ -48,22 +48,26 @@ REPORT_EVERY = 10  # sessions between subsequent notices
 
 
 def _ensure_dirs():
+    """Create the entries directory if it does not exist."""
     ENTRIES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _log(record: dict):
+    """Append a timestamped JSON record to the event log."""
     record["t"] = datetime.now(timezone.utc).isoformat()
     with LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
 
 def _current_session() -> str:
+    """Return the current session ID from the session file, or 'untracked'."""
     if SESSION_FILE.exists():
         return SESSION_FILE.read_text(encoding="utf-8").strip()
     return "untracked"
 
 
 def _miss_waste_estimate(stats: dict) -> int:
+    """Estimate tokens wasted on a cache miss using the lifetime mean."""
     hits = stats.get("hits", 0)
     saved = stats.get("tokens_saved", 0)
     mean = saved // hits if hits else 0
@@ -71,6 +75,7 @@ def _miss_waste_estimate(stats: dict) -> int:
 
 
 def _file_hash(path: str) -> str | None:
+    """Return the SHA-256 hex digest of a file, or None on IO error."""
     try:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
     except (OSError, IOError):
@@ -78,6 +83,7 @@ def _file_hash(path: str) -> str | None:
 
 
 def _load_json(p: Path, default) -> dict:
+    """Load a JSON file, returning default if absent or unreadable."""
     if p.exists():
         try:
             return json.loads(p.read_text(encoding="utf-8"))
@@ -87,10 +93,12 @@ def _load_json(p: Path, default) -> dict:
 
 
 def _save_json(p: Path, data):
+    """Write a dict to a JSON file atomically."""
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _load_stats() -> dict:
+    """Load the stats JSON file, returning zero-initialised defaults if absent."""
     return _load_json(STATS_FILE, {"hits": 0, "misses": 0, "charted": 0, "tokens_saved": 0})
 
 
@@ -141,6 +149,7 @@ def _parse_entry(path: Path) -> dict | None:
 
 
 def _entry_is_fresh(entry: dict) -> bool:
+    """Return True if all files referenced by an entry still match their stored hashes."""
     for fpath, stored_hash in entry.get("files", {}).items():
         current = _file_hash(fpath)
         if current is None or current != stored_hash:
@@ -149,6 +158,7 @@ def _entry_is_fresh(entry: dict) -> bool:
 
 
 def _all_entries() -> list[tuple[Path, dict]]:
+    """Return all parsed cache entries as (path, dict) pairs sorted by filename."""
     if not ENTRIES_DIR.exists():
         return []
     results = []
@@ -176,6 +186,7 @@ def _score(query: str, entry: dict) -> float:
 # ---------------------------------------------------------------------------
 
 def cmd_ask(question: str, threshold: float = 0.3):
+    """Search the discovery cache for hits matching the question and print results."""
     entries = _all_entries()
     fresh = [(p, e) for p, e in entries if _entry_is_fresh(e)]
     stale_count = len(entries) - len(fresh)
@@ -220,6 +231,7 @@ def cmd_ask(question: str, threshold: float = 0.3):
 
 
 def cmd_chart(question: str, files: list[str], details: str = "", work_cost: int = 500):
+    """Record a new discovery entry with question, files, and details."""
     if "\n" in question:
         print("Error: question cannot contain newlines", file=sys.stderr)
         sys.exit(1)
@@ -272,6 +284,7 @@ def cmd_chart(question: str, files: list[str], details: str = "", work_cost: int
 
 
 def cmd_prune():
+    """Delete stale cache entries whose referenced files have changed."""
     entries = _all_entries()
     pruned = 0
     for p, e in entries:
@@ -295,6 +308,7 @@ def cmd_prune():
 
 
 def _report_due(count: int) -> bool:
+    """Return True if a progress report should be printed at this miss count."""
     if count == REPORT_FIRST:
         return True
     if count > REPORT_FIRST and (count - REPORT_FIRST) % REPORT_EVERY == 0:
@@ -355,6 +369,7 @@ def _last_session_summary() -> str:
 
 
 def cmd_context():
+    """Start a new session: assign a session ID and print the cache status summary."""
     _ensure_dirs()
     session_id = uuid.uuid4().hex[:8]
     SESSION_FILE.write_text(session_id, encoding="utf-8")
@@ -410,6 +425,7 @@ Next auto-notice at session {next_due if session_count > REPORT_FIRST else REPOR
 
 
 def cmd_list():
+    """List all cache entries with their freshness status."""
     entries = _all_entries()
     if not entries:
         print("No entries.")
@@ -424,6 +440,7 @@ def cmd_list():
 
 
 def cmd_report(sessions: int = 10):
+    """Print a per-session activity report from the event log."""
     if not LOG_FILE.exists():
         print("No log yet. Run some queries first.")
         return
@@ -625,6 +642,7 @@ def cmd_savings(as_json: bool = False):
 # ---------------------------------------------------------------------------
 
 def main():
+    """Parse CLI arguments and dispatch to the appropriate capn sub-command."""
     ap = argparse.ArgumentParser(prog="capn", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")

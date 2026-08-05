@@ -28,6 +28,7 @@ from typing import Optional
 # ------------------------------------------------------------------
 
 def _get_stub(conn: sqlite3.Connection, name: str) -> Optional[dict]:
+    """Fetch a single stub function record by name from the DB."""
     row = conn.execute(
         "SELECT file_path, name, line_number, return_type, arguments_json, docstring "
         "FROM functions WHERE name = ? AND is_stub = 1 LIMIT 1",
@@ -39,6 +40,7 @@ def _get_stub(conn: sqlite3.Connection, name: str) -> Optional[dict]:
 
 
 def _get_callers(conn: sqlite3.Connection, stub_name: str, limit: int = 5) -> list[dict]:
+    """Return up to limit callers of the named stub including their docstrings."""
     # callee may be stored as bare name OR fully-qualified (module.name)
     rows = conn.execute(
         """
@@ -70,6 +72,7 @@ def _get_sibling_callees(conn: sqlite3.Connection, stub_name: str, file_path: st
 
 
 def _get_contracts(conn: sqlite3.Connection, function_names: list[str]) -> list[dict]:
+    """Fetch behavioral contracts for the given function names."""
     if not function_names:
         return []
     # strip module prefixes so bare names match behavioral_contracts.function_name
@@ -188,6 +191,7 @@ def _extract_structural_skeleton(source: str, fn_name: str) -> dict:
 
 
 def _get_source_lines(file_path: str, around_line: int, window: int = 30) -> str:
+    """Return a line-numbered source window around the given line."""
     try:
         lines = Path(file_path).read_text(encoding="utf-8", errors="ignore").splitlines()
         start = max(0, around_line - 3)
@@ -198,6 +202,7 @@ def _get_source_lines(file_path: str, around_line: int, window: int = 30) -> str
 
 
 def gather_context(conn: sqlite3.Connection, stub_name: str) -> Optional[dict]:
+    """Collect stub record, callers, siblings, contracts, and source for projection."""
     stub = _get_stub(conn, stub_name)
     if not stub:
         return None
@@ -262,11 +267,13 @@ _DEFAULT_LANG = ("Python", "python", "Return ONLY the function body (no signatur
 
 
 def _detect_lang(file_path: str) -> tuple[str, str, str]:
+    """Return (language, fence_hint, body_instruction) for a file path."""
     ext = Path(file_path).suffix.lower()
     return _EXT_LANG.get(ext, _DEFAULT_LANG)
 
 
 def _build_prompt(ctx: dict, classification: Optional[str] = None, target_lang: Optional[str] = None) -> str:
+    """Construct the LLM projection prompt for a stub given its context."""
     stub = ctx["stub"]
     args = json.loads(stub["arguments_json"] or "[]")
 
@@ -348,6 +355,7 @@ def _build_prompt(ctx: dict, classification: Optional[str] = None, target_lang: 
 # ------------------------------------------------------------------
 
 def _call_llm(prompt: str) -> str:
+    """Send a projection prompt to the local LLM and return the raw response."""
     from determined.agent.llm_client import generate as _llm_generate
     result = _llm_generate(prompt)
     return result if result else "# [llm_client error: no response]"
@@ -422,6 +430,7 @@ def project_all_stubs(
     target_lang: Optional[str] = None,
     verbose: bool = False,
 ) -> list[dict]:
+    """Project implementations for up to limit stubs from the corpus."""
     conn = sqlite3.connect(db_path)
     stubs = conn.execute(
         "SELECT name FROM functions WHERE is_stub = 1 ORDER BY file_path, line_number LIMIT ?",

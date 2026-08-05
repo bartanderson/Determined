@@ -103,6 +103,7 @@ def _decompose_prompt(
     history: list[dict],
     grounding: str = "",
 ) -> list[dict]:
+    """Send the question to the LLM to decompose it into a list of data needs."""
     messages = [{"role": "system", "content": _DECOMPOSE_SYSTEM}]
     for turn in history[-6:]:  # last 3 Q/A pairs
         messages.append({"role": turn["role"], "content": turn["content"]})
@@ -199,6 +200,7 @@ def _assembly_hint(needs: list[str], question: str = "") -> str:
 def _assemble_prompt(question: str, facts_text: str, history: list[dict],
                      facts: list[dict] | None = None,
                      needs: list[str] | None = None) -> list[dict]:
+    """Build the final answer prompt from retrieved facts and conversation history."""
     messages = [{"role": "system", "content": _ASSEMBLE_SYSTEM}]
     for turn in history[-6:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
@@ -285,6 +287,7 @@ def _extract_chain_endpoints(question: str) -> tuple[str, str] | tuple[None, Non
 
 
 def _is_chain_question(question: str) -> bool:
+    """Return True if the question asks for a call-chain between two symbols."""
     src, dst = _extract_chain_endpoints(question)
     return src is not None and dst is not None
 
@@ -661,10 +664,12 @@ _IMPL_RE = re.compile(
 
 
 def _is_plan_request(question: str) -> bool:
+    """Return True if the question is asking for a development plan."""
     return bool(_PLAN_RE.search(question))
 
 
 def _is_direction_request(question: str) -> bool:
+    """Return True if the question is reporting a completed implementation."""
     return bool(_IMPL_RE.search(question))
 
 
@@ -952,6 +957,7 @@ def _strip_to_section(text: str, section_num: int) -> str:
 # ------------------------------------------------------------------
 
 def _is_survey_needs(needs: list[str]) -> bool:
+    """Return True if the needs list matches the survey heuristic (symbols + files + findings)."""
     # dev_plan heuristic has the same symbols/files/findings pattern but also has
     # "entry points" - exclude those so they go through LLM for synthesis
     if any(n == "entry points" for n in needs):
@@ -1033,6 +1039,7 @@ def build_survey_answer(facts: list[dict]) -> str:
 # ------------------------------------------------------------------
 
 def _is_git_history_needs(needs: list[str]) -> bool:
+    """Return True if any need requests git history for a symbol."""
     return any(n.startswith("git history of ") for n in needs)
 
 
@@ -1053,6 +1060,7 @@ def build_git_history_answer(facts: list[dict]) -> str:
 # ------------------------------------------------------------------
 
 def _is_impact_needs(needs: list[str]) -> bool:
+    """Return True if the needs list matches the impact-analysis heuristic."""
     # impact NEEDs: "brief for X" + "what calls X" + "findings for X", no "symbols named"
     # (distinguishes from explain, which has "brief for" but also "symbols named")
     return (any(n.startswith("brief for ") for n in needs) and
@@ -1115,6 +1123,7 @@ def _postprocess_answer(answer: str, facts: list[dict]) -> str:
 # ------------------------------------------------------------------
 
 def _call_llm(messages: list[dict], verbose: bool = False, label: str = "") -> str:
+    """Send messages to the local LLM and return the response text."""
     text = _llm_chat(messages, timeout=_LLM_TIMEOUT) or "ERROR: llama-server is not running. Start the UI to launch it automatically, or run llama-server manually on port 8081."
     if verbose and label:
         print(f"\n[{label}]\n{text}\n[/{label}]", flush=True)
@@ -1258,6 +1267,7 @@ def _answer(
 # ------------------------------------------------------------------
 
 def run(db_path: str, verbose: bool = False) -> None:
+    """Start the interactive CLI REPL against the given corpus DB."""
     print(f"\nLoading corpus: {db_path}")
     try:
         oracle = DBOracle(db_path)

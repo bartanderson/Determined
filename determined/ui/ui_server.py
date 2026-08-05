@@ -52,6 +52,7 @@ _lock = threading.Lock()
 
 
 def _save_session(db_path: str) -> None:
+    """Persist the active DB path to the session file for next-launch resume."""
     try:
         _SESSION_FILE.write_text(json.dumps({"db_path": db_path}), encoding="utf-8")
     except Exception:
@@ -59,6 +60,7 @@ def _save_session(db_path: str) -> None:
 
 
 def _load_session() -> str | None:
+    """Return the DB path from the last session file, or None."""
     try:
         if _SESSION_FILE.exists():
             data = json.loads(_SESSION_FILE.read_text(encoding="utf-8"))
@@ -71,6 +73,7 @@ def _load_session() -> str | None:
 
 
 def init(db_path: str) -> None:
+    """Initialise globals (oracle, assessor, db_path) and load the corpus."""
     global _oracle, _assessor, _db_path, _source_path
     _oracle   = DBOracle(db_path)
     # Migrate older DBs forward — ensure_schema is idempotent (CREATE IF NOT EXISTS)
@@ -131,6 +134,7 @@ def _corpus_status() -> dict:
 
 @app.route("/")
 def index():
+    """Serve the main console HTML page."""
     from determined.agent.llm_client import LLM_DISPLAY_NAME
     db_name = Path(_db_path).name if _db_path else "no corpus"
     status  = _corpus_status()
@@ -139,6 +143,7 @@ def index():
 
 @app.route("/api/reasoning_lenses")
 def reasoning_lenses():
+    """Return the lens catalog as JSON for the frontend."""
     from determined.agent.reasoning_lenses import LENS_CATALOG
     from flask import jsonify
     return jsonify([{"id": l["id"], "name": l["name"], "description": l["description"],
@@ -149,6 +154,7 @@ def reasoning_lenses():
 
 @app.route("/api/clues", methods=["GET"])
 def get_clues():
+    """Return the current active clues from the corpus DB."""
     from flask import jsonify
     if not _db_path:
         return jsonify([])
@@ -166,6 +172,7 @@ def get_clues():
 
 @app.route("/api/clues", methods=["POST"])
 def add_clue():
+    """Persist a new clue to the corpus DB."""
     from flask import request, jsonify
     if not _db_path:
         return jsonify({"error": "no corpus"}), 400
@@ -195,6 +202,7 @@ def add_clue():
 
 @app.route("/api/clues/<int:db_id>", methods=["DELETE"])
 def delete_clue(db_id):
+    """Delete a clue by DB id."""
     from flask import jsonify
     if not _db_path:
         return jsonify({"ok": False}), 400
@@ -444,6 +452,7 @@ def _phase_dbs() -> dict:
 
 
 def _emit_corpus_ready(switched=False):
+    """Emit corpus_ready socket event with status and map data."""
     if _oracle:
         s = _corpus_status()
         m = _corpus_map_data()
@@ -484,6 +493,7 @@ def handle_corpus_status():
 
 @socketio.on("query")
 def handle_query(data):
+    """Handle an incoming socket query, route it to the agent, and stream the reply."""
     global _history
     question = (data.get("question") or "").strip()
     if not question or _oracle is None:
@@ -695,6 +705,7 @@ _gx_proc = None
 
 @socketio.on("clear_history")
 def handle_clear():
+    """Clear the in-memory conversation history."""
     global _history
     with _lock:
         _history = []
@@ -703,6 +714,7 @@ def handle_clear():
 
 @socketio.on("browse")
 def handle_browse(data):
+    """Open a system directory picker and return the selected path."""
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -748,6 +760,7 @@ def _staleness_check(db_path: str, source_path: str) -> dict:
 
 @socketio.on("scan")
 def handle_scan(data):
+    """Scan a path and emit scan_result with discovered DB files."""
     path = (data.get("path") or "").strip()
     if not path:
         emit("scan_result", {"error": "No path provided."})
@@ -801,6 +814,7 @@ def handle_load_corpus(data):
 
 @socketio.on("ingest")
 def handle_ingest(data):
+    """Run corpus ingestion for the given path and emit progress events."""
     path = (data.get("path") or "").strip()
     if not path:
         emit("ingest_error", {"message": "No path provided."})
@@ -3792,6 +3806,7 @@ def _start_llm_server() -> None:
 
 @socketio.on("llm_get_status")
 def handle_llm_get_status(_data=None):
+    """Emit the current LLM server state (running/stopped)."""
     from determined.agent.llm_client import is_available
     state = "running" if is_available() else "stopped"
     emit("llm_status", {"state": state})
@@ -3799,6 +3814,7 @@ def handle_llm_get_status(_data=None):
 
 @socketio.on("llm_restart")
 def handle_llm_restart(_data=None):
+    """Stop and restart the local LLM server."""
     from determined.agent.llm_client import stop_server
     _emit_log("LLM: stopping for restart…")
     socketio.emit("llm_status", {"state": "starting"})
@@ -3807,6 +3823,7 @@ def handle_llm_restart(_data=None):
 
 
 def run_server(db_path: str | None = None, host: str = "127.0.0.1", port: int = 5050) -> None:
+    """Start the Flask-SocketIO server on the given host and port."""
     import atexit
     from determined.agent.llm_client import stop_server
 

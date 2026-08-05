@@ -260,6 +260,7 @@ class LanguageWalker:
     """
 
     def __init__(self, src: str, file_path: str, language: str):
+        """Initialise walker with source text, file path, and language identifier."""
         self._src = src
         self._lines = src.splitlines()
         self._file_path = file_path
@@ -435,6 +436,7 @@ class LanguageWalker:
     # ------------------------------------------------------------------
 
     def _js_symbols(self) -> list[dict]:
+        """Extract function symbols from a JavaScript source file."""
         results = []
         root = self._root.root()
 
@@ -713,6 +715,7 @@ class LanguageWalker:
                      param_types_json: str | None = None,
                      docstring: str | None = None,
                      line_number: int | None = None) -> dict:
+        """Build a symbol dict from FQDN, node, and optional metadata."""
         if line_number is None:
             line_number = node.range().start.line + 1
         return {
@@ -1339,6 +1342,7 @@ class LanguageWalker:
         return False
 
     def _c_symbols(self) -> list[dict]:
+        """Extract function symbols from a C source file."""
         results = []
         root = self._root.root()
 
@@ -1370,6 +1374,7 @@ class LanguageWalker:
         return results
 
     def _c_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all C function definitions."""
         ranges = []
         root = self._root.root()
         for node in root.find_all({"rule": {"kind": "function_definition"}}):
@@ -1426,6 +1431,7 @@ class LanguageWalker:
         return None
 
     def _cuda_is_stub(self, node) -> bool:
+        """Return True if a CUDA function node has an empty or absent body."""
         body = node.field("body")
         if body is None:
             return True
@@ -1440,6 +1446,7 @@ class LanguageWalker:
         return False
 
     def _cuda_symbols(self) -> list[dict]:
+        """Extract function symbols from a CUDA source file."""
         results = []
         root = self._root.root()
 
@@ -1472,6 +1479,7 @@ class LanguageWalker:
         return results
 
     def _cuda_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all CUDA function definitions."""
         ranges = []
         root = self._root.root()
         for node in root.find_all({"rule": {"kind": "function_definition"}}):
@@ -1483,6 +1491,7 @@ class LanguageWalker:
         return ranges
 
     def _cuda_callee_name(self, func_node) -> str | None:
+        """Extract the callee name from a CUDA call expression node."""
         return self._c_callee_name(func_node)
 
     def _cuda_kernel_launches(self) -> list[tuple]:
@@ -1500,6 +1509,7 @@ class LanguageWalker:
         return results
 
     def _enclosing_fqdn_by_line(self, line: int, fn_ranges: list[tuple]) -> str | None:
+        """Return the FQDN of the function that contains the given source line."""
         candidates = [
             (start, end, fqdn)
             for start, end, fqdn in fn_ranges
@@ -1579,6 +1589,7 @@ class LanguageWalker:
         return not has_params
 
     def _cpp_is_stub(self, node) -> bool:
+        """Return True if a C++ function node has an empty or absent body."""
         body = node.field("body")
         if body is None:
             return True
@@ -1617,6 +1628,7 @@ class LanguageWalker:
         return None
 
     def _cpp_symbols(self) -> list[dict]:
+        """Extract function symbols from a C++ source file."""
         results = []
         root = self._root.root()
         class_ranges = self._cpp_class_range_map(root)
@@ -1679,6 +1691,7 @@ class LanguageWalker:
         return results
 
     def _cpp_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all C++ function definitions."""
         ranges = []
         root = self._root.root()
         for node in root.find_all({"rule": {"kind": "function_definition"}}):
@@ -1825,6 +1838,7 @@ class LanguageWalker:
     # ------------------------------------------------------------------
 
     def _go_symbols(self) -> list[dict]:
+        """Extract function symbols from a Go source file."""
         results = []
         root = self._root.root()
         package = self._go_package_name()
@@ -1856,6 +1870,7 @@ class LanguageWalker:
         return results
 
     def _go_package_name(self) -> str:
+        """Return the package name declared at the top of the Go file."""
         root = self._root.root()
         for node in root.find_all({"rule": {"kind": "package_clause"}}):
             pkg = node.find({"rule": {"kind": "package_identifier"}})
@@ -1953,6 +1968,7 @@ class LanguageWalker:
         return None
 
     def _go_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all Go function definitions."""
         ranges = []
         root = self._root.root()
         package = self._go_package_name()
@@ -1979,6 +1995,7 @@ class LanguageWalker:
     # ------------------------------------------------------------------
 
     def _rust_symbols(self) -> list[dict]:
+        """Extract function symbols from a Rust source file."""
         results = []
         root = self._root.root()
         module = self._basename
@@ -2043,6 +2060,7 @@ class LanguageWalker:
         return _json.dumps(result)
 
     def _rust_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all Rust function definitions."""
         ranges = []
         root = self._root.root()
         module = self._basename
@@ -2214,6 +2232,7 @@ class LanguageWalker:
         return _json.dumps(result) if result else None
 
     def _zig_symbols(self) -> list[dict]:
+        """Extract function symbols from a Zig source file."""
         root = self._zig_tree.root_node
         struct_map = self._zig_struct_name_map()
         results = []
@@ -2246,6 +2265,7 @@ class LanguageWalker:
         return results
 
     def _zig_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all Zig function definitions."""
         root = self._zig_tree.root_node
         struct_map = self._zig_struct_name_map()
         ranges = []
@@ -2289,6 +2309,7 @@ class LanguageWalker:
         return None
 
     def _zig_call_edges(self) -> list[tuple]:
+        """Extract call edges from a Zig source file."""
         root = self._zig_tree.root_node
         fn_ranges = self._zig_fn_ranges()
         results = []
@@ -2365,6 +2386,7 @@ class LanguageWalker:
         return _json.dumps(result) if result else None
 
     def _lua_symbols(self) -> list[dict]:
+        """Extract function symbols from a Lua source file."""
         root = self._lua_tree.root_node
         results = []
         for fn_node in self._zig_find_all(root, "function_declaration"):
@@ -2384,6 +2406,7 @@ class LanguageWalker:
         return results
 
     def _lua_fn_ranges(self) -> list[tuple]:
+        """Return (start, end, fqdn) line ranges for all Lua function definitions."""
         root = self._lua_tree.root_node
         ranges = []
         for fn_node in self._zig_find_all(root, "function_declaration"):
@@ -2412,6 +2435,7 @@ class LanguageWalker:
         return None
 
     def _lua_call_edges(self) -> list[tuple]:
+        """Extract call edges from a Lua source file."""
         root = self._lua_tree.root_node
         fn_ranges = self._lua_fn_ranges()
         results = []

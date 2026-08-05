@@ -11,6 +11,7 @@ def fetch_file_record(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> Optional[Dict[str, Any]]:
+    """Fetch the file record from the files table for the given path."""
     cursor = connection.cursor()
 
     normalized_path = normalize_path(file_path)
@@ -40,12 +41,14 @@ def fetch_file_record(
 from pathlib import Path
 
 def normalize_path(file_path: str) -> str:
+    """Resolve and normalise a file path to a forward-slash string."""
     return str(Path(file_path).resolve()).replace("\\", "/")
     
 def fetch_functions_for_file(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> List[Dict[str, Any]]:
+    """Return all functions in a file ordered by line number."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -76,6 +79,7 @@ def fetch_classes_for_file(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> List[Dict[str, Any]]:
+    """Return all classes in a file ordered by line number."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -106,6 +110,7 @@ def fetch_imports_for_file(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> List[Dict[str, Any]]:
+    """Return all imports in a file ordered by line number."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -133,6 +138,7 @@ def fetch_symbol_references_for_file(
     connection: sqlite3.Connection,
     file_path: str,
 ):
+    """Return all symbol reference edges where this file is the caller."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -159,6 +165,7 @@ def fetch_mutations_for_file(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> List[Dict[str, Any]]:
+    """Return all recorded mutations in a file ordered by line number."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -189,6 +196,7 @@ def fetch_behavioral_contracts_for_file(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> List[Dict[str, Any]]:
+    """Return all behavioral contracts for functions in this file."""
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -225,6 +233,7 @@ def fetch_complete_file_analysis(
     connection: sqlite3.Connection,
     file_path: str,
 ) -> Optional[Dict[str, Any]]:
+    """Aggregate all DB records for a file into a single dict."""
     normalized_path = file_path.replace("\\", "/")
     file_record = fetch_file_record(connection, normalized_path)
 

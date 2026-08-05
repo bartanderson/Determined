@@ -31,11 +31,13 @@ class GraphBuilder:
     """
 
     def __init__(self):
+        """Initialise the builder with empty edge list and bucket counter."""
         self.seen = set()
         self.edges = []
         self.bucket_counts = defaultdict(int)
 
     def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = "", resolved: bool = False, edge_type: str = "static"):
+        """Add a call edge, deduplicating by (caller, callee) pair."""
         self.edges.append(
             GraphEdge(
                 caller=caller,
@@ -56,18 +58,22 @@ class GraphBuilder:
         
 
     def build(self) -> GraphBundle:
+        """Return the completed GraphBundle."""
         return GraphBundle(
             edges=self.edges,
             bucket_counts=dict(self.bucket_counts),
         )
 
     def edges_for(self, callee: str):
+        """Return all edges whose callee matches the given name."""
         return [e for e in self.edges if e.callee == callee]
 
     def callers_of(self, callee: str):
+        """Return the set of callers for the given callee."""
         return {e.caller for e in self.edges if e.callee == callee}
 
     def callees_of(self, caller: str):
+        """Return the set of callees for the given caller."""
         return {
             e.callee
             for e in self.edges
@@ -75,6 +81,7 @@ class GraphBuilder:
         }
 
     def adjacency(self):
+        """Return a caller -> set-of-callees adjacency dict."""
         graph = {}
         for e in self.edges:
             graph.setdefault(e.caller, set()).add(e.callee)
@@ -155,6 +162,7 @@ class GraphBuilder:
         )
 
     def top_callees(self, limit: int = 10):
+        """Return the top-N most-called functions by unique-caller count."""
         counts = {}
 
         seen = set()
@@ -175,6 +183,7 @@ class GraphBuilder:
         )[:limit]
 
     def top_callers(self, limit: int = 10):
+        """Return the top-N functions that call the most distinct callees."""
         counts = {}
 
         seen = set()
@@ -195,6 +204,7 @@ class GraphBuilder:
         )[:limit]
 
     def connectivity_score(self):
+        """Return a dict of symbol -> total edge count (in + out)."""
         score = {}
 
         for e in self.edges:
