@@ -7536,7 +7536,7 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
         for sym in syms:
             callee_feat_map[sym].add(feat)
             sep = '.' if '.' in sym else ('::' if '::' in sym else '')
-            if sep:
+            if sep and '::' not in sym:
                 callee_feat_map[sym.rsplit(sep, 1)[1]].add(feat)
 
     caller_fp_map = {name: _fp_norm(fp) for fp, name, _ in rows}
