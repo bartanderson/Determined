@@ -35,6 +35,14 @@ Gaps
   docs 71%   distilled 0%   0 design notes   C: 71% (9 missing)
 ```
 
+Before you dig into the panels, type this in the Ask bar at the bottom and press Enter:
+
+```
+analyze_corpus
+```
+
+You'll get a structured summary of what kind of problem this corpus has. Keep the output in mind as you explore — it's the same information the panels show, expressed as a decision rather than a display. We'll come back to it in Phase 3.
+
 ---
 
 ## The corpus panel: what the call graph looks like from the outside
@@ -303,12 +311,65 @@ When you point Determined at your own project, this is the reference frame. Not 
 
 ---
 
+## The Ask bar: from structure to action
+
+The panels show you structure. The Ask bar tells you what to do about it.
+
+Type `analyze_corpus` in the Ask bar now, with the complete corpus loaded. This is the tool's orientation step — it reads the same structural data the panels display and converts it into a decision:
+
+```
+CORPUS ANALYSIS
+============================================================
+  60 implemented functions  |  1 stubs
+
+SHAPE: Low pressure — essentially complete.
+  1 stub(s) present, none blocking real callers.
+  43 implementations with no callers (anticipatory or unused).
+
+WHAT TO DO NOW
+----------------------------------------
+  1. Nothing blocking. Decide on the 1 deferred stub(s) in JUDGMENT CALLS.
+  2. Review 43 orphaned implementations — anticipatory or abandoned?
+       Run: find_orphaned_impls()  to see the full list.
+
+JUDGMENT CALLS (tool can't answer these)
+----------------------------------------
+  Isolated stubs (1) — no callers, not in FSM:
+    suggest_tags  (tagger.py)
+    Decide: implement, delete, or leave. Run blast_radius on each to check impact.
+
+SUGGESTED NEXT TOOLS
+----------------------------------------
+  find_orphaned_impls()          — review anticipatory/unused implementations
+  blast_radius(<stub_name>)      — check impact before deleting or deferring
+```
+
+**SHAPE** is the verdict. "Low pressure — essentially complete" means this corpus has one deferred stub and a pile of anticipatory code, but nothing is blocking anything. If you ran this on a project in the middle of development, you'd see something different: "Connectivity-dominant" (lots of implemented code that isn't wired into the application), "Stub-blocked" (stubs with real callers waiting on them), or counts large enough that the tool tells you where to start.
+
+**WHAT TO DO NOW** translates the shape into steps. On a near-complete application, there's nothing blocking — the steps are judgment calls, not implementation work. On a project under active development, this section names specific subsystems, specific stubs, specific wiring gaps in priority order.
+
+**JUDGMENT CALLS** is where the tool stops. `suggest_tags` returns an empty list until the LLM endpoint is wired. Whether to implement it now, defer it, or remove the placeholder — that's a product decision, not a structural one. The tool can tell you the stub is isolated (nothing is waiting on it) but it can't tell you whether the feature is worth building.
+
+**SUGGESTED NEXT TOOLS** closes the loop. Follow one:
+
+Type `find_orphaned_impls` to see the 43 functions with no callers. Most will be the pattern you've already seen: route handlers not reachable by static analysis, model methods written ahead of their callers, utility functions not yet threaded through. A few might be genuinely dead. The tool lists them; you decide which category each one belongs to.
+
+Type `blast_radius suggest_tags` to check what would change if you implemented the stub. It traces downstream from the function and shows what code becomes reachable. On a near-complete application the answer is usually small. On a project under development it can surface an entire subsystem waiting to be unlocked.
+
+### What this looks like on a real project
+
+Commonplace is clean by design — it's built to produce readable output. A real project under active development will look different. The SHAPE will be "Connectivity-dominant" if the corpus has more orphaned implementations than stubs, or "Stub-blocked" if working code is waiting on unimplemented functions. WHAT TO DO NOW will name specific directories and stubs. JUDGMENT CALLS will list FSM actions that can't be statically prioritized, ABC interface gaps where some overrides are intentional scaffolds.
+
+The questions are the same as what you'd ask reading the panels manually. The Ask bar answers them without requiring you to know which panels to check.
+
+---
+
 ## What to do next
 
-You've seen Determined on three corpus states — skeleton, growing, complete. You know what each panel is for and what it can and can't see. Now point it at your own project.
+You've seen Determined on three corpus states — skeleton, growing, complete. You know what the panels show and what the Ask bar synthesizes from them. Now point it at your own project.
 
-The first thing to check is always Frontier → Direct. If anything is there, fix it before doing anything else — those are broken execution paths. Then Orphan: is the work sitting in your codebase connected to the rest of it? Then Topology: what does the action queue say?
+On any new corpus, start with `analyze_corpus`. It tells you what kind of problem you're looking at before you open a single panel. Then use the panels to navigate the specific gaps it names. The Frontier → Direct tab for broken paths. Orphan for disconnected work. The Call tree to understand how a specific function connects to the rest.
 
-The Ask bar at the bottom runs natural-language queries against the structural database. Type a symbol name to get callers, callees, and risk profile. Type a question about the codebase to get an answer grounded in the graph, not in the model's training data.
+Type a symbol name in the Ask bar to get callers, callees, and risk profile. Type `blast_radius <name>` on any function you're thinking about changing. Type `list_stubs` to see all unimplemented functions ranked by how many real callers are waiting on them.
 
 Determined won't tell you what your code should do. It tells you what it actually does — and where what it actually does diverges from what you probably intended.

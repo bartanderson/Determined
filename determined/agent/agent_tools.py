@@ -8998,12 +8998,19 @@ def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
         if orphaned_impl > 50:
             lines.append(f"  {orphaned_pct}% of implemented functions have no callers.")
             lines.append("  Primary gap: CONNECTIVITY — wire existing code into entry points.")
+        elif orphaned_impl > 0:
+            lines.append(f"  {orphaned_impl} implementations have no callers (anticipatory or unused).")
     elif orphaned_impl >= 50 and orphaned_impl >= 3 * total_stubs and orphaned_pct >= 50:
         lines.append(f"SHAPE: Connectivity-dominant — {orphaned_pct}% orphaned vs {total_stubs} stubs.")
         lines.append("  Primary gap: CONNECTIVITY — wire existing code, not stub completion.")
     elif real_priority_stubs:
         lines.append(f"SHAPE: Stub-blocked — {len(real_priority_stubs)} stubs block real callers.")
         lines.append("  Primary gap: IMPLEMENTATION — implement the stubs listed below.")
+    elif total_stubs <= 5 and not wired_incomplete and not built_isolated:
+        lines.append(f"SHAPE: Low pressure — essentially complete.")
+        lines.append(f"  {total_stubs} stub(s) present, none blocking real callers.")
+        if orphaned_impl > 0:
+            lines.append(f"  {orphaned_impl} implementations with no callers (anticipatory or unused).")
     else:
         lines.append(f"SHAPE: {total_stubs} stubs present, none with verified callers.")
         lines.append("  Primary gap: unclear — see stub breakdown below.")
@@ -9041,6 +9048,12 @@ def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
             lines.append(f"  {step}. No implementation work — use blast_radius or feature_shape")
             lines.append("       to explore what's wired vs. isolated.")
             step += 1
+        elif total_stubs <= 5:
+            lines.append(f"  {step}. Nothing blocking. Decide on the {total_stubs} deferred stub(s) in JUDGMENT CALLS.")
+            if orphaned_impl > 0:
+                lines.append(f"  {step+1}. Review {orphaned_impl} orphaned implementations — anticipatory or abandoned?")
+                lines.append("       Run: find_orphaned_impls()  to see the full list.")
+            step += 2
         else:
             lines.append(f"  {step}. No stubs have verified callers. See JUDGMENT CALLS below.")
             step += 1
@@ -9103,8 +9116,12 @@ def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
     if total_abc > 0:
         lines.append(f"  find_abc_gaps()                — classify the {total_abc} ABC-interface gaps")
     if not (wired_incomplete or built_isolated or fsm_stubs or total_abc):
-        lines.append("  detect_topology()              — full topology breakdown")
-        lines.append("  frontier_coverage()            — stub pressure measurement")
+        if total_stubs <= 5 and total_stubs > 0:
+            lines.append("  find_orphaned_impls()          — review anticipatory/unused implementations")
+            lines.append("  blast_radius(<stub_name>)      — check impact before deleting or deferring")
+        else:
+            lines.append("  detect_topology()              — full topology breakdown")
+            lines.append("  frontier_coverage()            — stub pressure measurement")
 
     return "\n".join(lines)
 
