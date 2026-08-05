@@ -1,6 +1,6 @@
-Written at commit: 2c2d132
+Written at commit: f9cff9a
 
-# SESSION STATE — session 301 final handoff
+# SESSION STATE — session 302 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,52 +9,67 @@ Written at commit: 2c2d132
 
 ## WHAT HAPPENED THIS SESSION (full arc)
 
-**1. RM67 self-probe on Determined corpus (2c2d132)** [V]
+**1. Docstring health pass -- committed** [V]
 
-Determined corpus DB was stale since 2026-07-17 (3 weeks). Re-ingested fresh before probing.
-29 test files skipped due to BOM/unicode encoding issues -- pre-existing, not new.
+Added one-line docstrings to 111 undocumented functions across the four worst files:
+- `determined/assessor/assessor.py`      (37 added)
+- `determined/ui/graph_explorer.py`      (40 added)
+- `determined/oracle/db_oracle.py`       (17 added)
+- `determined/agent/runtime_locator.py`  (17 added)
 
-Probe results (all 5 steps):
-- Step 1 (stubs): 1 real stub -- `suggest_tags` in `tagger.py` (known accepted, frontier).
-  9 test mocks across 3 test files. 0 false positives.
-  Prior "real gaps" (`pattern_executor.__init__`, `contract_drift_classifier.__init__`)
-  WERE PHANTOM DETECTIONS in the stale July 17 DB. Fresh re-ingest cleared them.
-  Neither class has or ever had an explicit `__init__`. See HISTORY.md 2026-08-05.
-- Step 2 (unresolved edges): 95.4% overall (stable; external-lib ceiling, accepted).
-- Step 3 (ABC gaps): agent + ingestion subsystems both clean.
-- Step 4 (EPs): 587 EPs in `determined/`, 0 stubs.
-- Step 5 (docstring health): 39.1% missing in core (non-test, non-example).
-  Worst: `assessor.py` 37/53, `graph_explorer.py` 40/51, `runtime_locator.py` 17/21.
+Method: queried the Determined corpus DB to get exact line numbers of all missing
+docstrings, then wrote targeted one-liners per CLAUDE.md style rules.
 
-All 3 RM67 convergence criteria pass. [V]
-TRACKER.md Determined row updated to 2026-08-05 probe. [V]
-HISTORY.md: stale-DB phantom stub lesson added. [V]
+123 tests pass post-change. [V]
+Committed as f9cff9a. [V]
 
-**2. Phase D sidebar collapse -- verified already done** [V]
+DB NOT yet re-ingested -- counts in DB still reflect pre-change state.
+Session wrap requested before re-ingest could run.
+Re-ingest pattern (from ui_server.py handle_ingest line 816):
+  1. Clear all tables in the DB in-place
+  2. `EngineRunner().run(corpus, project_prefixes=[], repo_root=target, connection=conn)`
+  3. `conn.close()`
 
-SESSION_STATE s300 listed "sidebar panel collapse" as a next step. Checked code and browser:
-- `flex: 0 0 auto` already in style.css line 123.
-- `sbMakeCollapsible()` in console.html line 4587 wires chevrons + localStorage.
-- Browser verified: Oracle/Quick actions/Tools/Investigation default-collapsed;
-  Corpus map + Analyze default-open; click toggles correctly.
-Phase D was completed 2026-07-19. No work done -- confirmed done.
+**2. Items 2 and 3 not started** [V]
 
-459 tests pass [?] (no code changes this session; unchanged from s300 verified run).
+- Incremental re-ingest file-watcher (new RM item) -- no design, no work started.
+- Session-start DB freshness check -- not started; adjunct to item 2.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-1. **Docstring health (optional cleanup).** 39.1% missing in core. Not a convergence blocker.
-   Closeable in a focused pass: `assessor.py` (37/53), `graph_explorer.py` (40/51),
-   `runtime_locator.py` (17/21), `db_oracle.py` (17/35). Do only if Bart wants to close it.
+**Step 0 -- Re-ingest Determined DB and verify docstring count improvement.**
 
-2. **Incremental re-ingest file-watcher (new RM item).** Re-ingest only changed files for
-   active dj2 development. No design chosen -- surface as RM item, design first.
+Session wrapped before re-ingest ran. Run it first thing:
+```python
+# Pattern from ui_server.py handle_ingest (line 816)
+import sqlite3, sys
+sys.path.insert(0, r"C:\Users\bartl\dev\Determined")
+target = r"C:\Users\bartl\dev\Determined"
+db_path = r"C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined.db"
+# 1. Clear tables in-place (do NOT delete file -- avoids WinError 32)
+c = sqlite3.connect(db_path)
+for t in [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]:
+    c.execute(f"DELETE FROM {t}")
+c.commit(); c.close()
+# 2. Re-ingest
+from determined.engine.run_engine import EngineRunner
+conn = sqlite3.connect(db_path)
+corpus = type("Corpus", (), {"root_path": target})()
+EngineRunner().run(corpus=corpus, project_prefixes=[], repo_root=target, connection=conn)
+conn.close()
+```
+Then re-run the docstring health probe. Expected: assessor.py ~0 missing, runtime_locator.py 0,
+db_oracle.py 0, graph_explorer.py 0. Overall core % should drop well below 20%.
+Update TRACKER.md RM67 Determined row with new docstring health %.
 
-3. **Determined DB needs re-ingest each session.** The DB at session start was 3 weeks stale.
-   Add re-ingest to session start if DB mtime is more than 1 session old.
-   Script: `scratchpad/reingest_determined.py` (lives in temp; re-create from reingest pattern in ui_server.py handle_ingest).
+**Step 1 -- Incremental re-ingest design.**
+
+Surface as a new RM item in TRACKER.md. Design first:
+- Which files changed? (git diff --name-only or file mtime vs DB mtime)
+- Which tables to update? Check `determined/ingestion/reingest_file.py` -- it may already exist.
+- Session-start freshness check is adjunct: if any .py mtime > DB mtime, run incremental.
 
 ---
 
@@ -84,13 +99,13 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - _get_abc_gap_set() excludes no-subclass ABCs by design -- they belong to find_abc_gaps.
   Re-adding the no-subclass block causes false JUDGMENT CALLs in analyze_corpus. [V s300]
 - Stale corpus DB produces phantom stubs. Always re-ingest before trusting stub list
-  if DB is more than one session old. s301: pattern_executor.__init__ and
-  contract_drift_classifier.__init__ were phantom gaps in 3-week-stale DB; cleared by re-ingest.
-  See HISTORY.md 2026-08-05. [V s301]
+  if DB is more than one session old. See HISTORY.md 2026-08-05. [V s301]
+- Docstring health counts in DB are stale until re-ingest runs. s302 committed 111 docstrings
+  but wrapped before re-ingest -- DB still shows old zero counts. [V s302]
 
 ## RESOURCE / PROCESS RULES [V]
 
 - Test runner: `tools/run_tests.py` only. Never pytest directly, never full suite.
 - UI server restart: kill PID on 5050, then preview_start {name: "Determined UI"}.
 - Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"`.
-- Determined corpus DB: re-ingest at session start if DB mtime > ~1 week old. Takes ~30s.
+- Determined corpus DB: re-ingest at session start if DB mtime > ~1 week old.
