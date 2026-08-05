@@ -180,3 +180,49 @@ detect_topology reports 39 ABC-interface gaps. frontier_priority shows 1 result 
 **rotjs (library):** SHAPE "unclear" — correct. No false positives.
 
 **Outcome:** FIXED — analyze_corpus ships. False positive corrected. 391 tests pass.
+
+---
+
+## 2026-08-04 — Session 299 continued: false positive fixes + find_abc_gaps
+
+### Tool: analyze_corpus — static/ false positive in built_isolated
+**Delta:** `static/` (75 symbols, 6 EPs) appeared as "built-but-isolated" in dj2. Web assets
+(JS/CSS) are not Python subsystems to wire into the application.
+
+**Fix:** Added `_is_asset_dir()` helper (filters static, assets, public, dist, build, vendor,
+node_modules, www, media). Applied in both analyze_corpus and list_features built_isolated
+and wired_incomplete checks.
+
+**Outcome:** FIXED — static/ no longer appears. dungeon_neo/ remains correctly flagged.
+
+---
+
+### Tool: list_features — config/ false entry point count (bare-suffix collision)
+**Delta:** list_features showed config/ with 60 entry points and flagged it as
+"wired-but-incomplete." analyze_corpus correctly showed 0 EPs for config/. Root cause:
+list_features builds callee_feat_map with a bare-suffix fallback for qualified names (e.g.
+BarterFSM::action::add_gold also maps "add_gold"). FSM action names like "offer", "confirm",
+"cancel" are common enough to match unrelated callers in graph_edges. The 60 EPs are false.
+
+**Fix needed:** The bare-suffix fallback in list_features needs a guard against FSM-qualified
+names (names containing "::"). The fallback is correct for module.method notation but creates
+false positives for FSM state machines.
+
+**Outcome:** NEEDS_FIX — logged. analyze_corpus is correct (no bare-suffix fallback). The
+list_features false positive causes config/ to appear in wired-but-incomplete when it
+shouldn't.
+
+---
+
+### Tool: find_abc_gaps — decision text truncation + missing summary
+**Result on dj2:** 39 intentional scaffolds, 0 real gaps. All from engine/phases.py (8 ABC
+classes: AuthorityPhase, ConsequencePhase, InputPhase, InterpretationPhase, PersistencePhase,
+PhaseSystemFactory, StateMutationPhase, ViewProjectionPhase).
+
+**Delta 1:** Decision text truncates mid-sentence: "engine/phases.py defines the phase
+interface... The design is complete - all" cuts off. Developer can't see the full reasoning.
+
+**Delta 2:** No summary line at the end. Developer has to count to know "39 scaffolds, 0 real
+gaps, 0 unclassified." A summary would close the loop.
+
+**Outcome:** NEEDS_FIX — two gaps logged. Not blocking; tool gives correct classification.

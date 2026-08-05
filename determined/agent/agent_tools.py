@@ -7429,6 +7429,20 @@ _TEST_DIR_NAMES: frozenset = frozenset({
     "testing", "testcases", "test_cases",
 })
 
+_ASSET_DIR_NAMES: frozenset = frozenset({
+    "static", "assets", "public", "dist", "build", "vendor",
+    "node_modules", "www", "media",
+})
+
+
+def _is_asset_dir(key: str) -> bool:
+    """True if the feature directory key is a web-asset or build-output directory."""
+    if not key:
+        return False
+    first_seg = key.split("/")[0].lower()
+    base = first_seg.split(".")[0] if "." in first_seg else first_seg
+    return base in _ASSET_DIR_NAMES
+
 
 def _is_test_feature(key: str) -> bool:
     """True if the feature directory key looks like a test directory or file."""
@@ -7576,6 +7590,8 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
         ep_count = feat_entry_points[feat]
         if sym_count < 30 or ep_count < 2:
             continue
+        if _is_asset_dir(feat):
+            continue
         completeness = 1.0 - (stub_count / sym_count)
         ep_ratio = ep_count / sym_count
         if completeness >= 0.85 and ep_ratio <= 0.08:
@@ -7598,7 +7614,7 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
         sym_count = len(feat_symbols[feat])
         stub_count = feat_stubs[feat]
         ep_count = feat_entry_points[feat]
-        if ep_count >= 20 and stub_count >= 5:
+        if ep_count >= 20 and stub_count >= 5 and not _is_asset_dir(feat):
             wired_incomplete.append((feat, sym_count, stub_count, ep_count))
 
     if wired_incomplete:
@@ -8972,7 +8988,8 @@ def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
     built_isolated = [
         (f, len(feat_symbols[f]), feat_stubs[f], feat_entry_points[f])
         for f in feat_symbols
-        if len(feat_symbols[f]) >= 30
+        if not _is_asset_dir(f)
+        and len(feat_symbols[f]) >= 30
         and feat_entry_points[f] >= 2
         and (1.0 - feat_stubs[f] / len(feat_symbols[f])) >= 0.85
         and (feat_entry_points[f] / len(feat_symbols[f])) <= 0.08
@@ -8980,7 +8997,7 @@ def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
     wired_incomplete = [
         (f, len(feat_symbols[f]), feat_stubs[f], feat_entry_points[f])
         for f in feat_symbols
-        if feat_entry_points[f] >= 20 and feat_stubs[f] >= 5
+        if feat_entry_points[f] >= 20 and feat_stubs[f] >= 5 and not _is_asset_dir(f)
     ]
 
     # --- Build the report ---
