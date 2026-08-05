@@ -208,9 +208,7 @@ BarterFSM::action::add_gold also maps "add_gold"). FSM action names like "offer"
 names (names containing "::"). The fallback is correct for module.method notation but creates
 false positives for FSM state machines.
 
-**Outcome:** NEEDS_FIX — logged. analyze_corpus is correct (no bare-suffix fallback). The
-list_features false positive causes config/ to appear in wired-but-incomplete when it
-shouldn't.
+**Outcome:** FIXED (4ff3ea9) — bare-suffix fallback now skips names containing "::" (FSM-qualified). config/ no longer appears in wired-but-incomplete.
 
 ---
 
@@ -225,4 +223,30 @@ interface... The design is complete - all" cuts off. Developer can't see the ful
 **Delta 2:** No summary line at the end. Developer has to count to know "39 scaffolds, 0 real
 gaps, 0 unclassified." A summary would close the loop.
 
-**Outcome:** NEEDS_FIX — two gaps logged. Not blocking; tool gives correct classification.
+**Outcome:** FIXED (471740a) — decision text truncation fixed; summary line added showing class/method counts.
+
+---
+
+## 2026-08-05 — Evaluation run against dj2 (session 305)
+
+### Tool: list_entry_points — FSM JSON config symbols appear as inferred EPs
+
+**Probe output:** 116 explicit + 345 inferred EPs. Inferred breakdown by file type:
+Python 277, JavaScript 46, FSM config JSON 22.
+
+**Delta:** 22 FSM config symbols (BarterFSM::state::awaiting, BarterFSM::event::confirm, etc.
+from config/fsms/*.json) appear as inferred EPs. These are state machine definitions — machine-readable
+keys for the FSM dispatcher, not callable functions. They have no callers (confirmed by graph query)
+so they pass the has_callers check, but they are not entry points in any architectural sense.
+
+Root cause: `_ep_tier()` has no file-extension guard. Any symbol that isn't a dunder, serializer,
+or test function falls through to "inferred", regardless of file type. JSON files containing FSM
+configs have 45 symbols total; 22 appear as inferred EPs (rest are stubs).
+
+JavaScript EPs (46) are legitimate — CharacterCreator.init, TravelUI.startJourney, etc. are real
+browser-side entry points with no Python callers, correctly classified.
+
+**Fix needed:** In `_ep_tier()`, if file_path ends in `.json` (or other non-code extensions),
+return "protocol" to exclude it from EP classification. JSON files are config/data, not code.
+
+**Outcome:** FIXED — see below.

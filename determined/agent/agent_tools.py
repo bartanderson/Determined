@@ -10111,8 +10111,11 @@ def _ep_tier(name: str, file_path: str, is_tool: int | bool, http_route: str | N
     # Protocol: classmethod/staticmethod serializers and data converters
     if name in _SERIAL_NAMES or name.startswith(_SERIAL_PREFIXES):
         return "protocol"
-    # Test
+    # Non-code files (config, data) — not callable entry points
     fp = (file_path or "").replace("\\", "/")
+    if fp.endswith(".json") or fp.endswith(".yaml") or fp.endswith(".toml"):
+        return "protocol"
+    # Test
     if name.startswith("test_") or "/test" in fp or "\\test" in fp:
         return "test"
     # Inferred EP (caller check done at call site)
