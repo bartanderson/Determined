@@ -64,11 +64,13 @@ class ValidationSummary:
 
 class Assessor:
     def __init__(self, oracle, knowledge=None):
+        """Bind to an oracle; knowledge connection comes from oracle.conn."""
         self.oracle = oracle
         self._bags: "BagStore | None" = None
 
     @property
     def _knowledge_conn(self):
+        """Return the corpus DB connection, shared with the oracle."""
         return self.oracle.conn
 
     @property
@@ -84,6 +86,7 @@ class Assessor:
         return self._bags
 
     def run(self, symbol: str):
+        """Return neighbors, surface, influence, validation, and snapshot for a symbol."""
         graph = self.oracle.get_snapshot_graph()
 
         return {
@@ -100,9 +103,11 @@ class Assessor:
         }
 
     def snapshot(self):
+        """Return the full graph snapshot from the oracle."""
         return self.oracle.get_snapshot_graph()
 
     def degree(self):
+        """Return a dict mapping each symbol to its total edge count."""
         edges = self.oracle.get_snapshot_graph().edges
 
         degree_map = {}
@@ -114,10 +119,12 @@ class Assessor:
         return degree_map
 
     def hotspots(self, top_n=10):
+        """Return the top_n symbols by degree."""
         deg = self.degree()
         return sorted(deg.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
     def module_projection(self):
+        """Return cross-module (caller_module, callee_module) pairs from the edge list."""
         edges = self.oracle.get_snapshot_graph().edges
 
         pairs = []
@@ -132,6 +139,7 @@ class Assessor:
         return pairs
 
     def subsystems(self):
+        """Return a dict mapping each module to its set of dependencies."""
         proj = self.module_projection()
 
         graph = defaultdict(set)
@@ -142,6 +150,7 @@ class Assessor:
         return {k: sorted(v) for k, v in graph.items()}
 
     def subsystem_degree(self):
+        """Return the fanout count (distinct dependency count) for each module."""
         proj = self.module_projection()
 
         fanout = {}
@@ -152,6 +161,7 @@ class Assessor:
         return fanout
 
     def impact(self, symbol: str, depth: int = 1):
+        """Return surface, influence, neighbors, and semantic edges for a symbol."""
         return {
             "symbol": symbol,
             "surface": self.oracle.surface(symbol, depth),
@@ -161,6 +171,7 @@ class Assessor:
         }
 
     def run_integrity_check(self):
+        """Check for null-caller/callee edges and edge count vs. symbol_references mismatch."""
         edges = self.snapshot().edges
 
         errors = []
@@ -183,6 +194,7 @@ class Assessor:
         }
 
     def structural_diff(self, engine_edges, db_edges):
+        """Return edges missing from the DB vs. missing from the engine."""
         engine_set = set((e.caller, e.callee) for e in engine_edges)
         db_set = set((e.caller, e.callee) for e in db_edges)
 
@@ -195,6 +207,7 @@ class Assessor:
         }
 
     def validate_graph(self):
+        """Validate graph edges for null callers/callees and self-loops."""
         graph = self.snapshot().edges
 
         errors = []
@@ -217,6 +230,7 @@ class Assessor:
         }
 
     def build_snapshot(self):
+        """Build a snapshot dict with degree, bucket, and structural signal data."""
         graph = self.oracle.get_snapshot_graph().edges
 
         node_degree = {}
@@ -370,6 +384,7 @@ class Assessor:
     # =====================================================
 
     def structure_view(self):
+        """Build the STRUCTURE Truth Layer view from the oracle snapshot."""
         return build_structure_view(
             self.snapshot(),
             builtin_symbols=self.oracle.builtin_symbols(),
@@ -386,6 +401,7 @@ class Assessor:
     # =====================================================
 
     def file_contract_reports(self):
+        """Return a ContractReport for each file based on null-ref violations."""
         files = self.oracle.file_reference_map()
         reports = []
 
@@ -410,6 +426,7 @@ class Assessor:
         return reports
 
     def stability_view(self):
+        """Build the STABILITY Truth Layer view with contract drift and lifecycle data."""
         from determined.contracts.contract_health_aggregator import ContractHealthAggregator
         from determined.contracts.contract_lifecycle import ContractLifecycleController
         reports = self.file_contract_reports()
@@ -425,6 +442,7 @@ class Assessor:
         return build_stability_view(reports, drift_signals=drift_signals, lifecycle=lifecycle)
 
     def validation_summary(self):
+        """Run SystemValidator checks and return a ValidationSummary."""
         # CLAUDE-EDIT 2026-06-18 (TRACKER.md section 3 item 17): was a
         # partial inline reimplementation of SystemValidator's checks -
         # only 2 of its 4 methods, and never called _validate_contracts at
@@ -512,6 +530,7 @@ class Assessor:
         return mismatches
 
     def integrity_view(self):
+        """Build the INTEGRITY Truth Layer view."""
         return build_integrity_view(
             self.validation_summary(),
             self.snapshot(),
@@ -535,6 +554,7 @@ class Assessor:
     # =====================================================
 
     def summary_view(self):
+        """Build the SUMMARY Truth Layer view."""
         snapshot = self.build_snapshot()
         return build_system_summary_view(
             reduced=self.reduced_snapshot(),
@@ -543,6 +563,7 @@ class Assessor:
         )
 
     def subsystem_view(self):
+        """Build the SUBSYSTEM Truth Layer view."""
         # CLAUDE-EDIT 2026-06-17: pass the real DB-backed symbol -> module
         # map (oracle/db_oracle.py's Phase 2 discovery API) so SUBSYSTEM
         # grouping resolves module identity from actual declaration
@@ -562,6 +583,7 @@ class Assessor:
         )
 
     def role_view(self):
+        """Build the ROLE Truth Layer view."""
         # CLAUDE-EDIT 2026-06-16: sixth Truth Layer view, wired up per
         # Truth.md Phase 3/4 - responsibility_map() was real, DB-backed,
         # already-computed data with no path into Select()/Combine().
@@ -570,18 +592,22 @@ class Assessor:
         return build_role_view(self.responsibility_map())
 
     def intent_view(self):
+        """Build the INTENT Truth Layer view."""
         return build_intent_view(self.oracle.conn)
 
     def explain_file(self, file_path: str) -> dict:
+        """Return a file explanation dict from the corpus DB."""
         return _explain_file(self.oracle.conn, file_path)
 
     def generate_task_md(self, symbol: str, out_path: str = None) -> str:
+        """Generate a task.md stub for a symbol."""
         return _generate_task_md(
             symbol=symbol, oracle=self.oracle, out_path=out_path,
             knowledge_conn=self._knowledge_conn,
         )
 
     def rereference_task_md(self, task_md_path: str, diff_out_path: str = None) -> dict:
+        """Re-reference a task.md against the current corpus state."""
         return _rereference_task_md(task_md_path=task_md_path, oracle=self.oracle, diff_out_path=diff_out_path)
 
     # =====================================================
@@ -851,30 +877,35 @@ class Assessor:
         rank: int = None,
         provenance: str = "human",
     ) -> int:
+        """Add a ranked planning item to the workflow store."""
         from determined.intent.workflow_store import add_item
         if self._knowledge_conn is None:
             raise RuntimeError("No knowledge DB configured on this Assessor.")
         return add_item(self._knowledge_conn, kind, subject, content, rank, provenance)
 
     def update_workflow_item(self, item_id: int, **kwargs) -> bool:
+        """Update fields on an existing workflow item."""
         from determined.intent.workflow_store import update_item
         if self._knowledge_conn is None:
             return False
         return update_item(self._knowledge_conn, item_id, **kwargs)
 
     def rerank_workflow(self, ordered_ids: list) -> int:
+        """Re-rank workflow items according to ordered_ids."""
         from determined.intent.workflow_store import rerank_items
         if self._knowledge_conn is None:
             return 0
         return rerank_items(self._knowledge_conn, ordered_ids)
 
     def list_workflow_items(self, kind: str = None, status: str = "active") -> list:
+        """List workflow items, optionally filtered by kind and status."""
         from determined.intent.workflow_store import list_items
         if self._knowledge_conn is None:
             return []
         return list_items(self._knowledge_conn, kind=kind, status=status)
 
     def workflow_status(self) -> str:
+        """Return a formatted workflow status string."""
         from determined.intent.workflow_store import format_workflow_status
         if self._knowledge_conn is None:
             return "No knowledge DB configured."
@@ -894,6 +925,7 @@ class Assessor:
     # =====================================================
 
     def responsibility_map(self):
+        """Build a file-level responsibility map from ROLE_PATTERNS."""
         files_data = self.oracle.file_reference_map()
 
         files = []
@@ -925,6 +957,7 @@ class Assessor:
         }
 
     def responsibility_snapshot(self):
+        """Return the responsibility snapshot bundled with DB totals."""
         return build_responsibility_snapshot(
             responsibility_map=self.responsibility_map(),
             db_totals=self.build_snapshot(),
@@ -935,6 +968,7 @@ class Assessor:
     # =====================================================
 
     def reduced_snapshot(self):
+        """Return the reduced (folded) snapshot."""
         return reduce([self.build_snapshot()])
 
     # =====================================================
@@ -947,6 +981,7 @@ class Assessor:
     # =====================================================
 
     def system_report(self, sample_queries=None):
+        """Build a full system report bundling all views, snapshots, and optional queries."""
         report = {
             "snapshot": self.build_snapshot(),
             "reduced": self.reduced_snapshot(),
@@ -972,12 +1007,14 @@ class Assessor:
         return report
 
     def self_model(self):
+        """Return the system self-model."""
         return SystemSelfModelBuilder(self.oracle).build()
 # ---------------------------------------------------------
 # ENTRYPOINT
 # ---------------------------------------------------------
 
 def main():
+    """CLI entrypoint for running the assessor against corpus.db."""
     oracle = DBOracle("corpus.db")
     assessor = Assessor(oracle)
 

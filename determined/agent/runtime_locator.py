@@ -61,35 +61,42 @@ def locate() -> dict[str, Optional[str]]:
 # ------------------------------------------------------------------
 
 def _wrap_python(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in Python def syntax for ast.parse."""
     sig = f"def {name}({', '.join(args)}):"
     indented = "\n".join("    " + line for line in body.splitlines()) or "    pass"
     return f"{sig}\n{indented}\n"
 
 
 def _wrap_c(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in C function syntax."""
     arg_str = ", ".join(args) if args else "void"
     return f"void {name}({arg_str}) {{\n{body}\n}}\n"
 
 
 def _wrap_cpp(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in C++ function syntax."""
     return _wrap_c(name, args, body)
 
 
 def _wrap_zig(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in Zig pub fn syntax."""
     arg_parts = ", ".join(f"_{i}: anytype" for i in range(len(args))) if args else ""
     return f"pub fn {name}({arg_parts}) void {{\n{body}\n}}\n"
 
 
 def _wrap_lua(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in Lua local function syntax."""
     arg_str = ", ".join(args) if args else ""
     return f"local function {name}({arg_str})\n{body}\nend\n"
 
 
 def _wrap_rust(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in a Rust fn."""
     return f"fn {name}() {{\n{body}\n}}\n"
 
 
 def _wrap_go(name: str, args: list[str], body: str) -> str:
+    """Wrap a function body in a Go main-package func."""
     return f"package main\nfunc {name}() {{\n{body}\n}}\n"
 
 
@@ -119,6 +126,7 @@ _EXTENSIONS = {
 # ------------------------------------------------------------------
 
 def _check_python(snippet: str, name: str, args: list[str]) -> dict:
+    """Verify Python snippet syntax using ast.parse."""
     source = _wrap_python(name, args, snippet)
     try:
         ast.parse(source)
@@ -135,6 +143,7 @@ def _check_with_compiler(
     args: list[str],
     cmd_builder,          # callable(tool, tmp_path) -> list[str]
 ) -> dict:
+    """Write snippet to a temp file and verify it with an external compiler."""
     wrapper = _WRAPPERS.get(lang)
     if wrapper is None:
         return {"ok": None, "error": f"no wrapper for {lang}", "tool": None}
@@ -158,30 +167,38 @@ def _check_with_compiler(
 
 
 def _cmd_gcc(tool, path):
+    """Build the gcc syntax-check command."""
     return [tool, "-fsyntax-only", "-x", "c", path]
 
 def _cmd_gpp(tool, path):
+    """Build the g++ syntax-check command."""
     return [tool, "-fsyntax-only", "-x", "c++", path]
 
 def _cmd_zig(tool, path):
+    """Build the zig ast-check command."""
     return [tool, "ast-check", path]
 
 def _cmd_lua(tool, path):
+    """Build the luac parse-only command."""
     # luac -p (parse only); lua falls back to running — we use luac preferentially
     return [tool, "-p", path]
 
 def _cmd_rustc(tool, path):
+    """Build the rustc metadata-only check command."""
     return [tool, "--edition", "2021", "--crate-type", "lib", "--emit", "metadata",
             "-o", path + ".meta", path]
 
 def _cmd_go(tool, path):
+    """Build the go build command."""
     # go vet needs a package; just do build with -run=^$ to avoid linking
     return [tool, "build", path]
 
 def _cmd_tsc(tool, path):
+    """Build the tsc no-emit check command."""
     return [tool, "--noEmit", "--allowJs", path]
 
 def _cmd_node(tool, path):
+    """Build the node --check command."""
     return [tool, "--check", path]
 
 

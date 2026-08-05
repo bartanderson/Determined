@@ -62,6 +62,7 @@ def _file_path_to_module(file_path: str, project_root: str = "") -> str:
 
 class DBOracle:
     def __init__(self, db_path: str):
+        """Open the corpus DB and configure row_factory."""
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.db_path = db_path
@@ -143,6 +144,7 @@ class DBOracle:
     # -----------------------------
 
     def get_semantic_edges(self):
+        """Return all graph edges decorated with semantic interpretation."""
         cur = self.conn.cursor()
 
         rows = cur.execute("""
@@ -168,6 +170,7 @@ class DBOracle:
     # -----------------------------
 
     def file_count(self) -> int:
+        """Return the count of distinct files with symbol references."""
         cur = self.conn.cursor()
         return cur.execute("""
             SELECT COUNT(DISTINCT file_path)
@@ -180,6 +183,7 @@ class DBOracle:
     # -----------------------------
 
     def neighbors(self, symbol: str) -> dict:
+        """Return callers and callees for a symbol."""
         cur = self.conn.cursor()
 
         cur.execute("""
@@ -207,6 +211,7 @@ class DBOracle:
     # -----------------------------
 
     def surface(self, symbol: str, depth: int = 1) -> List[str]:
+        """BFS forward walk from symbol to depth, returning reachable callees."""
         visited = set()
         frontier = {symbol}
         result = set()
@@ -236,6 +241,7 @@ class DBOracle:
     # -----------------------------
 
     def influence(self, symbol: str, depth: int = 1) -> List[str]:
+        """BFS reverse walk from symbol to depth, returning reachable callers."""
         visited = set()
         frontier = {symbol}
         result = set()
@@ -261,6 +267,7 @@ class DBOracle:
         return sorted(result)
 
     def get_snapshot_graph(self) -> GraphBundle:
+        """Return a GraphBundle of all non-null edges from graph_edges."""
         cur = self.conn.cursor()
 
         rows = cur.execute("""
@@ -337,6 +344,7 @@ class DBOracle:
         return builtins
 
     def snapshot(self):
+        """Alias for get_snapshot_graph."""
         return self.get_snapshot_graph()
 
     # -----------------------------
@@ -345,6 +353,7 @@ class DBOracle:
     # -----------------------------
 
     def bucket_summary(self) -> dict:
+        """Return per-bucket reference counts from symbol_references."""
         cur = self.conn.cursor()
 
         rows = cur.execute("""
@@ -374,6 +383,7 @@ class DBOracle:
     # -----------------------------
 
     def symbol_reference_count(self) -> int:
+        """Return the total row count in symbol_references."""
         cur = self.conn.cursor()
         return cur.execute("""
             SELECT COUNT(*) FROM symbol_references
@@ -384,6 +394,7 @@ class DBOracle:
     # -----------------------------
 
     def file_reference_map(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Return a dict mapping file_path to its list of symbol reference dicts."""
         cur = self.conn.cursor()
 
         rows = cur.execute("""
@@ -909,10 +920,12 @@ class DBOracle:
 # =========================================================
 
 def _edges(graph):
+    """Extract edges list from a graph object."""
     return getattr(graph, "edges", [])
 
 
 def _build_index(graph):
+    """Build forward and reverse adjacency dicts from a graph."""
     forward = defaultdict(set)
     reverse = defaultdict(set)
 
@@ -928,6 +941,7 @@ def _build_index(graph):
 # =========================================================
 
 def context(graph: Any, symbol: str) -> Dict[str, Any]:
+    """Return calls and called_by for a symbol from graph-level index."""
     forward, reverse = _build_index(graph)
 
     return {
@@ -942,6 +956,7 @@ def context(graph: Any, symbol: str) -> Dict[str, Any]:
 # =========================================================
 
 def surface(graph: Any, symbol: str, depth: int = 1) -> List[str]:
+    """BFS forward walk over a graph object to depth, returning reachable callees."""
     forward, _ = _build_index(graph)
 
     visited = set()
@@ -970,6 +985,7 @@ def surface(graph: Any, symbol: str, depth: int = 1) -> List[str]:
 # =========================================================
 
 def influence(graph: Any, symbol: str, depth: int = 1) -> List[str]:
+    """BFS reverse walk over a graph object to depth, returning reachable callers."""
     _, reverse = _build_index(graph)
 
     visited = set()
@@ -1012,6 +1028,7 @@ def engine_query(graph, symbol: str, depth: int = 1):
 # =========================================================
 
 def main():
+    """CLI entrypoint for the DB oracle REPL."""
     if len(sys.argv) < 2:
         print("Usage: python db_oracle.py <db_path>")
         sys.exit(1)

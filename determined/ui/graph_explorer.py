@@ -107,11 +107,13 @@ COL_MINIMAP_BG  = ( 20,  22,  30, 200)
 COL_MINIMAP_VP  = (100, 140, 220, 120)
 
 def _col(r, g, b, a=255):
+    """Create a raylib Color struct from r, g, b, a components."""
     c = ffi.new('Color *')
     c.r, c.g, c.b, c.a = r, g, b, a
     return c[0]
 
 def _v2(x, y):
+    """Create a raylib Vector2 struct from x, y."""
     v = ffi.new('Vector2 *')
     v.x, v.y = float(x), float(y)
     return v[0]
@@ -135,14 +137,17 @@ class Node:
 
     @property
     def radius(self) -> float:
+        """Node display radius scaled by degree."""
         return min(NODE_RADIUS_BASE + math.sqrt(self.degree) * 1.2, NODE_RADIUS_MAX)
 
     @property
     def short_name(self) -> str:
+        """Node name with class/module prefix stripped."""
         return self.name.split("::")[-1] if "::" in self.name else self.name
 
     @property
     def color(self):
+        """Display color based on is_tool/is_stub flags."""
         if self.is_tool:   return COL_NODE_TOOL
         if self.is_stub:   return COL_NODE_STUB
         return COL_NODE_NORMAL
@@ -172,6 +177,7 @@ class _SocketBridge:
     UI_URL = "http://localhost:5050"
 
     def __init__(self):
+        """Start the background socket.io connection thread."""
         self._sio = None
         self._connected = False
         self._pending_highlight: Optional[str] = None
@@ -179,6 +185,7 @@ class _SocketBridge:
             threading.Thread(target=self._connect, daemon=True).start()
 
     def _connect(self):
+        """Background thread: connect to the UI server, retry on failure."""
         # Retry indefinitely — UI may start after graph explorer.
         while True:
             try:
@@ -198,6 +205,7 @@ class _SocketBridge:
                 time.sleep(5)  # UI not running yet — retry in 5s
 
     def emit_select(self, node):
+        """Emit gx_select to notify the UI of a node selection."""
         if not self._connected:
             return
         try:
@@ -212,6 +220,7 @@ class _SocketBridge:
             self._connected = False
 
     def emit_navigate(self, destination: str, node):
+        """Emit gx_navigate to route a node to another UI surface."""
         if not self._connected:
             return
         try:
@@ -225,11 +234,13 @@ class _SocketBridge:
 
     @property
     def connected(self) -> bool:
+        """True if the socket bridge has an active connection."""
         return self._connected
 
 
 class GraphDB:
     def __init__(self, db_path: str):
+        """Open the corpus DB for graph queries."""
         self._path = db_path
         self._con = sqlite3.connect(db_path, check_same_thread=False)
 
@@ -306,12 +317,14 @@ class GraphDB:
         return ""
 
     def caller_count(self, node: Node) -> int:
+        """Return the number of edges with this node as callee."""
         row = self._con.execute(
             "SELECT COUNT(*) FROM graph_edges WHERE callee=?", (node.name,)
         ).fetchone()
         return row[0] if row else 0
 
     def callee_count(self, node: Node) -> int:
+        """Return the number of edges with this node as caller."""
         row = self._con.execute(
             "SELECT COUNT(*) FROM graph_edges WHERE caller=? AND caller_file=?",
             (node.name, node.file_path)
@@ -395,6 +408,7 @@ class GraphDB:
         }
 
     def search(self, query: str, limit: int = 30) -> list[Node]:
+        """Return nodes whose name matches the query substring, ranked by degree."""
         q = f"%{query}%"
         rows = self._con.execute("""
             SELECT f.id, f.name, f.file_path, f.is_stub, f.is_tool,
@@ -406,6 +420,7 @@ class GraphDB:
         return [Node(r[0], r[1], r[2], bool(r[3]), bool(r[4]), r[5]) for r in rows]
 
     def corpus_name(self) -> str:
+        """Return the corpus name from project_meta, or the DB file stem."""
         try:
             row = self._con.execute(
                 "SELECT value FROM project_meta WHERE key='corpus_name' LIMIT 1"
@@ -423,6 +438,7 @@ class GraphDB:
 
 class Layout:
     def __init__(self):
+        """Initialize layout state; call reset() to load nodes and edges."""
         self._nodes: list[Node] = []
         self._adj: dict[int, set[int]] = {}
         self._lock = threading.Lock()
@@ -431,6 +447,7 @@ class Layout:
         self.temperature = 1.0
 
     def reset(self, nodes: list[Node], edges: list[Edge]):
+        """Reset the layout with new nodes and edges, placing them in a degree-sorted spiral."""
         with self._lock:
             self._nodes = nodes
             self._adj = {n.id: set() for n in nodes}
@@ -457,14 +474,17 @@ class Layout:
             self.temperature = target_r * 0.15
 
     def start(self):
+        """Start the background force-directed layout thread."""
         self._running = True
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def stop(self):
+        """Signal the background layout thread to stop."""
         self._running = False
 
     def _run(self):
+        """Background loop: apply Fruchterman-Reingold forces until cooled."""
         while self._running:
             with self._lock:
                 nodes = list(self._nodes)
@@ -538,6 +558,7 @@ class Layout:
 
 class GraphExplorer:
     def __init__(self, db_path: str):
+        """Initialize the graph explorer with a DB path."""
         self._db = GraphDB(db_path)
         self._layout = Layout()
         self._nodes: list[Node] = []
@@ -574,6 +595,7 @@ class GraphExplorer:
     # ------------------------------------------------------------------
 
     def _load_top(self):
+        """Load the highest-degree nodes and start layout."""
         self._status = "Loading top nodes…"
         nodes = self._db.top_nodes(MAX_INITIAL_NODES)
         # Compute inter-edges
@@ -649,6 +671,7 @@ class GraphExplorer:
         self._status = f"Expanded: {node.short_name}  ·  {len(all_nodes)} nodes"
 
     def _select_node(self, node: Node):
+        """Select a node and classify its neighbors as callers vs. callees."""
         self._selected = node
         # Find which neighbors are callers vs callees
         neighbors, _ = self._db.neighbors(node)
@@ -731,6 +754,7 @@ class GraphExplorer:
     # ------------------------------------------------------------------
 
     def _make_camera(self):
+        """Create and return a centered Camera2D."""
         cam = ffi.new('Camera2D *')
         cam.target.x = 0.0
         cam.target.y = 0.0
@@ -741,14 +765,17 @@ class GraphExplorer:
         return cam
 
     def _screen_to_world(self, cam, sx, sy):
+        """Convert screen coordinates to world space."""
         wp = rl.GetScreenToWorld2D(_v2(sx, sy), cam[0])
         return wp.x, wp.y
 
     def _world_to_screen(self, cam, wx, wy):
+        """Convert world coordinates to screen space."""
         sp = rl.GetWorldToScreen2D(_v2(wx, wy), cam[0])
         return sp.x, sp.y
 
     def _node_at(self, cam, sx, sy) -> Optional[Node]:
+        """Return the node nearest to screen position (sx, sy), or None."""
         wx, wy = self._screen_to_world(cam, sx, sy)
         best, best_d = None, 1e9
         for n in self._nodes:
@@ -759,6 +786,7 @@ class GraphExplorer:
         return best
 
     def _frame_all(self, cam):
+        """Fit all nodes into the visible area by adjusting zoom and target."""
         if not self._nodes:
             return
         xs = [n.x for n in self._nodes]
@@ -775,6 +803,7 @@ class GraphExplorer:
         cam.offset.y = SCREEN_H / 2.0
 
     def _frame_node(self, cam, node: Node):
+        """Center the camera on a specific node."""
         cam.target.x = node.x
         cam.target.y = node.y
         cam.zoom = max(cam.zoom, 1.2)
@@ -784,6 +813,7 @@ class GraphExplorer:
     # ------------------------------------------------------------------
 
     def _draw_edge(self, cam, e: Edge, highlight: bool):
+        """Draw an edge line between its source and destination nodes."""
         src = self._node_map.get(e.src_id)
         dst = self._node_map.get(e.dst_id)
         if not src or not dst:
@@ -795,6 +825,7 @@ class GraphExplorer:
         rl.DrawLineV(_v2(src.x, src.y), _v2(dst.x, dst.y), col)
 
     def _node_color(self, node: Node) -> tuple:
+        """Return the display color for a node based on selection state."""
         if self._selected:
             if node.id == self._selected.id:
                 return COL_NODE_SEL
@@ -807,6 +838,7 @@ class GraphExplorer:
         return node.color
 
     def _draw_node(self, node: Node, cam=None):
+        """Draw a node circle with selection halo if selected."""
         col = self._node_color(node)
         r = node.radius
         is_sel = self._selected and node.id == self._selected.id
@@ -829,6 +861,7 @@ class GraphExplorer:
             rl.DrawText(text.encode(), x, y, size, col)
 
     def _measure_text(self, text: str, size: int) -> int:
+        """Return pixel width of text at the given font size."""
         if self._font:
             spacing = size * 0.05
             v = rl.MeasureTextEx(self._font, text.encode(), float(size), spacing)
@@ -836,6 +869,7 @@ class GraphExplorer:
         return rl.MeasureText(text.encode(), size)
 
     def _draw_label(self, cam, node: Node):
+        """Draw the node's short name below its circle on screen."""
         sx, sy = self._world_to_screen(cam, node.x, node.y)
         if sx < -20 or sx > GRAPH_W + 20 or sy < -20 or sy > SCREEN_H + 20:
             return
@@ -850,16 +884,19 @@ class GraphExplorer:
 
     @staticmethod
     def _ctx_menu_total_h() -> int:
+        """Return the total pixel height of the context menu."""
         return sum(_CTX_MENU_DIV if it is None else _CTX_MENU_H for it in _CTX_MENU_ITEMS) + 8
 
     @staticmethod
     def _ctx_menu_clamped(raw_x: int, raw_y: int):
+        """Return a clamped context menu position that stays on screen."""
         total_h = GraphExplorer._ctx_menu_total_h()
         cx = min(raw_x, SCREEN_W - _CTX_MENU_W - 4)
         cy = min(raw_y, SCREEN_H - total_h - 4)
         return cx, cy
 
     def _draw_ctx_menu(self, cm: dict):
+        """Draw the right-click context menu."""
         cm_fs = 11
         total_h = self._ctx_menu_total_h()
         cx, cy = cm["cx"], cm["cy"]
@@ -882,6 +919,7 @@ class GraphExplorer:
             iy += _CTX_MENU_H
 
     def _draw_minimap(self, cam):
+        """Draw the minimap overlay and store geometry for hit-testing."""
         if not self._nodes:
             self._minimap_geo = None
             return
@@ -920,6 +958,7 @@ class GraphExplorer:
         rl.DrawRectangleLines(vx0, vy0, vw, vh, _col(*COL_MINIMAP_VP))
 
     def _draw_panel(self):
+        """Draw the right inspection panel for the selected node."""
         px = GRAPH_W
         ts = TEXT_SCALE_STEPS[self._text_scale_idx]
         rl.DrawRectangle(px, 0, PANEL_W, SCREEN_H, _col(*COL_PANEL_BG))
@@ -1145,6 +1184,7 @@ class GraphExplorer:
     # ------------------------------------------------------------------
 
     def run(self):
+        """Main raylib event loop."""
         rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE)
         rl.InitWindow(SCREEN_W, SCREEN_H,
                       b"Determined \xe2\x80\x94 Graph Explorer")
