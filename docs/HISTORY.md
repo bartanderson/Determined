@@ -28,6 +28,8 @@ inference paths. Fix: strip `_THINK_RE` from content, drop the fallback entirely
 
 2026-08-05: `_get_abc_gap_set()` deliberately excludes ABCs with no concrete subclasses. The temptation is to include them as "architecture voids" (an ABC nobody implements is a gap). Removed because: without checking `knowledge_artifacts` for a decision artifact, you can't tell scaffold from void — intentional phase interfaces look identical to forgotten abstractions. `_get_abc_gap_set()` only reports concrete subclass violations (a subclass exists but is missing an override). No-subclass ABCs belong exclusively to `find_abc_gaps`, which has the decision-artifact context to classify them. Re-adding the no-subclass block will cause `analyze_corpus` to emit false JUDGMENT CALLs on corpora with intentional scaffolds.
 
+2026-08-05: Stale corpus DB produces phantom stubs. The July 31 self-probe flagged pattern_executor.__init__ and contract_drift_classifier.__init__ as real gaps. Fresh re-ingest (s301) cleared both — neither class has or ever had an explicit __init__. The July 17 DB was 3 weeks stale; the stub detection at that snapshot classified something differently. Lesson: a "real gap" finding is only as trustworthy as the freshness of the DB it came from. Always re-ingest before trusting a stub list, especially if the DB hasn't been refreshed in more than one session.
+
 ## Active entries
 
 2026-08-03 (s291): F19 root cause was two files with the same name in different directories
