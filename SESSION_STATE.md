@@ -1,6 +1,6 @@
-Written at commit: f9cff9a
+Written at commit: a42f72f
 
-# SESSION STATE — session 302 final handoff
+# SESSION STATE — session 303 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,67 +9,82 @@ Written at commit: f9cff9a
 
 ## WHAT HAPPENED THIS SESSION (full arc)
 
-**1. Docstring health pass -- committed** [V]
+**Docstring health pass — three batches committed** [V]
 
-Added one-line docstrings to 111 undocumented functions across the four worst files:
-- `determined/assessor/assessor.py`      (37 added)
-- `determined/ui/graph_explorer.py`      (40 added)
-- `determined/oracle/db_oracle.py`       (17 added)
-- `determined/agent/runtime_locator.py`  (17 added)
+Session picked up from s302 handoff (DB not yet re-ingested). Re-ingested first,
+then ran three consecutive batches of worst-10-files docstring additions.
 
-Method: queried the Determined corpus DB to get exact line numbers of all missing
-docstrings, then wrote targeted one-liners per CLAUDE.md style rules.
+Batch 1 (commit 9fd6efd — pre-compaction, carried from s302):
+- 10 files, 118 docstrings added
+- Files: language_walker.py, capn.py, ui_server.py, parse_ast.py, local_agent.py,
+  graph_builder.py, persistence_engine.py, bag_store.py, stub_projector.py,
+  query_file_analysis.py
 
-123 tests pass post-change. [V]
-Committed as f9cff9a. [V]
+Batch 2 (commit d99956d — pre-compaction):
+- 10 files, 66 docstrings added
+- Files: extractor.py x3 (commonplace/commonplace_extended/enhanced), queries.py x3,
+  query_router.py, render_context_for_llm.py, symbol_resolution_engine.py, query_plan.py
+- DB re-ingested after this commit: coverage 49.8% (1516/3021 missing) [V]
 
-DB NOT yet re-ingested -- counts in DB still reflect pre-change state.
-Session wrap requested before re-ingest could run.
-Re-ingest pattern (from ui_server.py handle_ingest line 816):
-  1. Clear all tables in the DB in-place
-  2. `EngineRunner().run(corpus, project_prefixes=[], repo_root=target, connection=conn)`
-  3. `conn.close()`
+Batch 3 (commit a42f72f — this session):
+- 10 files, 62 docstrings added
+- Files: system_validator.py, processor.py x3, claude_eval.py, reasoning_engine.py,
+  query_session.py, structural_parity_diff.py, route_trace.py, scan_project_files.py
+- 31 tests pass [V]
 
-**2. Items 2 and 3 not started** [V]
-
-- Incremental re-ingest file-watcher (new RM item) -- no design, no work started.
-- Session-start DB freshness check -- not started; adjunct to item 2.
+DB NOT yet re-ingested after batch 3. Coverage will be higher than 49.8% once re-ingested.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**Step 0 -- Re-ingest Determined DB and verify docstring count improvement.**
+**Step 0 — Re-ingest DB and check new coverage.**
 
-Session wrapped before re-ingest ran. Run it first thing:
+Run this first (same pattern as before — clears tables in-place, re-ingests):
 ```python
-# Pattern from ui_server.py handle_ingest (line 816)
 import sqlite3, sys
 sys.path.insert(0, r"C:\Users\bartl\dev\Determined")
 target = r"C:\Users\bartl\dev\Determined"
 db_path = r"C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined.db"
-# 1. Clear tables in-place (do NOT delete file -- avoids WinError 32)
 c = sqlite3.connect(db_path)
 for t in [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]:
     c.execute(f"DELETE FROM {t}")
 c.commit(); c.close()
-# 2. Re-ingest
 from determined.engine.run_engine import EngineRunner
 conn = sqlite3.connect(db_path)
 corpus = type("Corpus", (), {"root_path": target})()
 EngineRunner().run(corpus=corpus, project_prefixes=[], repo_root=target, connection=conn)
 conn.close()
 ```
-Then re-run the docstring health probe. Expected: assessor.py ~0 missing, runtime_locator.py 0,
-db_oracle.py 0, graph_explorer.py 0. Overall core % should drop well below 20%.
+Then probe: query the DB for total functions and missing docstring count.
 Update TRACKER.md RM67 Determined row with new docstring health %.
 
-**Step 1 -- Incremental re-ingest design.**
+**Step 1 — Continue docstring pass or pivot.**
 
-Surface as a new RM item in TRACKER.md. Design first:
-- Which files changed? (git diff --name-only or file mtime vs DB mtime)
-- Which tables to update? Check `determined/ingestion/reingest_file.py` -- it may already exist.
-- Session-start freshness check is adjunct: if any .py mtime > DB mtime, run incremental.
+After re-ingest, check the new worst-10 list. If coverage is still meaningfully
+below 60%, run another batch. If it's at a reasonable plateau, consider pivoting
+to the incremental re-ingest RM item (design first: which files changed? which
+tables to update? check if `determined/ingestion/reingest_file.py` exists).
+
+**Useful scratchpad probe script** (re-write if scratchpad was cleared):
+```python
+import sqlite3
+db = r"C:\Users\bartl\dev\Determined\C_Users_bartl_dev_Determined.db"
+conn = sqlite3.connect(db)
+total = conn.execute("SELECT COUNT(*) FROM functions").fetchone()[0]
+missing = conn.execute(
+    "SELECT COUNT(*) FROM functions WHERE (docstring IS NULL OR docstring = '') "
+    "AND file_path NOT LIKE '%/tests/%' AND file_path NOT LIKE '%\\\\tests\\\\%'"
+).fetchone()[0]
+print(f"Total: {total}, Missing: {missing} ({missing/total*100:.1f}%), Coverage: {(total-missing)/total*100:.1f}%")
+rows = conn.execute(
+    "SELECT file_path, COUNT(*) as total, SUM(CASE WHEN docstring IS NULL OR docstring = '' THEN 1 ELSE 0 END) as missing "
+    "FROM functions WHERE file_path NOT LIKE '%/tests/%' AND file_path NOT LIKE '%\\\\tests\\\\%' "
+    "GROUP BY file_path HAVING missing > 0 ORDER BY missing DESC LIMIT 10"
+).fetchall()
+for r in rows: print(f"  {r[2]}/{r[1]} missing  {r[0].split('/')[-1]}")
+conn.close()
+```
 
 ---
 
@@ -95,13 +110,10 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - analyze_corpus connectivity-dominant threshold requires orphaned_impl >= 50. [V s299]
 - New tools registered in TOOLS dict: add AFTER function def, not inside the dict literal. [V s299]
 - git commit messages: PowerShell @'...'@ here-strings fail on em-dashes and smart quotes.
-  Use Git Bash (Bash tool) for commit messages containing special characters. [V s299]
-- _get_abc_gap_set() excludes no-subclass ABCs by design -- they belong to find_abc_gaps.
-  Re-adding the no-subclass block causes false JUDGMENT CALLs in analyze_corpus. [V s300]
-- Stale corpus DB produces phantom stubs. Always re-ingest before trusting stub list
-  if DB is more than one session old. See HISTORY.md 2026-08-05. [V s301]
-- Docstring health counts in DB are stale until re-ingest runs. s302 committed 111 docstrings
-  but wrapped before re-ingest -- DB still shows old zero counts. [V s302]
+  Use Git Bash (Bash tool) for commit messages. [V s299]
+- _get_abc_gap_set() excludes no-subclass ABCs by design -- they belong to find_abc_gaps. [V s300]
+- Stale corpus DB produces phantom stubs. Re-ingest before trusting stub list. [V s301]
+- DB forward-slash paths: when querying by file_path, use forward slashes not backslashes. [V s303]
 
 ## RESOURCE / PROCESS RULES [V]
 
