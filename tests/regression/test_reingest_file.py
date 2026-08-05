@@ -13,6 +13,8 @@ import pytest
 from determined.ingestion.reingest_file import (
     FileDelta,
     compute_file_delta,
+    detect_changed_files,
+    reingest_changed,
     reingest_file,
     _load_old_symbols,
 )
@@ -234,3 +236,61 @@ def test_reingest_error_missing_db(tmp_path):
     })
     with pytest.raises(FileNotFoundError):
         reingest_file(db_path=str(tmp_path / "nope.db"), file_path=str(tmp_path / "pkg" / "foo.py"))
+
+
+def test_detect_changed_files_finds_modified(tmp_path):
+    """detect_changed_files returns files whose mtime is newer than ingested_at."""
+    import time
+
+    _make_project(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/foo.py": "def f(): pass",
+    })
+
+    db_path = str(tmp_path / "corpus.db")
+    _full_ingest(tmp_path, db_path)
+
+    # Nothing changed yet
+    changed_before = detect_changed_files(db_path)
+    assert not any("foo.py" in p for p in changed_before)
+
+    # Touch the file after ingest — ensure mtime advances
+    time.sleep(0.05)
+    foo_py = tmp_path / "pkg" / "foo.py"
+    foo_py.write_text("def f(): pass\ndef g(): pass\n", encoding="utf-8")
+
+    changed_after = detect_changed_files(db_path)
+    assert any("foo.py" in p for p in changed_after)
+
+
+def test_reingest_changed_updates_db(tmp_path):
+    """reingest_changed re-ingests modified files and reports them."""
+    import time
+
+    _make_project(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/foo.py": "def original(): pass",
+    })
+
+    db_path = str(tmp_path / "corpus.db")
+    _full_ingest(tmp_path, db_path)
+
+    # Verify original is present
+    conn = sqlite3.connect(db_path)
+    before = {r[0] for r in conn.execute("SELECT name FROM functions WHERE file_path LIKE '%foo.py'").fetchall()}
+    conn.close()
+    assert "original" in before
+
+    # Modify the file
+    time.sleep(0.05)
+    (tmp_path / "pkg" / "foo.py").write_text("def replacement(): pass\n", encoding="utf-8")
+
+    result = reingest_changed(db_path)
+    assert "ERROR" not in result
+    assert "foo.py" in result
+
+    conn = sqlite3.connect(db_path)
+    after = {r[0] for r in conn.execute("SELECT name FROM functions WHERE file_path LIKE '%foo.py'").fetchall()}
+    conn.close()
+    assert "replacement" in after
+    assert "original" not in after

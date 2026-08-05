@@ -408,19 +408,22 @@ def persist_file_analysis(
     # -------------------------
     # FILE
     # -------------------------
+    _now = datetime.now(timezone.utc).isoformat()
     cursor.execute("""
     INSERT OR REPLACE INTO files (
         file_path,
         line_count,
         role,
-        is_hot
+        is_hot,
+        ingested_at
     )
-    VALUES (?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?)
     """, (
         analysis.file_path,
         analysis.metadata.line_count,
         analysis.metadata.role,
         int(analysis.metadata.is_hot),
+        _now,
     ))
 
     # -------------------------

@@ -612,6 +612,8 @@ def test_dispatch_all_tools_registered():
         "find_cross_language_calls",
         # RM67: developer entry point
         "analyze_corpus",
+        # Incremental re-ingest: batch changed-file detection
+        "reingest_changed",
     }
 
     assert set(TOOLS.keys()) == expected

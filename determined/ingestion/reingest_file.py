@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -357,3 +359,79 @@ def reingest_file(
         )
     finally:
         conn.close()
+
+
+# ------------------------------------------------------------------
+# Changed-file detection
+# ------------------------------------------------------------------
+
+def detect_changed_files(db_path: str) -> list[str]:
+    """
+    Return a list of file paths that exist on disk and have been modified
+    since their last ingest (mtime > ingested_at).  Files not yet tracked
+    in the DB are not returned — this detects changes to already-ingested files.
+    """
+    db = Path(db_path)
+    if not db.exists():
+        raise FileNotFoundError(f"Corpus DB not found: {db_path}")
+
+    conn = sqlite3.connect(str(db))
+    try:
+        rows = conn.execute(
+            "SELECT file_path, ingested_at FROM files WHERE ingested_at IS NOT NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    changed: list[str] = []
+    for file_path, ingested_at_str in rows:
+        p = Path(file_path)
+        if not p.exists():
+            continue
+        try:
+            mtime = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc)
+            ingested_at = datetime.fromisoformat(ingested_at_str)
+            if ingested_at.tzinfo is None:
+                ingested_at = ingested_at.replace(tzinfo=timezone.utc)
+            if mtime > ingested_at:
+                changed.append(file_path)
+        except (OSError, ValueError):
+            continue
+
+    return changed
+
+
+# ------------------------------------------------------------------
+# Batch re-ingest of changed files
+# ------------------------------------------------------------------
+
+def reingest_changed(
+    db_path: str,
+    repo_root: Optional[str] = None,
+) -> str:
+    """
+    Detect all files that changed since their last ingest and re-ingest each.
+
+    Returns a human-readable summary: count of changed files and per-file results.
+    """
+    changed = detect_changed_files(db_path)
+    if not changed:
+        return "reingest_changed: corpus is up to date — no files have changed since last ingest."
+
+    lines = [f"reingest_changed: {len(changed)} file(s) changed since last ingest."]
+    errors = 0
+    for fp in changed:
+        try:
+            result = reingest_file(db_path=db_path, file_path=fp, repo_root=repo_root)
+            # Keep only the first line (path + symbols) to keep output compact
+            lines.append("  " + result.splitlines()[0])
+        except Exception as exc:
+            lines.append(f"  ERROR {fp}: {exc}")
+            errors += 1
+
+    if errors:
+        lines.append(f"\n{errors} file(s) failed re-ingest.")
+    else:
+        lines.append(f"\nAll {len(changed)} file(s) re-ingested successfully.")
+
+    return "\n".join(lines)

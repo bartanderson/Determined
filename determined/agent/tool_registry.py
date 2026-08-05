@@ -387,6 +387,14 @@ REGISTRY: dict[str, dict] = {
         "use_when": "A source file changed and you want the corpus to reflect the new state without a full re-ingest.",
         "category": "ingestion",
     },
+    "reingest_changed": {
+        "purpose": "Detect all files that changed since last ingest (mtime > ingested_at) and re-ingest each automatically. No arguments required.",
+        "args": {},
+        "output": "count of changed files and per-file re-ingest summary; 'up to date' if nothing changed",
+        "feeds": ["reingest_file", "describe_file"],
+        "use_when": "Corpus may be stale — several files changed since the last full ingest and you want to sync without a full re-ingest.",
+        "category": "ingestion",
+    },
 
     "symbol_context": {
         "purpose": "Unified view of everything known about a named symbol: declaration, docstring, risk, references, callers/callees, design frame, findings.",

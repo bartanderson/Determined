@@ -4435,6 +4435,27 @@ def reingest_file(assessor: "Assessor", args: dict) -> str:
         return f"ERROR during re-ingest: {e}"
 
 
+def reingest_changed(assessor: "Assessor", args: dict) -> str:
+    """
+    reingest_changed() - detect all files that have changed since their last
+    ingest (mtime > ingested_at) and re-ingest each one automatically.
+    No arguments required; uses the active corpus DB.
+    Returns a per-file summary and total count.
+    """
+    oracle = assessor.oracle
+    db_path = getattr(oracle, "db_path", None) or getattr(oracle, "_db_path", None)
+    if not db_path:
+        return "ERROR: could not determine corpus DB path from oracle"
+
+    from determined.ingestion.reingest_file import reingest_changed as _reingest_changed
+    try:
+        return _reingest_changed(db_path=db_path)
+    except FileNotFoundError as e:
+        return f"ERROR: {e}"
+    except Exception as e:
+        return f"ERROR during reingest_changed: {e}"
+
+
 # ------------------------------------------------------------------
 # GOAL INTAKE
 # ------------------------------------------------------------------
@@ -8841,6 +8862,7 @@ TOOLS = {
     "project_status":          (project_status,          "assessor"),
     # Incremental re-ingest
     "reingest_file":           (reingest_file,           "assessor"),
+    "reingest_changed":        (reingest_changed,        "assessor"),
     # Symbol context + concept search (items 21/22)
     "symbol_context":          (symbol_context,          "assessor"),
     "completion_contract":     (completion_contract,     "assessor"),
