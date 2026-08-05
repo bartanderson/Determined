@@ -43,6 +43,7 @@ class RouteResult:
 # =========================================================
 
 def _detect_intent(text: str) -> str:
+    """Classify query text into one of seven intent categories."""
     t = text.lower()
 
     if "what depends" in t or "impact" in t:
@@ -74,6 +75,7 @@ def _detect_intent(text: str) -> str:
 # =========================================================
 
 def _select_primitives(intent: str) -> List[str]:
+    """Return the data primitives appropriate for the detected intent."""
     if intent == "impact_query":
         return ["impact", "context"]
     if intent == "reverse_query":
@@ -94,6 +96,7 @@ def _select_primitives(intent: str) -> List[str]:
 # =========================================================
 
 def _build_plan(symbols: List[str], primitives: List[str], trace: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Assemble an execution plan dict from symbols and primitives."""
     return {
         "symbols": symbols,
         "primitives": primitives,
@@ -106,10 +109,12 @@ def _build_plan(symbols: List[str], primitives: List[str], trace: Dict[str, Any]
 # =========================================================
 
 def _is_valid_symbol(sym: str, builtin_symbols=frozenset()) -> bool:
+    """Return True if the symbol is not noise."""
     return not is_noise_symbol(sym, builtin_symbols)
 
 
 def _route_expand(forward: dict, reverse: dict, seeds: List[str], intent: str, builtin_symbols=frozenset()) -> dict:
+    """BFS-expand seeds through the call graph within intent-calibrated depth budgets."""
     visited = set()
     expanded = set()
 
@@ -186,6 +191,7 @@ def _route_expand(forward: dict, reverse: dict, seeds: List[str], intent: str, b
 
 
 def _score_symbol(symbol: str, seeds: List[str], forward: dict, reverse: dict) -> float:
+    """Score a symbol by seed proximity and call-graph degree."""
     score = 0.0
     if symbol in seeds:
         score += 5.0
@@ -198,6 +204,7 @@ def _score_symbol(symbol: str, seeds: List[str], forward: dict, reverse: dict) -
 
 
 def _prune(symbols: List[str], seeds: List[str], forward: dict, reverse: dict, limit: int = 40) -> List[str]:
+    """Keep only the top-limit symbols by score."""
     scored = [(  _score_symbol(sym, seeds, forward, reverse), sym) for sym in symbols]
     scored.sort(reverse=True, key=lambda x: x[0])
     return [s for _, s in scored[:limit]]

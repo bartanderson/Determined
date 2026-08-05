@@ -12,12 +12,14 @@ from utils.text import truncate
 
 class _TitleParser(HTMLParser):
     def __init__(self):
+        """Initialise parser state for title and description extraction."""
         super().__init__()
         self.title = None
         self.description = None
         self._in_title = False
 
     def handle_starttag(self, tag, attrs):
+        """Set in-title flag or capture meta description attribute."""
         if tag == "title":
             self._in_title = True
         if tag == "meta":
@@ -26,10 +28,12 @@ class _TitleParser(HTMLParser):
                 self.description = attrs.get("content", "")
 
     def handle_endtag(self, tag):
+        """Clear in-title flag when the title element closes."""
         if tag == "title":
             self._in_title = False
 
     def handle_data(self, data):
+        """Capture the first text chunk inside the title element."""
         if self._in_title and not self.title:
             self.title = data.strip()
 
@@ -40,25 +44,30 @@ class _TextExtractor(HTMLParser):
     _SKIP_TAGS = {"script", "style", "head", "noscript"}
 
     def __init__(self):
+        """Initialise the extractor with skip-depth counter and parts list."""
         super().__init__()
         self._skip_depth = 0
         self._parts = []
 
     def handle_starttag(self, tag, attrs):
+        """Increment skip depth when entering a non-visible tag."""
         if tag in self._SKIP_TAGS:
             self._skip_depth += 1
 
     def handle_endtag(self, tag):
+        """Decrement skip depth when leaving a non-visible tag."""
         if tag in self._SKIP_TAGS and self._skip_depth:
             self._skip_depth -= 1
 
     def handle_data(self, data):
+        """Collect visible text chunks, skipping content inside skip-depth."""
         if not self._skip_depth:
             text = data.strip()
             if text:
                 self._parts.append(text)
 
     def get_text(self):
+        """Return all collected visible text joined by spaces."""
         return " ".join(self._parts)
 
 

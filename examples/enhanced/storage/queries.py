@@ -2,6 +2,7 @@ from storage.db import get_db
 
 
 def insert_entry(type, content, title, source_url, excerpt):
+    """Insert a new entry row and return its id."""
     db = get_db()
     cur = db.execute(
         "INSERT INTO entries (type, content, title, source_url, excerpt) VALUES (?,?,?,?,?)",
@@ -12,12 +13,14 @@ def insert_entry(type, content, title, source_url, excerpt):
 
 
 def get_entry(entry_id):
+    """Fetch a single entry by id."""
     return get_db().execute(
         "SELECT * FROM entries WHERE id = ?", (entry_id,)
     ).fetchone()
 
 
 def list_entries(limit=50, offset=0):
+    """Return the most recent entries in descending order."""
     return get_db().execute(
         "SELECT * FROM entries ORDER BY created_at DESC LIMIT ? OFFSET ?",
         (limit, offset),
@@ -25,6 +28,7 @@ def list_entries(limit=50, offset=0):
 
 
 def search_entries(query):
+    """Full-text search entries by content or title."""
     # DESIGN TENSION: searcher.py also calls this directly, bypassing
     # the service layer boundary. Who should own search logic?
     like = f"%{query}%"
@@ -35,6 +39,7 @@ def search_entries(query):
 
 
 def get_entry_tags(entry_id):
+    """Return all tags associated with an entry."""
     return get_db().execute(
         "SELECT t.name, t.source FROM tags t JOIN entry_tags et ON t.id = et.tag_id WHERE et.entry_id = ?",
         (entry_id,),
@@ -42,6 +47,7 @@ def get_entry_tags(entry_id):
 
 
 def insert_tag(name, source="manual"):
+    """Insert a tag if it does not exist and return its id."""
     db = get_db()
     db.execute(
         "INSERT OR IGNORE INTO tags (name, source) VALUES (?,?)", (name, source)
@@ -52,6 +58,7 @@ def insert_tag(name, source="manual"):
 
 
 def link_tag(entry_id, tag_id):
+    """Associate a tag with an entry."""
     db = get_db()
     db.execute(
         "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?,?)",
@@ -61,6 +68,7 @@ def link_tag(entry_id, tag_id):
 
 
 def insert_connection(from_id, to_id, relation, note=None):
+    """Record a directed relationship between two entries."""
     db = get_db()
     db.execute(
         "INSERT INTO connections (from_entry_id, to_entry_id, relation, note) VALUES (?,?,?,?)",
@@ -70,6 +78,7 @@ def insert_connection(from_id, to_id, relation, note=None):
 
 
 def get_connections(entry_id):
+    """Return all connections where this entry is either endpoint."""
     return get_db().execute(
         "SELECT * FROM connections WHERE from_entry_id = ? OR to_entry_id = ?",
         (entry_id, entry_id),

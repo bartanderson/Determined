@@ -43,12 +43,14 @@ class QuerySemanticsRegistry:
     }
 
     def validate_combine(self, left, right):
+        """Return True if the two views can legally be combined."""
         return (
             (left, right) in self.VALID_COMBINES
             or (right, left) in self.VALID_COMBINES
         )
 
     def validate_filter_key(self, view: str, key: str):
+        """Return True if the key is a valid filter for the given view."""
         allowed = self.VALID_FILTER_KEYS.get(view, set())
         return key in allowed
 
@@ -65,13 +67,16 @@ class QuerySemanticsRegistry:
 class QueryPlanner:
 
     def __init__(self, registry: QuerySemanticsRegistry):
+        """Store the semantics registry."""
         self.registry = registry
 
     def plan(self, query):
+        """Validate a query AST and return a QueryPlan."""
         query = self._validate(query)
         return QueryPlan(root=query)
 
     def _extract_view(self, q):
+        """Return the view name from a Select node, raising on Combine/Filter."""
         if isinstance(q, Select):
             return q.view
 
@@ -84,7 +89,7 @@ class QueryPlanner:
         raise ValueError(f"Unknown AST node type: {type(q)}")
 
     def _validate(self, query):
-
+        """Recursively validate a query AST node, rejecting illegal structures."""
         if isinstance(query, Filter):
             raise ValueError("Filter cannot be a root query node in deterministic-model")
 
@@ -118,7 +123,7 @@ class QueryPlanner:
         return query
 
     def _validate_select(self, q: Select):
-
+        """Validate a Select node's view and metric against the registry."""
         if q.view not in QueryPlan.VALID_METRICS:
             raise ValueError(f"Unknown view: {q.view}")
 

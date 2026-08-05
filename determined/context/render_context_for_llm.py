@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 
 def _render_function(function: Dict[str, Any]) -> str:
+    """Format a function record as a one-line LLM-readable string."""
     arguments = ", ".join(function["arguments"])
 
     return (
@@ -15,6 +16,7 @@ def _render_function(function: Dict[str, Any]) -> str:
 
 
 def _render_class(class_info: Dict[str, Any]) -> str:
+    """Format a class record as a one-line LLM-readable string."""
     base_classes = ", ".join(class_info["base_classes"])
 
     if not base_classes:
@@ -31,6 +33,7 @@ def _render_class(class_info: Dict[str, Any]) -> str:
 
 
 def _render_import(import_info: Dict[str, Any]) -> str:
+    """Format an import record as a one-line LLM-readable string."""
     return (
         f"- IMPORT {import_info['module']} "
         f"({import_info['import_type']}) "
@@ -39,6 +42,7 @@ def _render_import(import_info: Dict[str, Any]) -> str:
 
 
 def _render_mutation(mutation: Dict[str, Any]) -> str:
+    """Format a mutation event as a one-line LLM-readable string."""
     return (
         f"- MUTATION "
         f"target={mutation['target']} "
@@ -48,6 +52,7 @@ def _render_mutation(mutation: Dict[str, Any]) -> str:
 
 
 def _render_contract(contract: Dict[str, Any]) -> str:
+    """Format a behavioral contract as a one-line LLM-readable string."""
     side_effects = ", ".join(contract["side_effects"])
     behaviors = ", ".join(contract["testable_behaviors"])
 
@@ -64,6 +69,7 @@ def _render_contract(contract: Dict[str, Any]) -> str:
 def render_file_analysis_for_llm(
     file_analysis: Dict[str, Any],
 ) -> str:
+    """Render a full FileAnalysis dict into a structured LLM text block."""
     lines: List[str] = []
 
     file_info = file_analysis["file"]
@@ -142,6 +148,7 @@ def render_file_analysis_for_llm(
 def render_context_bundle_for_llm(
     context_bundle: Dict[str, Any],
 ) -> str:
+    """Render an entry file plus related files into a multi-section LLM text block."""
     output_sections: List[str] = []
 
     entry_file = context_bundle.get("entry_file")

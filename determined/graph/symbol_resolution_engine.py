@@ -25,6 +25,7 @@ STDLIB_PREFIXES = set(sys.stdlib_module_names)
 
 
 def terminal_symbol(name: str) -> str:
+    """Return the last dot-separated segment of a qualified name."""
     return name.split(".")[-1]
 
 
@@ -49,6 +50,7 @@ def canonical_symbol(
 # ============================================================
 
 def is_builtin_symbol(name: str) -> bool:
+    """Return True if the name's root is a Python builtin."""
     if not name:
         return False
 
@@ -62,6 +64,7 @@ def is_builtin_symbol(name: str) -> bool:
 # ============================================================
 
 def is_stdlib_symbol(name: str) -> bool:
+    """Return True if the name's root is a stdlib module."""
     if not name:
         return False
 
@@ -75,6 +78,7 @@ def is_stdlib_symbol(name: str) -> bool:
 # ============================================================
 
 def resolve_runtime_binding(name: str, runtime_bindings: dict[str, str] | None = None) -> str | None:
+    """Look up a name in the runtime bindings map, with prefix-walk fallback."""
     if not name:
         return None
 
@@ -103,6 +107,7 @@ def is_runtime_symbol(
     name: str,
     runtime_bindings: dict[str, str] | None = None,
 ) -> bool:
+    """Return True if the name has a runtime binding."""
     return resolve_runtime_binding(name, runtime_bindings) is not None
 
 
@@ -114,7 +119,7 @@ def is_project_symbol(
     name: str,
     project_symbols: set[str] | None,
 ) -> bool:
-
+    """Return True if the name matches any known project symbol."""
     if not project_symbols:
         return False
 
@@ -159,6 +164,7 @@ def resolve_symbol_type(
     project_symbols: set[str] | None = None,
     project_prefixes: list[str] | None = None,
 ) -> RouteType:
+    """Classify a name as project, runtime, builtin, stdlib, external, or unknown."""
     assert runtime_bindings is not None
     
     if not name:
