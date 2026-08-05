@@ -2024,10 +2024,13 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
             for m in missing:
                 lines.append(f"    {m}  [not overridden]")
         lines.append("")
+    n_scaffold_methods = sum(len(s[2]) for s in scaffolds)
+    n_gap_methods = sum(len(c[2]) for c in concrete_gaps)
+    n_void_methods = sum(len(v[2]) for v in voids)
     lines.append(
-        f"Summary: {len(scaffolds)} intentional scaffold(s), "
-        f"{len(concrete_gaps)} concrete gap(s), "
-        f"{len(voids)} unclassified void(s)"
+        f"Summary: {len(scaffolds)} intentional scaffold class(es) ({n_scaffold_methods} abstract methods), "
+        f"{len(concrete_gaps)} concrete gap class(es) ({n_gap_methods} missing overrides), "
+        f"{len(voids)} unclassified void(s) ({n_void_methods} methods)"
     )
     return "\n".join(lines)
 
