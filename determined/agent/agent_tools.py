@@ -1956,9 +1956,9 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     }
 
     lines = []
+    scaffolds: list = []
+    voids: list = []
     if unimplemented_interfaces:
-        scaffolds = []
-        voids = []
         for abc_name in sorted(unimplemented_interfaces):
             row = conn.execute(
                 "SELECT file_path FROM classes WHERE name = ? LIMIT 1", (abc_name,)
@@ -2004,7 +2004,11 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
             lines.append("")
             for abc_name, fp, methods, decision_content in scaffolds:
                 lines.append(f"  {abc_name}  ({fp})")
-                lines.append(f"    decision: {decision_content[:120]}")
+                if len(decision_content) <= 200:
+                    d_text = decision_content
+                else:
+                    d_text = decision_content[:200].rsplit(' ', 1)[0] + '…'
+                lines.append(f"    decision: {d_text}")
                 for m in methods:
                     lines.append(f"    {m}  [intentional scaffold]")
             lines.append("")
@@ -2019,6 +2023,12 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
             lines.append(f"  {sub_name}  (inherits {abc_name})")
             for m in missing:
                 lines.append(f"    {m}  [not overridden]")
+        lines.append("")
+    lines.append(
+        f"Summary: {len(scaffolds)} intentional scaffold(s), "
+        f"{len(concrete_gaps)} concrete gap(s), "
+        f"{len(voids)} unclassified void(s)"
+    )
     return "\n".join(lines)
 
 
