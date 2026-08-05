@@ -250,3 +250,50 @@ browser-side entry points with no Python callers, correctly classified.
 return "protocol" to exclude it from EP classification. JSON files are config/data, not code.
 
 **Outcome:** FIXED — see below.
+
+---
+
+### Tool: list_stubs — _caller_names false "(unresolved)" for Class.method callers
+
+**Probe output:** All 5 "tail" stubs show "(unresolved)" callers: ContextBuilder.build,
+WorldAI.__init__, AuthoritySystem._validate_creation_action, NarrativeEngine.advance_story_arc.
+
+**Delta:** The `_caller_names` lookup does `f2.name = ge.caller` (exact match). But graph_edges
+stores callers as qualified `Class.method` names (e.g., "ContextBuilder.build"), while functions
+table stores bare method names (e.g., "build"). The exact match always fails for Class.method
+callers → all labeled "(unresolved)".
+
+Verified against DB: 4 of 5 labeled callers actually exist in the corpus under bare names:
+- ContextBuilder.build → build in context_builder.py (is_stub=0) — FALSE-UNRESOLVED
+- AuthoritySystem._validate_creation_action → _validate_creation_action in authority_system.py — FALSE-UNRESOLVED
+- NarrativeEngine.advance_story_arc → advance_story_arc in narrative_engine.py — FALSE-UNRESOLVED
+- WorldAI.__init__ → __init__ ambiguous (many matches, can't confirm) — AMBIGUOUS
+
+Session 298 concluded "phantom edges, treat as lower priority" based on this annotation. That
+conclusion was wrong: _get_encounter_context and _get_combat_context have real implemented
+callers and block real code. They deserve higher priority, not lower.
+
+**Fix needed:** In `_caller_names`, when exact match fails, try bare name + caller_file lookup.
+If found, report as resolved (no "(unresolved)" annotation).
+
+**Outcome:** FIXED — see below.
+
+---
+
+### Tool: detect_topology — ABC-interface=0 silent when no-subclass ABCs exist
+
+**Probe output:** ABC-interface: 0. No ABC action queue line.
+
+**Delta:** `_get_abc_gap_set()` only flags ABCs where a concrete subclass exists but is missing
+overrides. When NO concrete subclass exists (phases.py pattern: 8 ABCs, 39 abstract methods,
+no concrete implementation), it returns 0 gaps. detect_topology shows 0 and drops the action
+queue line entirely — the developer has no signal to run find_abc_gaps() and never learns about
+the 39 abstract methods.
+
+Verified: 39 @abstractmethod functions in engine/phases.py, all in all-abstract classes.
+
+**Fix needed:** When abc_gap_count=0 but abstract methods exist in all-abstract classes, add
+a note: "ABC-interface: 0 concrete gaps — N abstract methods with no subclass; run
+find_abc_gaps() to classify as accepted scaffolds or real gaps."
+
+**Outcome:** FIXED — see below.

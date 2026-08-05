@@ -1789,9 +1789,9 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     def _caller_names(stub_name: str, limit: int = 3) -> list:
         rows_ = conn.execute(
             """
-            SELECT DISTINCT ge.caller,
-                   EXISTS(SELECT 1 FROM functions f2 WHERE f2.name = ge.caller) as resolved,
-                   COALESCE((SELECT f2.is_stub FROM functions f2 WHERE f2.name = ge.caller LIMIT 1), -1) as is_stub
+            SELECT DISTINCT ge.caller, ge.caller_file,
+                   EXISTS(SELECT 1 FROM functions f2 WHERE f2.name = ge.caller) as exact_resolved,
+                   COALESCE((SELECT f2.is_stub FROM functions f2 WHERE f2.name = ge.caller LIMIT 1), -1) as exact_stub
             FROM graph_edges ge
             WHERE ge.callee = ? OR ge.callee LIKE '%.' || ?
             LIMIT ?
@@ -1799,13 +1799,20 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
             (stub_name, stub_name, limit),
         ).fetchall()
         result = []
-        for caller, resolved, is_stub in rows_:
-            if not resolved:
-                result.append(f"{caller} (unresolved)")
-            elif is_stub == 1:
-                result.append(f"{caller} (stub)")
+        for caller, caller_file, exact_resolved, exact_stub in rows_:
+            if exact_resolved:
+                result.append(f"{caller} (stub)" if exact_stub == 1 else caller)
             else:
-                result.append(caller)
+                # Callers may be stored as Class.method; try bare name in caller's file
+                bare = caller.rsplit(".", 1)[-1] if "." in caller else caller
+                bare_row = conn.execute(
+                    "SELECT is_stub FROM functions WHERE name=? AND file_path=? LIMIT 1",
+                    (bare, caller_file),
+                ).fetchone()
+                if bare_row is not None:
+                    result.append(f"{caller} (stub)" if bare_row[0] == 1 else caller)
+                else:
+                    result.append(f"{caller} (unresolved)")
         return result
 
     lines = [f"Stub functions ({len(rows)} shown, ranked by caller count):"]
@@ -2269,6 +2276,24 @@ def detect_topology(oracle: "DBOracle", args: dict) -> str:
             f"    ABC-interface:  {abc_gap_count} abstract methods unimplemented"
             f" — run find_abc_gaps() to classify (some may be accepted scaffolds)"
         )
+    else:
+        # No concrete-subclass gaps, but there may be all-abstract classes with no subclass at all
+        no_subclass_abstract = conn.execute(
+            """
+            SELECT COUNT(*) FROM functions
+            WHERE decorators_json LIKE '%abstractmethod%'
+              AND file_path IN (
+                SELECT file_path FROM classes
+                WHERE base_classes_json LIKE '%ABC%' OR base_classes_json LIKE '%Abstract%'
+              )
+            """
+        ).fetchone()[0]
+        if no_subclass_abstract > 0:
+            action_lines.append(
+                f"    ABC-interface:  0 concrete gaps"
+                f" — {no_subclass_abstract} abstract methods in all-abstract classes (no concrete subclass);"
+                f" run find_abc_gaps() to classify as accepted scaffolds or real gaps"
+            )
     if fsm_disconnected > 0:
         action_lines.append(
             f"    FSM mechanics:  {fsm_disconnected} stubs with string dispatch"
