@@ -2122,10 +2122,6 @@ def _get_abc_gap_set(conn) -> set:
             for method in abstract_methods:
                 if method not in sub_methods:
                     gaps.add(method)
-    # ABCs with NO concrete subclasses at all — every abstract method is an arch void
-    for abc_name, abstract_methods in abc_method_map.items():
-        if abc_name not in subclass_found:
-            gaps.update(abstract_methods)
     return gaps
 
 
