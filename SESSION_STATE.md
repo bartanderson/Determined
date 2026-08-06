@@ -1,6 +1,6 @@
-Written at commit: a21e32b
+Written at commit: 5fbd981
 
-# SESSION STATE — session 305 final handoff
+# SESSION STATE — session 306 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,87 +9,63 @@ Written at commit: a21e32b
 
 ## WHAT HAPPENED THIS SESSION (full arc)
 
-**Option B from s304 handoff: dj2 delta probe.** Three gaps found and fixed, all in agent_tools.py.
+**Option A from s305 handoff: RM67 dj2 convergence probe update.**
+Re-ran list_stubs + frontier_priority on dj2 after s305 _caller_names fix.
+Found two more deltas; both fixed. Also fixed list_stubs display-limit bug.
 
-### Delta 1: _ep_tier JSON false positives (commit 1026ece) [V]
+### Delta 1: frontier_priority Class.method caller JOIN bug (commit 3cc2529) [V]
 
-`list_entry_points` was reporting 22 FSM config symbols (BarterFSM::state::awaiting, etc.
-from config/fsms/*.json) as inferred entry points. Root cause: `_ep_tier()` had no
-file-extension guard — any non-dunder, non-test symbol fell through to "inferred".
-JSON files are config/data, not callable code.
+`frontier_priority` SQL query and both queries in `_get_chain_positions`
+(`has_functional_caller`, `has_stub_caller`) had `JOIN functions caller_fn ON
+caller_fn.name = ge.caller` — same root cause as s305 `_caller_names` fix.
+graph_edges stores callers as "ContextBuilder.build"; functions stores bare "build".
+No match → production stubs (_get_combat_context, _get_encounter_context,
+on_arc_completed, _register_world_tools) were invisible to frontier_priority entirely.
+The note "all priority stubs are in test files" was a lie caused by this bug.
 
-Fix: added `.json`/`.yaml`/`.toml` check in `_ep_tier` returning "protocol" to exclude them.
-dj2 inferred EPs: 345 → 323. JS EPs (46) unchanged — legitimate browser-side entry points.
+Fix: bare-name + caller_file SQL fallback added to all three JOINs.
+After fix: all 5 production stubs appear in frontier_priority with score=1.
 
-Also corrected two stale NEEDS_FIX entries in DELTA_LOG that were fixed in s299 but never updated.
+### Delta 2: list_stubs LIMIT 20 applied before FSM/non-FSM split (commit f0d6683) [V]
 
-### Delta 2: _caller_names false "(unresolved)" for Class.method callers (commit a21e32b) [V]
+SQL `LIMIT 20` was applied to the combined query before Python split FSM vs non-FSM.
+On dj2 (12 FSM stubs), FSM stubs consumed 12 of 20 slots, leaving only 8 for Python
+stubs. `subraces` and `semantic_match_fighting_style` were silently cut from output.
 
-`_caller_names` in list_stubs matched callers with `f2.name = ge.caller` (exact). But graph_edges
-stores callers as `ContextBuilder.build` while functions stores bare `build`. All Class.method
-callers appeared as "(unresolved)" even when the method existed in the corpus.
-
-**Important**: Session 298 concluded "phantom edges, treat as lower priority" for
-_get_encounter_context, _get_combat_context, semantic_match_subrace, on_arc_completed — that
-conclusion was wrong. 4 of 5 labeled stubs have real implemented callers. These stubs block
-real production code, not phantom edges.
-
-Fix: bare-name fallback in `_caller_names` — if exact match fails, try `caller.rsplit('.', 1)[-1]`
-in `caller_file`. Result: those stubs now show callers without "(unresolved)" annotation.
-
-### Delta 3: detect_topology ABC silence on no-subclass classes (commit a21e32b) [V]
-
-When `abc_gap_count=0`, the ABC action queue line was gated out (`if abc_gap_count > 0`). For
-phases.py (8 ABCs, 39 abstract methods, no concrete subclass), detect_topology showed
-"ABC-interface: 0" with no pointer to find_abc_gaps(). Developer had no signal.
-
-Fix: added `else` branch — when abc_gap_count=0 but abstract methods exist in all-abstract classes,
-surfaces: "0 concrete gaps — N abstract methods with no subclass; run find_abc_gaps() to classify."
+Fix: removed LIMIT from SQL; applied `regular_rows[:limit]` after split. FSM stubs
+always show in full. Limit now constrains non-FSM stubs only.
 
 459 tests pass [V].
 
-### What the probe also confirmed (no delta — tool was correct) [V]
+### TRACKER dj2 entry updated (commit 5fbd981) [V]
 
-- list_stubs: FSM stubs separated, isolated/tail labels correct
-- find_abc_gaps: 8 intentional scaffolds, 0 real gaps, summary line present
-- analyze_corpus: SHAPE "Connectivity-dominant" correct; JUDGMENT CALLS correct
-- detect_topology: Synthesis fires correctly
-- frontier_priority: test-file tag on get_player_by_session correct
-- blast_radius: works correctly (called with target= arg)
-- Edge ratio: 87.6% unresolved — accepted ceiling [V]
-- Docstring health: 54.5% missing for dj2 (not a delta; tracked separately)
-
-DELTA_LOG updated with all 3 new entries (status FIXED). HISTORY.md updated with
-_caller_names bug note.
+dj2 now: 25 stubs — 12 FSM (accepted), 3 test (accepted), 5 subrace/RM68 delete
+candidates (subraces, get_subraces_for_race, get_race_for_subrace,
+semantic_match_subrace, semantic_match_fighting_style), 5 production gaps
+(_get_combat_context, _get_encounter_context, on_arc_completed, process_consequences,
+_register_world_tools). All 3 convergence criteria met.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**Step 0 — DB state.** Determined corpus is fresh (re-ingested s304). dj2 DB is fresh
-(ingested before s304 probe). No re-ingest needed unless files changed.
+**Step 0 — DB state.** dj2 DB last written 2026-08-05 evening (s305 probe).
+No code changes to dj2 since then. No re-ingest needed.
 
-**Option A: Run RM67 convergence probe update for dj2.**
-The TRACKER's dj2 probe entry (2026-08-05) was written before today's fixes. The
-"tail" stubs section now shows real callers without "(unresolved)". Re-run the probe
-and update the TRACKER: does the stub classification change? Specifically:
-- _get_encounter_context and _get_combat_context have real callers → may shift from
-  "acknowledged" to "real gaps that block ContextBuilder.build."
-- Run: list_stubs + frontier_priority on dj2 and compare to TRACKER entry.
-
-**Option B: Pick next corpus for RM67 probe loop.**
-All listed corpora have "probe-passes" status. If a new corpus is wanted,
-RM75 is closed. Start fresh corpus or re-probe an existing one with the fixed tools.
-
-**Option C: dj2 subrace cleanup (RM68).**
-dj2-session only. Use blast_radius to confirm the 5 subrace stubs are truly dead,
-then delete them. Now that we know the "unresolved" annotation was wrong, re-verify
-they're truly isolated before acting.
-
-**Option D: Further delta probe — list_features EntryPts vs feature_shape EPs.**
+**Option A: Option D from s305 — list_features vs feature_shape EP count discrepancy.**
 list_features shows world/ with 164 EntryPts; feature_shape('world') shows 39 Entry
-points. Different definitions, same label, no explanation. Not logged yet — worth logging
-and deciding if the terminology should be unified.
+points. Different definitions, same label, no explanation. Not logged yet — worth
+logging in DELTA_LOG and deciding if terminology should be unified.
+
+**Option B: New corpus for RM67 probe loop.**
+RM75 (corpus expansion) is closed. If a new corpus is wanted, clone into
+`C:\Users\bartl\dev\corpora\`, ingest with `tools/ingest_lang_corpus.py`,
+run the RM67 probe (list_stubs, frontier_priority, find_abc_gaps, detect_topology).
+
+**Option C: Companion framework (out-of-band).**
+Bart is planning a deterministic mixture-of-experts framework as a separate project.
+Agreed: start it after a few real dj2 development sessions through Determined; real
+failures will define the chapter plan better than speculation. Not a Determined task.
 
 ---
 
@@ -121,12 +97,13 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - Stale corpus DB produces phantom stubs. Re-ingest before trusting stub list. [V s301]
 - DB forward-slash paths: when querying by file_path, use forward slashes not backslashes. [V s303]
 - persist_file_analysis ingested_at fix: Python file rows now get ingested_at on every write.
-  Old corpus DBs ingested before d48836f have NULL ingested_at for Python files -- detect_changed_files
-  will see nothing on those DBs until a fresh re-ingest populates the timestamps. [V s304]
-- _ep_tier now excludes .json/.yaml/.toml files (protocol tier). FSM config symbols no
-  longer appear as inferred EPs. [V s305]
-- _caller_names bare-name fallback: Class.method callers now resolved via bare name + caller_file.
-  Re-run list_stubs on any corpus that previously showed surprising "(unresolved)" labels. [V s305]
+  Old corpus DBs ingested before d48836f have NULL ingested_at for Python files. [V s304]
+- _ep_tier excludes .json/.yaml/.toml (protocol tier). FSM config symbols not inferred EPs. [V s305]
+- _caller_names bare-name fallback: Class.method callers resolved via bare name + caller_file.
+  Re-run list_stubs on any corpus with prior "(unresolved)" surprises. [V s305]
+- frontier_priority and _get_chain_positions: same Class.method JOIN bug now fixed in SQL.
+  All three JOINs use bare-name + caller_file fallback. [V s306]
+- list_stubs LIMIT applies to non-FSM stubs only. FSM stubs always show in full. [V s306]
 
 ## RESOURCE / PROCESS RULES [V]
 
@@ -134,5 +111,4 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - UI server restart: kill PID on 5050, then preview_start {name: "Determined UI"}.
 - Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"`.
 - Determined corpus DB: re-ingest at session start if DB mtime > ~1 week old.
-- reingest_changed is available as a tool: call it when corpus may be stale (files changed
-  outside the editor). After the first re-ingest post-d48836f, it will work correctly.
+- reingest_changed is available as a tool: call it when corpus may be stale.
