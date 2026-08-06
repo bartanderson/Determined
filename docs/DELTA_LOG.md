@@ -85,6 +85,26 @@ All 4 gaps from the 2026-08-04 evaluation run were implemented in `determined/ag
 
 ---
 
+## 2026-08-05 — list_features EP count discrepancy vs feature_shape (session 308)
+
+### Tool: list_features vs feature_shape — same label, different definitions
+
+**Observation:** `list_features` reported world/ with 164 EntryPts; `feature_shape('world')` reported 39 entry points. Both labeled "Entry points," no explanation of the difference.
+
+**Root cause:**
+- `list_features` was counting **cross-feature call edges** (each external call to a symbol += 1), so a symbol called 5 times from outside counted as 5 EPs. Also, `feat_entry_points` and `feat_cross_edges` were incremented in the same line — both columns were always identical.
+- `feature_shape` counts **distinct symbols** that have at least one external caller (a set).
+
+**Fix:**
+- Changed `feat_entry_points` in `list_features` from `defaultdict(int)` to `defaultdict(set)`, using `.add(callee)` instead of `+= 1`. EP column now = distinct callee symbols, matching `feature_shape`.
+- `feat_cross_edges` stays as the edge counter — CrossEdges column now meaningfully differs from EntryPts (164 edges vs 39 distinct symbols for world/).
+- Compiled-output warning switched from `feat_entry_points` to `feat_cross_edges` (edge volume is the right signal for "compiled output mirroring").
+- Added comment explaining the distinction.
+
+**Outcome:** FIXED — 459 tests pass. world/ now shows 39 EP (both tools agree).
+
+---
+
 ## 2026-08-04 — Second evaluation run against dj2 (session 297)
 
 ### Tool: detect_topology

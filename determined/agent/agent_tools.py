@@ -7601,8 +7601,11 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     if not feat_symbols:
         return f"No features found (depth={depth}" + (f", scope={scope}" if scope else "") + ")."
 
-    # Entry points: local symbols called by callers outside the directory.
-    feat_entry_points: dict[str, int] = defaultdict(int)
+    # Entry points: distinct local symbols called by callers outside the directory.
+    # CrossEdges: total count of cross-feature call edges (can exceed EP if a symbol
+    # has multiple external callers). These were identical before (both counted edges);
+    # now EP is a set so the column matches feature_shape's definition.
+    feat_entry_points: dict[str, set] = defaultdict(set)
     feat_cross_edges: dict[str, int] = defaultdict(int)
 
     # Build callee -> set-of-features map, supporting both full (module.name) and
@@ -7621,13 +7624,13 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
         caller_k = dir_key(caller_fp) if caller_fp else ""
         for feat in callee_feat_map.get(callee, set()):
             if caller_k != feat:
-                feat_entry_points[feat] += 1
+                feat_entry_points[feat].add(callee)
                 feat_cross_edges[feat] += 1
 
     # Build output ranked by entry points desc, then symbol count desc
     features = sorted(
         feat_symbols.keys(),
-        key=lambda f: (-feat_entry_points[f], -len(feat_symbols[f]))
+        key=lambda f: (-len(feat_entry_points[f]), -len(feat_symbols[f]))
     )
 
     prefix_note = f" (prefix={prefix})" if prefix else ""
@@ -7638,19 +7641,22 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     for feat in features:
         lines.append(
             f"{feat:<40} {len(feat_symbols[feat]):>5} {feat_stubs[feat]:>5} "
-            f"{feat_entry_points[feat]:>8} {feat_cross_edges[feat]:>10}"
+            f"{len(feat_entry_points[feat]):>8} {feat_cross_edges[feat]:>10}"
         )
 
-    # Compiled-output warning: lib/dist/build/out dominates EP while src/ exists with symbols
+    # Compiled-output warning: lib/dist/build/out dominates cross-edge traffic while
+    # src/ exists with symbols. Uses feat_cross_edges (total call edges) as the signal
+    # because edge volume — not distinct symbol count — indicates compiled mirroring.
     if not scope:
         _COMPILED_NAMES = {"lib", "dist", "build", "out"}
-        compiled_ep = {f: feat_entry_points[f] for f in features if f.split("/")[0] in _COMPILED_NAMES}
-        src_ep = feat_entry_points.get("src", 0)
+        compiled_ce = {f: feat_cross_edges[f] for f in features if f.split("/")[0] in _COMPILED_NAMES}
+        src_ce = feat_cross_edges.get("src", 0)
+        src_ep = len(feat_entry_points.get("src", set()))
         src_syms = len(feat_symbols.get("src", set()))
-        for compiled_feat, ep in compiled_ep.items():
-            if ep >= 5 * max(src_ep, 1) and src_syms > 10:
+        for compiled_feat, ce in compiled_ce.items():
+            if ce >= 5 * max(src_ce, 1) and src_syms > 10:
                 lines.append(
-                    f"\nNote: '{compiled_feat}' ({ep} EP) appears to be compiled output "
+                    f"\nNote: '{compiled_feat}' ({ce} cross-edges) appears to be compiled output "
                     f"mirroring 'src/' ({src_syms} syms, {src_ep} EP). "
                     f"For architecture analysis use: scope=src"
                 )
@@ -7663,7 +7669,7 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     for feat in features:
         sym_count = len(feat_symbols[feat])
         stub_count = feat_stubs[feat]
-        ep_count = feat_entry_points[feat]
+        ep_count = len(feat_entry_points[feat])
         if sym_count < 30 or ep_count < 2:
             continue
         if _is_asset_dir(feat):
@@ -7689,7 +7695,7 @@ def list_features(oracle: "DBOracle", args: dict) -> str:
     for feat in features:
         sym_count = len(feat_symbols[feat])
         stub_count = feat_stubs[feat]
-        ep_count = feat_entry_points[feat]
+        ep_count = len(feat_entry_points[feat])
         if ep_count >= 20 and stub_count >= 5 and not _is_asset_dir(feat):
             wired_incomplete.append((feat, sym_count, stub_count, ep_count))
 
