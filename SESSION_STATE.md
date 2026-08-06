@@ -1,6 +1,6 @@
-Written at commit: d9dbfda
+Written at commit: 0481245
 
-# SESSION STATE — session 307 final handoff
+# SESSION STATE — session 308 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,56 +9,57 @@ Written at commit: d9dbfda
 
 ## WHAT HAPPENED THIS SESSION (full arc)
 
-Short session. Two threads, one process change.
+Single focused task: Option A from s307 — `list_features` vs `feature_shape` EP count
+discrepancy.
 
-### Thread 1: Zero-Mem paper (arxiv 2607.29377)
+### Bug found and fixed: list_features EP definition (8176fc1) [V]
 
-Bart shared a paper on deterministic memory operations for LLM agents. Key finding:
-Zero-Mem eliminates LLM calls from memory ops (entity-context graph + temporal
-hierarchy + deterministic calibration); 57.6% latency reduction.
+**Symptom:** `list_features` showed world/ with 164 EntryPts; `feature_shape('world')`
+showed 39. Same label "Entry points," no explanation.
 
-Assessment:
-- Not useful for Determined (already does this -- deterministic layer, LLM only at narration)
-- Relevant to the companion MoE framework: the calibration layer (filtering conflicting
-  evidence from multiple memory structures) is a concrete worked solution to the
-  combination problem in deterministic MoE. Worth reading full method section before
-  designing the combination step.
+**Root cause:**
+- `list_features` counted cross-feature call *edges* (feat_entry_points += 1 per edge).
+  Same symbol called N times from outside counted as N EPs.
+- `feat_entry_points` and `feat_cross_edges` were incremented in the same statement --
+  both columns were always identical (redundant).
+- `feature_shape` uses a set: distinct callee symbols with at least one external caller.
 
-### Thread 2: Companion MoE framework
+**Fix in `determined/agent/agent_tools.py`:**
+- `feat_entry_points` changed to `defaultdict(set)`, `.add(callee)` instead of `+= 1`.
+- `feat_cross_edges` stays as int edge counter -- columns now meaningfully differ.
+- Compiled-output warning switched to use `feat_cross_edges` (edge volume is the right
+  signal for "compiled output mirroring"; symbol count would be too low to trigger).
+- 459 tests pass. [V]
 
-Bart is planning a deterministic mixture-of-experts framework as a separate project.
-Agreed: start it after a few real dj2 development sessions through Determined; real
-failures will define what the experts need to be. Not a Determined task.
+**dj2 full list_features after fix (key numbers):** [V]
+```
+world_app.py   107 syms  0 stubs   86 EP  160 CrossEdges
+world          564 syms 10 stubs   39 EP  164 CrossEdges
+dungeon_neo    141 syms  0 stubs    6 EP    6 CrossEdges
+config          45 syms 12 stubs    0 EP    0 CrossEdges
+```
+world/ CrossEdges >> EntryPts (164 vs 39): high call concentration on ~39 symbols.
+meta_agent.py 4 EP / 22 edges: tiny surface, heavily called.
+config: 0 external callers -- its 12 stubs don't block anything wired in yet.
 
-### Process change: session arc workflow (commit d9dbfda) [V]
-
-Added to CLAUDE.md:
-- Step 5 in session start checklist: create `session_arc.md` in scratchpad, seed with
-  carried-forward traps
-- Working agreement: append one line to arc after each commit
-- Session end Step 1: read arc file as source, fall back to git log if missing
-
-Memory saved: `feedback_session_arc.md`. MEMORY.md updated.
-
-Motivation: SESSION_STATE reconstruction at end is expensive when context is full.
-Arc file amortizes cost; wrap-up becomes verify + promote, not reconstruct.
+Logged in `docs/DELTA_LOG.md`. TRACKER updated (0481245). [V]
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**Step 0 — Arc file.** Create session_arc.md at session start (Step 5 is now in
-CLAUDE.md). Seed from the KNOWN TRAPS block below.
-
-**Option A: list_features vs feature_shape EP count discrepancy (Option D from s305).**
-list_features shows world/ with 164 EntryPts; feature_shape('world') shows 39.
-Different definitions, same label "Entry points", no explanation. Not logged yet.
-Run both tools on dj2, compare definitions in agent_tools.py, log delta in DELTA_LOG,
-decide if terminology should be unified.
-
 **Option B: New corpus for RM67 probe loop.**
-RM75 closed. Clone a new corpus into `C:\Users\bartl\dev\corpora\`, ingest with
-`tools/ingest_lang_corpus.py`, run RM67 probe.
+Clone a new corpus into `C:\Users\bartl\dev\corpora\`, ingest with
+`tools/ingest_lang_corpus.py`, run the RM67 probe (6 canonical questions).
+Candidates: anything not yet at "Full convergence" in TRACKER RM67 table, or a
+brand-new corpus to extend language coverage.
+
+**Option C: dj2 development session.**
+Run Determined on a real dj2 gap -- pick one of the 5 production stubs
+(_get_combat_context, _get_encounter_context, on_arc_completed,
+process_consequences, _register_world_tools), use feature_shape + frontier_priority
+to scope it, then fix it in dj2. This is the "real failures define what experts need"
+loop that precedes the companion MoE framework.
 
 ---
 
@@ -94,6 +95,8 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - frontier_priority and _get_chain_positions: Class.method JOIN bug fixed; bare-name + caller_file
   fallback in all three SQL JOINs. [V s306]
 - list_stubs LIMIT applies to non-FSM stubs only. FSM stubs always show in full. [V s306]
+- list_features EntryPts = distinct callee symbols; CrossEdges = total edge count.
+  These were identical before s308 (both counted edges). Now meaningfully separate. [V s308]
 
 ## RESOURCE / PROCESS RULES [V]
 
