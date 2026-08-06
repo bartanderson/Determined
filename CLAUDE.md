@@ -37,6 +37,15 @@ surprises that are still live. These are things that don't belong in memory file
 yet (too recent or specific) but that a fresh session would otherwise re-derive
 the hard way.
 
+**Step 5 -- Open session arc file**
+Create `session_arc.md` in the scratchpad directory. Seed it with:
+- The carried-forward traps from SESSION_STATE.md (copy the KNOWN TRAPS block verbatim)
+- A blank "## This session" section for commits to be logged as they land
+
+Path: `C:\Users\bartl\AppData\Local\Temp\claude\C--Users-bartl-dev-Determined\scratchpad\session_arc.md`
+(The scratchpad directory is session-specific; the file is discarded at session end after
+SESSION_STATE.md is written.)
+
 ---
 
 ## Environment
@@ -132,6 +141,9 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
 
 - Read/write access to this folder -- edit files in place, no patch files.
 - Run `git add` and `git commit` for completed work. Do NOT push -- Bart pushes.
+- **After each commit**: append one line to `session_arc.md` in the scratchpad:
+  `<SHA> -- <what changed and why>`. This is the raw material for SESSION_STATE.md
+  at wrap-up. One line per commit; no prose.
 - Before any multi-step sequence, state in one short line what is about to happen
   so Bart can abort. Skip this only for single-step actions.
 - **After any change**: run `tools/run_tests.py` — it auto-selects the minimum
@@ -177,11 +189,12 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
 Run this before writing SESSION_STATE.md. This runs when memory is least
 reliable -- nothing goes in the file from memory alone.
 
-**Step 1 -- Carry forward traps**
-Read the existing SESSION_STATE.md (if any). Identify any still-relevant failed
-approaches or traps and carry them forward into the new file -- re-tagged [?]
-unless re-verified in Step 2. Then overwrite SESSION_STATE.md in place.
-(Git history is the archive; no need to copy the old file elsewhere.)
+**Step 1 -- Use the session arc file**
+Read `session_arc.md` from the scratchpad. It contains the carried-forward traps
+(seeded at session start) and the per-commit log (appended after each commit).
+This is the source of truth for what happened -- do not reconstruct from memory.
+If the arc file is missing or incomplete, fall back to git log + reading SESSION_STATE.md,
+and note "arc file missing" at the top of the new SESSION_STATE.md.
 
 **Step 2 -- Verify before writing (anti-hallucination protocol)**
 A claim may be tagged [V] only if confirmed by a command or file read during
