@@ -48,18 +48,18 @@ Logged in `docs/DELTA_LOG.md`. TRACKER updated (0481245). [V]
 
 ## WHAT TO DO NEXT SESSION
 
-**Option B: New corpus for RM67 probe loop.**
-Clone a new corpus into `C:\Users\bartl\dev\corpora\`, ingest with
-`tools/ingest_lang_corpus.py`, run the RM67 probe (6 canonical questions).
-Candidates: anything not yet at "Full convergence" in TRACKER RM67 table, or a
-brand-new corpus to extend language coverage.
+**Standing loop (run every session):** run Determined on dj2, compare tool output
+to what Claude would say, log delta in DELTA_LOG.md, fix the tool.
 
-**Option C: dj2 development session.**
-Run Determined on a real dj2 gap -- pick one of the 5 production stubs
-(_get_combat_context, _get_encounter_context, on_arc_completed,
-process_consequences, _register_world_tools), use feature_shape + frontier_priority
-to scope it, then fix it in dj2. This is the "real failures define what experts need"
-loop that precedes the companion MoE framework.
+The immediate open thread: dj2 has 5 production stubs still unimplemented --
+_get_combat_context, _get_encounter_context, on_arc_completed, process_consequences,
+_register_world_tools. These are real game gaps, not test noise. Use frontier_priority
+and feature_shape to scope one, then fix it in dj2. The tool loop and the game loop
+are the same loop right now.
+
+If Bart wants to extend RM67 language coverage instead: clone a new corpus into
+`C:\Users\bartl\dev\corpora\`, ingest with `tools/ingest_lang_corpus.py`, run the
+6 canonical probe questions.
 
 ---
 
