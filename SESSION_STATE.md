@@ -1,6 +1,6 @@
-Written at commit: 5fbd981
+Written at commit: d9dbfda
 
-# SESSION STATE — session 306 final handoff
+# SESSION STATE — session 307 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
@@ -9,63 +9,56 @@ Written at commit: 5fbd981
 
 ## WHAT HAPPENED THIS SESSION (full arc)
 
-**Option A from s305 handoff: RM67 dj2 convergence probe update.**
-Re-ran list_stubs + frontier_priority on dj2 after s305 _caller_names fix.
-Found two more deltas; both fixed. Also fixed list_stubs display-limit bug.
+Short session. Two threads, one process change.
 
-### Delta 1: frontier_priority Class.method caller JOIN bug (commit 3cc2529) [V]
+### Thread 1: Zero-Mem paper (arxiv 2607.29377)
 
-`frontier_priority` SQL query and both queries in `_get_chain_positions`
-(`has_functional_caller`, `has_stub_caller`) had `JOIN functions caller_fn ON
-caller_fn.name = ge.caller` — same root cause as s305 `_caller_names` fix.
-graph_edges stores callers as "ContextBuilder.build"; functions stores bare "build".
-No match → production stubs (_get_combat_context, _get_encounter_context,
-on_arc_completed, _register_world_tools) were invisible to frontier_priority entirely.
-The note "all priority stubs are in test files" was a lie caused by this bug.
+Bart shared a paper on deterministic memory operations for LLM agents. Key finding:
+Zero-Mem eliminates LLM calls from memory ops (entity-context graph + temporal
+hierarchy + deterministic calibration); 57.6% latency reduction.
 
-Fix: bare-name + caller_file SQL fallback added to all three JOINs.
-After fix: all 5 production stubs appear in frontier_priority with score=1.
+Assessment:
+- Not useful for Determined (already does this -- deterministic layer, LLM only at narration)
+- Relevant to the companion MoE framework: the calibration layer (filtering conflicting
+  evidence from multiple memory structures) is a concrete worked solution to the
+  combination problem in deterministic MoE. Worth reading full method section before
+  designing the combination step.
 
-### Delta 2: list_stubs LIMIT 20 applied before FSM/non-FSM split (commit f0d6683) [V]
+### Thread 2: Companion MoE framework
 
-SQL `LIMIT 20` was applied to the combined query before Python split FSM vs non-FSM.
-On dj2 (12 FSM stubs), FSM stubs consumed 12 of 20 slots, leaving only 8 for Python
-stubs. `subraces` and `semantic_match_fighting_style` were silently cut from output.
+Bart is planning a deterministic mixture-of-experts framework as a separate project.
+Agreed: start it after a few real dj2 development sessions through Determined; real
+failures will define what the experts need to be. Not a Determined task.
 
-Fix: removed LIMIT from SQL; applied `regular_rows[:limit]` after split. FSM stubs
-always show in full. Limit now constrains non-FSM stubs only.
+### Process change: session arc workflow (commit d9dbfda) [V]
 
-459 tests pass [V].
+Added to CLAUDE.md:
+- Step 5 in session start checklist: create `session_arc.md` in scratchpad, seed with
+  carried-forward traps
+- Working agreement: append one line to arc after each commit
+- Session end Step 1: read arc file as source, fall back to git log if missing
 
-### TRACKER dj2 entry updated (commit 5fbd981) [V]
+Memory saved: `feedback_session_arc.md`. MEMORY.md updated.
 
-dj2 now: 25 stubs — 12 FSM (accepted), 3 test (accepted), 5 subrace/RM68 delete
-candidates (subraces, get_subraces_for_race, get_race_for_subrace,
-semantic_match_subrace, semantic_match_fighting_style), 5 production gaps
-(_get_combat_context, _get_encounter_context, on_arc_completed, process_consequences,
-_register_world_tools). All 3 convergence criteria met.
+Motivation: SESSION_STATE reconstruction at end is expensive when context is full.
+Arc file amortizes cost; wrap-up becomes verify + promote, not reconstruct.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**Step 0 — DB state.** dj2 DB last written 2026-08-05 evening (s305 probe).
-No code changes to dj2 since then. No re-ingest needed.
+**Step 0 — Arc file.** Create session_arc.md at session start (Step 5 is now in
+CLAUDE.md). Seed from the KNOWN TRAPS block below.
 
-**Option A: Option D from s305 — list_features vs feature_shape EP count discrepancy.**
-list_features shows world/ with 164 EntryPts; feature_shape('world') shows 39 Entry
-points. Different definitions, same label, no explanation. Not logged yet — worth
-logging in DELTA_LOG and deciding if terminology should be unified.
+**Option A: list_features vs feature_shape EP count discrepancy (Option D from s305).**
+list_features shows world/ with 164 EntryPts; feature_shape('world') shows 39.
+Different definitions, same label "Entry points", no explanation. Not logged yet.
+Run both tools on dj2, compare definitions in agent_tools.py, log delta in DELTA_LOG,
+decide if terminology should be unified.
 
 **Option B: New corpus for RM67 probe loop.**
-RM75 (corpus expansion) is closed. If a new corpus is wanted, clone into
-`C:\Users\bartl\dev\corpora\`, ingest with `tools/ingest_lang_corpus.py`,
-run the RM67 probe (list_stubs, frontier_priority, find_abc_gaps, detect_topology).
-
-**Option C: Companion framework (out-of-band).**
-Bart is planning a deterministic mixture-of-experts framework as a separate project.
-Agreed: start it after a few real dj2 development sessions through Determined; real
-failures will define the chapter plan better than speculation. Not a Determined task.
+RM75 closed. Clone a new corpus into `C:\Users\bartl\dev\corpora\`, ingest with
+`tools/ingest_lang_corpus.py`, run RM67 probe.
 
 ---
 
@@ -87,8 +80,7 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - FSM stubs have 0 static callers (string dispatch) -- don't treat as low-priority. [V s295]
 - frontier_priority [test] tag uses _is_test_path() -- keep in sync with _is_test_feature(). [V s296]
 - list_stubs caller count = ALL edges (resolved + unresolved); frontier_priority = resolved only. [V s297]
-- dj2 "tail" stubs: prior session (298) concluded "phantom edges, lower priority" for
-  _get_encounter_context etc. -- that was WRONG. Those callers ARE in the corpus. [V s305]
+- dj2 "tail" stubs: prior session (298) concluded "phantom edges, lower priority" -- WRONG. [V s305]
 - analyze_corpus connectivity-dominant threshold requires orphaned_impl >= 50. [V s299]
 - New tools registered in TOOLS dict: add AFTER function def, not inside the dict literal. [V s299]
 - git commit messages: PowerShell @'...'@ here-strings fail on em-dashes and smart quotes.
@@ -96,13 +88,11 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - _get_abc_gap_set() excludes no-subclass ABCs by design -- they belong to find_abc_gaps. [V s300]
 - Stale corpus DB produces phantom stubs. Re-ingest before trusting stub list. [V s301]
 - DB forward-slash paths: when querying by file_path, use forward slashes not backslashes. [V s303]
-- persist_file_analysis ingested_at fix: Python file rows now get ingested_at on every write.
-  Old corpus DBs ingested before d48836f have NULL ingested_at for Python files. [V s304]
+- persist_file_analysis ingested_at fix: old DBs pre-d48836f have NULL ingested_at for Python files. [V s304]
 - _ep_tier excludes .json/.yaml/.toml (protocol tier). FSM config symbols not inferred EPs. [V s305]
-- _caller_names bare-name fallback: Class.method callers resolved via bare name + caller_file.
-  Re-run list_stubs on any corpus with prior "(unresolved)" surprises. [V s305]
-- frontier_priority and _get_chain_positions: same Class.method JOIN bug now fixed in SQL.
-  All three JOINs use bare-name + caller_file fallback. [V s306]
+- _caller_names bare-name fallback: Class.method callers resolved via bare name + caller_file. [V s305]
+- frontier_priority and _get_chain_positions: Class.method JOIN bug fixed; bare-name + caller_file
+  fallback in all three SQL JOINs. [V s306]
 - list_stubs LIMIT applies to non-FSM stubs only. FSM stubs always show in full. [V s306]
 
 ## RESOURCE / PROCESS RULES [V]
@@ -112,3 +102,4 @@ log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
 - Duplicate server trap: `netstat -ano | Select-String "TCP.*:5050.*LISTENING"`.
 - Determined corpus DB: re-ingest at session start if DB mtime > ~1 week old.
 - reingest_changed is available as a tool: call it when corpus may be stale.
+- Session arc: create session_arc.md in scratchpad at start; append per commit; promote at wrap.
