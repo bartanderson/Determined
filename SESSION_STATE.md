@@ -1,72 +1,43 @@
-Written at commit: 0481245
+Written at commit: 12de8a9
 
-# SESSION STATE — session 308 final handoff
+# SESSION STATE — session 309 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
 
 ---
 
-## WHAT HAPPENED THIS SESSION (full arc)
+## WHAT HAPPENED THIS SESSION
 
-Single focused task: Option A from s307 — `list_features` vs `feature_shape` EP count
-discrepancy.
+Single action: declared Determined complete.
 
-### Bug found and fixed: list_features EP definition (8176fc1) [V]
+- All open TRACKER items (RM21, RM73, RM75, RM76, RM77, RM-Perf) deleted.
+- RM67 moved to maintenance mode: fix regressions when they appear, no scheduled development.
+- TRACKER reduced from 383 lines to 77. [V]
+- Memory updated: `feedback_work_focus.md` reflects complete status and hard rule. [V]
+- Committed: 12de8a9 [V]
 
-**Symptom:** `list_features` showed world/ with 164 EntryPts; `feature_shape('world')`
-showed 39. Same label "Entry points," no explanation.
-
-**Root cause:**
-- `list_features` counted cross-feature call *edges* (feat_entry_points += 1 per edge).
-  Same symbol called N times from outside counted as N EPs.
-- `feat_entry_points` and `feat_cross_edges` were incremented in the same statement --
-  both columns were always identical (redundant).
-- `feature_shape` uses a set: distinct callee symbols with at least one external caller.
-
-**Fix in `determined/agent/agent_tools.py`:**
-- `feat_entry_points` changed to `defaultdict(set)`, `.add(callee)` instead of `+= 1`.
-- `feat_cross_edges` stays as int edge counter -- columns now meaningfully differ.
-- Compiled-output warning switched to use `feat_cross_edges` (edge volume is the right
-  signal for "compiled output mirroring"; symbol count would be too low to trigger).
-- 459 tests pass. [V]
-
-**dj2 full list_features after fix (key numbers):** [V]
-```
-world_app.py   107 syms  0 stubs   86 EP  160 CrossEdges
-world          564 syms 10 stubs   39 EP  164 CrossEdges
-dungeon_neo    141 syms  0 stubs    6 EP    6 CrossEdges
-config          45 syms 12 stubs    0 EP    0 CrossEdges
-```
-world/ CrossEdges >> EntryPts (164 vs 39): high call concentration on ~39 symbols.
-meta_agent.py 4 EP / 22 edges: tiny surface, heavily called.
-config: 0 external callers -- its 12 stubs don't block anything wired in yet.
-
-Logged in `docs/DELTA_LOG.md`. TRACKER updated (0481245). [V]
+**Bart's rule (session 309):** No Determined feature work while dj2 development is active.
+Determined sessions = probe + regression fix only. Two active dev threads = cognitive overhead
+that defeats the purpose of building the tool.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**Standing loop (run every session):** run Determined on dj2, compare tool output
-to what Claude would say, log delta in DELTA_LOG.md, fix the tool.
+**Determined is complete. Next work is dj2 development.**
 
-The immediate open thread: dj2 has 5 production stubs still unimplemented --
-_get_combat_context, _get_encounter_context, on_arc_completed, process_consequences,
-_register_world_tools. These are real game gaps, not test noise. Use frontier_priority
-and feature_shape to scope one, then fix it in dj2. The tool loop and the game loop
-are the same loop right now.
+Start a dj2 session. Use Determined to analyze dj2 (read-only probes). Make game
+code changes in dj2. Do not make Determined feature changes.
 
-If Bart wants to extend RM67 language coverage instead: clone a new corpus into
-`C:\Users\bartl\dev\corpora\`, ingest with `tools/ingest_lang_corpus.py`, run the
-6 canonical probe questions.
+First things to do in dj2 (from last RM67 probe):
+- RM68: remove subrace stubs from dnd_data.py, character_generator.py, authority_system.py
+  (5 stubs: subraces, get_subraces_for_race, get_race_for_subrace, semantic_match_subrace,
+  semantic_match_fighting_style)
+- 5 production stubs to implement: _get_combat_context, _get_encounter_context,
+  on_arc_completed, process_consequences, _register_world_tools
 
----
-
-## PROCESS RULE (standing) [V]
-
-Every session: run Determined on dj2, compare tool output to what Claude would say,
-log delta in DELTA_LOG.md, fix the tool. Never synthesize without fixing.
+Run Determined against dj2 at session start to get current state before touching anything.
 
 ---
 
