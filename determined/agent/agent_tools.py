@@ -2154,11 +2154,17 @@ def _get_chain_positions(conn) -> tuple[set, set, set]:
     ).fetchall()}
 
     # Stubs that have at least one functional (non-stub) caller
+    # Bare-name fallback for Class.method callers (same fix as frontier_priority).
     has_functional_caller = {r[0] for r in conn.execute(
         """
         SELECT DISTINCT f.name FROM functions f
         JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
-        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        JOIN functions caller_fn ON (
+            caller_fn.name = ge.caller
+            OR (INSTR(ge.caller, '.') > 0
+                AND caller_fn.name = SUBSTR(ge.caller, INSTR(ge.caller, '.')+1)
+                AND caller_fn.file_path = ge.caller_file)
+        )
         WHERE f.is_stub = 1 AND caller_fn.is_stub = 0
         """
     ).fetchall()}
@@ -2168,7 +2174,12 @@ def _get_chain_positions(conn) -> tuple[set, set, set]:
         """
         SELECT DISTINCT f.name FROM functions f
         JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
-        JOIN functions caller_fn ON caller_fn.name = ge.caller
+        JOIN functions caller_fn ON (
+            caller_fn.name = ge.caller
+            OR (INSTR(ge.caller, '.') > 0
+                AND caller_fn.name = SUBSTR(ge.caller, INSTR(ge.caller, '.')+1)
+                AND caller_fn.file_path = ge.caller_file)
+        )
         WHERE f.is_stub = 1 AND caller_fn.is_stub = 1
         """
     ).fetchall()}
@@ -2471,12 +2482,19 @@ def frontier_priority(oracle: "DBOracle", args: dict) -> str:
     conn = oracle.conn
 
     # All stubs with at least one functional caller (direct-call shape only)
+    # Bare-name fallback: graph_edges stores callers as "Class.method"; functions stores bare "method".
+    # Match on exact name OR (bare name + caller_file) to avoid ambiguity.
     stubs = conn.execute(
         """
         SELECT f.name, f.file_path, COUNT(DISTINCT ge.caller) AS callers
         FROM functions f
         JOIN graph_edges ge ON (ge.callee = f.name OR ge.callee LIKE '%.' || f.name)
-        JOIN functions caller_fn ON caller_fn.name = ge.caller AND caller_fn.is_stub = 0
+        JOIN functions caller_fn ON (
+            caller_fn.name = ge.caller
+            OR (INSTR(ge.caller, '.') > 0
+                AND caller_fn.name = SUBSTR(ge.caller, INSTR(ge.caller, '.')+1)
+                AND caller_fn.file_path = ge.caller_file)
+        ) AND caller_fn.is_stub = 0
         WHERE f.is_stub = 1
         GROUP BY f.name, f.file_path
         """,
