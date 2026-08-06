@@ -1751,9 +1751,7 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
           AND f.file_path NOT LIKE '%\\tests\\%'
         GROUP BY f.name, f.file_path
         ORDER BY callers DESC, f.file_path, f.name
-        LIMIT ?
         """,
-        (limit,),
     ).fetchall()
     if not rows:
         return "No stub functions found in corpus."
@@ -1785,6 +1783,7 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
 
     regular_rows = [(r[0], r[1], r[2]) for r in rows if not _is_fsm_stub(r[0], r[1])]
     fsm_rows     = [(r[0], r[1], r[2]) for r in rows if     _is_fsm_stub(r[0], r[1])]
+    regular_rows = regular_rows[:limit]
 
     def _caller_names(stub_name: str, limit: int = 3) -> list:
         rows_ = conn.execute(
@@ -1815,7 +1814,7 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
                     result.append(f"{caller} (unresolved)")
         return result
 
-    lines = [f"Stub functions ({len(rows)} shown, ranked by caller count):"]
+    lines = [f"Stub functions ({len(regular_rows)} shown, ranked by caller count):"]
     for name, fp_raw, callers in regular_rows:
         fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
         callers = callers or 0
