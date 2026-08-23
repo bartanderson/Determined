@@ -36,6 +36,24 @@ inference paths. Fix: strip `_THINK_RE` from content, drop the fallback entirely
 
 2026-08-05: Stale corpus DB produces phantom stubs. The July 31 self-probe flagged pattern_executor.__init__ and contract_drift_classifier.__init__ as real gaps. Fresh re-ingest (s301) cleared both — neither class has or ever had an explicit __init__. The July 17 DB was 3 weeks stale; the stub detection at that snapshot classified something differently. Lesson: a "real gap" finding is only as trustworthy as the freshness of the DB it came from. Always re-ingest before trusting a stub list, especially if the DB hasn't been refreshed in more than one session.
 
+2026-08-23 (s312): The right way to call Determined tools from a session is
+`tools/query.py`, not a one-off probe script. It wraps `dispatch()` and routes
+through the confidence-check layer added in RM71. Examples:
+  python tools/query.py analyze_corpus
+  python tools/query.py blast_radius   (then enter args interactively via dispatch)
+  python tools/query.py --db other.db list_stubs
+PowerShell quoting of JSON args is awkward; pass args via positional string with
+doubled inner quotes: `"{""target"": ""Foo""}"`. For complex args, write a one-line
+Python call directly: `.venv\Scripts\python -c "from ... import dispatch, ...; print(dispatch(...))"`.
+Importing tool functions directly (bypassing dispatch) skips the confidence check
+and requires knowing the oracle-vs-assessor layer -- wrong path.
+
+2026-08-23 (s312): call_arg_count was silently dropped at GraphEdge/GraphBuilder/
+EngineRunner. parse_ast.py computed it; _persist_graph_edges used getattr(edge,
+"call_arg_count", None) -- always None because GraphEdge had no field. Fix: added
+field to GraphEdge, param to add_reference(), passthrough in run_engine.py loop.
+After re-ingest: 22631/27169 edges populated (NULLs = non-static edges, correct).
+
 ## Active entries
 
 2026-08-03 (s291): F19 root cause was two files with the same name in different directories
