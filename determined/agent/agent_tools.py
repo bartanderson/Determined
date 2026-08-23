@@ -1877,8 +1877,13 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     lines.append(
         "  Note: caller count includes all graph edges (resolved + unresolved)."
         " Use frontier_priority for resolved-functional-caller ranking."
-        " '+N stub edges' = edges to other stubs in this list; nonzero means"
-        " the interaction between stubs may be the finding, not any single stub."
+    )
+    lines.append(
+        "  WARNING: Before fixing any stub marked '+N stub edges', rule out"
+        " system interplay first. When stubs share edges, the interface between"
+        " them is the harder problem -- fixing one stub alone may leave the"
+        " interaction broken. Confirm the interaction is NOT the root cause"
+        " before treating either stub as an individual fix."
     )
     return "\n".join(lines)
 
