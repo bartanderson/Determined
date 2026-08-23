@@ -53,6 +53,7 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_feature_work_plan.py",
         "tests/regression/test_find_abc_gaps.py",
         "tests/regression/test_find_bridges_and_ghosts.py",
+        "tests/regression/test_find_interplay_gaps.py",
         "tests/regression/test_goal_intake.py",
         "tests/regression/test_http_chain.py",
         "tests/regression/test_implementation_order.py",

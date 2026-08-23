@@ -2081,6 +2081,209 @@ def find_abc_gaps(oracle: "DBOracle", args: dict) -> str:
     return "\n".join(lines)
 
 
+def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
+    """
+    find_interplay_gaps() - detect interaction problems between implemented modules.
+
+    Surfaces five patterns where the problem lives in the interface between parts,
+    not in any single part (component substitution fallacy defense):
+
+    1. Unresolved edges between implemented functions -- A calls B, B exists, but
+       Determined can't confirm the link. Likely interface drift or naming mismatch.
+    2. Production edges with no test coverage -- the interaction exists in real code
+       but is never exercised by tests. Cannot know if the interface is correct.
+    3. Interaction hubs -- symbols called by many AND calling many others. High
+       blast radius; a contract change here ripples everywhere.
+    4. Circular file dependencies -- file A calls file B AND file B calls file A.
+       Tight coupling that makes each side's behavior depend on the other.
+    5. Tightly-coupled file pairs -- more than threshold cross-file edges between
+       the same two files. May indicate a missing abstraction at the boundary.
+    """
+    import json as _json
+
+    conn = oracle.conn
+    threshold = int(args.get("threshold", 5))
+    hub_fan = int(args.get("hub_fan", 10))
+
+    def _is_test(fp: str) -> bool:
+        fp = (fp or "").replace("\\", "/")
+        return "/test" in fp or fp.startswith("test")
+
+    sections: list[str] = []
+
+    # ------------------------------------------------------------------
+    # 1. Unresolved edges between implemented (non-stub) functions
+    # ------------------------------------------------------------------
+    unresolved_impl = conn.execute(
+        """
+        SELECT ge.caller, ge.callee, ge.caller_file
+        FROM graph_edges ge
+        JOIN functions fc ON (fc.name = ge.caller OR ge.caller LIKE '%.' || fc.name)
+        WHERE ge.resolved = 0
+          AND fc.is_stub = 0
+          AND ge.caller_file NOT LIKE '%/test%'
+          AND ge.caller_file NOT LIKE '%\\test%'
+          AND ge.callee NOT LIKE '%<builtin>%'
+          AND ge.callee NOT LIKE '%<unknown>%'
+        ORDER BY ge.caller_file, ge.caller
+        LIMIT 50
+        """
+    ).fetchall()
+
+    if unresolved_impl:
+        lines = [f"1. UNRESOLVED EDGES BETWEEN IMPLEMENTED FUNCTIONS ({len(unresolved_impl)} shown):"]
+        lines.append("   A calls B, B is in the corpus, but the link cannot be confirmed.")
+        lines.append("   Likely cause: interface drift, renamed function, or wrong import path.")
+        lines.append("")
+        for caller, callee, cf in unresolved_impl:
+            fp = (cf or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"   {caller} -> {callee}  ({fp})")
+        sections.append("\n".join(lines))
+    else:
+        sections.append("1. UNRESOLVED EDGES BETWEEN IMPLEMENTED FUNCTIONS: none found.")
+
+    # ------------------------------------------------------------------
+    # 2. Production edges with no test coverage
+    # ------------------------------------------------------------------
+    prod_edges = conn.execute(
+        """
+        SELECT ge.caller, ge.callee, ge.caller_file
+        FROM graph_edges ge
+        JOIN functions fc ON (fc.name = ge.caller OR ge.caller LIKE '%.' || fc.name)
+        WHERE fc.is_stub = 0
+          AND ge.caller_file NOT LIKE '%/test%'
+          AND ge.caller_file NOT LIKE '%\\test%'
+        """
+    ).fetchall()
+
+    # A prod edge (A->B) is "covered" if any test file calls B directly.
+    test_callees = set()
+    for row in conn.execute(
+        """
+        SELECT ge.callee FROM graph_edges ge
+        WHERE ge.caller_file LIKE '%/test%'
+           OR ge.caller_file LIKE '%\\test%'
+        """
+    ).fetchall():
+        test_callees.add(row[0])
+
+    uncovered = [
+        (caller, callee, cf)
+        for caller, callee, cf in prod_edges
+        if callee not in test_callees
+    ][:50]
+
+    if uncovered:
+        lines = [f"2. PRODUCTION EDGES NOT EXERCISED IN TESTS ({len(uncovered)} shown):"]
+        lines.append("   These interactions exist in real code but tests never trigger them.")
+        lines.append("   An interface can be wrong here and tests will never catch it.")
+        lines.append("")
+        for caller, callee, cf in uncovered:
+            fp = (cf or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"   {caller} -> {callee}  ({fp})")
+        sections.append("\n".join(lines))
+    else:
+        sections.append("2. PRODUCTION EDGES NOT EXERCISED IN TESTS: all production edges have test coverage.")
+
+    # ------------------------------------------------------------------
+    # 3. Interaction hubs
+    # ------------------------------------------------------------------
+    fan_out = {}
+    fan_in = {}
+    for row in conn.execute("SELECT caller, callee FROM graph_edges").fetchall():
+        fan_out[row[0]] = fan_out.get(row[0], 0) + 1
+        fan_in[row[1]] = fan_in.get(row[1], 0) + 1
+
+    hubs = [
+        (sym, fan_in.get(sym, 0), fan_out.get(sym, 0))
+        for sym in set(fan_in) | set(fan_out)
+        if fan_in.get(sym, 0) >= hub_fan and fan_out.get(sym, 0) >= hub_fan
+    ]
+    hubs.sort(key=lambda x: -(x[1] + x[2]))
+
+    if hubs:
+        lines = [f"3. INTERACTION HUBS -- high fan-in AND fan-out (>={hub_fan} each) ({len(hubs)} found):"]
+        lines.append("   A contract change here ripples in both directions.")
+        lines.append("   These are the highest blast-radius symbols in the system.")
+        lines.append("")
+        for sym, fi, fo in hubs[:20]:
+            row = conn.execute(
+                "SELECT file_path FROM functions WHERE name = ? LIMIT 1", (sym,)
+            ).fetchone()
+            fp = (row[0] if row else "").replace("\\", "/").split("/")[-1] if row else "?"
+            lines.append(f"   {sym}  ({fp})  in={fi} out={fo}")
+        sections.append("\n".join(lines))
+    else:
+        sections.append(f"3. INTERACTION HUBS: none with fan-in and fan-out both >= {hub_fan}.")
+
+    # ------------------------------------------------------------------
+    # 4. Circular file dependencies
+    # ------------------------------------------------------------------
+    file_edges: set[tuple[str, str]] = set()
+    for row in conn.execute(
+        "SELECT DISTINCT ge.caller_file, f.file_path FROM graph_edges ge "
+        "JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name) "
+        "WHERE ge.caller_file IS NOT NULL AND f.file_path IS NOT NULL"
+    ).fetchall():
+        a = (row[0] or "").replace("\\", "/")
+        b = (row[1] or "").replace("\\", "/")
+        if a != b:
+            file_edges.add((a, b))
+
+    cycles = sorted(
+        {(a, b) for a, b in file_edges if (b, a) in file_edges and a < b}
+    )
+
+    if cycles:
+        lines = [f"4. CIRCULAR FILE DEPENDENCIES ({len(cycles)} pair(s)):"]
+        lines.append("   File A calls into file B AND file B calls back into file A.")
+        lines.append("   Each side's behavior depends on the other -- hard to test in isolation.")
+        lines.append("")
+        for a, b in cycles[:20]:
+            lines.append(f"   {a.split('/')[-1]}  <->  {b.split('/')[-1]}")
+        sections.append("\n".join(lines))
+    else:
+        sections.append("4. CIRCULAR FILE DEPENDENCIES: none found.")
+
+    # ------------------------------------------------------------------
+    # 5. Tightly-coupled file pairs
+    # ------------------------------------------------------------------
+    pair_counts: dict[tuple[str, str], int] = {}
+    for row in conn.execute(
+        "SELECT ge.caller_file, f.file_path FROM graph_edges ge "
+        "JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name) "
+        "WHERE ge.caller_file IS NOT NULL AND f.file_path IS NOT NULL"
+    ).fetchall():
+        a = (row[0] or "").replace("\\", "/")
+        b = (row[1] or "").replace("\\", "/")
+        if a != b:
+            key = (min(a, b), max(a, b))
+            pair_counts[key] = pair_counts.get(key, 0) + 1
+
+    tight_pairs = sorted(
+        [(cnt, a, b) for (a, b), cnt in pair_counts.items() if cnt >= threshold],
+        reverse=True,
+    )
+
+    if tight_pairs:
+        lines = [f"5. TIGHTLY-COUPLED FILE PAIRS (>={threshold} cross-edges) ({len(tight_pairs)} pair(s)):"]
+        lines.append("   Many edges between the same two files may mean a missing abstraction at their boundary.")
+        lines.append("")
+        for cnt, a, b in tight_pairs[:20]:
+            lines.append(f"   {a.split('/')[-1]}  <->  {b.split('/')[-1]}  ({cnt} edges)")
+        sections.append("\n".join(lines))
+    else:
+        sections.append(f"5. TIGHTLY-COUPLED FILE PAIRS: none with >= {threshold} cross-edges.")
+
+    header = (
+        "INTERPLAY GAP ANALYSIS\n"
+        "======================\n"
+        "Patterns where the problem is the interaction between parts, not a single part.\n"
+        "Rule out these before treating any issue as a single-module fix.\n"
+    )
+    return header + "\n\n".join(sections)
+
+
 _ENTRY_POINT_PATH_HINTS = {
     "route", "routes", "view", "views", "handler", "handlers",
     "endpoint", "endpoints", "cli", "commands", "command",
@@ -8915,6 +9118,7 @@ TOOLS = {
     # Stub tools
     "list_stubs":           (list_stubs,            "oracle"),
     "find_abc_gaps":        (find_abc_gaps,         "oracle"),
+    "find_interplay_gaps":  (find_interplay_gaps,   "oracle"),
     "detect_topology":      (detect_topology,       "oracle"),
     "frontier_coverage":    (frontier_coverage,     "oracle"),
     "find_orphaned_impls":      (find_orphaned_impls,       "oracle"),

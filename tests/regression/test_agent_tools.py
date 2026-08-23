@@ -528,6 +528,7 @@ def test_dispatch_all_tools_registered():
         "reason_about",
         "score_stub",
         "find_abc_gaps",
+        "find_interplay_gaps",
         "detect_topology",
         "find_orphaned_impls",
         "frontier_priority",

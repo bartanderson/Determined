@@ -272,6 +272,17 @@ REGISTRY: dict[str, dict] = {
         "use_when": "You want to find what abstract interfaces need to be implemented — different from call-graph stubs, these are contract requirements.",
         "category": "understanding",
     },
+    "find_interplay_gaps": {
+        "purpose": "Detect interaction problems between implemented modules (component substitution fallacy defense). Surfaces five patterns: unresolved edges between implemented functions (interface drift), production edges with no test coverage, interaction hubs (high fan-in AND fan-out), circular file dependencies, and tightly-coupled file pairs.",
+        "args": {
+            "threshold": "(optional) min cross-file edge count to flag tight coupling, default 5",
+            "hub_fan": "(optional) min fan-in AND fan-out to flag an interaction hub, default 10",
+        },
+        "output": "Five-section report: unresolved impl edges, uncovered prod edges, hubs, circular deps, tight pairs",
+        "feeds": ["blast_radius", "call_tree", "list_stubs"],
+        "use_when": "BEFORE treating any issue as a single-module fix -- run this first to rule out that the problem lives in the interaction between modules, not in any one module. Also run when an interface change is suspected or when a bug only appears under specific call sequences.",
+        "category": "structural",
+    },
     "project_stub": {
         "purpose": "Generate a concrete implementation for a stub function using call-graph context.",
         "args": {"symbol": "name of the stub function to implement"},
