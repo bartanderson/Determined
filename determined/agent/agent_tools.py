@@ -1785,32 +1785,33 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     fsm_rows     = [(r[0], r[1], r[2]) for r in rows if     _is_fsm_stub(r[0], r[1])]
     regular_rows = regular_rows[:limit]
 
-    def _co_stub_edge_count(stub_name: str) -> int:
-        """Count edges between this stub and any other stub in the corpus."""
+    def _co_stub_edges(stub_name: str) -> list:
+        """Return names of other stubs in the corpus connected to this stub by an edge."""
         try:
-            out_count = conn.execute(
+            out_rows = conn.execute(
                 """
-                SELECT COUNT(*) FROM graph_edges ge
+                SELECT DISTINCT f.name FROM graph_edges ge
                 JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name)
                 WHERE (ge.caller = ? OR ge.caller LIKE '%.' || ?)
                   AND f.is_stub = 1
                   AND f.name != ?
                 """,
                 (stub_name, stub_name, stub_name),
-            ).fetchone()[0] or 0
-            in_count = conn.execute(
+            ).fetchall()
+            in_rows = conn.execute(
                 """
-                SELECT COUNT(*) FROM graph_edges ge
+                SELECT DISTINCT f.name FROM graph_edges ge
                 JOIN functions f ON (f.name = ge.caller OR ge.caller LIKE '%.' || f.name)
                 WHERE (ge.callee = ? OR ge.callee LIKE '%.' || ?)
                   AND f.is_stub = 1
                   AND f.name != ?
                 """,
                 (stub_name, stub_name, stub_name),
-            ).fetchone()[0] or 0
-            return out_count + in_count
+            ).fetchall()
+            names = {r[0] for r in out_rows} | {r[0] for r in in_rows}
+            return sorted(names)
         except Exception:
-            return 0
+            return []
 
     def _caller_names(stub_name: str, limit: int = 3) -> list:
         rows_ = conn.execute(
@@ -1846,8 +1847,8 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
         callers = callers or 0
         depth = _chain_depth(name)
-        co_edges = _co_stub_edge_count(name)
-        co_tag = f", +{co_edges} stub edges" if co_edges > 0 else ""
+        co_stubs = _co_stub_edges(name)
+        co_tag = f", +{len(co_stubs)} stub edges [{', '.join(co_stubs)}]" if co_stubs else ""
         if callers == 0 and depth == 0:
             depth_tag = "isolated"
         elif depth > 0:
@@ -1875,16 +1876,16 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     lines.append(
         "  Note: caller count includes all graph edges (resolved + unresolved)."
         " Use frontier_priority for resolved-functional-caller ranking."
-        " '+N stub edges' = edges to any other stub in the corpus (not just this list)."
+        " '+N stub edges [names]' = other stubs in the corpus directly connected to this one."
     )
     lines.append(
-        "  WARNING: Before fixing any stub marked '+N stub edges', rule out"
-        " system interplay first -- it is the harder problem and must be"
-        " eliminated before individual fixes. To investigate: run call_tree on"
-        " each connected stub and look for common callers. A shared caller means"
-        " its contract depends on both stubs; the interface is the finding, not"
-        " either stub alone. Only when no shared caller exists is it safe to"
-        " treat the stubs as independent component gaps."
+        "  WARNING -- system interplay check required before any individual fix:"
+        " If a stub shows stub edges, look at the named stubs. For each one ask:"
+        " 'Does implementing THIS stub require knowing what THAT stub returns or does?'"
+        " If yes -- do not fix either stub alone. Design the interface between them"
+        " first: what data must flow between them, and in what order? Only after"
+        " that design question is answered should you write code for either."
+        " If no -- they are independent and each can be fixed on its own."
     )
     return "\n".join(lines)
 
