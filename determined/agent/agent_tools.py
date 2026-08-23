@@ -1785,6 +1785,35 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     fsm_rows     = [(r[0], r[1], r[2]) for r in rows if     _is_fsm_stub(r[0], r[1])]
     regular_rows = regular_rows[:limit]
 
+    stub_name_set = {r[0] for r in regular_rows}
+
+    def _co_stub_edge_count(stub_name: str) -> int:
+        """Count edges between this stub and any other stub in the current list."""
+        try:
+            out_count = conn.execute(
+                """
+                SELECT COUNT(*) FROM graph_edges ge
+                JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name)
+                WHERE (ge.caller = ? OR ge.caller LIKE '%.' || ?)
+                  AND f.is_stub = 1
+                  AND f.name != ?
+                """,
+                (stub_name, stub_name, stub_name),
+            ).fetchone()[0] or 0
+            in_count = conn.execute(
+                """
+                SELECT COUNT(*) FROM graph_edges ge
+                JOIN functions f ON (f.name = ge.caller OR ge.caller LIKE '%.' || f.name)
+                WHERE (ge.callee = ? OR ge.callee LIKE '%.' || ?)
+                  AND f.is_stub = 1
+                  AND f.name != ?
+                """,
+                (stub_name, stub_name, stub_name),
+            ).fetchone()[0] or 0
+            return out_count + in_count
+        except Exception:
+            return 0
+
     def _caller_names(stub_name: str, limit: int = 3) -> list:
         rows_ = conn.execute(
             """
@@ -1819,6 +1848,8 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         fp = (fp_raw or "").replace("\\", "/").split("/")[-1]
         callers = callers or 0
         depth = _chain_depth(name)
+        co_edges = _co_stub_edge_count(name)
+        co_tag = f", +{co_edges} stub edges" if co_edges > 0 else ""
         if callers == 0 and depth == 0:
             depth_tag = "isolated"
         elif depth > 0:
@@ -1828,9 +1859,9 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         if 1 <= callers <= 3:
             caller_names = _caller_names(name)
             caller_str = ", ".join(caller_names) if caller_names else "?"
-            lines.append(f"  {name} in {fp}  ({callers} callers [{caller_str}], {depth_tag})")
+            lines.append(f"  {name} in {fp}  ({callers} callers [{caller_str}], {depth_tag}{co_tag})")
         else:
-            lines.append(f"  {name} in {fp}  ({callers} callers, {depth_tag})")
+            lines.append(f"  {name} in {fp}  ({callers} callers, {depth_tag}{co_tag})")
 
     if fsm_rows:
         lines.append("")
@@ -1846,6 +1877,8 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     lines.append(
         "  Note: caller count includes all graph edges (resolved + unresolved)."
         " Use frontier_priority for resolved-functional-caller ranking."
+        " '+N stub edges' = edges to other stubs in this list; nonzero means"
+        " the interaction between stubs may be the finding, not any single stub."
     )
     return "\n".join(lines)
 
