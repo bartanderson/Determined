@@ -1,4 +1,26 @@
 # tools/analysis/observability/instruments.py
+#
+# OBSERVABILITY SCOPE (Option B -- RM73)
+# =======================================
+# MONITORED (signals emitted during EngineRunner.run):
+#   ingestion_instrument  -- file_count, symbol_reference_count
+#   graph_instrument      -- edge_count
+#   classification_instrument -- bucket distribution (project/stdlib/unknown)
+#   propagation_instrument -- edge_ref_ratio, edge_density
+#
+# NOT MONITORED (known gaps -- Option A follow-on work):
+#   - Ingest failure / partial ingest (files silently skipped due to parse errors)
+#   - Corpus returning empty on a non-empty source directory
+#   - Query returning no results when results are expected (false-negative)
+#   - Schema staleness (corpus predates a migration; call_arg_count=0 everywhere)
+#   - Per-file re-ingest failure (reingest_file exceptions are logged but not signaled)
+#   - Transitive dependent re-ingest coverage (find_transitive_dependents gaps)
+#   - LLM call failure / timeout (llm_client errors are caught, not signaled)
+#   - Corpus-level staleness (mtime drift -- covered by detect_changed_files,
+#     not by a signal)
+#
+# All signals are structure-class only. No integrity, stability, or
+# query-level signals are emitted at ingest time.
 
 from collections import Counter
 
