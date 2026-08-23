@@ -1,43 +1,74 @@
-Written at commit: 12de8a9
+Written at commit: d20cf90
 
-# SESSION STATE — session 309 final handoff
+# SESSION STATE — session 310 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
+## Tests: 338 passed, 4 deselected [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-Single action: declared Determined complete.
+CSF (component substitution fallacy) operationalized in Determined. Source: csf.md
+committed last session (b8dc661). DetMoE determined the capability was required.
 
-- All open TRACKER items (RM21, RM73, RM75, RM76, RM77, RM-Perf) deleted.
-- RM67 moved to maintenance mode: fix regressions when they appear, no scheduled development.
-- TRACKER reduced from 383 lines to 77. [V]
-- Memory updated: `feedback_work_focus.md` reflects complete status and hard rule. [V]
-- Committed: 12de8a9 [V]
+**Commits this session (5):** [V]
+- ab1d4e7 -- list_stubs: add co-stub edge count (+N stub edges) as CSF defense
+- a68efe4 -- list_stubs: hard WARNING, rule out system interplay before individual fixes
+- 424b0b3 -- fix 3 defects: dead stub_name_set, wrong note scope, no investigation method
+- 9a93d23 -- list_stubs: show connected stub names; WARNING as plain steps
+- d20cf90 -- find_interplay_gaps: Layer 1 CSF defense for implemented modules
 
-**Bart's rule (session 309):** No Determined feature work while dj2 development is active.
-Determined sessions = probe + regression fix only. Two active dev threads = cognitive overhead
-that defeats the purpose of building the tool.
+**What is live:**
+
+`list_stubs` now shows `+N stub edges [name1, name2]` on any stub connected to other
+stubs in the corpus. Hard WARNING follows the list: look at named stubs, ask if
+implementing one requires the other's output; if yes, design the interface first.
+
+`find_interplay_gaps` (new tool) surfaces 5 interaction patterns between implemented
+modules -- run BEFORE treating any issue as a single-module fix:
+1. Unresolved edges between implemented functions (interface drift)
+2. Production edges not exercised in tests (invisible contract errors)
+3. Interaction hubs -- high fan-in AND fan-out
+4. Circular file dependencies
+5. Tightly-coupled file pairs
+
+Registered in TOOLS dict and tool_registry. 10 regression tests. FILE_MAP updated.
+
+**Memory updated:** [V]
+- `reference_component_substitution_fallacy.md` -- hard rule + investigation method
+- `MEMORY.md` index -- description updated to surface at the right moment
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**Determined is complete. Next work is dj2 development.**
+**Layer 2: call-site argument capture** -- the remaining CSF gap.
 
-Start a dj2 session. Use Determined to analyze dj2 (read-only probes). Make game
-code changes in dj2. Do not make Determined feature changes.
+Goal: add `call_arg_count` to `graph_edges` so `find_interplay_gaps` can flag
+argument count mismatches between caller and callee on resolved edges.
 
-First things to do in dj2 (from last RM67 probe):
-- RM68: remove subrace stubs from dnd_data.py, character_generator.py, authority_system.py
-  (5 stubs: subraces, get_subraces_for_race, get_race_for_subrace, semantic_match_subrace,
-  semantic_match_fighting_style)
-- 5 production stubs to implement: _get_combat_context, _get_encounter_context,
-  on_arc_completed, process_consequences, _register_world_tools
+Files to touch (in order):
+1. `determined/shared/types.py` -- add `call_arg_count: Optional[int] = None` to `SymbolReference`
+2. `determined/persistence/persistence_engine.py` -- add column to CREATE TABLE,
+   add migration in `_migrate()`, add to INSERT in both Python and JS/TS paths
+3. `determined/ingestion/parse_ast.py` -- at each `ast.Call` node, count
+   `len(node.args) + len(node.keywords)`; set -1 if `*args` or `**kwargs` present;
+   populate `SymbolReference.call_arg_count`
+4. `determined/ingestion/language_walker.py` -- same at call sites in each language handler;
+   `walker.call_edges()` returns `(caller, callee, etype, resolved)` -- needs to carry count too
+5. `determined/agent/agent_tools.py` -- add section 6 to `find_interplay_gaps`:
+   for resolved edges where `call_arg_count >= 0`, compare against callee's required
+   parameter count from `functions.arguments_json`; flag mismatches
 
-Run Determined against dj2 at session start to get current state before touching anything.
+Key design decisions already made:
+- -1 = uncountable (*args/**kwargs), skip the check for those
+- Default parameters mean required count = non-default subset of arguments_json
+- NULL = old row (pre-migration), handle gracefully (skip check)
+- Compare call_arg_count against required params only, not total params
+
+After Layer 2, dj2 work begins (RM68 subrace removal, 5 production stubs).
 
 ---
 
@@ -66,8 +97,9 @@ Run Determined against dj2 at session start to get current state before touching
 - frontier_priority and _get_chain_positions: Class.method JOIN bug fixed; bare-name + caller_file
   fallback in all three SQL JOINs. [V s306]
 - list_stubs LIMIT applies to non-FSM stubs only. FSM stubs always show in full. [V s306]
-- list_features EntryPts = distinct callee symbols; CrossEdges = total edge count.
-  These were identical before s308 (both counted edges). Now meaningfully separate. [V s308]
+- list_features EntryPts = distinct callee symbols; CrossEdges = total edge count. [V s308]
+- test coverage check in find_interplay_gaps: checks callee in test_callees (not exact pair).
+  Tests that call B by any name count as coverage for any prod edge A->B. [V s310]
 
 ## RESOURCE / PROCESS RULES [V]
 
@@ -77,3 +109,5 @@ Run Determined against dj2 at session start to get current state before touching
 - Determined corpus DB: re-ingest at session start if DB mtime > ~1 week old.
 - reingest_changed is available as a tool: call it when corpus may be stale.
 - Session arc: create session_arc.md in scratchpad at start; append per commit; promote at wrap.
+- dispatch test (test_agent_tools.py::test_dispatch_all_tools_registered): update expected
+  set when adding new tools to TOOLS dict. [V s310]
