@@ -2179,6 +2179,16 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
     ).fetchall():
         test_callees.add(row[0])
 
+    # dedupe on (caller, callee) -- multiple call sites produce one row each
+    seen_pairs: set[tuple[str, str]] = set()
+    deduped_edges: list[tuple] = []
+    for caller, callee, cf in prod_edges:
+        key = (caller, callee)
+        if key not in seen_pairs:
+            seen_pairs.add(key)
+            deduped_edges.append((caller, callee, cf))
+    prod_edges = deduped_edges
+
     uncovered = [
         (caller, callee, cf)
         for caller, callee, cf in prod_edges
@@ -2246,14 +2256,25 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
         {(a, b) for a, b in file_edges if (b, a) in file_edges and a < b}
     )
 
-    if cycles:
-        lines = [f"4. CIRCULAR FILE DEPENDENCIES ({len(cycles)} pair(s)):"]
+    prod_cycles = [(a, b) for a, b in cycles if not (_is_test(a) and _is_test(b))]
+    test_cycles = [(a, b) for a, b in cycles if _is_test(a) and _is_test(b)]
+
+    if prod_cycles:
+        lines = [f"4. CIRCULAR FILE DEPENDENCIES ({len(prod_cycles)} pair(s)):"]
         lines.append("   File A calls into file B AND file B calls back into file A.")
         lines.append("   Each side's behavior depends on the other -- hard to test in isolation.")
         lines.append("")
-        for a, b in cycles[:20]:
+        for a, b in prod_cycles[:20]:
             lines.append(f"   {a.split('/')[-1]}  <->  {b.split('/')[-1]}")
+        if test_cycles:
+            lines.append("")
+            lines.append(f"   (+ {len(test_cycles)} test<->test shared-fixture pair(s) suppressed)")
         sections.append("\n".join(lines))
+    elif test_cycles:
+        sections.append(
+            f"4. CIRCULAR FILE DEPENDENCIES: none in production code. "
+            f"{len(test_cycles)} test<->test shared-fixture pair(s) suppressed."
+        )
     else:
         sections.append("4. CIRCULAR FILE DEPENDENCIES: none found.")
 
