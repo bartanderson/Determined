@@ -9546,6 +9546,21 @@ def analyze_corpus(oracle: "DBOracle", args: dict) -> str:
             lines.append("  detect_topology()              — full topology breakdown")
             lines.append("  frontier_coverage()            — stub pressure measurement")
 
+    # High blast-radius warning
+    try:
+        from determined.engine.responsibility_map import get_high_blast_radius_files
+        hbr = get_high_blast_radius_files(conn)
+        if hbr:
+            lines.append("")
+            lines.append("HIGH BLAST RADIUS FILES")
+            lines.append("-" * 40)
+            lines.append("  Changes to these files require full regression (tools/run_regression.py):")
+            for fpath, ecount in hbr:
+                short = fpath.split("/")[-1].split("\\")[-1]
+                lines.append(f"  [{ecount:>5} edges]  {short}")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 

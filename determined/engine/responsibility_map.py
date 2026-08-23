@@ -2,6 +2,62 @@
 
 from collections import defaultdict
 
+# ------------------------------------------------------------------
+# HIGH BLAST RADIUS
+# Modules whose changes have disproportionate system-wide impact.
+# Rule: any change to a file in this set triggers full regression
+# (tools/run_regression.py), not targeted tests.
+#
+# Threshold for auto-detection: files with >= BLAST_EDGE_THRESHOLD
+# outbound call edges in the corpus are flagged alongside these
+# explicitly named files.
+# ------------------------------------------------------------------
+
+HIGH_BLAST_RADIUS_FILES = {
+    "agent_tools.py",   # 12k+ lines, dispatches every tool call
+}
+
+BLAST_EDGE_THRESHOLD = 500   # outbound edges from a single caller_file
+
+
+def get_high_blast_radius_files(conn) -> list[str]:
+    """
+    Return list of (file_path, edge_count) for files that exceed the
+    blast-radius threshold by fan-out edge count, plus all explicitly
+    named files that appear in the corpus.
+    Cheap SQL query -- safe to call on every analyze_corpus run.
+    """
+    try:
+        rows = conn.execute(
+            """
+            SELECT caller_file, COUNT(*) AS edge_count
+            FROM graph_edges
+            WHERE caller_file IS NOT NULL AND caller_file != ''
+            GROUP BY caller_file
+            HAVING edge_count >= ?
+            ORDER BY edge_count DESC
+            """,
+            (BLAST_EDGE_THRESHOLD,),
+        ).fetchall()
+    except Exception:
+        rows = []
+
+    results = [(r[0], r[1]) for r in rows]
+
+    # Also include explicitly named files even if below threshold
+    for name in HIGH_BLAST_RADIUS_FILES:
+        try:
+            row = conn.execute(
+                "SELECT caller_file, COUNT(*) FROM graph_edges WHERE caller_file LIKE ? GROUP BY caller_file",
+                (f"%{name}",),
+            ).fetchone()
+            if row and not any(r[0] == row[0] for r in results):
+                results.append((row[0], row[1]))
+        except Exception:
+            pass
+
+    return results
+
 
 ROLE_PATTERNS = {
     "ingestion": [
