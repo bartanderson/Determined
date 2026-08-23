@@ -54,11 +54,20 @@ Determined tool from a session. See HISTORY.md for usage.
 Not filed as a tracker item yet; do Option A when RM67 regression work surfaces a
 real monitoring gap.
 
-**Self-probe (run tools/query.py against self-corpus):**
-The corpus was re-ingested fresh this session. Run a self-probe to verify section 6
-(call_arg_count mismatch detection) now works with populated data:
-  python tools/query.py find_interplay_gaps
-Check section 6 output -- should now show actual arg-count mismatches if any exist.
+**Self-probe section 6 result (run this session):** [V]
+57 arg-count mismatches found. Two categories:
+
+Real signal -- investigate next session:
+  BagStore.add_item called with 4-5 args from add_edge, add_symbol, add_file,
+  auto_add_items, but declared with 5 or 6 params (two different counts).
+  Likely: add_item signature changed and some callers weren't updated, or
+  callers rely on default params that the corpus doesn't model.
+  File: determined/intent/bag_store.py
+  First tool: blast_radius BagStore.add_item  -- then read the file to verify.
+
+Noise (stdlib resolution ceiling -- ignore):
+  sqlite3.Connection.execute passed=2, declared=1  (C stub, not real)
+  dict.get passed=2, declared=0  (C stub, not real)
 
 **Correct tool usage going forward:**
   python tools/query.py <tool_name>            # default: self-corpus DB
