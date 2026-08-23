@@ -88,7 +88,7 @@ world/authority_system.py.
 
 ---
 
-## RM69 -- Corpus age timestamp on every query result (Cook CSF-1)
+## RM69 -- Corpus age timestamp on every query result (Cook CSF-1) -- DONE a22c798
 
 Cook: a query against a 3-day-old corpus emits the same confidence as one against
 a 5-minute-old corpus. Stale-corpus failure is silent and confident -- the most
