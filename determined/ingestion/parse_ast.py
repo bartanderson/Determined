@@ -737,12 +737,21 @@ def _extract_symbol_references(
             # Store fqdn before generic_visit so visit_Assign can read it for Level 2 binding
             self._last_call_fqdn[id(node)] = fqdn
 
+            # Arg count at call site: -1 if *args or **kwargs present (uncountable)
+            _has_vararg = any(isinstance(a, ast.Starred) for a in node.args)
+            _has_kwargs = any(kw.arg is None for kw in node.keywords)
+            if _has_vararg or _has_kwargs:
+                _call_arg_count = -1
+            else:
+                _call_arg_count = len(node.args) + len(node.keywords)
+
             results.append((
                 self.current_function,
                 identity,
                 node.lineno,
                 annotation_resolved,
                 'static',
+                _call_arg_count,
             ))
 
             # data_flow edges: fn_b(fn_a()) means fn_b calls fn_a and uses its
@@ -858,8 +867,10 @@ def _extract_symbol_references(
             identity=identity,
             resolved=ann_resolved,
             edge_type=etype,
+            call_arg_count=call_arg_count if etype == 'static' else None,
         )
-        for (caller, identity, lineno, ann_resolved, etype) in results
+        for (caller, identity, lineno, ann_resolved, etype, *_rest) in results
+        for call_arg_count in [_rest[0] if _rest else None]
     ]
 
 

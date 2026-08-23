@@ -25,6 +25,8 @@ def _migrate(connection):
         cursor.execute("ALTER TABLE graph_edges ADD COLUMN resolved INTEGER DEFAULT 0")
     if "edge_type" not in existing:
         cursor.execute("ALTER TABLE graph_edges ADD COLUMN edge_type TEXT DEFAULT 'static'")
+    if "call_arg_count" not in existing:
+        cursor.execute("ALTER TABLE graph_edges ADD COLUMN call_arg_count INTEGER")
     fn_existing = {row[1] for row in cursor.execute("PRAGMA table_info(functions)").fetchall()}
     if "decorators_json" not in fn_existing:
         cursor.execute("ALTER TABLE functions ADD COLUMN decorators_json TEXT")
@@ -202,7 +204,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         line_number INTEGER,
         caller_file TEXT,
         resolved INTEGER DEFAULT 0,
-        edge_type TEXT DEFAULT 'static'
+        edge_type TEXT DEFAULT 'static',
+        call_arg_count INTEGER
     )
     """)
 
@@ -885,13 +888,15 @@ def _persist_js_ts_files(connection, project_root, ignored_directory_names=None,
             _insert_symbol(cursor, sym["file_path"], "function", sym["name"], sym["line_number"])
 
         # --- call edges → graph_edges table ---
-        for caller_fqdn, callee_name, etype, resolved in walker.call_edges():
+        for _ce in walker.call_edges():
+            caller_fqdn, callee_name, etype, resolved = _ce[0], _ce[1], _ce[2], _ce[3]
+            call_arg_count = _ce[4] if len(_ce) > 4 else None
             src_id, tgt_id = edge_identity(caller_fqdn, callee_name)
             cursor.execute("""
             INSERT INTO graph_edges (
-                source_id, target_id, caller, callee, caller_file, resolved, edge_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (src_id, tgt_id, caller_fqdn, callee_name, str(path), 1 if resolved else 0, etype))
+                source_id, target_id, caller, callee, caller_file, resolved, edge_type, call_arg_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (src_id, tgt_id, caller_fqdn, callee_name, str(path), 1 if resolved else 0, etype, call_arg_count))
             for name, ntype in all_name_forms(caller_fqdn):
                 symbol_names_batch.append((src_id, name, ntype))
             for name, ntype in all_name_forms(callee_name):
@@ -1604,8 +1609,9 @@ def _persist_graph_edges(connection, graph):
             line_number,
             caller_file,
             resolved,
-            edge_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            edge_type,
+            call_arg_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             source_id,
             target_id,
@@ -1615,6 +1621,7 @@ def _persist_graph_edges(connection, graph):
             getattr(edge, "caller_file", None),
             1 if getattr(edge, "resolved", False) else 0,
             etype,
+            getattr(edge, "call_arg_count", None),
         ))
         for name, ntype in all_name_forms(edge.caller):
             symbol_names_batch.append((source_id, name, ntype))

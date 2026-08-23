@@ -93,6 +93,7 @@ class SymbolReference:
 
     bucket: Optional[str] = None
     resolved: bool = False  # True = callee derived from type annotation, not heuristic
+    call_arg_count: Optional[int] = None  # positional+keyword args at call site; -1 = *args/**kwargs; None = unknown
 
 @dataclass
 class ClassAttribute:

@@ -2098,6 +2098,8 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
        Tight coupling that makes each side's behavior depend on the other.
     5. Tightly-coupled file pairs -- more than threshold cross-file edges between
        the same two files. May indicate a missing abstraction at the boundary.
+    6. Argument count mismatches -- call sites pass a different number of args
+       than the callee declares. Skips *args/**kwargs calls and NULL (old rows).
     """
     import json as _json
 
@@ -2274,6 +2276,51 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
         sections.append("\n".join(lines))
     else:
         sections.append(f"5. TIGHTLY-COUPLED FILE PAIRS: none with >= {threshold} cross-edges.")
+
+    # ------------------------------------------------------------------
+    # 6. Argument count mismatches
+    # ------------------------------------------------------------------
+    try:
+        arg_mismatches = conn.execute(
+            """
+            SELECT ge.caller, ge.callee, ge.caller_file, ge.call_arg_count, f.arguments_json
+            FROM graph_edges ge
+            JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name)
+            WHERE ge.call_arg_count IS NOT NULL
+              AND ge.call_arg_count >= 0
+              AND ge.resolved = 1
+              AND ge.edge_type = 'static'
+              AND f.arguments_json IS NOT NULL
+            ORDER BY ge.caller_file, ge.caller
+            LIMIT 100
+            """
+        ).fetchall()
+    except Exception:
+        # call_arg_count column missing in old corpus DBs -- re-ingest to populate
+        arg_mismatches = []
+
+    mismatch_rows = []
+    for caller, callee, cf, call_argc, args_json in arg_mismatches:
+        try:
+            params = _json.loads(args_json or "[]")
+        except Exception:
+            continue
+        # strip 'self' from method param count
+        declared = len([p for p in params if p != "self"])
+        if call_argc != declared:
+            mismatch_rows.append((caller, callee, cf, call_argc, declared))
+
+    if mismatch_rows:
+        lines = [f"6. ARGUMENT COUNT MISMATCHES ({len(mismatch_rows)} found):"]
+        lines.append("   Call site passes different arg count than callee declares.")
+        lines.append("   Note: does not account for default parameters -- verify before acting.")
+        lines.append("")
+        for caller, callee, cf, call_argc, declared in mismatch_rows[:20]:
+            fp = (cf or "").replace("\\", "/").split("/")[-1]
+            lines.append(f"   {caller} -> {callee}  passed={call_argc} declared={declared}  ({fp})")
+        sections.append("\n".join(lines))
+    else:
+        sections.append("6. ARGUMENT COUNT MISMATCHES: none found (or call_arg_count not yet populated -- re-ingest to capture).")
 
     header = (
         "INTERPLAY GAP ANALYSIS\n"

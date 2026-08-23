@@ -274,11 +274,12 @@ def apply_file_delta(
         etype = getattr(edge, "edge_type", "static")
         conn.execute("""
         INSERT INTO graph_edges (source_id, target_id, caller, callee,
-                                 line_number, caller_file, resolved, edge_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                 line_number, caller_file, resolved, edge_type, call_arg_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (source_id, target_id, edge.caller, edge.callee,
               getattr(edge, "line_number", None), edge.caller_file,
-              1 if getattr(edge, "resolved", False) else 0, etype))
+              1 if getattr(edge, "resolved", False) else 0, etype,
+              getattr(edge, "call_arg_count", None)))
         for name, ntype in all_name_forms(edge.caller):
             key = (source_id, name)
             if key not in seen_names:
