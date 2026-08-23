@@ -1785,10 +1785,8 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     fsm_rows     = [(r[0], r[1], r[2]) for r in rows if     _is_fsm_stub(r[0], r[1])]
     regular_rows = regular_rows[:limit]
 
-    stub_name_set = {r[0] for r in regular_rows}
-
     def _co_stub_edge_count(stub_name: str) -> int:
-        """Count edges between this stub and any other stub in the current list."""
+        """Count edges between this stub and any other stub in the corpus."""
         try:
             out_count = conn.execute(
                 """
@@ -1877,13 +1875,16 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
     lines.append(
         "  Note: caller count includes all graph edges (resolved + unresolved)."
         " Use frontier_priority for resolved-functional-caller ranking."
+        " '+N stub edges' = edges to any other stub in the corpus (not just this list)."
     )
     lines.append(
         "  WARNING: Before fixing any stub marked '+N stub edges', rule out"
-        " system interplay first. When stubs share edges, the interface between"
-        " them is the harder problem -- fixing one stub alone may leave the"
-        " interaction broken. Confirm the interaction is NOT the root cause"
-        " before treating either stub as an individual fix."
+        " system interplay first -- it is the harder problem and must be"
+        " eliminated before individual fixes. To investigate: run call_tree on"
+        " each connected stub and look for common callers. A shared caller means"
+        " its contract depends on both stubs; the interface is the finding, not"
+        " either stub alone. Only when no shared caller exists is it safe to"
+        " treat the stubs as independent component gaps."
     )
     return "\n".join(lines)
 
