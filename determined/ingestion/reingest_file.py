@@ -403,6 +403,81 @@ def detect_changed_files(db_path: str) -> list[str]:
 
 
 # ------------------------------------------------------------------
+# Transitive dependent discovery
+# ------------------------------------------------------------------
+
+def _file_path_to_module(file_path: str, project_root: str) -> Optional[str]:
+    """Convert an absolute file path to a dotted module name relative to project_root."""
+    try:
+        rel = Path(file_path).relative_to(project_root)
+    except ValueError:
+        return None
+    parts = list(rel.parts)
+    if not parts:
+        return None
+    if parts[-1].endswith(".py"):
+        parts[-1] = parts[-1][:-3]
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts) if parts else None
+
+
+def find_transitive_dependents(db_path: str, seed_files: list[str]) -> list[str]:
+    """
+    BFS over the imports table to find all files that transitively import
+    from any file in seed_files.  Returns dependents only (seed files excluded).
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT value FROM project_meta WHERE key = 'project_root'"
+        ).fetchone()
+        project_root = row[0] if row else None
+        if not project_root:
+            return []
+
+        # Build module -> file_path index from imports table (internal files only)
+        # We need the reverse: given a module name, which file provides it?
+        # Derive from the files table using path-to-module conversion.
+        file_rows = conn.execute("SELECT file_path FROM files").fetchall()
+        module_to_file: dict[str, str] = {}
+        for (fp,) in file_rows:
+            mod = _file_path_to_module(fp, project_root)
+            if mod:
+                module_to_file[mod] = fp
+
+        # Build importer index: module_name -> set of files that import it
+        import_rows = conn.execute(
+            "SELECT file_path, module FROM imports"
+        ).fetchall()
+        importers_of: dict[str, set[str]] = {}
+        for fp, mod in import_rows:
+            importers_of.setdefault(mod, set()).add(fp)
+
+        # BFS from seed files
+        seed_set = set(seed_files)
+        visited = set(seed_files)
+        queue = list(seed_files)
+        dependents: list[str] = []
+
+        while queue:
+            current = queue.pop(0)
+            mod = _file_path_to_module(current, project_root)
+            if not mod:
+                continue
+            for importer in importers_of.get(mod, set()):
+                if importer not in visited:
+                    visited.add(importer)
+                    queue.append(importer)
+                    if importer not in seed_set:
+                        dependents.append(importer)
+
+        return dependents
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------------
 # Batch re-ingest of changed files
 # ------------------------------------------------------------------
 
@@ -411,7 +486,8 @@ def reingest_changed(
     repo_root: Optional[str] = None,
 ) -> str:
     """
-    Detect all files that changed since their last ingest and re-ingest each.
+    Detect all files that changed since their last ingest and re-ingest each,
+    plus all files that transitively import from any changed file.
 
     Returns a human-readable summary: count of changed files and per-file results.
     """
@@ -419,12 +495,17 @@ def reingest_changed(
     if not changed:
         return "reingest_changed: corpus is up to date — no files have changed since last ingest."
 
-    lines = [f"reingest_changed: {len(changed)} file(s) changed since last ingest."]
+    dependents = find_transitive_dependents(db_path, changed)
+    all_files = changed + [f for f in dependents if f not in set(changed)]
+
+    lines = [
+        f"reingest_changed: {len(changed)} file(s) changed, "
+        f"{len(dependents)} transitive dependent(s) to refresh."
+    ]
     errors = 0
-    for fp in changed:
+    for fp in all_files:
         try:
             result = reingest_file(db_path=db_path, file_path=fp, repo_root=repo_root)
-            # Keep only the first line (path + symbols) to keep output compact
             lines.append("  " + result.splitlines()[0])
         except Exception as exc:
             lines.append(f"  ERROR {fp}: {exc}")
@@ -433,6 +514,6 @@ def reingest_changed(
     if errors:
         lines.append(f"\n{errors} file(s) failed re-ingest.")
     else:
-        lines.append(f"\nAll {len(changed)} file(s) re-ingested successfully.")
+        lines.append(f"\nAll {len(all_files)} file(s) re-ingested successfully.")
 
     return "\n".join(lines)

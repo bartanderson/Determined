@@ -14,6 +14,7 @@ from determined.ingestion.reingest_file import (
     FileDelta,
     compute_file_delta,
     detect_changed_files,
+    find_transitive_dependents,
     reingest_changed,
     reingest_file,
     _load_old_symbols,
@@ -294,3 +295,68 @@ def test_reingest_changed_updates_db(tmp_path):
     conn.close()
     assert "replacement" in after
     assert "original" not in after
+
+
+def test_find_transitive_dependents_direct(tmp_path):
+    """find_transitive_dependents returns files that directly import a changed file."""
+    _make_project(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/base.py": "def base_fn(): pass",
+        "pkg/consumer.py": "from pkg.base import base_fn\ndef use_it(): base_fn()",
+        "pkg/unrelated.py": "def unrelated(): pass",
+    })
+
+    db_path = str(tmp_path / "corpus.db")
+    _full_ingest(tmp_path, db_path)
+
+    base_path = str(tmp_path / "pkg" / "base.py")
+    deps = find_transitive_dependents(db_path, [base_path])
+
+    dep_basenames = {Path(d).name for d in deps}
+    assert "consumer.py" in dep_basenames
+    assert "unrelated.py" not in dep_basenames
+    assert "base.py" not in dep_basenames  # seed file excluded
+
+
+def test_find_transitive_dependents_transitive(tmp_path):
+    """find_transitive_dependents walks multi-hop import chains."""
+    _make_project(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "def a_fn(): pass",
+        "pkg/b.py": "from pkg.a import a_fn\ndef b_fn(): a_fn()",
+        "pkg/c.py": "from pkg.b import b_fn\ndef c_fn(): b_fn()",
+    })
+
+    db_path = str(tmp_path / "corpus.db")
+    _full_ingest(tmp_path, db_path)
+
+    a_path = str(tmp_path / "pkg" / "a.py")
+    deps = find_transitive_dependents(db_path, [a_path])
+
+    dep_basenames = {Path(d).name for d in deps}
+    assert "b.py" in dep_basenames
+    assert "c.py" in dep_basenames  # transitive: c imports b which imports a
+
+
+def test_reingest_changed_includes_dependents(tmp_path):
+    """reingest_changed also refreshes files that import a changed file."""
+    import time
+
+    _make_project(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/base.py": "def original(): pass",
+        "pkg/consumer.py": "from pkg.base import original\ndef use_it(): original()",
+    })
+
+    db_path = str(tmp_path / "corpus.db")
+    _full_ingest(tmp_path, db_path)
+
+    time.sleep(0.05)
+    (tmp_path / "pkg" / "base.py").write_text("def renamed(): pass\n", encoding="utf-8")
+
+    result = reingest_changed(db_path)
+    assert "ERROR" not in result
+    assert "transitive dependent" in result
+    # Both base.py and consumer.py should appear in the output
+    assert "base.py" in result
+    assert "consumer.py" in result
