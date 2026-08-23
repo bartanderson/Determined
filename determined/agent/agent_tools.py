@@ -12709,6 +12709,12 @@ def chain_context(oracle: "DBOracle", args: dict) -> str:
 TOOLS["chain_context"] = (chain_context, "oracle")
 
 
+_DISPATCH_NO_CONFIDENCE_CHECK = frozenset({
+    "edit_file", "store_workflow_item", "store_finding", "bag_add", "bag_clear",
+    "bag_label", "ingest_design_docs", "annotate_function",
+})
+
+
 def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor") -> str:
     """
     Execute a tool by name. Returns result string.
@@ -12730,7 +12736,15 @@ def dispatch(tool_name: str, args: dict, oracle: "DBOracle", assessor: "Assessor
             # Auto-populate system bag if assessor has bags available
             if items and hasattr(assessor, "bags") and assessor.bags is not None:
                 assessor.bags.auto_add_items(items)
-            return text
+            result = text
+        if tool_name not in _DISPATCH_NO_CONFIDENCE_CHECK:
+            try:
+                from determined.assessor.epistemic_policy import corpus_quick_check
+                note = corpus_quick_check(oracle.conn)
+                if note:
+                    result = f"{note}\n{result}"
+            except Exception:
+                pass
         return result
     except Exception as e:
         return f"ERROR in {tool_name}: {type(e).__name__}: {e}"

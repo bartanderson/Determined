@@ -182,3 +182,33 @@ class EpistemicPolicy:
             required_surfaces=required_surfaces,
             reason="projection risk decomposition complete",
         )
+
+
+# ------------------------------------------------------------------
+# CHEAP CORPUS HEALTH CHECK  (no view builds required)
+# ------------------------------------------------------------------
+
+# A corpus with fewer than this many files is too small to trust results.
+SMALL_CORPUS_FILE_THRESHOLD = 10
+# A corpus with zero edges almost certainly failed to ingest call graphs.
+MIN_EDGE_COUNT = 1
+
+def corpus_quick_check(conn) -> str | None:
+    """
+    Run a cheap SQL-based corpus health check.
+    Returns a one-line warning string when confidence is low, else None.
+    Does NOT build views — safe to call on every dispatch.
+    """
+    try:
+        file_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        if file_count == 0:
+            return "[confidence: LOW -- corpus is empty; ingest a project first]"
+        if file_count < SMALL_CORPUS_FILE_THRESHOLD:
+            return f"[confidence: LOW -- corpus has only {file_count} file(s); results may not generalize]"
+
+        edge_count = conn.execute("SELECT COUNT(*) FROM graph_edges").fetchone()[0]
+        if edge_count < MIN_EDGE_COUNT:
+            return "[confidence: LOW -- corpus has no call edges; ingest may be incomplete]"
+    except Exception:
+        pass  # missing tables in stub DBs -- silently skip
+    return None
