@@ -110,7 +110,15 @@ dangerous failure mode.
 
 ---
 
-## RM70 -- Wire pipeline_dependency_tracer into diff pipeline (Cook CSF-2)
+## RM70 -- Wire pipeline_dependency_tracer into diff pipeline (Cook CSF-2) -- CLOSED superseded
+
+Investigated 2026-08-23: pipeline_dependency_tracer.py is a prototype (debug prints,
+pipeline layer classifier -- not a cross-file impact tool). engine_snapshot_diff.py and
+structural_parity_diff.py are dead code -- only referenced in comments in views.py and
+assessor.py. Cook CSF-2 cross-file impact concern is covered by find_transitive_dependents()
+built for CSF-3 (106c12e). No further action.
+
+## RM70 -- Wire pipeline_dependency_tracer into diff pipeline (Cook CSF-2) -- original text
 
 Cook: a diff that reports "function A changed" and "function B changed" separately
 may not surface that A and B together break an invariant that neither breaks alone.
