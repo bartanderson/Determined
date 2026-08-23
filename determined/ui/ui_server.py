@@ -3455,6 +3455,24 @@ _WORKBENCH_TOOLS = [
         "args": {},
         "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
     },
+    # ── Safety / Interplay ───────────────────────────────────
+    {
+        "id": "list_stubs",
+        "label": "List stubs",
+        "tool": "list_stubs",
+        "description": "All unimplemented stubs with co-stub edge count — CSF interplay warning included",
+        "category": "Safety",
+        "args": {},
+        "param": {"name": "scope", "placeholder": "subdirectory filter (optional)"},
+    },
+    {
+        "id": "find_interplay_gaps",
+        "label": "Interplay gaps",
+        "tool": "find_interplay_gaps",
+        "description": "6 interaction-gap patterns between implemented modules — run before any single-module fix",
+        "category": "Safety",
+        "args": {},
+    },
     # ── Cross-corpus ──────────────────────────────────────────
     {
         "id": "corpus_chain_survey",
