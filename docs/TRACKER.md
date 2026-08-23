@@ -85,3 +85,103 @@ world/authority_system.py.
 **Approach:** blast_radius each subrace stub to confirm low impact, then remove.
 
 **Gate: dj2 session only. Surfaces naturally from Determined analysis of dj2.**
+
+---
+
+## RM69 -- Corpus age timestamp on every query result (Cook CSF-1)
+
+Cook: a query against a 3-day-old corpus emits the same confidence as one against
+a 5-minute-old corpus. Stale-corpus failure is silent and confident -- the most
+dangerous failure mode.
+
+**What to do:**
+- `assessor/epistemic_policy.py` is the enforcement point.
+- Add a `corpus_age_seconds()` helper that reads `MAX(ingested_at)` from `files`
+  and computes elapsed time since now.
+- Add a configurable staleness threshold (default: 24h); expose it in `project_meta`
+  or a config key so corpora with different churn rates can tune it.
+- Every query result that exits through `assessor/assessor.py` or `oracle/db_oracle.py`
+  should include a one-line staleness note when the threshold is exceeded:
+  `[corpus last ingested Xh ago -- results may be stale]`.
+- `find_interplay_gaps` and `list_stubs` are the highest-value targets since they
+  inform implementation decisions.
+
+**Gate:** Determined session only.
+
+---
+
+## RM70 -- Wire pipeline_dependency_tracer into diff pipeline (Cook CSF-2)
+
+Cook: a diff that reports "function A changed" and "function B changed" separately
+may not surface that A and B together break an invariant that neither breaks alone.
+Compound failures require cross-file awareness.
+
+**What to do:**
+- Locate `engine/pipeline_dependency_tracer.py` and verify it exists and is functional.
+- Check whether `engine/engine_snapshot_diff.py` and `engine/structural_parity_diff.py`
+  currently call it or just run independently.
+- If not wired: after the diff computes changed files, pass them through
+  `pipeline_dependency_tracer` to surface files that import from any changed file
+  and flag them as "potentially affected even if unchanged."
+- The output should be a distinct section: "Potentially affected by these changes"
+  separate from "directly changed."
+
+**Gate:** Determined session only. Verify pipeline_dependency_tracer.py exists before
+planning implementation.
+
+---
+
+## RM71 -- epistemic_policy.py as mandatory query gate (Cook CSF-4)
+
+Cook: "providing calibrated views of the hazards" requires the epistemic policy to
+run on every query response, not just on queries that explicitly ask for it.
+
+**What to do:**
+- Read `assessor/epistemic_policy.py` (183L) to understand what it currently checks.
+- Audit `assessor/assessor.py` and `oracle/db_oracle.py` call sites: does every
+  response path pass through epistemic_policy?
+- If not: add a wrapper or decorator so every outbound result gets a confidence check.
+- A low-confidence result should include the reason inline, not suppress it.
+- Do NOT make this a hard gate that blocks results -- callers must still get an answer,
+  just a qualified one.
+
+**Gate:** Determined session only.
+
+---
+
+## RM72 -- Mark agent_tools.py as high-blast-radius in responsibility_map (Cook CSF-5)
+
+Cook: one component that accounts for the majority of system behavior is a hazard --
+its failure modes are hardest to see and its changes have the broadest blast radius.
+`agent_tools.py` at 12,705 lines is 5x the next-largest module.
+
+**What to do:**
+- Read `engine/responsibility_map.py` to understand how modules are currently classified.
+- Add an explicit `HIGH_BLAST_RADIUS` marking for `agent_tools.py` (and any other
+  module above a size/centrality threshold -- check by fan-in from the corpus).
+- Surface this marking in `analyze_corpus` output so it appears whenever someone
+  is about to reason about a change to that file.
+- Standing rule: any change to `agent_tools.py` triggers full regression
+  (`tools/run_regression.py`), not just targeted tests.
+
+**Gate:** Determined session only.
+
+---
+
+## RM73 -- Grow or explicitly scope the observability layer (Cook CSF-6)
+
+Cook: "people continuously create safety." The observability layer IS the mechanism
+by which safety is created at runtime. At ~135 lines (fault_injector.py 26L,
+signals.py 20L, instruments.py 89L) covering a 369-file system, it monitors a
+small fraction of potential failure modes.
+
+**What to do (choose one or both):**
+- Option A (grow): add monitors for the major failure paths not currently covered:
+  ingest failure, corpus returning empty on a non-empty corpus, query returning
+  no results when results are expected, staleness (overlaps RM69).
+- Option B (scope explicitly): document in `observability/README.md` or a docstring
+  which failure modes ARE monitored, which are NOT, and why. An explicitly scoped
+  monitor is safer than an implicitly incomplete one -- the gap is visible.
+- At minimum, do Option B first. Option A is follow-on work.
+
+**Gate:** Determined session only.
