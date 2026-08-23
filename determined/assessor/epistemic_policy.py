@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field
-from typing import Dict, List
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 # ------------------------------------------------------------------
 # TUNABLE CONSTANTS  (adjust after observing real corpus outputs)
@@ -49,6 +51,9 @@ INTERPRETIVE_INTENTS     = {"debug_query", "general_query"}
 LLM_SEVERITY_THRESHOLD = 0.15  # minimum severity to consider LLM at all
 HARD_BLOCK_INTEGRITY   = 0.35  # integrity risk at or above this blocks LLM
 HARD_BLOCK_STRUCTURE   = 0.30  # structure risk at or above this blocks LLM
+
+# Staleness gate
+STALENESS_THRESHOLD_HOURS = 24  # corpus older than this triggers a warning
 
 
 # ------------------------------------------------------------------
@@ -106,6 +111,37 @@ def _unstable_ratio(stability_view) -> float:
     if total == 0:
         return 0.0
     return len(stability_view.unstable_contracts) / total
+
+
+# ------------------------------------------------------------------
+# STALENESS CHECK
+# ------------------------------------------------------------------
+
+def corpus_staleness_note(
+    conn: sqlite3.Connection,
+    threshold_hours: float = STALENESS_THRESHOLD_HOURS,
+) -> str:
+    """
+    Return a one-line warning if the corpus is older than threshold_hours, else "".
+    Reads MAX(ingested_at) from the files table; silently returns "" on any error
+    (missing column, empty table) so callers are never broken by a stale schema.
+    """
+    try:
+        row = conn.execute(
+            "SELECT MAX(ingested_at) FROM files WHERE ingested_at IS NOT NULL"
+        ).fetchone()
+        if not row or not row[0]:
+            return ""
+        last = datetime.fromisoformat(row[0])
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        if age_hours >= threshold_hours:
+            h = int(age_hours)
+            return f"[corpus last ingested {h}h ago -- results may be stale; run reingest_changed to refresh]"
+        return ""
+    except Exception:
+        return ""
 
 
 # ------------------------------------------------------------------

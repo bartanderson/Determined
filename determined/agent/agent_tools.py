@@ -1887,6 +1887,11 @@ def list_stubs(oracle: "DBOracle", args: dict) -> str:
         " that design question is answered should you write code for either."
         " If no -- they are independent and each can be fixed on its own."
     )
+    from determined.assessor.epistemic_policy import corpus_staleness_note
+    staleness = corpus_staleness_note(conn)
+    if staleness:
+        lines.append("")
+        lines.append(staleness)
     return "\n".join(lines)
 
 
@@ -2328,7 +2333,10 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
         "Patterns where the problem is the interaction between parts, not a single part.\n"
         "Rule out these before treating any issue as a single-module fix.\n"
     )
-    return header + "\n\n".join(sections)
+    from determined.assessor.epistemic_policy import corpus_staleness_note
+    staleness = corpus_staleness_note(oracle.conn)
+    suffix = f"\n\n{staleness}" if staleness else ""
+    return header + "\n\n".join(sections) + suffix
 
 
 _ENTRY_POINT_PATH_HINTS = {
