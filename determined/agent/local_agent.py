@@ -1601,9 +1601,16 @@ if __name__ == "__main__":
     if reingest_file_arg:
         if not args.db_path:
             parser.error("--reingest-file requires db_path")
-        from determined.ingestion.reingest_file import reingest_file
+        from determined.ingestion.reingest_file import (
+            reingest_file,
+            find_transitive_dependents,
+        )
         result = reingest_file(args.db_path, reingest_file_arg)
         print(result)
+        deps = find_transitive_dependents(args.db_path, [reingest_file_arg])
+        for dep in deps:
+            dep_result = reingest_file(args.db_path, dep)
+            print(dep_result.splitlines()[0])
         raise SystemExit(0)
 
     if args.source:
