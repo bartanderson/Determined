@@ -104,6 +104,7 @@ class EngineRunner:
                     caller_file=analysis.file_path,
                     resolved=getattr(ref, "resolved", False),
                     edge_type=getattr(ref, "edge_type", "static"),
+                    call_arg_count=getattr(ref, "call_arg_count", None),
                 )
 
         graph = builder.build()

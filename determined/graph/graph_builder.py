@@ -14,6 +14,7 @@ class GraphEdge:
     caller_file: str = ""
     resolved: bool = False
     edge_type: str = "static"
+    call_arg_count: int | None = None
 
 
 @dataclass
@@ -36,7 +37,7 @@ class GraphBuilder:
         self.edges = []
         self.bucket_counts = defaultdict(int)
 
-    def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = "", resolved: bool = False, edge_type: str = "static"):
+    def add_reference(self, caller: str, callee: str, line_number: int, bucket: str, caller_file: str = "", resolved: bool = False, edge_type: str = "static", call_arg_count: int | None = None):
         """Add a call edge, deduplicating by (caller, callee) pair."""
         self.edges.append(
             GraphEdge(
@@ -46,6 +47,7 @@ class GraphBuilder:
                 caller_file=caller_file,
                 resolved=resolved,
                 edge_type=edge_type,
+                call_arg_count=call_arg_count,
             )
         )
 
