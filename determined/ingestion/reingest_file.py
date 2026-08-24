@@ -263,6 +263,7 @@ def apply_file_delta(
             bucket=getattr(ref, "bucket", "unknown"),
             caller_file=delta.file_path,
             resolved=getattr(ref, "resolved", False),
+            call_arg_count=getattr(ref, "call_arg_count", None),
         )
     graph = builder.build()
     # Pass a sentinel-file graph so _persist_graph_edges skips its own delete.
