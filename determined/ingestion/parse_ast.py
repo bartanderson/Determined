@@ -158,16 +158,17 @@ def _is_protocol_class(class_node: ast.ClassDef) -> bool:
 
 
 def _iter_top_level_functions(tree: ast.AST):
-    """Yield (FunctionDef, in_protocol) at module or class scope only.
+    """Yield (FunctionDef, in_protocol, class_name) at module or class scope only.
     Skips functions nested inside other functions (inner classes, closures).
+    class_name is None for module-level functions, the enclosing class name otherwise.
     """
-    def _visit(stmts, in_protocol=False):
+    def _visit(stmts, in_protocol=False, class_name=None):
         for node in stmts:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                yield node, in_protocol
+                yield node, in_protocol, class_name
                 # do NOT recurse into function bodies — skip nested defs
             elif isinstance(node, ast.ClassDef):
-                yield from _visit(node.body, in_protocol=_is_protocol_class(node))
+                yield from _visit(node.body, in_protocol=_is_protocol_class(node), class_name=node.name)
 
     yield from _visit(ast.iter_child_nodes(tree))
 
@@ -252,7 +253,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
     """Extract all top-level and class-level functions from the AST."""
     results: List[FunctionRepresentation]= []
 
-    for node, in_protocol in _iter_top_level_functions(tree):
+    for node, in_protocol, class_name in _iter_top_level_functions(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             args = [
                 arg.arg
@@ -319,6 +320,7 @@ def _extract_functions(tree: ast.AST, comment_map: Optional[dict] = None) -> Lis
                     http_route=http_route,
                     response_shape=response_shape,
                     is_tool=is_tool,
+                    class_name=class_name,
                 )
             )
 

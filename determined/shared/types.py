@@ -51,6 +51,7 @@ class FunctionRepresentation:
     http_route: Optional[str] = None  # Flask route URL extracted from @<x>.route(...)
     response_shape: List[str] = field(default_factory=list)  # JSON keys returned by this route handler
     is_tool: bool = False  # True when decorated with tool(...) — set at parse time, not agent layer
+    class_name: Optional[str] = None  # enclosing class, if any (None for module-level functions)
 
 
 @dataclass

@@ -455,9 +455,10 @@ def persist_file_analysis(
             is_stub,
             decorators_json,
             http_route,
-            is_tool
+            is_tool,
+            class_name
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             analysis.file_path,
             _canonical_symbol(function.name),
@@ -470,6 +471,7 @@ def persist_file_analysis(
             json.dumps(getattr(function, "decorators", [])) or None,
             getattr(function, "http_route", None),
             1 if getattr(function, "is_tool", False) else 0,
+            getattr(function, "class_name", None),
         ))
 
         # CLAUDE-EDIT 2026-06-17: was gated on

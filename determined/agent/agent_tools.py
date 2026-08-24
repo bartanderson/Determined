@@ -2316,12 +2316,20 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
             """
             SELECT ge.caller, ge.callee, ge.caller_file, ge.call_arg_count, f.arguments_json
             FROM graph_edges ge
-            JOIN functions f ON (f.name = ge.callee OR ge.callee LIKE '%.' || f.name)
+            JOIN functions f ON (
+                f.name = ge.callee
+                OR (
+                    INSTR(ge.callee, '.') > 0
+                    AND ge.callee LIKE '%.' || f.name
+                    AND f.class_name = SUBSTR(ge.callee, 1, INSTR(ge.callee, '.') - 1)
+                )
+            )
             WHERE ge.call_arg_count IS NOT NULL
               AND ge.call_arg_count >= 0
               AND ge.resolved = 1
               AND ge.edge_type = 'static'
               AND f.arguments_json IS NOT NULL
+              AND f.is_stub = 0
             ORDER BY ge.caller_file, ge.caller
             LIMIT 100
             """
@@ -2330,16 +2338,27 @@ def find_interplay_gaps(oracle: "DBOracle", args: dict) -> str:
         # call_arg_count column missing in old corpus DBs -- re-ingest to populate
         arg_mismatches = []
 
-    mismatch_rows = []
+    # Deduplicate: the JOIN can match the same bare callee name in multiple files
+    # (e.g. add_item in bag_store.py AND workflow_store.py for callee BagStore.add_item).
+    # Keep the function with the smallest |delta| per call site; if any match is exact,
+    # the call is not a mismatch.
+    _best: dict = {}  # (caller, callee, cf, call_argc) -> (delta, declared)
     for caller, callee, cf, call_argc, args_json in arg_mismatches:
         try:
             params = _json.loads(args_json or "[]")
         except Exception:
             continue
-        # strip 'self' from method param count
         declared = len([p for p in params if p != "self"])
-        if call_argc != declared:
-            mismatch_rows.append((caller, callee, cf, call_argc, declared))
+        delta = abs(call_argc - declared)
+        key = (caller, callee, cf, call_argc)
+        if key not in _best or delta < _best[key][0]:
+            _best[key] = (delta, declared)
+
+    mismatch_rows = [
+        (caller, callee, cf, call_argc, declared)
+        for (caller, callee, cf, call_argc), (delta, declared) in _best.items()
+        if delta != 0
+    ]
 
     if mismatch_rows:
         lines = [f"6. ARGUMENT COUNT MISMATCHES ({len(mismatch_rows)} found):"]
