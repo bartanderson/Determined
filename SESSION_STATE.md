@@ -1,79 +1,80 @@
-Written at commit: a719ce7
+Written at commit: eac5371
 
-# SESSION STATE -- session 312 final handoff
+# SESSION STATE -- session 313 final handoff
 
 ## Active branch: main [V]
 ## Working tree: clean [V]
-## Tests: 471 passed, 8 deselected (last verified at aa9aa6b) [V]
+## Tests: 684 passed, 9 deselected (last verified at 1c7efed) [V]
+## call_arg_count: 22654/27190 edges populated (restored) [V]
 
 ---
 
 ## WHAT HAPPENED THIS SESSION
 
-Fixed call_arg_count propagation bug, implemented RM71/72/73, added tools/query.py.
-Started using Determined via dispatch() to probe itself rather than reading files.
+Investigated session 312's "real signal" (BagStore.add_item arg-count mismatch).
+Found it was noise. Fixed the root causes in find_interplay_gaps section 6.
+Fixed a separate bug in reingest_file that was silently dropping call_arg_count.
 
-**Commits this session (5):** [V]
-- 0f1f997 -- fix: propagate call_arg_count through GraphEdge/GraphBuilder/EngineRunner
-- f05d7c7 -- feat: RM71 epistemic_policy as mandatory query gate via dispatch()
-- ea5dafb -- feat: RM72 high-blast-radius marking in responsibility_map + analyze_corpus
-- aa9aa6b -- feat: RM73 observability scope + tools/query.py CLI dispatcher
-- a719ce7 -- docs: HISTORY.md usage pattern notes
+**Commits this session (2):** [V]
+- 1c7efed -- fix: populate class_name for Python methods + cleaner section 6 arg-count mismatch detection
+- eac5371 -- fix: pass call_arg_count through reingest_file -> GraphBuilder -> graph_edges
 
-**What is live:**
+---
 
-`call_arg_count` now propagates: `GraphEdge` has the field, `GraphBuilder.add_reference()`
-accepts it, `run_engine.py` passes `getattr(ref, "call_arg_count", None)` in the loop.
-After full re-ingest: 22631/27169 edges populated. NULLs = non-static edges (correct).
+## WHAT WAS FOUND AND FIXED
 
-`corpus_quick_check(conn)` in `epistemic_policy.py`: cheap SQL check (file count, edge
-count). `dispatch()` in `agent_tools.py` calls it after every read-tool result and
-prepends `[confidence: LOW -- reason]` when corpus is empty or very small (<10 files).
-Write-side tools excluded via `_DISPATCH_NO_CONFIDENCE_CHECK`.
+**BagStore.add_item investigation (noise):**
+bag_store.py is correct. `add_item(self, bag_id, item_type, content, key=None, note=None)`
+-- callers pass 4-5 args using optional defaults. Not a bug.
 
-`get_high_blast_radius_files(conn)` in `responsibility_map.py`: queries graph_edges for
-files with >= 500 outbound edges. `analyze_corpus` now appends a HIGH BLAST RADIUS FILES
-section. Self-corpus flags 6 files: agent_tools.py (4840), ui_server.py (1535),
-language_walker.py (1213), graph_explorer.py (702), local_agent.py (635), parse_ast.py (501).
+**Section 6 find_interplay_gaps -- three noise sources fixed (1c7efed):**
 
-`instruments.py` top block documents monitored vs not-monitored failure modes (RM73 Option B).
+1. JOIN ambiguity: bare name `add_item` matched both bag_store.add_item AND
+   workflow_store.add_item. Root cause: `class_name` column existed in functions table
+   but was never populated. Fix: `_iter_top_level_functions` now yields class_name;
+   `FunctionRepresentation` carries it; persistence_engine INSERT stores it.
+   Section 6 JOIN now uses class_name for class-qualified callees.
 
-`tools/query.py`: CLI wrapper around `dispatch()`. Correct entry point for calling any
-Determined tool from a session. See HISTORY.md for usage.
+2. Stdlib C-stub noise: dict.get / sqlite3.Connection.execute were being matched
+   to corpus functions with same bare name. Fix: added `AND f.is_stub = 0` to query.
+
+3. Double-counting: when multiple functions matched same callee, both rows appeared.
+   Fix: Python dedup -- keep row with minimum |call_argc - declared| per call site;
+   if any match is exact, call is not a mismatch.
+
+Net result: 57 false positives -> 8 findings. Section 6 current output:
+  BagStore.add_edge/auto_add_items -> add_item  passed=4 declared=5  (optional params, benign)
+  auto_questions -> DBOracle.find_files  passed=0 declared=3  (INVESTIGATE)
+  _store -> Assessor.add_artifact  passed=4 declared=5  (likely optional params)
+  survey_files -> DBOracle.find_files  passed=0 declared=3  (INVESTIGATE)
+  survey_files -> Assessor.semantic_summary  passed=2 declared=3  (INVESTIGATE)
+  LanguageWalker._c/cpp_symbols -> _make_symbol  passed=4 declared=7  (_make_symbol has many optional params, benign)
+
+**reingest_file call_arg_count bug (eac5371):**
+apply_file_delta called `builder.add_reference()` without `call_arg_count` kwarg.
+Every incremental re-ingest since s312 silently wiped call_arg_count for that file's edges.
+Fix: one kwarg added. Full-ingest path (EngineRunner) was always correct.
+
+**DB side-effect this session:**
+Used force_reingest.py (sets ingested_at='2000-01-01') + reingest_changed to do
+bulk Python re-ingest twice. ingested_at timestamps for all 366 Python files are
+now "now", not their actual last-changed dates. detect_changed_files() still works
+(mtime vs ingested_at); it just means those files won't re-detect as changed until
+actually modified. Acceptable; DB otherwise correct.
 
 ---
 
 ## WHAT TO DO NEXT SESSION
 
-**All RM69-73 are now closed.** [V]
+**Interesting section 6 findings to investigate:**
+  `auto_questions -> DBOracle.find_files  passed=0 declared=3`
+  `survey_files -> DBOracle.find_files  passed=0 declared=3`
+  `survey_files -> Assessor.semantic_summary  passed=2 declared=3`
+  First tool: `python tools/query.py symbols_in_file` on discovery_agent.py to see
+  find_files calls, then read the file. These may be genuinely missing required args,
+  or DBOracle.find_files may have optional params the corpus doesn't model.
 
-**RM73 Option A (follow-on):** grow observability coverage -- add signals for:
-- Ingest failure (files skipped due to parse errors -- count already printed to stdout)
-- Corpus empty on non-empty source (graph_instrument edge_count=0 with file_count>0)
-- Schema staleness (call_arg_count=0 across >90% of edges)
-Not filed as a tracker item yet; do Option A when RM67 regression work surfaces a
-real monitoring gap.
-
-**Self-probe section 6 result (run this session):** [V]
-57 arg-count mismatches found. Two categories:
-
-Real signal -- investigate next session:
-  BagStore.add_item called with 4-5 args from add_edge, add_symbol, add_file,
-  auto_add_items, but declared with 5 or 6 params (two different counts).
-  Likely: add_item signature changed and some callers weren't updated, or
-  callers rely on default params that the corpus doesn't model.
-  File: determined/intent/bag_store.py
-  First tool: blast_radius BagStore.add_item  -- then read the file to verify.
-
-Noise (stdlib resolution ceiling -- ignore):
-  sqlite3.Connection.execute passed=2, declared=1  (C stub, not real)
-  dict.get passed=2, declared=0  (C stub, not real)
-
-**Correct tool usage going forward:**
-  python tools/query.py <tool_name>            # default: self-corpus DB
-  python tools/query.py --db other.db <tool>   # other corpus
-DO NOT write probe.py scripts. DO NOT import tool functions directly (bypasses
-confidence check and requires knowing oracle-vs-assessor layer).
+**RM67 maintenance status:** no open regressions after this session's fixes.
 
 ---
 
@@ -104,6 +105,8 @@ confidence check and requires knowing oracle-vs-assessor layer).
 - find_interplay_gaps and list_stubs call reingest_changed() at entry; guard with try/except FileNotFoundError for in-memory/mock DBs in tests. [V s311]
 - age != staleness: time since last ingest is not corpus currency; detect_changed_files() (mtime vs ingested_at) is. [V s311]
 - tools/query.py JSON args in PowerShell: use doubled inner quotes `"{""key"": ""val""}"` or pass via Python one-liner for complex args. [V s312]
+- reingest_file does NOT use EngineRunner -- only handles Python files via parse_ast path. It now propagates call_arg_count correctly (fixed s313), but bulk reset via ingested_at manipulation corrupts timestamp history. [V s313]
+- section 6 mismatch JOIN: class_name match required for class-qualified callees. class_name now populated on re-ingest. Old corpus DBs (pre-s313) have class_name=NULL for all functions -- section 6 will see 0 results for class-qualified callees until re-ingest. [V s313]
 
 ## RESOURCE / PROCESS RULES [V]
 

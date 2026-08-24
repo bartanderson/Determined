@@ -48,6 +48,23 @@ Python call directly: `.venv\Scripts\python -c "from ... import dispatch, ...; p
 Importing tool functions directly (bypassing dispatch) skips the confidence check
 and requires knowing the oracle-vs-assessor layer -- wrong path.
 
+2026-08-23 (s313): reingest_file was silently dropping call_arg_count. apply_file_delta
+called builder.add_reference() without the call_arg_count kwarg -- one missing arg.
+Every incremental re-ingest since s312 was wiping call_arg_count for that file's edges.
+Fix: eac5371. Also: class_name was never populated in the functions table (column existed,
+INSERT never included it). parse_ast._iter_top_level_functions now yields class_name;
+FunctionRepresentation carries it; persistence_engine stores it. Allows section 6 of
+find_interplay_gaps to disambiguate bare-name JOIN collisions (e.g. BagStore.add_item
+vs workflow_store.add_item). Fix: 1c7efed. Section 6 also got dedup (keep best-match
+per call site) and is_stub filter to suppress stdlib C-stub noise. Net: 57 false-positive
+mismatches down to 8, all real or benign optional-param cases.
+
+2026-08-23 (s313): TRAP -- reingest_file (via force_reingest.py resetting ingested_at)
+does NOT compute call_arg_count; only EngineRunner (full ingest) does. Using reingest_file
+for a bulk reset corrupts call_arg_count for all touched files. After fixing the bug,
+reset + reingest_changed restores it. But ingested_at timestamps are faked -- DB loses
+accurate change-detection history.
+
 2026-08-23 (s312): call_arg_count was silently dropped at GraphEdge/GraphBuilder/
 EngineRunner. parse_ast.py computed it; _persist_graph_edges used getattr(edge,
 "call_arg_count", None) -- always None because GraphEdge had no field. Fix: added
