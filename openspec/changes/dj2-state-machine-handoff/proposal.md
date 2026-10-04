@@ -57,7 +57,7 @@ None. Determined has no OpenSpec specs yet; this change initialises `openspec/`.
   new `handoffs/dj2/`, new analysis tools registered in the TOOLS dict, tests under
   `tests/regression/`, `tools/run_tests.py` FILE_MAP and `docs/TEST_MAP.md` kept in sync.
 - **dj2 repo (writes):** none by the agent. The user applies bundles.
-- **Cloud constraints:** no Qwen3 / llama-server, no Chrome 9222 DeepSeek bridge, no Blender,
+- **Cloud constraints:** no Qwen3 / llama-server, no Chrome 9222 DeepSeek bridge,
   no Postgres+pgvector. dj2's `world/db.py` needs Postgres, so only dj2 tests that run without
   it are usable as verification; the set is discovered, not assumed (task 1.3).
 - **Known dj2 working-tree state at proposal time (user's, untouched):** uncommitted edits to

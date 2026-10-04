@@ -22,7 +22,9 @@ context: |
     tools/run_tests.py (foreground, short timeout, never pytest -m by hand).
   - Pre-code checklist: grep determined/agent/graph_utils.py and agent_tools.py before writing anything
     that queries or computes data; say what you searched for if it is not there.
-  - Cloud environment has no Qwen3/llama-server, no Chrome DeepSeek bridge, no Blender, no Postgres.
+  - Cloud environment has no Qwen3/llama-server, no Chrome DeepSeek bridge, no Postgres.
+  - Scope: only Determined and dj2 work belongs in this repo and its remote. Nothing from unrelated
+    local projects (their code, knowledge bases, session notes, or conversation context) is copied in or pushed.
     Anything needing them is reported "not run", never claimed as passing.
   - Windows-isms in CLAUDE.md (PowerShell, `C:\` paths) do not apply on Linux; use equivalent POSIX commands.
   - Use plain hyphens in docs and commit messages (no em dashes).
