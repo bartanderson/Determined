@@ -15,3 +15,8 @@ build/
 .determined_session.json
 .recall/
 .handoffs/
+
+# corpus DB backups and pre-ingest copies (rebuildable, never commit)
+*.db.bak*
+*.db.preingest*
+.omp/

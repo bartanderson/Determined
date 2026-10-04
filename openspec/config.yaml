@@ -1,0 +1,38 @@
+schema: spec-driven
+
+context: |
+  Determined: corpus-agnostic Python code-analysis engine (SQLite corpus DBs, local Ollama/llama-server
+  models, `tools/query.py` dispatch). It is run against other repos; the main subject now is dj2
+  (D&D AI dungeon-master game, separate repo github.com/bartanderson/dj2, no runtime coupling).
+
+  Read first, every session: SESSION_STATE.md, docs/TRACKER.md, docs/PRACTICES.md, docs/sots.md.
+  Project knowledge lives in docs/ and SESSION_STATE.md. OpenSpec holds the forward-looking
+  contract (capabilities and changes in flight); do not duplicate docs/ content, link to it.
+
+  Hard rules for every change:
+  - dj2 is READ-ONLY to the agent. dj2 changes travel only as handoff bundles in handoffs/dj2/
+    (change.patch + MANIFEST.json + rationale.md + verify.md), pinned to a dj2 base_sha, verified in
+    a throwaway clone, and applied to dj2 by the user. Never edit, commit, or push in dj2.
+  - Placement: durable things (specs, tooling, tests, bundles, STATE.md, SESSION_STATE.md) are committed
+    and pushed on the feature branch; rebuildable things (dj2 clones, *.db corpora, venv, test output)
+    stay in the sandbox and are never committed.
+  - Both repos must be valid at every stopping point: commit and push after each task; bundles are
+    ordered so every prefix leaves dj2 working; work in progress lives in handoffs/dj2/wip/.
+  - Never commit or push to main; feature branch only. Never run the full suite; use
+    tools/run_tests.py (foreground, short timeout, never pytest -m by hand).
+  - Pre-code checklist: grep determined/agent/graph_utils.py and agent_tools.py before writing anything
+    that queries or computes data; say what you searched for if it is not there.
+  - Cloud environment has no Qwen3/llama-server, no Chrome DeepSeek bridge, no Blender, no Postgres.
+    Anything needing them is reported "not run", never claimed as passing.
+  - Windows-isms in CLAUDE.md (PowerShell, `C:\` paths) do not apply on Linux; use equivalent POSIX commands.
+  - Use plain hyphens in docs and commit messages (no em dashes).
+
+rules:
+  proposal:
+    - Include a Non-goals section
+    - State which dj2 base_sha the facts were measured at, or say they are unmeasured
+  specs:
+    - Every requirement that concerns dj2 must name how it is verified and by whom (script or Claude)
+  tasks:
+    - Each task ends with a measurable verification and names who runs it (script or Claude)
+    - Each task that produces a dj2 change ends in a bundle, never a direct dj2 edit

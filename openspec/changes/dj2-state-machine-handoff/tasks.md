@@ -1,0 +1,35 @@
+## 0. Standing rules for every task below (spec `dj2-handoff-sync`)
+
+- [ ] 0.1 After each task: tick its box, commit to branch `dj2-state-machines-openspec`, push that branch (never `main`, never any dj2 remote). Verify: `git status` clean and `git log origin/dj2-state-machines-openspec..HEAD` empty after each task; run by script.
+- [ ] 0.2 Before each commit: `git status --short` shows no `*.db`, dj2 clone, or virtualenv paths; bundles under construction are only in `handoffs/dj2/wip/`. Verify: the check prints nothing; run by script.
+- [ ] 0.3 Never write to a dj2 checkout or remote. Verify: at the close checkpoint, `git -C <dj2 clone> status --short` is empty and the dj2 clone's HEAD equals `base_sha`; run by script.
+
+## 1. Bootstrap and baseline (first thing the cloud session does)
+
+- [ ] 1.1 Create the venv, install Determined's dependencies, run `python tools/run_tests.py --list` and one targeted test run on Linux. Record OS, Python version, and pass/fail in `handoffs/dj2/BASELINE.md`. If dependencies or tests fail for Windows-only reasons, stop and report; do not patch around it in this change. Verify: command output pasted in BASELINE.md; run by Claude.
+- [ ] 1.2 Clone dj2 `origin/main` into a scratch directory outside the Determined repo, record the full SHA as `base_sha` in BASELINE.md, and treat the clone as read-only fixture. Verify: `git -C <clone> rev-parse HEAD` equals the recorded SHA and `git status --short` is empty; run by script.
+- [ ] 1.3 Ingest the dj2 clone into a corpus DB and confirm paths resolve under Linux. Then run each dj2 test file in the clone with a short timeout and classify it: passes headless / fails / needs Postgres or network. Verify: a table in BASELINE.md with one row per test file; counts add up to the number of files; run by script.
+- [ ] 1.4 Re-measure the wave: run `implementation_order`, `development_priorities`, `list_stubs` on the fresh corpus. Compare with the proposal (25 symbols, 12 FSM stubs, 2 context-builder stubs). Record differences and, if the bundle order in design D5 changes, edit D5 and say why. Verify: BASELINE.md lists the counts next to the proposal's counts; run by script, judged by Claude.
+
+## 2. Determined tooling (code in Determined, tests first)
+
+- [ ] 2.1 Add the FSM consistency check (spec `dj2-fsm-completion`): undefined guard/action/state references, exactly one initial state, per-machine summary table. Register in `TOOLS` after the function definition, add to the dispatch-test expected set, `FILE_MAP`, `docs/TEST_MAP.md`. Verify: new regression tests include the `cond: fight_possible` undefined-guard case and pass via `tools/run_tests.py`; run by script.
+- [ ] 2.2 Add the event coverage report (spec `dj2-initial-event-set`): taxonomy vs emitted vs consumed, four diff lists, initial-set filter. Same registration and mapping steps as 2.1. Verify: tests cover undeclared emission, typo'd type, and the pass/fail row for the initial set; run by script.
+- [ ] 2.3 Add the bundle tool `tools/handoff.py`: `make` (diff of a clone against `base_sha` into `change.patch` plus `MANIFEST.json`), `verify` (fresh clone at `base_sha`, `git apply --check`, apply, run named tests, write `verify.md`), `check` (all four files present). Verify: tests against a fixture mini-repo create a bundle, verify it, and reject one that has no finding id; run by script.
+- [ ] 2.4 Write `handoffs/dj2/README.md` (how the user applies a bundle: feature branch, `git apply --check`, one commit, how to revert) and `handoffs/dj2/STATE.md` (last recorded dj2 SHA, bundle list and status). Verify: following the README on a scratch clone applies a sample bundle with exit 0; run by script.
+
+## 3. Bundles (each built in a clone at `base_sha`, verified, never applied to dj2 by the agent)
+
+- [ ] 3.1 Bundle 001, events foundation: create the single definition of the initial event types and required fields; add any taxonomy additions. Confirm the starting set in design D4 against what the machines actually need first, and update D4 with the result. Verify: coverage report on the patched clone lists every initial type declared; `verify.md` shows the named tests; run by script.
+- [ ] 3.2 Bundle 002, Encounter FSM: implement `flee_possible`, `parley_possible`, `resolve_flee`, `resolve_parley`, `start_combat` (emit only) to the committed JSON, with transition tests through the runner for every transition and both guard paths. Verify: `list_stubs` on the patched, re-ingested clone shows none of Encounter's guards/actions as stubs; the consistency check exits 0; tests pass headless; run by script.
+- [ ] 3.3 Bundle 003, Barter FSM: read `tests/integration/test_economy.py` first, record in rationale whether Barter and Trade share logic; implement `add_gold`, `execute_barter`, `need_more_gold`, emitting `state.resource.changed` / `interaction.trade.*`. Verify: as 3.2 for Barter; existing economy tests that ran headless in 1.3 still pass; run by script.
+- [ ] 3.4 Bundle 004, Trade FSM: implement `execute_buy`, `update_price`, `price_acceptable`, `price_too_low`. Verify: as 3.2 for Trade; `test_trade_fsm.py` result recorded as pass or not-run with reason; run by script.
+- [ ] 3.5 Bundle 005, context builder: implement `_get_encounter_context` and `_get_combat_context` as read-only consumers of the Event Log. Verify: tests build a log with `encounter.started` / `encounter.ended` and `combat.initiation.triggered` and assert the snapshots; no import of `world.db` in the new code (grep count 0); run by script.
+
+## 4. Close
+
+- [ ] 4.1 Apply bundles 001 to 005 in order to one fresh clone, re-ingest, run the consistency check, the coverage report, and `list_stubs`. Verify: all 12 FSM guards/actions and 2 context stubs absent from the stub list; consistency check exit 0; initial-set coverage rows all pass; numbers recorded in `handoffs/dj2/STATE.md`; run by script.
+- [ ] 4.1a Freshness check: fetch dj2 `origin/main`; for each ready bundle run `git apply --check` against it. Regenerate and re-verify those that fail, or mark them `stale` in `STATE.md`. Also confirm every prefix of the bundle order leaves the headless dj2 tests that passed at `base_sha` passing (apply bundles 1..k in a clone for k = 1..5 and run them). Verify: a prefix table (k, tests passed, tests not run) in `STATE.md`; run by script.
+- [ ] 4.2 Run `openspec validate dj2-state-machine-handoff --strict`. Verify: exit 0; run by script.
+- [ ] 4.3 Rewrite `SESSION_STATE.md` per Determined's SESSION END PROTOCOL (tags [V]/[?], first line `Written at commit: <SHA>`), listing which bundles are verified, which dj2 tests were not run and why, and the first command for the next session. Verify: file matches the protocol checklist; judged by Claude.
+- [ ] 4.4 Stop and hand over: user pulls the Determined branch, applies bundles to dj2 locally (including Postgres-backed tests), commits and pushes dj2; the next Determined session records the new SHA in `handoffs/dj2/STATE.md`. Verify: that session's drift check prints the recorded vs remote SHA; run by script.

@@ -66,15 +66,14 @@ actually modified. Acceptable; DB otherwise correct.
 
 ## WHAT TO DO NEXT SESSION
 
-**Interesting section 6 findings to investigate:**
-  `auto_questions -> DBOracle.find_files  passed=0 declared=3`
-  `survey_files -> DBOracle.find_files  passed=0 declared=3`
-  `survey_files -> Assessor.semantic_summary  passed=2 declared=3`
-  First tool: `python tools/query.py symbols_in_file` on discovery_agent.py to see
-  find_files calls, then read the file. These may be genuinely missing required args,
-  or DBOracle.find_files may have optional params the corpus doesn't model.
+**Section 6 findings -- all investigated and closed (s314):**
+  `auto_questions/survey_files -> DBOracle.find_files  passed=0 declared=3` -- benign.
+    find_files(pattern=None, role=None, limit=None): all 3 params optional. Callers pass 0. Correct.
+  `survey_files -> Assessor.semantic_summary  passed=2 declared=3` -- benign.
+    semantic_summary(subject, kind="file", source_text=""): source_text optional. Caller passes (rel, kind="file"). Correct.
+  Section 6 signal is clean. No real arg-count bugs remain.
 
-**RM67 maintenance status:** no open regressions after this session's fixes.
+**RM67 maintenance status:** no open regressions. Section 6 findings closed.
 
 ---
 
