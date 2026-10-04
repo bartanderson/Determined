@@ -6,10 +6,10 @@
 
 ## 1. Bootstrap and baseline (first thing the cloud session does)
 
-- [ ] 1.1 Create the venv, install Determined's dependencies, run `python tools/run_tests.py --list` and one targeted test run on Linux. Record OS, Python version, and pass/fail in `handoffs/dj2/BASELINE.md`. If dependencies or tests fail for Windows-only reasons, stop and report; do not patch around it in this change. Verify: command output pasted in BASELINE.md; run by Claude.
-- [ ] 1.2 Clone dj2 `origin/main` into a scratch directory outside the Determined repo, record the full SHA as `base_sha` in BASELINE.md, and treat the clone as read-only fixture. Verify: `git -C <clone> rev-parse HEAD` equals the recorded SHA and `git status --short` is empty; run by script.
-- [ ] 1.3 Ingest the dj2 clone into a corpus DB and confirm paths resolve under Linux. Then run each dj2 test file in the clone with a short timeout and classify it: passes headless / fails / needs Postgres or network. Verify: a table in BASELINE.md with one row per test file; counts add up to the number of files; run by script.
-- [ ] 1.4 Re-measure the wave: run `implementation_order`, `development_priorities`, `list_stubs` on the fresh corpus. Compare with the proposal (25 symbols, 12 FSM stubs, 2 context-builder stubs). Record differences and, if the bundle order in design D5 changes, edit D5 and say why. Verify: BASELINE.md lists the counts next to the proposal's counts; run by script, judged by Claude.
+- [x] 1.1 Create the venv, install Determined's dependencies, run `python tools/run_tests.py --list` and one targeted test run on Linux. Record OS, Python version, and pass/fail in `handoffs/dj2/BASELINE.md`. If dependencies or tests fail for Windows-only reasons, stop and report; do not patch around it in this change. Verify: command output pasted in BASELINE.md; run by Claude.
+- [x] 1.2 Clone dj2 `origin/main` into a scratch directory outside the Determined repo, record the full SHA as `base_sha` in BASELINE.md, and treat the clone as read-only fixture. Verify: `git -C <clone> rev-parse HEAD` equals the recorded SHA and `git status --short` is empty; run by script.
+- [x] 1.3 Ingest the dj2 clone into a corpus DB and confirm paths resolve under Linux. Then run each dj2 test file in the clone with a short timeout and classify it: passes headless / fails / needs Postgres or network. Verify: a table in BASELINE.md with one row per test file; counts add up to the number of files; run by script.
+- [x] 1.4 Re-measure the wave: run `implementation_order`, `development_priorities`, `list_stubs` on the fresh corpus. Compare with the proposal (25 symbols, 12 FSM stubs, 2 context-builder stubs). Record differences and, if the bundle order in design D5 changes, edit D5 and say why. Verify: BASELINE.md lists the counts next to the proposal's counts; run by script, judged by Claude.
 
 ## 2. Determined tooling (code in Determined, tests first)
 
