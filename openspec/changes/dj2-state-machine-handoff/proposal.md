@@ -60,10 +60,12 @@ None. Determined has no OpenSpec specs yet; this change initialises `openspec/`.
 - **Cloud constraints:** no Qwen3 / llama-server, no Chrome 9222 DeepSeek bridge,
   no Postgres+pgvector. dj2's `world/db.py` needs Postgres, so only dj2 tests that run without
   it are usable as verification; the set is discovered, not assumed (task 1.3).
-- **Known dj2 working-tree state at proposal time (user's, untouched):** uncommitted edits to
-  `config/fsms/encounter.json` (adds `cond: fight_possible` with no matching guard defined),
-  `world/context_builder.py` (adds a Postgres `get_spell_from_db` helper), `TRACKER.md`,
-  `create_tables.py`, `SESSION_STATE.md`; plus untracked files. These are not in any baseline.
+- **dj2 baseline:** `origin/main` = `598ed551d0538c1129c75aec0f708b20205c80af` (pushed by the user 2026-10-04, working tree
+  clean at that point). It includes the user's earlier in-flight edits, so two facts hold at this SHA and are inputs, not
+  accidents: `config/fsms/encounter.json` has `cond: fight_possible` on the `fight` transition with no `fight_possible`
+  guard defined (an undefined-guard defect the task 2.1 check must flag), and `world/context_builder.py` carries a
+  Postgres `get_spell_from_db` helper (not exercised headless). Task 1.2 must confirm the clone's HEAD equals this SHA or record
+  the newer one.
 
 ## Non-goals
 
