@@ -58,3 +58,45 @@ No difference from the proposal; design D5 order is unchanged.
    expected home for guards/actions or the tests may be stale. Decide before work order 002.
 2. Only `test_event_log.py` plus 4 escalation integration tests run headless. That is the regression
    floor for the prefix check (task 4.1a).
+
+## Windows addendum (local session, 2026-10-13)
+
+The Linux session above completed tasks 1.1-1.4 and its findings stand. This addendum
+records the environment where the remaining tasks (2.x, 3.x, 4.x) will be executed.
+
+- OS: Windows 11, build 10.0.26200.9457
+- Shell: cmd.exe
+- Python: 3.11.9 (Linux used 3.11.15)
+- Venv: .venv, activated
+
+Targeted test:
+  python tools\run_tests.py --files determined\agent\classify_stub.py
+  Result: 91 passed in 16.84s
+
+Local toolchain status (differs from the proposal's cloud constraints):
+- llama-server: available
+- Chrome 9222 DeepSeek bridge: available
+- Postgres + pgvector: available
+- The proposal's "no Qwen3 / no bridge / no Postgres" section does not bind this session.
+
+dj2 clones on this machine:
+- Working copy (untouched by agent): C:\Users\bartl\dev\dj2 - clean, at base_sha
+- Read-only fixture: C:\Users\bartl\dev\_scratch\dj2-598ed55 - clean, at base_sha
+- A cloned from local is faster than from GitHub; contents identical.
+
+Repo hygiene:
+- .gitignore line 6 already matches *.db; task 0.2 concern is pre-handled.
+- The stale corpus from the proposal (C_Users_bartl_dev_dj2.db) remains in the repo
+  root but is gitignored. Task 1.3 re-ingested fresh in the Linux session; that DB
+  does not carry over to Windows, so task 2.1 will likely re-ingest here.
+
+Consequence for the remaining plan:
+- Tasks 2.1-4.4 run by this local Windows session, not a Linux cloud session.
+- Where the plan says "run by Claude", read "run by the local orchestrator/agent".
+- Where the plan says "run by script", unchanged.
+
+Resolved item from Linux baseline section 1.1:
+- The five extra packages the Linux session needed are all present in this
+  Windows venv: ast-grep-py 0.45.0, tree-sitter 0.25.0, tree-sitter-lua 0.5.0,
+  Flask 3.1.3, Flask-SocketIO 5.6.1. tree-sitter-zig 1.1.2 is also present.
+- No further package installs are needed before task 2.1.
