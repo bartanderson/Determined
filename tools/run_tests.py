@@ -248,6 +248,9 @@ FILE_MAP: dict[str, list[str]] = {
     # determined/validation/
     "determined/validation/system_validator.py": [
         "tests/regression/test_integrity_view_wiring.py"],
+    # tools/
+    "tools/handoff.py": [
+        "tests/regression/test_handoff.py"],
 }
 
 
