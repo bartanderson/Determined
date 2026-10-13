@@ -591,6 +591,7 @@ def test_dispatch_all_tools_registered():
         "work_session_primer",
         "fsm_scaffold",
         "fsm_diagram",
+        "check_fsm_consistency",
         "export_context",
             "export_context_append",
             "export_context_dump",
@@ -1436,3 +1437,120 @@ if __name__ == "__main__":
             traceback.print_exc()
             failed += 1
     print(f"\n{passed + failed} tests: {passed} passed, {failed} failed")
+
+
+def test_check_fsm_consistency_flags_undefined_guard(tmp_path):
+    """
+    Spec dj2-fsm-completion: undefined guard referenced -> report file,
+    event, and the missing guard name.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "TestFSM",
+        "states": [
+            {"name": "awaiting_choice", "initial": True},
+            {"name": "resolving_fight"},
+        ],
+        "events": {
+            "fight": {
+                "transitions": [
+                    {
+                        "from": "awaiting_choice",
+                        "to": "resolving_fight",
+                        "cond": "fight_possible",
+                        "actions": ["start_combat"],
+                    }
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {"start_combat": {}},
+    }
+    (tmp_path / "test.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "test.json" in result
+    assert "fight" in result
+    assert "fight_possible" in result
+
+
+def test_check_fsm_consistency_passes_on_valid(tmp_path):
+    """
+    Spec dj2-fsm-completion: all references resolve -> per-machine table.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "GoodFSM",
+        "states": [
+            {"name": "a", "initial": True},
+            {"name": "b"},
+        ],
+        "events": {"go": {"transitions": [{"from": "a", "to": "b"}]}},
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "good.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("PASS")
+    assert "GoodFSM" in result
+
+
+def test_check_fsm_consistency_flags_undefined_action(tmp_path):
+    """
+    Spec dj2-fsm-completion: undefined action referenced is also a failure.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "BadAction",
+        "states": [{"name": "a", "initial": True}, {"name": "b"}],
+        "events": {
+            "go": {
+                "transitions": [
+                    {"from": "a", "to": "b", "actions": ["missing_action"]}
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "bad.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "missing_action" in result
+
+
+def test_check_fsm_consistency_flags_multiple_initial_states(tmp_path):
+    """
+    Spec dj2-fsm-completion: exactly one initial state is required.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "TwoInitial",
+        "states": [
+            {"name": "a", "initial": True},
+            {"name": "b", "initial": True},
+        ],
+        "events": {},
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "two.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "initial" in result
