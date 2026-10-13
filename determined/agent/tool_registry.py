@@ -1121,6 +1121,30 @@ REGISTRY: dict[str, dict] = {
         "category": "planning",
     },
 
+    "check_fsm_consistency": {
+        "purpose": "Validate every FSM JSON file in a directory: flags undefined guards/actions/states, wrong from/to names, and counts initial states. Fails when there is not exactly one initial state per machine.",
+        "args": {
+            "directory": "path to a directory of FSM JSON files (e.g. config/fsms)",
+        },
+        "output": "PASS or FAIL with unresolved references (file, event, name); when PASS, a per-machine summary table (states/events/guards/actions)",
+        "feeds": ["fsm_diagram", "fsm_scaffold", "feature_work_plan"],
+        "use_when": "Before implementing FSM handlers, to catch JSON defects like an undefined guard on a transition. Also useful in CI to keep FSM specs internally consistent.",
+        "category": "planning",
+    },
+
+    "check_event_coverage": {
+        "purpose": "Report event coverage across a dj2 clone: taxonomy declarations vs emitted emit() call sites vs consumed on()/on_any() handlers. Produces four diff lists and an optional initial-set pass/fail table.",
+        "args": {
+            "directory": "root of a dj2 checkout",
+            "taxonomy_file": "(optional) path to taxonomy doc; default <directory>/docs/design1a_event_taxonomy.md",
+            "initial_set_file": "(optional) path to initial_events.json; default <directory>/config/events/initial_events.json",
+        },
+        "output": "four diff lists (emitted-but-undeclared, declared-but-never-emitted, emitted-but-never-consumed, consumed-but-never-emitted); when the initial set is found, a per-type table with PASS/FAIL",
+        "feeds": ["check_fsm_consistency", "design_oracle", "feature_work_plan"],
+        "use_when": "After implementing FSM actions, to verify the initial event set is fully declared/emitted/consumed. Also useful to catch typos like 'encounter.endd' before they reach production.",
+        "category": "planning",
+    },
+
     # ── RM69: CORPUS-LEVEL PROJECTIONS ───────────────────────────────
     "stub_file_shape": {
         "purpose": "Corpus-level projection: stub density and dominant classification per file. Shows which files are most stub-heavy and what kind of gap they represent (design-skeleton / dead-concept / unknown-gaps / mixed).",

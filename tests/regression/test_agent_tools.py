@@ -592,9 +592,10 @@ def test_dispatch_all_tools_registered():
         "fsm_scaffold",
         "fsm_diagram",
         "check_fsm_consistency",
+        "check_event_coverage",
         "export_context",
-            "export_context_append",
-            "export_context_dump",
+        "export_context_append",
+        "export_context_dump",
         # structural gap tools
         "find_isolated_modules",
         "find_orphaned_interfaces",
@@ -1554,3 +1555,120 @@ def test_check_fsm_consistency_flags_multiple_initial_states(tmp_path):
 
     assert result.startswith("FAIL")
     assert "initial" in result
+
+def test_check_event_coverage_flags_undeclared_emission(tmp_path):
+    """
+    Spec dj2-initial-event-set: an emit() of a type not in the taxonomy
+    appears under emitted-but-undeclared with file and line.
+    """
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "# Event Taxonomy\n\n### encounter\n"
+        "- `encounter.started`\n"
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "combat.py").write_text(
+        "def start_combat(log):\n"
+        "    log.emit('encounter.resolved', {'x': 1})\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "emitted-but-undeclared" in result
+    assert "encounter.resolved" in result
+    assert "combat.py" in result
+
+
+def test_check_event_coverage_typo_not_matched_to_declared(tmp_path):
+    """
+    Spec dj2-initial-event-set: a typo'd event type string is flagged as
+    emitted-but-undeclared and not silently matched to the correct type.
+    """
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "fsm.py").write_text(
+        "def resolve_flee(log):\n"
+        "    log.emit('encounter.endd')\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "encounter.endd" in result
+    assert "declared-but-never-emitted" in result
+    emitted_section = result.split("declared-but-never-emitted")[0]
+    assert "encounter.endd" in emitted_section
+
+
+def test_check_event_coverage_initial_set_pass_fail(tmp_path):
+    """
+    Spec dj2-initial-event-set: initial-set filter shows one row per initial
+    type with pass/fail against 'emitted AND consumed'.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "- `combat.initiation.triggered`\n"
+        "- `encounter.updated`\n"
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "events").mkdir(parents=True)
+    (tmp_path / "config" / "events" / "initial_events.json").write_text(
+        _json.dumps(["combat.initiation.triggered", "encounter.ended"]),
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "encounter.py").write_text(
+        "def on_start(log):\n"
+        "    log.emit('combat.initiation.triggered', {'target': 'goblin'})\n"
+        "def register(log):\n"
+        "    log.on('combat.initiation.triggered', on_start)\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "initial-set filter" in result
+    assert "combat.initiation.triggered" in result
+    assert "PASS" in result
+    assert "FAIL" in result
+
+
+def test_check_event_coverage_clean_case(tmp_path):
+    """Fully covered event: declared, emitted, consumed -> no undeclared list entry."""
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "fsm.py").write_text(
+        "def resolve_flee(log):\n"
+        "    log.emit('encounter.ended')\n"
+        "def register(log):\n"
+        "    log.on('encounter.ended', resolve_flee)\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "emitted-but-undeclared (0)" in result
+    assert "declared-but-never-emitted (0)" in result
+    assert "emitted-but-never-consumed (0)" in result
+    assert "consumed-but-never-emitted (0)" in result
