@@ -1,0 +1,11 @@
+{
+  "id": "001",
+  "base_sha": "598ed551d0538c1129c75aec0f708b20205c80af",
+  "files_touched": [
+    "config/events/initial_events.json"
+  ],
+  "tests_run": [],
+  "finding_ids": [],
+  "openspec_task": "3.1",
+  "verified_at": "2026-10-14T01:18:35.829808+00:00"
+}

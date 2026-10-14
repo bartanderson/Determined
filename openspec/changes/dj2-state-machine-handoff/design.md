@@ -55,10 +55,17 @@ Event type strings are defined once (a constants module or `initial_events.json`
 report can resolve them statically instead of regex-guessing.
 
 ### D4. Initial event set derived from the taxonomy
-Start from `design1a_event_taxonomy.md`. Expected core, to be confirmed against the actual FSM needs in task 3.1
-(this list is a starting hypothesis, not a decision): `encounter.started`, `encounter.updated`, `encounter.ended`,
-`combat.initiation.triggered`, `interaction.trade.offer_made`, `interaction.trade.completed`,
-`interaction.trade.rejected`, `state.resource.changed` (gold), `system.action.executed`.
+
+Confirmed 2026-10-13 in task 3.1 against the three FSM JSONs and world/event_log.py.
+Initial set: encounter.started, encounter.updated, encounter.ended,
+combat.initiation.triggered, interaction.trade.offer_made,
+interaction.trade.completed, state.resource.changed (gold). Required fields live in
+config/events/initial_events.json.
+
+Dropped from the earlier hypothesis: interaction.trade.rejected (a low offer stays in
+the countering state; the only terminal paths are confirm/cancel, both emitting
+interaction.trade.completed) and system.action.executed (no FSM action emits it and
+the context builder does not consume it).
 
 ### D5. Encounter first, and combat stays a stub
 Order bundles by what unblocks the most with the least dependency: events foundation, then Encounter (analysis

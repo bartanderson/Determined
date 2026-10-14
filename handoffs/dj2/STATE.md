@@ -25,7 +25,7 @@ stale    - base SHA is behind dj2 HEAD; ask for regeneration
 
 Current bundles:
 
- 001  events-foundation  planned  task 3.1
+ 001  events-foundation  ready    task 3.1
  002  encounter-fsm      planned  task 3.2
  003  barter-fsm         planned  task 3.3
  004  trade-fsm          planned  task 3.4
