@@ -25,7 +25,7 @@
   - Scope note (2026-10-14): only fight_possible was actually missing; the other four names had bodies. Bundle 002 adds fight_possible, converts start_combat / resolve_flee / resolve_parley to emit events, and adds test_encounter_fsm.py. See handoffs/dj2/002-encounter-fsm/rationale.md.
 - [x] 3.3 Bundle 003, Barter FSM: read `tests/integration/test_economy.py` first, record in rationale whether Barter and Trade share logic; implement `add_gold`, `execute_barter`, `need_more_gold`, emitting `state.resource.changed` / `interaction.trade.*`. Verify: as 3.2 for Barter; existing economy tests that ran headless in 1.3 still pass; run by script.
 - [x] 3.4 Bundle 004, Trade FSM: implement `execute_buy`, `update_price`, `price_acceptable`, `price_too_low`. Verify: as 3.2 for Trade; `test_trade_fsm.py` result recorded as pass or not-run with reason; run by script.
-- [ ] 3.5 Bundle 005, context builder: implement `_get_encounter_context` and `_get_combat_context` as read-only consumers of the Event Log. Verify: tests build a log with `encounter.started` / `encounter.ended` and `combat.initiation.triggered` and assert the snapshots; no import of `world.db` in the new code (grep count 0); run by script.
+- [x] 3.5 Bundle 005, context builder: implement `_get_encounter_context` and `_get_combat_context` as read-only consumers of the Event Log. Verify: tests build a log with `encounter.started` / `encounter.ended` and `combat.initiation.triggered` and assert the snapshots; no import of `world.db` in the new code (grep count 0); run by script.
 
 ## 4. Close
 

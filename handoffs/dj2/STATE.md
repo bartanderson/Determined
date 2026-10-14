@@ -29,7 +29,7 @@ Current bundles:
  002  encounter-fsm      ready    task 3.2
  003  barter-fsm         ready    task 3.3
  004  trade-fsm          ready    task 3.4
- 005  context-builder    planned  task 3.5
+ 005  context-builder    ready    task 3.5
 
 All planned against base SHA 598ed55.
 
@@ -82,3 +82,9 @@ corrected to match trade.json (update_price, execute_buy). execute_purchase
 renamed execute_buy and emits interaction.trade.completed. session_id added
 to the buy/sell context. First cumulative verification: bundles 001-003
 applied together, 16 tests (encounter + barter) still pass.
+
+2026-10-14: bundle 005 context-builder. Both encounter/combat context stubs
+implemented as pure EventLog readers (no mutation, no DB, no entity
+re-resolution). Full prefix check: all 5 bundles applied in order to a
+fresh clone at base_sha leave 32 tests passing across encounter, barter,
+trade, and context-builder.
