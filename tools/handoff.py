@@ -67,7 +67,7 @@ def cmd_make(args):
 
     bundle_dir = Path(args.bundle_dir).resolve()
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    (bundle_dir / "change.patch").write_text(patch_text, encoding="utf-8")
+    (bundle_dir / "change.patch").write_text(patch_text, encoding="utf-8", newline="\n")
 
     manifest = {
         "id": args.id,
@@ -79,7 +79,7 @@ def cmd_make(args):
         "verified_at": None,
     }
     (bundle_dir / "MANIFEST.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
 
     if not (bundle_dir / "rationale.md").exists():
@@ -212,10 +212,10 @@ def cmd_verify(args):
     lines.append(f"verified_at: {verified_at}")
     lines.append("")
 
-    (bundle_dir / "verify.md").write_text("\n".join(lines), encoding="utf-8")
+    (bundle_dir / "verify.md").write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
     manifest["verified_at"] = verified_at
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     return f"verify: wrote {bundle_dir / 'verify.md'}"
 

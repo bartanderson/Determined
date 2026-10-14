@@ -26,7 +26,7 @@ stale    - base SHA is behind dj2 HEAD; ask for regeneration
 Current bundles:
 
  001  events-foundation  ready    task 3.1
- 002  encounter-fsm      planned  task 3.2
+ 002  encounter-fsm      ready    task 3.2
  003  barter-fsm         planned  task 3.3
  004  trade-fsm          planned  task 3.4
  005  context-builder    planned  task 3.5
@@ -60,3 +60,9 @@ session does four things:
  2. reports "recorded X, remote now Y" with the files changed
  3. re-ingests the corpus at the new SHA
  4. updates the base SHA line above
+
+## Changelog
+
+2026-10-14: bundle 001 change.patch regenerated with LF line endings (old
+version had CRLF and would not apply on a LF clone). handoff.py fixed to
+write patches in LF regardless of host OS.
