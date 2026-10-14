@@ -176,6 +176,10 @@ Not in scope for this change (wave-1 machines only):
 
 ## WHAT TO DO NEXT SESSION
 
+Operational playbook for building the next bundle is in
+handoffs/dj2/WORKFLOW.md.
+
+
 Two independent lines of work now:
 
 1. If the user has applied the bundles to dj2 and pushed, record the new
