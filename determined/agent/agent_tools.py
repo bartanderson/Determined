@@ -12651,11 +12651,14 @@ def check_fsm_consistency(assessor: "Assessor", args: dict) -> str:
                 cond = t.get("cond")
                 acts = t.get("actions", []) or []
 
-                if frm not in state_names:
-                    failures.append(
-                        f"{path.name} [{name}] event '{event_name}': "
-                        f"from state '{frm}' not in states"
-                    )
+                # 'from' may be a string or a list of state names
+                frm_names = frm if isinstance(frm, list) else [frm]
+                for frm_name in frm_names:
+                    if frm_name not in state_names:
+                        failures.append(
+                            f"{path.name} [{name}] event '{event_name}': "
+                            f"from state '{frm_name}' not in states"
+                        )
                 if to not in state_names:
                     failures.append(
                         f"{path.name} [{name}] event '{event_name}': "

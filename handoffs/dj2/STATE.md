@@ -88,3 +88,23 @@ implemented as pure EventLog readers (no mutation, no DB, no entity
 re-resolution). Full prefix check: all 5 bundles applied in order to a
 fresh clone at base_sha leave 32 tests passing across encounter, barter,
 trade, and context-builder.
+
+
+## Prefix test table (task 4.1a)
+
+Applied bundles 1..k in order to a fresh clone at 598ed55; ran the five
+headless dj2 test files from BASELINE.md at each step.
+
+  k   bundles applied        test files  result
+  --  ---------------------  ----------  ------------
+  0   (none, base_sha)       5           16 passed
+  1   001                     5           16 passed
+  2   001-002                 5           16 passed
+  3   001-003                 5           16 passed
+  4   001-004                 5           16 passed
+  5   001-005                 5           16 passed
+
+Every prefix leaves dj2 in a working state. (BASELINE.md from the Linux
+session recorded 14 passed at base_sha; the actual count on this Windows
+session is 16. The 2-test difference is not investigated here; recorded as
+an observation for the next session.)

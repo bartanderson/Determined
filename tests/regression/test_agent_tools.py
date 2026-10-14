@@ -1556,6 +1556,65 @@ def test_check_fsm_consistency_flags_multiple_initial_states(tmp_path):
     assert result.startswith("FAIL")
     assert "initial" in result
 
+def test_check_fsm_consistency_handles_list_from(tmp_path):
+    """
+    Spec dj2-fsm-completion: a transition whose 'from' is a list of
+    state names must not crash the check.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "ListFromFSM",
+        "states": [
+            {"name": "awaiting", "initial": True},
+            {"name": "countering"},
+            {"name": "completed", "final": True},
+        ],
+        "events": {
+            "confirm": {
+                "transitions": [
+                    {"from": ["awaiting", "countering"], "to": "completed"}
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "list.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("PASS")
+    assert "ListFromFSM" in result
+
+def test_check_fsm_consistency_flags_bad_name_in_list_from(tmp_path):
+    """
+    A name inside a list 'from' that is not a declared state is reported.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "BadListFSM",
+        "states": [{"name": "awaiting", "initial": True}],
+        "events": {
+            "go": {
+                "transitions": [
+                    {"from": ["awaiting", "ghost"], "to": "awaiting"}
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "bad_list.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "ghost" in result
+
 def test_check_event_coverage_flags_undeclared_emission(tmp_path):
     """
     Spec dj2-initial-event-set: an emit() of a type not in the taxonomy
