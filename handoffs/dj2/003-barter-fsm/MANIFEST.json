@@ -1,0 +1,16 @@
+{
+  "id": "003",
+  "base_sha": "598ed551d0538c1129c75aec0f708b20205c80af",
+  "files_touched": [
+    "tests/unit/test_barter_fsm.py",
+    "world/adjudication_engine.py",
+    "world/fsm/builtins.py",
+    "world/fsm/generic_fsm.py"
+  ],
+  "tests_run": [
+    "tests/unit/test_barter_fsm.py"
+  ],
+  "finding_ids": [],
+  "openspec_task": "3.3",
+  "verified_at": "2026-10-14T05:46:52.041958+00:00"
+}
