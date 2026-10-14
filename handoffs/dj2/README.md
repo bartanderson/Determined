@@ -49,6 +49,17 @@ Work in your dj2 working copy, on a feature branch. Never apply to main.
 
        git apply C:\Users\bartl\dev\Determined\handoffs\dj2\NNN-slug\change.patch
 
+   For bundles 002 and later, the patch was generated against base_sha but
+   the tree already has earlier bundles applied, so the direct apply may
+   fail on context. Use the three-way form instead:
+
+       git apply --3way C:\Users\bartl\dev\Determined\handoffs\dj2\NNN-slug\change.patch
+
+   The --3way form uses the blob SHAs recorded in the patch to merge against
+   the current tree. It succeeds cleanly when the earlier bundles touched
+   different regions of the same files, which is our design here. If it
+   reports a conflict, stop and ask for the bundle to be regenerated.
+
 4. Run the dj2 tests named in the bundle's verify.md. Some require Postgres;
    those are marked "not run" there and are not claimed as passing.
 

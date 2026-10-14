@@ -70,3 +70,9 @@ write patches in LF regardless of host OS.
 2026-10-14: bundle 003 change.patch built. Also fixes a latent bug in
 GenericFSM.send_event (python-statemachine 3.x does not forward kwargs to
 guards/actions; callbacks were always receiving None as event_data).
+
+2026-10-14: handoff.py verify now supports three-way apply. When a bundle
+was generated against base_sha but the tree has earlier bundles applied,
+git apply --check fails on context and verify falls back to git apply --3way.
+The clone HEAD check is relaxed to accept base_sha as an ancestor of HEAD.
+README documents the --3way form for bundles 002+.

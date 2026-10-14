@@ -185,7 +185,11 @@ def test_verify_rejects_dirty_clone(tmp_path):
     assert "clean" in result.lower()
 
 
-def test_verify_rejects_wrong_base_sha(tmp_path):
+def test_verify_accepts_descendant_head_via_3way(tmp_path):
+    """
+    When HEAD is ahead of base_sha (earlier bundles applied and committed),
+    verify falls back to three-way apply and succeeds.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     (repo / "hello.txt").write_text("old\n", encoding="utf-8")
@@ -200,14 +204,40 @@ def test_verify_rejects_wrong_base_sha(tmp_path):
         test=[],
     ))
 
-    # Fresh clone but reset to a DIFFERENT commit (fabricate one)
+    # Add another commit on top of base so HEAD != base_sha.
     (repo / "other.txt").write_text("x\n", encoding="utf-8")
-    other = _commit(repo, "other")
+    descendant = _commit(repo, "later work")
+
     verify_clone = tmp_path / "verify"
-    _fresh_clone_at(repo, verify_clone, other)
+    _fresh_clone_at(repo, verify_clone, descendant)
+
+    result = handoff.cmd_verify(argparse.Namespace(
+        bundle_dir=str(bundle), clone=str(verify_clone),
+    ))
+    assert result.startswith("verify:")
+    verify_md = (bundle / "verify.md").read_text(encoding="utf-8")
+    assert "3way" in verify_md
+
+
+def test_verify_rejects_non_ancestor_head(tmp_path):
+    """A HEAD that does not descend from base_sha is still rejected."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "hello.txt").write_text("old\n", encoding="utf-8")
+    _commit(repo, "base")
+
+    bundle = tmp_path / "bundle"
+    _write_complete_bundle(bundle, {
+        "id": "001", "base_sha": "0" * 40, "files_touched": ["hello.txt"],
+        "tests_run": [], "finding_ids": ["F-1"], "openspec_task": "",
+        "verified_at": None,
+    })
+
+    verify_clone = tmp_path / "verify"
+    _fresh_clone_at(repo, verify_clone, _git(["rev-parse", "HEAD"], repo).stdout.strip())
 
     result = handoff.cmd_verify(argparse.Namespace(
         bundle_dir=str(bundle), clone=str(verify_clone),
     ))
     assert result.startswith("Error")
-    assert "base_sha" in result
+    assert "ancestor" in result

@@ -156,30 +156,54 @@ def cmd_verify(args):
     head = _git(["rev-parse", "HEAD"], clone)
     head_sha = head.stdout.strip()
     if head_sha != base_sha:
-        return f"Error: clone HEAD {head_sha[:8]} != base_sha {base_sha[:8]}"
+        # Allow HEAD ahead of base_sha (earlier bundles applied and committed)
+        # so a later bundle can be verified on top of them. Non-ancestor HEAD
+        # is still rejected.
+        ancestor = _git(["merge-base", "--is-ancestor", base_sha, head_sha], clone)
+        if ancestor.returncode != 0:
+            return (f"Error: clone HEAD {head_sha[:8]} != base_sha {base_sha[:8]} "
+                    f"and base_sha is not an ancestor of HEAD")
 
     status = _git(["status", "--short"], clone)
     if status.stdout.strip():
         return "Error: clone is not clean:\n" + status.stdout
 
     check = _git(["apply", "--check", str(patch_path)], clone)
-    if check.returncode != 0:
-        return f"FAIL: git apply --check failed: {check.stderr.strip()}"
+    if check.returncode == 0:
+        apply_result = _git(["apply", str(patch_path)], clone)
+        apply_method = "direct"
+    else:
+        # Context mismatch - expected when earlier bundles have already
+        # changed the same files. Fall back to three-way merge using the
+        # blob SHAs recorded in the patch.
+        apply_result = _git(["apply", "--3way", str(patch_path)], clone)
+        apply_method = "3way"
 
-    apply_result = _git(["apply", str(patch_path)], clone)
     if apply_result.returncode != 0:
-        return f"FAIL: git apply failed: {apply_result.stderr.strip()}"
+        return f"FAIL: git apply failed ({apply_method}): {apply_result.stderr.strip()}"
+
+    if apply_method == "direct":
+        command_lines = [
+            "- `git apply --check change.patch` -> OK",
+            "- `git apply change.patch` -> OK",
+        ]
+    else:
+        command_lines = [
+            "- `git apply --check change.patch` -> context mismatch (earlier bundles already applied)",
+            "- `git apply --3way change.patch` -> OK (three-way merge succeeded)",
+        ]
 
     lines = [
         f"# Verification for {manifest['id']}",
         "",
         f"Base SHA: {base_sha}",
+        f"Clone HEAD: {head_sha}",
         f"Clone: {clone}",
+        f"Apply method: {apply_method}",
         "",
         "## Commands",
         "",
-        "- `git apply --check change.patch` -> OK",
-        "- `git apply change.patch` -> OK",
+        *command_lines,
         "",
     ]
 
