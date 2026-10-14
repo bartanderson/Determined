@@ -28,7 +28,7 @@ Current bundles:
  001  events-foundation  ready    task 3.1
  002  encounter-fsm      ready    task 3.2
  003  barter-fsm         ready    task 3.3
- 004  trade-fsm          planned  task 3.4
+ 004  trade-fsm          ready    task 3.4
  005  context-builder    planned  task 3.5
 
 All planned against base SHA 598ed55.
@@ -76,3 +76,9 @@ was generated against base_sha but the tree has earlier bundles applied,
 git apply --check fails on context and verify falls back to git apply --3way.
 The clone HEAD check is relaxed to accept base_sha as an ancestor of HEAD.
 README documents the --3way form for bundles 002+.
+
+2026-10-14: bundle 004 trade-fsm. Registry keys in adjudication_engine.py
+corrected to match trade.json (update_price, execute_buy). execute_purchase
+renamed execute_buy and emits interaction.trade.completed. session_id added
+to the buy/sell context. First cumulative verification: bundles 001-003
+applied together, 16 tests (encounter + barter) still pass.

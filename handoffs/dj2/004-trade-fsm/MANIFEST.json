@@ -1,0 +1,15 @@
+{
+  "id": "004",
+  "base_sha": "598ed551d0538c1129c75aec0f708b20205c80af",
+  "files_touched": [
+    "tests/unit/test_trade_fsm.py",
+    "world/adjudication_engine.py",
+    "world/fsm/builtins.py"
+  ],
+  "tests_run": [
+    "tests/unit/test_trade_fsm.py"
+  ],
+  "finding_ids": [],
+  "openspec_task": "3.4",
+  "verified_at": "2026-10-14T06:43:58.411658+00:00"
+}

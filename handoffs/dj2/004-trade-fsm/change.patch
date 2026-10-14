@@ -1,0 +1,182 @@
+diff --git a/tests/unit/test_trade_fsm.py b/tests/unit/test_trade_fsm.py
+new file mode 100644
+index 0000000..ac1b7bb
+--- /dev/null
++++ b/tests/unit/test_trade_fsm.py
+@@ -0,0 +1,123 @@
++"""
++Unit tests for the trade FSM (config/fsms/trade.json).
++
++Walks every declared transition through the GenericFSM runner and checks
++the emitted events.
++"""
++from pathlib import Path
++from unittest.mock import Mock
++
++from world.event_log import EventLog
++from world.fsm.generic_fsm import GenericFSM
++from world.fsm import builtins
++
++
++FSM_PATH = str(Path(__file__).resolve().parents[2] / "config" / "fsms" / "trade.json")
++
++
++class StubMerchant:
++    id = "grom"
++    name = "Grom"
++
++
++class StubEngine:
++    def __init__(self):
++        self.event_log = EventLog()
++        self._execute_purchase = Mock()
++
++
++def _build_fsm(engine, current_price=13):
++    guard_reg = {
++        'price_too_low':   builtins.price_lt,
++        'price_acceptable': builtins.price_ge,
++    }
++    action_reg = {
++        'update_price': builtins.update_price,
++        'execute_buy':  builtins.execute_buy,
++    }
++    context = {
++        'item_name': 'Healing Potion',
++        'current_price': current_price,
++        'price': current_price,
++        'character': None,
++        'merchant': StubMerchant(),
++        'item': None,
++        'engine': engine,
++        'session_id': 'test_session',
++        '_guard_registry': guard_reg,
++        '_action_registry': action_reg,
++    }
++    return GenericFSM(FSM_PATH, context)
++
++
++def _send_quiet(fsm, event, **kwargs):
++    try:
++        fsm.send_event(event, kwargs or None)
++    except Exception:
++        pass
++
++
++def _types(engine):
++    return [e.type for e in engine.event_log.get_all_events()]
++
++
++def test_offer_below_price_transitions_to_countering():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('offer', {'value': 10})
++    assert fsm.state == 'countering'
++    assert fsm.context['price'] == 10
++
++
++def test_offer_below_price_does_not_emit_completed():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('offer', {'value': 10})
++    assert 'interaction.trade.completed' not in _types(engine)
++
++
++def test_offer_at_price_completes():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('offer', {'value': 13})
++    assert fsm.state == 'completed'
++
++
++def test_offer_above_price_completes():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('offer', {'value': 20})
++    assert fsm.state == 'completed'
++
++
++def test_offer_at_price_emits_completed():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('offer', {'value': 13})
++    assert 'interaction.trade.completed' in _types(engine)
++    ev = engine.event_log.get_events('interaction.trade.completed')[0]
++    assert ev.data['session_id'] == 'test_session'
++    assert ev.data['merchant_id'] == 'grom'
++
++
++def test_offer_at_price_calls_engine_execute_purchase():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('offer', {'value': 13})
++    assert engine._execute_purchase.called
++
++
++def test_confirm_from_awaiting_completes_and_emits():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('confirm')
++    assert fsm.state == 'completed'
++    assert 'interaction.trade.completed' in _types(engine)
++
++
++def test_cancel_completes_without_emit():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, current_price=13)
++    fsm.send_event('cancel')
++    assert fsm.state == 'completed'
++    assert 'interaction.trade.completed' not in _types(engine)
+\ No newline at end of file
+diff --git a/world/adjudication_engine.py b/world/adjudication_engine.py
+index 1263571..c871abb 100644
+--- a/world/adjudication_engine.py
++++ b/world/adjudication_engine.py
+@@ -51,7 +51,7 @@ class AdjudicationEngine:
+             get_item_from_merchant=True,
+             price_func=lambda item, merchant, rel, ctx: self.world._compute_price(item, merchant, rel, ctx),
+             guard_registry={'price_too_low': builtins.price_lt, 'price_acceptable': builtins.price_ge},
+-            action_registry={'store_offer': builtins.store_offer, 'execute_purchase': builtins.execute_purchase},
++            action_registry={action_registry={'update_price': builtins.update_price, 'execute_buy': builtins.execute_buy},: builtins.execute_purchase},
+         )
+         self.sell_config = TransactionConfig(
+             name='sell',
+@@ -219,6 +219,7 @@ class AdjudicationEngine:
+             'merchant': merchant,
+             'item': item,
+             'engine': self,
++            'session_id': session_id,
+         }
+         if config.context_updates:
+             context.update(config.context_updates)
+diff --git a/world/fsm/builtins.py b/world/fsm/builtins.py
+index 81dd58f..49b6ca3 100644
+--- a/world/fsm/builtins.py
++++ b/world/fsm/builtins.py
+@@ -74,7 +74,7 @@ def add_gold(instance, event_data):
+     instance.context['shortage'] = shortage - extra
+     return instance.context
+ 
+-def execute_purchase(instance, event_data):
++def execute_buy(instance, event_data):
+     engine = instance.context.get('engine')
+     if engine and hasattr(engine, '_execute_purchase'):
+         engine._execute_purchase(
+@@ -83,6 +83,17 @@ def execute_purchase(instance, event_data):
+             instance.context['item'],
+             instance.context.get('price', instance.context.get('current_price', 0))
+         )
++    if engine is not None and hasattr(engine, 'event_log'):
++        merchant = instance.context.get('merchant')
++        merchant_id = getattr(merchant, 'id', '') if merchant is not None else ''
++        engine.event_log.emit(
++            'interaction.trade.completed',
++            {
++                'session_id': instance.context.get('session_id', ''),
++                'merchant_id': merchant_id,
++            },
++            source_system='economy',
++        )
+     return instance.context
+ 
+ def execute_sell(instance, event_data):
