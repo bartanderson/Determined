@@ -221,7 +221,7 @@ does not say the function already exists.
 
 `design_oracle` (agent_tools.py, context branch) selects `class_name` from `functions`
 without a guard. Corpus DBs ingested before session 313 lack the column and the call
-raises "no such column". The test fixture was fixed (07a85a0); the tool was not.
+raises "no such column". The test fixture was fixed (306208a); the tool was not.
 
 **What to do:** catch the missing column (or check `PRAGMA table_info(functions)`) and
 fall back to the bare-name lookup; add a test with a fixture lacking class_name.
@@ -289,7 +289,7 @@ applied to dj2. Until they are, the primer correctly shows them as "pending appl
 
 ---
 
-## RM80 -- LLM server lifecycle follow-ups (after the autostart seam, 3b4bd48)
+## RM80 -- LLM server lifecycle follow-ups (after the autostart seam, ead23c4)
 
 Landed: `DETERMINED_LLM_AUTOSTART` / `[llm] autostart` seam, hermetic tests by default,
 session teardown, 15 s unreachable memory. Remaining, in the order they pay off:

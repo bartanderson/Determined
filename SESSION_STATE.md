@@ -1,4 +1,4 @@
-Written at commit: 832d55d
+Written at commit: 028c7ba
 
 # SESSION STATE -- opencode wiring, llm profiles, primer bundle awareness
 
@@ -9,8 +9,8 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
 
 ## STATE [V]
 
-- Branch: main at 832d55d; local-only, 57 commits ahead of origin/main. Nothing pushed.
-- Other branch: dj2-state-machines-openspec (merged into main at 4649465; local and
+- Branch: main at 028c7ba; local-only, 57 commits ahead of origin/main. Nothing pushed.
+- Other branch: dj2-state-machines-openspec (merged into main at 7600131; local and
   origin copies can be deleted).
 - Working tree clean except untracked memory/reference_autosaddler.md (user file).
 - Regression: all ten groups pass after the autostart change (206, 203, 136, 181, 136,
@@ -24,19 +24,19 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
 
  5f849a9 llm_client: named server profiles (analysis 8081, agent 8083), port-scoped
          orphan kill, tools/llm_server.py, determined.cfg rewritten
- 22ea50b context_compactor removed (only Determined used it)
- 5fb15b0 analysis profile text-only (no mmproj); HISTORY pointer fixed
- 19d24be opencode wiring: .opencode/plugins/determined, opencode.json, AGENTS.md,
+ aff1aae context_compactor removed (only Determined used it)
+ 1e4ace7 analysis profile text-only (no mmproj); HISTORY pointer fixed
+ 2c56608 opencode wiring: .opencode/plugins/determined, opencode.json, AGENTS.md,
          docs/AGENT_PARITY.md + agent_parity.json, tools/check_agent_parity.py
- 7a5bd51 plugin tools determined_tests / determined_git / determined_python,
+ 89f9efd plugin tools determined_tests / determined_git / determined_python,
          shell redirect, bash/sh/wsl block in validate_shell.py
- 4649465 merge of dj2-state-machines-openspec (session 314 handoff work, 19 commits)
- 07a85a0 design_oracle test fixture gains class_name; test mapped to agent_tools
- 34dfa55 primer aware of verified handoff bundles (determined/agent/handoff_bundles.py)
- 0cbd031 docs: lessons recorded (registry, AGENT_PARITY, HISTORY, TRACKER RM74-RM79)
- 3b4bd48 llm_client autostart seam (DETERMINED_LLM_AUTOSTART), conftest makes tests
+ 7600131 merge of dj2-state-machines-openspec (session 314 handoff work, 19 commits)
+ 306208a design_oracle test fixture gains class_name; test mapped to agent_tools
+ f34791e primer aware of verified handoff bundles (determined/agent/handoff_bundles.py)
+ 1da59ea docs: lessons recorded (registry, AGENT_PARITY, HISTORY, TRACKER RM74-RM79)
+ ead23c4 llm_client autostart seam (DETERMINED_LLM_AUTOSTART), conftest makes tests
          hermetic by default, session teardown, 15 s unreachable memory
- 832d55d docs: autostart trap, fix and follow-ups (HISTORY, TRACKER RM80)
+ 028c7ba docs: autostart trap, fix and follow-ups (HISTORY, TRACKER RM80)
 
 ## LIVE IN THE CODE NOW [V]
 
@@ -103,7 +103,7 @@ Carried forward from session 314:
 New this session:
 - Guard hooks scan command TEXT: a literal "&&", bare `python`, or "rm -rf *" inside a
   commit message or prompt string is blocked. Put such text in a file (git commit -F). [V]
-- FIXED 3b4bd48: non-slow tests reaching llm_client.generate() used to lazily start the
+- FIXED ead23c4: non-slow tests reaching llm_client.generate() used to lazily start the
   8B (172 s, leaked). Still true outside tests: the UI and ad-hoc scripts autostart.
   A test header saying "no LLM needed" is not evidence; check what generate()/chat()
   are reachable from. Live tests need slow/live_llm marks or warmup_llm. [V]
@@ -137,7 +137,7 @@ Full old text: `git show 8707451:SESSION_STATE.md`. Still live elsewhere:
   (ten unresolved references). A follow-up change, outside bundles 001-005 (TRACKER RM79).
 - Bundle status and apply order: handoffs/dj2/STATE.md is the live record; the primer
   shows "pending apply" per covered item.
-- The pre-existing G3 failure from that handoff is fixed (07a85a0).
+- The pre-existing G3 failure from that handoff is fixed (306208a).
 
 ## NEXT STEPS
 
