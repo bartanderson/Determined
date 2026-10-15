@@ -36,6 +36,21 @@ def get_llm_profile(default: str = "analysis") -> str:
     return _load().get("llm", "profile", fallback=default).strip() or default
 
 
+def get_llm_autostart(default: bool = True) -> bool:
+    """Whether llm_client.generate()/chat() may start a llama-server on demand.
+
+    Priority: DETERMINED_LLM_AUTOSTART env var > determined.cfg [llm] autostart > default.
+    Off means a call with no server running fails fast (returns None) instead of
+    spawning a GPU process; an explicit start_server() still works. Tests, the opencode
+    test tool and one-shot scripts turn it off; the UI keeps it on."""
+    raw = os.environ.get("DETERMINED_LLM_AUTOSTART")
+    if raw is None:
+        raw = _load().get("llm", "autostart", fallback=None)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in ("0", "false", "no", "off", "")
+
+
 def get_fast_ctx(default: int = 131072) -> int:
     """Context window (tokens) for the fast tier (llama-server, port 8081)."""
     if "LLM_FAST_CTX" in os.environ:

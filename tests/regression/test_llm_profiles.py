@@ -133,6 +133,128 @@ def test_kill_swallows_listing_errors(lc, monkeypatch):
     m._kill_servers_on_port(8081)  # must not raise
 
 
+@pytest.mark.parametrize("raw,expected", [
+    ("0", False), ("false", False), ("No", False), ("off", False), ("", False),
+    ("1", True), ("true", True), ("yes", True),
+])
+def test_autostart_env_parsing(monkeypatch, raw, expected):
+    from determined.config import get_llm_autostart
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", raw)
+    assert get_llm_autostart() is expected
+
+
+def test_autostart_env_beats_default(monkeypatch):
+    from determined import config
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    assert config.get_llm_autostart(default=True) is False
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "1")
+    assert config.get_llm_autostart(default=False) is True
+
+
+def test_unmarked_tests_run_with_autostart_disabled():
+    """conftest's autouse fixture makes every non-live test hermetic."""
+    from determined.config import get_llm_autostart
+    assert get_llm_autostart() is False
+
+
+def test_ensure_server_starts_only_when_autostart_on(lc, monkeypatch):
+    m = lc("analysis")
+    started = []
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: False)
+    monkeypatch.setattr(m, "start_server", lambda *a, **k: started.append(1) or True)
+
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    m._ensure_server()
+    assert started == []
+
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "1")
+    m._ensure_server()
+    assert started == [1]
+
+
+def test_generate_fails_fast_without_starting_when_autostart_off(lc, monkeypatch):
+    m = lc("analysis")
+    started = []
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: False)
+    monkeypatch.setattr(m, "start_server", lambda *a, **k: started.append(1) or True)
+
+    def _refused(*a, **k):
+        raise m.requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(m.requests, "post", _refused)
+    assert m.generate("hi") is None
+    assert m.chat([{"role": "user", "content": "hi"}]) is None
+    assert started == []
+
+
+def _counting_post(m, monkeypatch):
+    posts = []
+
+    def _refused(*a, **k):
+        posts.append(1)
+        raise m.requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(m.requests, "post", _refused)
+    return posts
+
+
+def test_unreachable_server_is_remembered_when_autostart_off(lc, monkeypatch):
+    m = lc("analysis")
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: False)
+    posts = _counting_post(m, monkeypatch)
+    assert m.generate("a") is None
+    assert m.chat([{"role": "user", "content": "b"}]) is None
+    assert m.generate("c") is None
+    assert posts == [1]                    # one real attempt, then fast-fail
+
+
+def test_unreachable_memory_expires(lc, monkeypatch):
+    m = lc("analysis")
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: False)
+    posts = _counting_post(m, monkeypatch)
+    m.generate("a")
+    m._unreachable_until = 0.0             # simulate the TTL elapsing
+    m.generate("b")
+    assert posts == [1, 1]
+
+
+def test_no_memory_when_autostart_on(lc, monkeypatch):
+    m = lc("analysis")
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "1")
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: True)   # skip any start
+    posts = _counting_post(m, monkeypatch)
+    m.generate("a")
+    m.generate("b")
+    assert posts == [1, 1]                 # transient failures are retried, not cached
+
+
+def test_warmup_is_not_fast_failed(lc, monkeypatch):
+    m = lc("analysis")
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: False)
+    m._unreachable_until = m.time.monotonic() + 1000      # a stale "down" note
+    calls = []
+
+    def _gen(prompt, timeout=0, max_tokens=0):
+        calls.append(prompt)
+        return "pong"
+
+    monkeypatch.setattr(m, "generate", _gen)
+    assert m.warmup(wait_seconds=5) is True
+    assert calls == ["ping"]
+    assert m._unreachable_until == 0.0
+
+
+def test_explicit_start_server_ignores_autostart_flag(lc, monkeypatch):
+    m = lc("analysis")
+    monkeypatch.setenv("DETERMINED_LLM_AUTOSTART", "0")
+    monkeypatch.setattr(m, "is_available", lambda timeout=5: True)
+    assert m.start_server() is True      # already reachable; no process involved
+
+
 def test_stop_server_any_owner_only_when_asked(lc, monkeypatch):
     m = lc("agent")
     calls = []

@@ -18,6 +18,10 @@ Arguments are passed as data, so there is no quoting to get wrong:
 The shell blocks commands these tools cover and tells you which tool to use. Never
 push; Bart pushes. Never run the full test suite or run tests in the background.
 
+These tools never start a model server on their own. Determined tools that need the
+analysis LLM (reason_about, infer_behavior, narration) return "unavailable" until one
+is running: `tools/llm_server.py start --profile analysis` (via `determined_python`).
+
 ## Shell (Windows PowerShell 5.1) for everything else
 
 - No `&&` / `||`: chain with `;` or `if ($?) { ... }`. No heredocs (`<<`), no `/dev/null`

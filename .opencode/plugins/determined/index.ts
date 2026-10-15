@@ -76,12 +76,23 @@ export default Plugin.define({
     })()
 
     // Run a process with an argument array (never a shell string): nothing to quote.
-    const runProc = (file: string, argv: string[], signal?: AbortSignal, timeout = 120000) =>
+    // Determined child processes never start a model server on their own
+    // (DETERMINED_LLM_AUTOSTART=0): a tool call must not stall for minutes or take VRAM
+    // from the agent's own server. Start one explicitly with tools/llm_server.py; the
+    // slow-test option opts back in because those tests call a real model.
+    const runProc = (
+      file: string,
+      argv: string[],
+      signal?: AbortSignal,
+      timeout = 120000,
+      autostart = false,
+    ) =>
       new Promise<{ code: number; out: string }>((done) => {
+        const env = autostart ? process.env : { ...process.env, DETERMINED_LLM_AUTOSTART: "0" }
         execFile(
           file,
           argv,
-          { cwd: dir, timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true, signal },
+          { cwd: dir, timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true, signal, env },
           (err, stdout, stderr) => {
             const code = err ? (typeof (err as any).code === "number" ? (err as any).code : 1) : 0
             let out = String(stdout ?? "")
@@ -243,7 +254,7 @@ export default Plugin.define({
           if (input.full_files) argv.push("--full-files")
           if (input.slow) argv.push("--slow")
           if (input.list) argv.push("--list")
-          const r = await runProc(py, argv, c?.signal, 180000)
+          const r = await runProc(py, argv, c?.signal, 180000, Boolean(input.slow))
           return text(cap(`exit ${r.code}\n${r.out}`))
         },
       })
@@ -342,7 +353,8 @@ export default Plugin.define({
           if (input.args !== undefined && !isStringArray(input.args)) {
             return text("args must be an array of strings.")
           }
-          const r = await runProc(py, [script, ...(input.args ?? [])], c?.signal)
+          // 200 s: tools/llm_server.py start waits up to 180 s for the model to load.
+          const r = await runProc(py, [script, ...(input.args ?? [])], c?.signal, 200000)
           return text(cap(`exit ${r.code}\n${r.out}`))
         },
       })
