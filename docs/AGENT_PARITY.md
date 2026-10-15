@@ -33,10 +33,21 @@ or change the model server, update the manifest and this table in the same commi
 
 ## Starting and stopping the local model
 
+Under opencode this is automatic. The model cannot start the server it runs on, so the
+plugin does it: on a prompt it checks the provider's health URL (from `opencode.json`)
+and, if nothing answers, runs `tools/llm_server.py start --profile agent --coexist` and
+waits (about 1 to 2 minutes when the model is cold; the first prompt just takes that long).
+A server the plugin started is stopped after 30 idle minutes (`DETERMINED_AGENT_IDLE_MIN`);
+a server you started yourself is never stopped by the plugin. Turn it all off with
+`DETERMINED_AGENT_AUTOSTART=0`. Plugin log: `%TEMP%\determined-opencode.log`.
+
+Manual control (any time):
+
     .venv\Scripts\python tools\llm_server.py start --profile agent
     .venv\Scripts\python tools\llm_server.py stop  --profile agent
 
-One server fits in VRAM at a time; `start` refuses to stack a second.
+Without `--coexist`, `start` refuses to stack a second server. The agent and analysis
+profiles together fit (about 8 GB VRAM), so the plugin passes `--coexist`.
 
 ## Known differences and gaps
 

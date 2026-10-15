@@ -9,17 +9,22 @@
 //   3. Brief    - before each user prompt, run work_session_primer against the corpus and
 //                 add it to the system context.
 //   4. Tools    - determined_query, determined_tests, determined_git, determined_python.
+//   0. Server   - starts the local agent model server on the first prompt (the model cannot
+//                 start the server it runs on) and stops it after an idle period, if this
+//                 plugin started it. Log: %TEMP%\determined-opencode.log
 //
 // Environment:
 //   DETERMINED_CORPUS_DB  corpus DB for the brief and determined_query default
 //                         (default: <repo>/C_Users_bartl_dev_dj2.db if present)
 //   DETERMINED_BRIEF=0    disable the brief
 //   DETERMINED_REDIRECT=0 disable the shell-to-tool redirect
+//   DETERMINED_AGENT_AUTOSTART=0   do not start the model server automatically
+//   DETERMINED_AGENT_IDLE_MIN=30   minutes idle before a server this plugin started is stopped
 //
 // Parity with Claude Code: docs/AGENT_PARITY.md, checked by tools/check_agent_parity.py.
 import { Plugin } from "@opencode/plugin"
 import { execFile, spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
@@ -105,6 +110,75 @@ export default Plugin.define({
         )
       })
 
+    // ---- 0. the agent model server: start on demand, stop when idle -------
+    // The model cannot start the server it runs on, so the plugin does it, before the
+    // model call (the prompt hook below). Health is read from the provider URL in
+    // opencode.json, which tools/check_agent_parity.py ties to the llm_client profile.
+    // A server this plugin started is stopped after DETERMINED_AGENT_IDLE_MIN minutes
+    // without activity (it holds ~17 GB of RAM); one you started yourself is never
+    // stopped here. DETERMINED_AGENT_AUTOSTART=0 turns all of this off.
+    const llmServerPy = join(dir, "tools", "llm_server.py")
+    const logFile = join(tmpdir(), "determined-opencode.log")
+    const log = (m: string) => {
+      try {
+        appendFileSync(logFile, `${new Date().toISOString()} ${m}\n`)
+      } catch {
+        // logging is best effort
+      }
+    }
+    const agentHealthUrl = (() => {
+      try {
+        const cfg = JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8"))
+        const base: string = cfg?.providers?.local?.settings?.baseURL ?? "http://127.0.0.1:8083/v1"
+        return base.replace(/\/v1\/?$/, "") + "/health"
+      } catch {
+        return "http://127.0.0.1:8083/health"
+      }
+    })()
+    const autoAgent = process.env.DETERMINED_AGENT_AUTOSTART !== "0" && existsSync(llmServerPy)
+    const idleMs = (Number(process.env.DETERMINED_AGENT_IDLE_MIN) || 30) * 60_000
+    let startedByUs = false
+    let lastActivity = Date.now()
+    let starting: Promise<void> | null = null
+
+    const healthy = async () => {
+      try {
+        const r = await fetch(agentHealthUrl, { signal: AbortSignal.timeout(2000) })
+        return r.ok
+      } catch {
+        return false
+      }
+    }
+    const ensureAgentServer = async () => {
+      lastActivity = Date.now()
+      if (!autoAgent || (await healthy())) return
+      if (!starting) {
+        starting = (async () => {
+          log(`agent server not reachable at ${agentHealthUrl}; starting`)
+          // --coexist: the analysis server may be running; both fit in 8 GB VRAM.
+          const r = await runProc(
+            py,
+            [llmServerPy, "start", "--profile", "agent", "--coexist"],
+            undefined,
+            240000,
+          )
+          log(`start exit ${r.code}: ${r.out.trim().slice(-300)}`)
+          if (r.code === 0) startedByUs = true
+        })().finally(() => {
+          starting = null
+        })
+      }
+      await starting
+    }
+    const idleTimer = setInterval(async () => {
+      if (!startedByUs || starting || Date.now() - lastActivity < idleMs) return
+      startedByUs = false
+      log(`idle for ${Math.round((Date.now() - lastActivity) / 60000)} min; stopping agent server`)
+      const r = await runProc(py, [llmServerPy, "stop", "--profile", "agent"], undefined, 60000)
+      log(`stop exit ${r.code}: ${r.out.trim().slice(-200)}`)
+    }, 60_000)
+    ;(idleTimer as any).unref?.()
+
     // ---- 1 + 2. guards and redirect -------------------------------------
     const guardScripts = [
       join(dir, ".claude", "hooks", "validate_shell.py"),
@@ -148,6 +222,7 @@ export default Plugin.define({
     }
 
     await ctx.tool.hook("execute.before", (event: any) => {
+      lastActivity = Date.now()
       if (event.tool !== "shell") return
       const command = String(event.input?.command ?? "")
       if (hasDetermined && process.env.DETERMINED_REDIRECT !== "0") {
@@ -178,6 +253,12 @@ export default Plugin.define({
     }
 
     await ctx.session.hook("prompt", async () => {
+      // Runs before the model call: the model server must be up by the time it returns.
+      try {
+        await ensureAgentServer()
+      } catch (err) {
+        log(`ensureAgentServer failed: ${String(err)}`)
+      }
       try {
         await refreshBrief()
       } catch {
@@ -185,6 +266,7 @@ export default Plugin.define({
       }
     })
     await ctx.session.hook("context", (event: any) => {
+      lastActivity = Date.now()
       if (brief) event.system.push({ type: "text", text: brief })
     })
 
@@ -411,5 +493,9 @@ export default Plugin.define({
         },
       })
     })
+
+    // Stop the idle timer if the plugin is unloaded. A server started here is left
+    // running on unload on purpose: it may belong to another open session.
+    return () => clearInterval(idleTimer)
   },
 })

@@ -27,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("action", choices=["status", "start", "stop", "profiles"])
     ap.add_argument("--profile", help="profile name (default: env/cfg/analysis)")
+    ap.add_argument("--coexist", action="store_true",
+                    help="start even if another llama-server is running (the agent and "
+                         "analysis profiles together use about 8 GB of VRAM)")
     args = ap.parse_args(argv)
 
     if args.profile:
@@ -54,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             print("already running")
             return 0
         others = [(pid, lc._parse_port(cmd)) for pid, cmd in lc._llama_servers()]
-        if others:
+        if others and not args.coexist:
             print("another llama-server is running (VRAM is shared): "
                   + ", ".join(f"pid {pid} port {port}" for pid, port in others))
             print("stop it first (.venv\\Scripts\\python tools\\llm_server.py stop --profile <name>)")

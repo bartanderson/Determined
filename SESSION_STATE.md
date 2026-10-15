@@ -175,7 +175,9 @@ First commands (any agent):
 
 To try opencode on real work:
 
-1. `.venv\Scripts\python tools\llm_server.py start --profile agent` (if not running).
+1. Nothing to start: the plugin starts the agent server on the first prompt (1-2 min cold)
+   and stops it after 30 idle minutes if it started it. Manual:
+   `.venv\Scripts\python tools\llm_server.py start --profile agent`.
 2. Open C:\Users\bartl\dev\Determined in opencode desktop on branch main, model
    local/qwen36-35b, run `/next`. The brief will list the dj2 cards with bundle coverage.
 3. Report friction (permission dialogs, tool choice) -- it feeds RM78.
