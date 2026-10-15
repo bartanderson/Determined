@@ -866,3 +866,7 @@ no socket.emit in the HTML/JS source -- not a bug in the extractor, a gap in the
 2026-10-15: Primer bundle awareness reports what the patch changes, not what the repo lacks. dj2's parley_possible already exists at baseline and bundle 002 does not touch it, so "not changed by the bundle" is not "still to build" (RM74 tracks the FSM-stub false positive).
 
 2026-10-15: context_compactor (PNG-render compression) removed; only Determined used it. The analysis profile no longer loads an mmproj.
+
+2026-10-15: A plain regression run could start a GPU model server. tests/regression/test_intent_layer_ab.py has non-slow tests that reach llm_client.generate(), whose lazy start (_ensure_server) spawned the 8B (172 s) and left it running after pytest exited; the warmup_llm fixture was not involved (one slow test uses it). Fixed with an autostart seam (DETERMINED_LLM_AUTOSTART), an autouse conftest fixture that turns it off for non-live tests, and session teardown. Test headers that say "no LLM needed" are not evidence: check what generate()/chat() are reachable from.
+
+2026-10-15: On this Windows box a refused connection costs 2-4 s (localhost 4 s, 127.0.0.1 2 s), so "fail fast" with no server is not milliseconds. With autostart off llm_client remembers an unreachable server for 15 s; warmup() bypasses and clears that note, and autostart-on never caches (transient failures are retried).

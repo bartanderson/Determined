@@ -286,3 +286,32 @@ applied to dj2. Until they are, the primer correctly shows them as "pending appl
   bundle workflow (handoffs/dj2/WORKFLOW.md); a good first task for the local model.
 
 **Gate:** Bart authorizes changes to the dj2 repo.
+
+---
+
+## RM80 -- LLM server lifecycle follow-ups (after the autostart seam, 3b4bd48)
+
+Landed: `DETERMINED_LLM_AUTOSTART` / `[llm] autostart` seam, hermetic tests by default,
+session teardown, 15 s unreachable memory. Remaining, in the order they pay off:
+
+1. **Flip the default entry point by entry point (option C).** Lazy start inside
+   `generate()`/`chat()` is still on for the UI and ad-hoc scripts. Give each entry
+   point (UI request layer, CLI, tools via dispatch) an explicit `ensure_llm()` and set
+   autostart off there. Needs a health/restart path in the UI request layer so a server
+   that crashed between sessions does not return silent `None` again (the 2026-07-05
+   reason lazy start exists). 47 references in 13 files; agent_tools.py is
+   high-blast-radius, so full regression.
+2. **In-process mock server fixture (option F).** A thread-hosted scripted
+   OpenAI-compatible server for tests of the agent-layer parsers (decompose NEED: lines,
+   claim_verifier, pattern_executor): fixed model outputs, injected failures (timeout,
+   500, empty, <think> blocks). Does not replace live tests; do after step 1 or behind
+   the existing autostart-off fixture. A prototype exists in the opencode probing notes
+   (a scripted /v1/chat/completions server, ~100 lines).
+3. **Decide whether opencode sessions route Determined's own LLM calls to the agent
+   server** (DETERMINED_LLM_PROFILE=agent in the plugin env) so one server serves both,
+   instead of starting `analysis` next to it. Needs a quality check of decompose/narrate
+   on the 35B (live tests, 7+ minutes per file).
+4. **Windows refused-connect is 2-4 s** (localhost 4 s, 127.0.0.1 2 s). Switching
+   LLM_BASE_URL to 127.0.0.1 halves it; touches tests and one error message string.
+
+**Gate:** Determined session only.

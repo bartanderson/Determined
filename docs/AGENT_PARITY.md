@@ -55,7 +55,11 @@ One server fits in VRAM at a time; `start` refuses to stack a second.
   `validate_shell.py` (which Claude Code also runs).
 - Guard hooks scan command text. A literal `&&`, bare `python`, or `rm -rf *` inside
   a commit message or prompt string trips them; pass such text in a file.
-- Open parity items and follow-ups are tracked in `docs/TRACKER.md` (RM74-RM79).
+- Determined processes the plugin spawns run with `DETERMINED_LLM_AUTOSTART=0`: a
+  tool call never starts a model server. LLM-backed Determined tools report
+  "unavailable" until `tools/llm_server.py start --profile analysis` is run
+  (`determined_tests` with `slow: true` opts back in).
+- Open parity items and follow-ups are tracked in `docs/TRACKER.md` (RM74-RM80).
 
 ## Switching back and forth
 
