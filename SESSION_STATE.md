@@ -1,202 +1,167 @@
-Written at commit: 85d9bcb
+Written at commit: 832d55d
 
-# SESSION STATE -- dj2-state-machines-openspec wrap
+# SESSION STATE -- opencode wiring, llm profiles, primer bundle awareness
 
-## Active branch: dj2-state-machines-openspec [V]
-## Working tree: clean, one untracked user file (memory/reference_autosaddler.md) [V]
-## Tests: G1 + G2 pass (423 total); G3 fails on one pre-existing test (see below) [V]
-## dj2 baseline: 598ed551d0538c1129c75aec0f708b20205c80af (matches proposal) [V]
+Arc file missing (no session_arc.md was kept this session); reconstructed from
+git log and re-verification. Tags: [V] confirmed by a command this run, [?] recalled.
 
----
+Last agent: Claude Code (desktop app). Next agent may be opencode (see Next steps).
 
-## WHAT HAPPENED THIS SESSION
+## STATE [V]
 
-Completed the dj2-state-machine-handoff OpenSpec change end to end. This is
-a self-contained change on branch dj2-state-machines-openspec, distinct from
-Determined's main line of work.
+- Branch: main at 832d55d; local-only, 57 commits ahead of origin/main. Nothing pushed.
+- Other branch: dj2-state-machines-openspec (merged into main at 4649465; local and
+  origin copies can be deleted).
+- Working tree clean except untracked memory/reference_autosaddler.md (user file).
+- Regression: all ten groups pass after the autostart change (206, 203, 136, 181, 136,
+  112, 288, 48, 131, 81; 82 s total, no server left behind). --slow run of
+  test_intent_layer_ab.py: 28 passed in 431 s, server stopped at session end.
+- Parity check: `AGENT PARITY: ok`.
+- Model server for opencode (agent profile, port 8083) is running at time of writing [V].
+  Stop with `.venv\Scripts\python tools\llm_server.py stop --profile agent`.
 
-Determined-side tooling (section 2 of the tasks): [V]
-- 2.1 check_fsm_consistency tool + 6 tests
-- 2.2 check_event_coverage tool + 8 tests
-- 2.3 tools/handoff.py (make/verify/check) + 8 tests
-- 2.4 handoffs/dj2/README.md and STATE.md
+## WHAT HAPPENED (main, oldest first)
 
-Bundle work (section 3): [V]
-- 001 events foundation: config/events/initial_events.json, 7 event types
-- 002 encounter FSM: fight_possible guard, four actions emit events,
-  tests/unit/test_encounter_fsm.py (8 tests)
-- 003 barter FSM: session_id in barter context, add_gold and execute_barter
-  emit, tests/unit/test_barter_fsm.py (8 tests)
-- 004 trade FSM: registry keys fixed to match trade.json, execute_purchase
-  renamed execute_buy and emits, tests/unit/test_trade_fsm.py (8 tests)
-- 005 context-builder: _get_encounter_context and _get_combat_context
-  implemented as EventLog readers, tests/unit/test_context_builder_encounter.py
-  (8 tests)
+ 5f849a9 llm_client: named server profiles (analysis 8081, agent 8083), port-scoped
+         orphan kill, tools/llm_server.py, determined.cfg rewritten
+ 22ea50b context_compactor removed (only Determined used it)
+ 5fb15b0 analysis profile text-only (no mmproj); HISTORY pointer fixed
+ 19d24be opencode wiring: .opencode/plugins/determined, opencode.json, AGENTS.md,
+         docs/AGENT_PARITY.md + agent_parity.json, tools/check_agent_parity.py
+ 7a5bd51 plugin tools determined_tests / determined_git / determined_python,
+         shell redirect, bash/sh/wsl block in validate_shell.py
+ 4649465 merge of dj2-state-machines-openspec (session 314 handoff work, 19 commits)
+ 07a85a0 design_oracle test fixture gains class_name; test mapped to agent_tools
+ 34dfa55 primer aware of verified handoff bundles (determined/agent/handoff_bundles.py)
+ 0cbd031 docs: lessons recorded (registry, AGENT_PARITY, HISTORY, TRACKER RM74-RM79)
+ 3b4bd48 llm_client autostart seam (DETERMINED_LLM_AUTOSTART), conftest makes tests
+         hermetic by default, session teardown, 15 s unreachable memory
+ 832d55d docs: autostart trap, fix and follow-ups (HISTORY, TRACKER RM80)
 
-Close tasks (section 4): [V]
-- 4.1a freshness check: dj2 origin/main is still at 598ed55, no drift
-- 4.1a prefix test table: bundles 1..k applied to a fresh clone; the five
-  headless dj2 test files pass at every k (16 passed at k=0 through k=5)
-- 4.1 FSM consistency on the patched clone: BarterFSM, EncounterFSM,
-  TradeFSM resolve cleanly
-- 4.2 openspec validate dj2-state-machine-handoff --strict: valid
+## LIVE IN THE CODE NOW [V]
 
-Also discovered and fixed during the session:
-- generic_fsm.py send_event used **event_data; python-statemachine 3.x
-  forwards only positional args to guard/action callbacks, so every
-  callback received None. Fixed to pass positionally.
-- check_fsm_consistency crashed on list-form "from" fields (barter.json
-  and trade.json use them). Fixed with tests.
+- Profiles: `DETERMINED_LLM_PROFILE` env > determined.cfg `[llm] profile` > analysis.
+  Public llm_client API unchanged. One profile's server fits in 8 GB VRAM at a time.
+- Autostart: `DETERMINED_LLM_AUTOSTART` env > `[llm] autostart` > true. Off = generate()/
+  chat() never start a server (None instead). tests/regression/conftest.py turns it off
+  for every test not marked slow/live_llm and not using warmup_llm, and stops a server
+  the session launched. The plugin runs Determined children with it off.
+- opencode (v2.0.29) in the Determined folder: plugin gives guards (the repo's own hook
+  scripts, honoring exit 2 and {"decision":"block"}), a per-prompt work_session_primer
+  brief, tools determined_query/tests/git/python, `/next`. Default model
+  local/qwen36-35b at 127.0.0.1:8083.
+- Primer: fully covered items move to "Already handed off"; partial ones show
+  "changes N/M ... not changed by the bundle". Bundle state via
+  `git apply --reverse --check` in project_root.
+- Verified live with the real 35B through opencode (headless and background-service
+  mode): brief, determined_query, both guards, redirect, tool-first on 8 prompts.
 
-**Commits this session (10):** [V]
-- e5cc4db -- openspec: task 2.4 - handoff README and STATE docs
-- 25d4132 -- openspec: task 2.3 - handoff bundle tool (make/verify/check)
-- 533b5ef -- openspec: task 2.2 - event coverage report; registry entries
-- e654646 -- openspec: task 2.1 - FSM consistency check + 4 tests
-- 3200684 -- openspec: task 3.1 - bundle 001 events foundation
-- c1e671c -- openspec: task 3.2 - bundle 002 encounter FSM
-- 73bdaf1 -- handoff: three-way apply fallback for cumulative bundles
-- d6d28f3 -- openspec: task 3.3 - bundle 003 barter FSM
-- 97f1957 -- openspec: task 3.4 - bundle 004 trade FSM
-- 9f1c255 -- openspec: task 3.5 - bundle 005 context builder
-- 85d9bcb -- openspec: check_fsm_consistency handles list 'from'
+## DECISIONS PINNED
 
----
+- AGENTS.md is a thin pointer to CLAUDE.md (single source). opencode v2.0.29 did not
+  auto-load CLAUDE.md in testing.
+- Redirects to opencode-only tools live in the plugin, not in validate_shell.py.
+- Only bundles with MANIFEST verified_at are read by the primer.
+- fast_ctx/quality_ctx in determined.cfg left as-is on purpose (RM76).
+- Never push; Bart pushes. dj2 repo changes need Bart's authorization.
 
-## BUNDLES VERIFIED, NOT YET APPLIED TO dj2
+## FAILED APPROACHES / SURPRISES (details in docs/HISTORY.md)
 
-All five bundles under handoffs/dj2/ are ready: MANIFEST.json,
-change.patch, rationale.md, verify.md present, all four files checked.
-The patches apply cleanly to a fresh clone at 598ed55 and to a cumulative
-clone (each on top of its predecessors). Not yet applied to the user's
-working dj2 clone.
+- v1 opencode docs (first search hits) do not match v2.0.29.
+- Permission hook sees pieces of a compound shell command; use tool.execute.before.
+- A first plugin honored only exit 2 and let check_venv_python through.
+- Harness reset --hard did not undo a commit and contaminated a measurement.
 
-To apply: see handoffs/dj2/README.md. Use git apply --3way for bundles
-002+ (they were generated against base_sha but the tree already has
-earlier bundles).
+## NOT VERIFIED [?]
 
-After applying, the user commits to a dj2 feature branch and pushes; the
-next Determined session records the new dj2 SHA in handoffs/dj2/STATE.md.
+- opencode desktop GUI itself has not been clicked through (permission dialogs untested).
+- 8B model against the tool-first prompt set.
+- Long sessions / dj2-scale tasks on the local model; quality vs Claude on real work.
 
----
+## KNOWN TRAPS
 
-## dj2 TESTS NOT RUN AND WHY
-
-- Anything requiring Postgres (psycopg2, pgvector): 30 files classified
-  in BASELINE.md from the Linux baseline. Postgres is available on this
-  Windows session but was not exercised; the change is FSM-only and no
-  Postgres-dependent code path was touched.
-- tests/test_trade_fsm.py imports world.fsm.trade_machine, a module that
-  does not exist at base_sha. Left broken (out of scope); flagged in
-  bundle 004's rationale.
-
----
-
-## PRE-EXISTING FAILURES (not caused by this session)
-
-tools/run_regression.py G3 has one failure:
-  tests/regression/test_design_oracle.py::test_design_oracle_opportunity_context
-  sqlite3.OperationalError: no such column: class_name
-
-The test fixture does not create a class_name column, but design_oracle
-queries it. The test file was last touched in commit 471ee71 (adding
-design_oracle); class_name was added to the schema later (Determined
-session 313). The test predates that addition. Not related to this
-branch's work; fix is deferred.
-
----
-
-## FINDINGS DEFERRED TO A LATER CHANGE
-
-Surfaced during task 4.1's check_fsm_consistency run on the patched clone.
-Not in scope for this change (wave-1 machines only):
-
-  buy.json [BuyFSM] and sell.json [SellFSM] declare guards: {} and
-  actions: {}, yet their transitions reference price_too_low,
-  store_offer, execute_purchase, execute_sell. Ten unresolved references
-  total. These two FSMs cannot fire their offer/confirm events as written.
-
-  Per the proposal's non-goals ("no wave-1 stubs outside the three FSMs
-  and the two context-builder stubs"), a follow-up change handles them.
-
-  Wave-1 machines (BarterFSM, EncounterFSM, TradeFSM) resolve cleanly.
-
----
-
-## KNOWN TRAPS (carried forward)
-
+Carried forward from session 314:
 - Cytoscape containers need position:relative;overflow:hidden. [V s290]
 - llm_client.chat() reasoning_content fallback removed -- don't re-add it. [V s290]
 - Editor sym list: exact path equality in DB query, not LIKE basename. [V s291]
 - Call tree: filter callees/callers whose name contains \n. [V s291]
 - pytest -m on CLI REPLACES addopts -- never pass -m by hand. [V]
-- Old corpus DBs may lack http_route/is_tool/is_stub columns -- handle
-  gracefully. [V s293]
-- FSM stubs have 0 static callers (string dispatch) -- don't treat as
-  low-priority. [V s295]
-- New tools registered in TOOLS dict: add AFTER function def, not inside
-  the dict literal. [V s299]
-- git commit messages: PowerShell @'...'@ here-strings fail on em-dashes
-  and smart quotes. Use plain hyphens only. [V s299/s311]
-- Stale corpus DB produces phantom stubs. Re-ingest before trusting stub
-  list. [V s301]
-- DB forward-slash paths: when querying by file_path, use forward slashes
-  not backslashes. [V s303]
-- dispatch test (test_agent_tools.py::test_dispatch_all_tools_registered):
-  update expected set when adding new tools to TOOLS dict. [V s310]
-- reingest_file does NOT use EngineRunner -- only handles Python files via
-  parse_ast path. call_arg_count propagation fixed s313. [V s313]
-- section 6 mismatch JOIN: class_name match required for class-qualified
-  callees. Old corpus DBs (pre-s313) have class_name=NULL. [V s313]
-- [NEW s314] python-statemachine 3.x: send_event callbacks receive only
-  positional args, not kwargs. Pass event_data as a single positional
-  argument. [V]
-- [NEW s314] handoff.py writes patches with newline="\n" explicitly;
-  Windows Path.write_text defaults to CRLF and breaks git apply. [V]
-- [NEW s314] handoff.py verify: direct apply first, then git apply --3way
-  fallback for cumulative bundles. Clone HEAD check allows base_sha as an
-  ancestor rather than requiring equality. [V]
-- [NEW s314] check_fsm_consistency handles 'from' as a string OR a list of
-  state names. [V]
+- Old corpus DBs may lack http_route/is_tool/is_stub columns -- handle gracefully. [V s293]
+- FSM stubs have 0 static callers (string dispatch) -- not low priority. [V s295]
+- New tools in TOOLS dict: add AFTER the function def, not inside the literal. [V s299]
+- git commit messages: PowerShell @'...'@ here-strings fail on em-dashes/smart quotes. [V]
+- Stale corpus DB produces phantom stubs. Re-ingest before trusting stub list. [V s301]
+- DB paths: query with forward slashes. [V s303]
+- test_dispatch_all_tools_registered: update expected set when adding tools. [V s310]
+- reingest_file only handles Python via parse_ast; call_arg_count fixed s313. [V s313]
+- class_name JOIN needed for class-qualified callees; pre-s313 DBs have NULL. [V s313]
+- python-statemachine 3.x: callbacks get positional args only. [V s314]
+- handoff.py writes patches with newline="\n" (CRLF breaks git apply). [V s314]
+- handoff.py verify: direct apply, then --3way; base_sha may be an ancestor. [V s314]
+- check_fsm_consistency handles 'from' as string or list. [V s314]
 
-## RESOURCE / PROCESS RULES [V]
+New this session:
+- Guard hooks scan command TEXT: a literal "&&", bare `python`, or "rm -rf *" inside a
+  commit message or prompt string is blocked. Put such text in a file (git commit -F). [V]
+- FIXED 3b4bd48: non-slow tests reaching llm_client.generate() used to lazily start the
+  8B (172 s, leaked). Still true outside tests: the UI and ad-hoc scripts autostart.
+  A test header saying "no LLM needed" is not evidence; check what generate()/chat()
+  are reachable from. Live tests need slow/live_llm marks or warmup_llm. [V]
+- A refused connection costs 2-4 s on this Windows box (localhost 4 s, 127.0.0.1 2 s);
+  with autostart off the client remembers a miss for 15 s. [V]
+- Windows PowerShell 5.1: Start-Process -ArgumentList joins args with spaces and drops
+  inner double quotes; opencode run treats a prompt word starting with "-" as a flag. [V]
+- opencode shell tool is PS 5.1; `bash` is the WSL launcher, not Git Bash. [V]
+- design_oracle's context lookup raises on pre-s313 DBs (RM75). [V]
 
-- Test runner: tools/run_tests.py only. Never pytest directly, never full
-  suite.
-- Tool access: python tools/query.py <tool> -- correct entry point, routes
-  through dispatch().
-- High-blast-radius files (>= 500 edges): any change requires full
-  regression (tools/run_regression.py). Current list: agent_tools.py,
-  ui_server.py, language_walker.py, graph_explorer.py, local_agent.py,
-  parse_ast.py. agent_tools.py and tool_registry.py both changed this
-  session; regression was run (G1 + G2 pass; G3 has the pre-existing
-  design_oracle failure above).
+## RESOURCE / PROCESS RULES
+
+- Test runner: tools/run_tests.py only; never pytest directly, never the full suite.
+- Tool access: tools/query.py, or determined_query under opencode.
+- High-blast-radius files (>= 500 edges) need full regression: agent_tools.py,
+  ui_server.py, language_walker.py, graph_explorer.py, local_agent.py, parse_ast.py.
+  agent_tools.py changed this session; groups run (see STATE).
 
 ---
 
-## WHAT TO DO NEXT SESSION
+## CARRIED FROM THE SESSION 314 HANDOFF
 
-Operational playbook for building the next bundle is in
-handoffs/dj2/WORKFLOW.md.
+Full old text: `git show 8707451:SESSION_STATE.md`. Still live elsewhere:
 
+- dj2 tests not run: Postgres-dependent files (30, classified in
+  handoffs/dj2/BASELINE.md). dj2's tests/test_trade_fsm.py imports
+  world.fsm.trade_machine, which does not exist at base_sha; left broken and flagged in
+  handoffs/dj2/004-trade-fsm/rationale.md.
+- Deferred finding: buy.json [BuyFSM] and sell.json [SellFSM] declare guards: {} and
+  actions: {} yet reference price_too_low, store_offer, execute_purchase, execute_sell
+  (ten unresolved references). A follow-up change, outside bundles 001-005 (TRACKER RM79).
+- Bundle status and apply order: handoffs/dj2/STATE.md is the live record; the primer
+  shows "pending apply" per covered item.
+- The pre-existing G3 failure from that handoff is fixed (07a85a0).
 
-Two independent lines of work now:
+## NEXT STEPS
 
-1. If the user has applied the bundles to dj2 and pushed, record the new
-   SHA in handoffs/dj2/STATE.md (task 4.4's reverse-sync step), re-ingest
-   at that SHA, and confirm no drift.
+First commands (any agent):
 
-2. If the user wants to revisit buy.json / sell.json, open a new change
-   (not this one) that fixes the ten unresolved references. Same shape as
-   bundle 004's trade fix: either add the missing guards/actions to the
-   JSON, or rename builtins to match the JSON per design D2.
+    git log --oneline -5
+    .venv\Scripts\python tools\check_agent_parity.py
 
-3. The pre-existing test_design_oracle failure is orthogonal and can be
-   fixed any time: add class_name to the test fixture schema in
-   tests/regression/test_design_oracle.py.
+To try opencode on real work:
 
----
+1. `.venv\Scripts\python tools\llm_server.py start --profile agent` (if not running).
+2. Open C:\Users\bartl\dev\Determined in opencode desktop on branch main, model
+   local/qwen36-35b, run `/next`. The brief will list the dj2 cards with bundle coverage.
+3. Report friction (permission dialogs, tool choice) -- it feeds RM78.
 
-## FIRST COMMAND NEXT SESSION
+Open items are in docs/TRACKER.md RM74-RM80 (RM80 = LLM lifecycle follow-ups: flip lazy
+start per entry point, in-process mock server fixture, route Determined's calls to the
+agent server under opencode). Suggested order:
 
-git log --oneline -3
+- RM79 dj2 close-out: apply bundles 001-005 on a dj2 branch (Bart authorizes), record
+  the SHA in handoffs/dj2/STATE.md, `reingest_changed`, confirm primer cards close.
+- RM74 primer: do not count FSM handlers that already exist as functions.
+- RM75 guard design_oracle against pre-s313 DBs.
+- buy.json / sell.json follow-up change (ten unresolved references) via
+  handoffs/dj2/WORKFLOW.md -- first real task for the local model.
+- Pre-existing: docs/UI_REDESIGN.md Phase B/C is the main work driver per CLAUDE.md;
+  untouched this session.
