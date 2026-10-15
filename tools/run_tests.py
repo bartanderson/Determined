@@ -37,8 +37,6 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_domain_analyst.py"],
     "determined/agent/agent_prompt.py": [
         "tests/regression/test_agent_prompt.py"],
-    "determined/agent/context_compactor.py": [
-        "tests/regression/test_context_compactor.py"],
     "determined/agent/llm_client.py": [
         "tests/regression/test_llm_profiles.py"],
     "determined/config.py": [

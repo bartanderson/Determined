@@ -14,7 +14,6 @@ pytest tests/regression/<file>  [<file2> ...]
 |---|---|
 | local_agent.py | test_domain_analyst.py |
 | agent_prompt.py | test_agent_prompt.py |
-| context_compactor.py | test_context_compactor.py |
 | llm_client.py | test_llm_profiles.py |
 | config.py | test_llm_profiles.py |
 | fsm_walker.py | test_fsm_walker.py |
