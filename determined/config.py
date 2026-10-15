@@ -26,6 +26,16 @@ def _load() -> configparser.ConfigParser:
     return cfg
 
 
+def get_llm_profile(default: str = "analysis") -> str:
+    """Name of the llama-server profile this process uses (see llm_client._PROFILES).
+
+    Priority: DETERMINED_LLM_PROFILE env var > determined.cfg [llm] profile > default.
+    This is the single override point for which model server a process talks to."""
+    if "DETERMINED_LLM_PROFILE" in os.environ:
+        return os.environ["DETERMINED_LLM_PROFILE"].strip() or default
+    return _load().get("llm", "profile", fallback=default).strip() or default
+
+
 def get_fast_ctx(default: int = 131072) -> int:
     """Context window (tokens) for the fast tier (llama-server, port 8081)."""
     if "LLM_FAST_CTX" in os.environ:

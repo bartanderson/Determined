@@ -3,10 +3,12 @@
 # Thin LLM backend shim. All inference calls go through here.
 # Backend: llama-server (llama.cpp built-in OpenAI-compatible server).
 #
-# Model: Qwen3-VL-8B-Thinking (Q4_K_M) on GPU, port 8081, launched on demand by ui_server.py.
+# Model/port come from the active profile (see _PROFILES; select with env
+# DETERMINED_LLM_PROFILE or determined.cfg [llm] profile). Default "analysis":
+# Qwen3-VL-8B-Thinking (Q4_K_M) on GPU, port 8081, launched on demand by ui_server.py.
 # Vision-capable (mmproj loaded). /no_think system prefix suppresses chain-of-thought for
-# text calls -- do NOT add --jinja to server args (triggers llama.cpp thinking-suppression
-# bug #20182 on the vision path). Vision inputs (images in chat messages) work normally.
+# text calls -- do NOT add --jinja to the analysis profile (triggers llama.cpp
+# thinking-suppression bug #20182 on the vision path).
 # No always-on service required. start_server() / stop_server() manage the subprocess.
 #
 # Public API:
@@ -18,6 +20,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
@@ -31,8 +34,6 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
-LLM_BASE_URL     = "http://localhost:8081"
-LLM_DISPLAY_NAME = "Qwen3-VL-8B"
 LLM_TIMEOUT      = 600
 LLM_COLD_TIMEOUT = 10
 LLM_MAX_TOKENS   = 1200
@@ -40,15 +41,58 @@ LLM_MAX_TOKENS   = 1200
 # Server launch config — used by start_server() / stop_server()
 LLM_SERVER_EXE   = r"C:\Users\bartl\models\llama-server\llama-server.exe"
 _VL_SNAPSHOT     = r"C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Thinking-GGUF\snapshots\bca5838231f8cc1303cf8810afffcfbdc41bc75a"
-LLM_MODEL_PATH   = _VL_SNAPSHOT + r"\Qwen3VL-8B-Thinking-Q4_K_M.gguf"
 LLM_MMPROJ_PATH  = _VL_SNAPSHOT + r"\mmproj-Qwen3VL-8B-Thinking-Q8_0.gguf"
-# ctx-size 32768 = Qwen3-VL native max. --mmproj enables vision inputs.
-# Do NOT add --jinja: triggers llama.cpp #20182 thinking-suppression bug on vision path.
-LLM_SERVER_ARGS  = [
-    "--port", "8081", "--host", "127.0.0.1",
-    "--ctx-size", "32768", "-ngl", "99",
-    "--mmproj", LLM_MMPROJ_PATH,
-]
+
+# Server profiles. Exactly one is active per process, chosen by
+# determined.config.get_llm_profile() (env DETERMINED_LLM_PROFILE > determined.cfg
+# [llm] profile > "analysis"). Add a profile here; do not fork this module.
+#   analysis -- Determined's own narrow calls (decompose / narrate). Vision-capable VL-8B.
+#               Do NOT add --jinja: triggers llama.cpp #20182 thinking-suppression bug on
+#               the vision path. ctx 32768 = Qwen3-VL native max.
+#   agent    -- the model a coding agent (opencode) drives. Text-only MoE with experts on
+#               CPU so it fits an 8 GB card alongside a 32k KV cache. Needs --jinja for
+#               tool calling. Separate port so it never collides with `analysis`.
+# Only one profile's server fits in VRAM at a time on the 8 GB card.
+_PROFILES: dict[str, dict] = {
+    "analysis": {
+        "port": 8081,
+        "display_name": "Qwen3-VL-8B",
+        "model_path": _VL_SNAPSHOT + r"\Qwen3VL-8B-Thinking-Q4_K_M.gguf",
+        "server_args": ["--ctx-size", "32768", "-ngl", "99", "--mmproj", LLM_MMPROJ_PATH],
+        "prefix_no_think": True,
+        "chat_kwargs": {},
+    },
+    "agent": {
+        "port": 8083,
+        "display_name": "Qwen3.6-35B-A3B",
+        "model_path": r"C:\Users\bartl\models\gguf\Qwen3.6-35B-A3B-MTP-IMAT-IQ4_XS-Q8nextn.gguf",
+        "server_args": [
+            "--jinja", "-ngl", "99", "--n-cpu-moe", "99",
+            "-c", "32768", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
+            "-t", "8", "--alias", "qwen36-35b",
+        ],
+        "prefix_no_think": False,
+        "chat_kwargs": {"chat_template_kwargs": {"enable_thinking": False}},
+    },
+}
+
+
+def _resolve_profile() -> tuple[str, dict]:
+    from determined.config import get_llm_profile
+    name = get_llm_profile()
+    if name not in _PROFILES:
+        logger.warning("llm_client: unknown profile %r, using 'analysis' (known: %s)",
+                       name, ", ".join(sorted(_PROFILES)))
+        name = "analysis"
+    return name, _PROFILES[name]
+
+
+LLM_PROFILE, _ACTIVE = _resolve_profile()
+LLM_PORT         = _ACTIVE["port"]
+LLM_BASE_URL     = f"http://localhost:{LLM_PORT}"
+LLM_DISPLAY_NAME = _ACTIVE["display_name"]
+LLM_MODEL_PATH   = _ACTIVE["model_path"]
+LLM_SERVER_ARGS  = ["--port", str(LLM_PORT), "--host", "127.0.0.1"] + list(_ACTIVE["server_args"])
 
 _server_proc: subprocess.Popen | None = None
 _server_lock = threading.Lock()
@@ -102,9 +146,11 @@ def chat(messages: list[dict], timeout: int = LLM_TIMEOUT, max_tokens: int = LLM
     """Chat completion via /v1/chat/completions."""
     _ensure_server()
     try:
+        msgs = _no_think(messages) if _ACTIVE["prefix_no_think"] else list(messages)
         resp = requests.post(
             f"{LLM_BASE_URL}/v1/chat/completions",
-            json={"messages": _no_think(messages), "stream": False, "max_tokens": max_tokens},
+            json={"messages": msgs, "stream": False, "max_tokens": max_tokens,
+                  **_ACTIVE["chat_kwargs"]},
             timeout=timeout,
         )
         resp.raise_for_status()
@@ -152,30 +198,54 @@ def warmup(wait_seconds: int = 30, probe_timeout: int = LLM_COLD_TIMEOUT) -> boo
     return False
 
 
-def _kill_orphaned_servers() -> None:
-    """Kill any llama-server.exe processes not started by this session."""
+_PORT_RE = re.compile(r"--port[ =]+(\d+)")
+
+
+def _parse_port(cmdline: str) -> int | None:
+    """Port from a llama-server command line, or None if it has no --port."""
+    m = _PORT_RE.search(cmdline or "")
+    return int(m.group(1)) if m else None
+
+
+def _llama_servers() -> list[tuple[int, str]]:
+    """(pid, command line) of every running llama-server.exe. Windows only."""
     import platform
     if platform.system() != "Windows":
-        return
+        return []
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\" | "
+          "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress")
+    r = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+        capture_output=True, text=True, timeout=15,
+    )
+    out = r.stdout.strip()
+    if not out:
+        return []
+    data = json.loads(out)
+    if isinstance(data, dict):
+        data = [data]
+    return [(int(d["ProcessId"]), d.get("CommandLine") or "") for d in data]
+
+
+def _kill_servers_on_port(port: int, spare_pid: int | None = None) -> None:
+    """Kill llama-server.exe processes listening on `port`, except `spare_pid`.
+
+    Only the given port is touched: a server on another port (another profile, or a
+    coding agent's model) is never ours to kill. A process whose command line is
+    unreadable is left alone."""
     try:
-        result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq llama-server.exe", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True,
-        )
-        for line in result.stdout.splitlines():
-            if "llama-server.exe" not in line:
+        for pid, cmdline in _llama_servers():
+            if pid == spare_pid or _parse_port(cmdline) != port:
                 continue
-            parts = line.strip('"').split('","')
-            if len(parts) < 2:
-                continue
-            pid = int(parts[1])
-            if _server_proc and _server_proc.pid == pid:
-                continue  # ours — leave it
-            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                           capture_output=True)
-            logger.info("llm_client: killed orphaned llama-server pid %d", pid)
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+            logger.info("llm_client: killed llama-server pid %d on port %d", pid, port)
     except Exception as exc:
-        logger.warning("llm_client._kill_orphaned_servers: %s", exc)
+        logger.warning("llm_client._kill_servers_on_port: %s", exc)
+
+
+def _kill_orphaned_servers() -> None:
+    """Kill llama-server.exe on this profile's port that this session did not start."""
+    _kill_servers_on_port(LLM_PORT, spare_pid=_server_proc.pid if _server_proc else None)
 
 
 def start_server(wait_seconds: int = 90) -> bool:
@@ -214,10 +284,15 @@ def start_server(wait_seconds: int = 90) -> bool:
         _server_starting = False
 
 
-def stop_server() -> None:
-    """Terminate the subprocess started by start_server(). No-op if we didn't launch it."""
+def stop_server(any_owner: bool = False) -> None:
+    """Terminate the subprocess started by start_server(). No-op if we didn't launch it.
+
+    any_owner=True also stops a server on this profile's port that another process
+    started (used by tools/llm_server.py, which runs in a different process)."""
     global _server_proc
     if _server_proc and _server_proc.poll() is None:
         logger.info("llm_client.stop_server: terminating pid %d", _server_proc.pid)
         _server_proc.terminate()
+    elif any_owner:
+        _kill_servers_on_port(LLM_PORT)
     _server_proc = None

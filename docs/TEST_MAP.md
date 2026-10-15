@@ -15,6 +15,8 @@ pytest tests/regression/<file>  [<file2> ...]
 | local_agent.py | test_domain_analyst.py |
 | agent_prompt.py | test_agent_prompt.py |
 | context_compactor.py | test_context_compactor.py |
+| llm_client.py | test_llm_profiles.py |
+| config.py | test_llm_profiles.py |
 | fsm_walker.py | test_fsm_walker.py |
 | agent_resolver.py | test_agent_resolver.py test_technique3.py |
 | agent_tools.py | test_agent_tools.py test_design_gaps.py test_detect_conventions.py test_detect_topology.py test_feature_shape.py test_feature_work_plan.py test_find_abc_gaps.py test_find_bridges_and_ghosts.py test_goal_intake.py test_http_chain.py test_implementation_order.py test_infer_behavior.py test_readiness_check.py test_scaffold_from_pattern.py test_search_web.py test_technique3.py test_verify_and_drift.py test_data_flow.py test_completion_contract.py test_edit_file.py |
