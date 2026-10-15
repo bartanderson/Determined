@@ -15,7 +15,7 @@ def _make_db(stubs=None, non_stubs=None, edges=None):
         CREATE TABLE functions (
             name TEXT, file_path TEXT, is_stub INTEGER DEFAULT 0,
             docstring TEXT, param_types_json TEXT, return_type TEXT,
-            line_number INTEGER DEFAULT 1
+            line_number INTEGER DEFAULT 1, class_name TEXT
         );
         CREATE TABLE graph_edges (
             caller TEXT, callee TEXT, edge_type TEXT DEFAULT 'static',

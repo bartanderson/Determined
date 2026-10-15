@@ -61,6 +61,7 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_technique3.py"],
     "determined/agent/agent_tools.py": [
         "tests/regression/test_agent_tools.py",
+        "tests/regression/test_design_oracle.py",
         "tests/regression/test_design_gaps.py",
         "tests/regression/test_detect_conventions.py",
         "tests/regression/test_detect_topology.py",
