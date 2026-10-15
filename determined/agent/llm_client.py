@@ -6,9 +6,9 @@
 # Model/port come from the active profile (see _PROFILES; select with env
 # DETERMINED_LLM_PROFILE or determined.cfg [llm] profile). Default "analysis":
 # Qwen3-VL-8B-Thinking (Q4_K_M) on GPU, port 8081, launched on demand by ui_server.py.
-# Vision-capable (mmproj loaded). /no_think system prefix suppresses chain-of-thought for
-# text calls -- do NOT add --jinja to the analysis profile (triggers llama.cpp
-# thinking-suppression bug #20182 on the vision path).
+# Text-only use: no mmproj is loaded. /no_think system prefix suppresses chain-of-thought
+# for text calls -- do NOT add --jinja to the analysis profile (triggers llama.cpp
+# thinking-suppression bug #20182; untested without the mmproj, so left off).
 # No always-on service required. start_server() / stop_server() manage the subprocess.
 #
 # Public API:
@@ -41,14 +41,13 @@ LLM_MAX_TOKENS   = 1200
 # Server launch config — used by start_server() / stop_server()
 LLM_SERVER_EXE   = r"C:\Users\bartl\models\llama-server\llama-server.exe"
 _VL_SNAPSHOT     = r"C:\hf_cache\hub\models--Qwen--Qwen3-VL-8B-Thinking-GGUF\snapshots\bca5838231f8cc1303cf8810afffcfbdc41bc75a"
-LLM_MMPROJ_PATH  = _VL_SNAPSHOT + r"\mmproj-Qwen3VL-8B-Thinking-Q8_0.gguf"
 
 # Server profiles. Exactly one is active per process, chosen by
 # determined.config.get_llm_profile() (env DETERMINED_LLM_PROFILE > determined.cfg
 # [llm] profile > "analysis"). Add a profile here; do not fork this module.
-#   analysis -- Determined's own narrow calls (decompose / narrate). Vision-capable VL-8B.
-#               Do NOT add --jinja: triggers llama.cpp #20182 thinking-suppression bug on
-#               the vision path. ctx 32768 = Qwen3-VL native max.
+#   analysis -- Determined's own narrow calls (decompose / narrate). Qwen3-VL-8B used as a
+#               text model (no mmproj). Do NOT add --jinja: triggers llama.cpp #20182
+#               thinking-suppression bug. ctx 32768 = Qwen3-VL native max.
 #   agent    -- the model a coding agent (opencode) drives. Text-only MoE with experts on
 #               CPU so it fits an 8 GB card alongside a 32k KV cache. Needs --jinja for
 #               tool calling. Separate port so it never collides with `analysis`.
@@ -58,7 +57,7 @@ _PROFILES: dict[str, dict] = {
         "port": 8081,
         "display_name": "Qwen3-VL-8B",
         "model_path": _VL_SNAPSHOT + r"\Qwen3VL-8B-Thinking-Q4_K_M.gguf",
-        "server_args": ["--ctx-size", "32768", "-ngl", "99", "--mmproj", LLM_MMPROJ_PATH],
+        "server_args": ["--ctx-size", "32768", "-ngl", "99"],
         "prefix_no_think": True,
         "chat_kwargs": {},
     },

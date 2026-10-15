@@ -34,7 +34,7 @@ def test_default_profile_is_analysis_on_8081(lc):
     assert m.LLM_PROFILE == "analysis"
     assert m.LLM_PORT == 8081
     assert m.LLM_BASE_URL == "http://localhost:8081"
-    assert "--mmproj" in m.LLM_SERVER_ARGS
+    assert "--mmproj" not in m.LLM_SERVER_ARGS  # text-only; vision is not used here
     assert "--jinja" not in m.LLM_SERVER_ARGS
 
 

@@ -359,7 +359,7 @@ vision models. Thinking model produces <think> blocks that swallow the transcrip
 Qwen3-VL-8B-Instruct-Q4_K_M.gguf, not Qwen3-VL-8B-Thinking-*. The mmproj file happens
 to live in the Thinking model's snapshot directory — that's fine, it's cross-model compatible.
 Server requires --jinja flag for <transcript> tag instruction following. Port 8082.
-Full server command in context_compactor.py file header.
+(context_compactor.py was removed; its server command is in git history.)
 
 2026-07-22 (s238): context_compactor.py font size 14 optimal for underscore recognition.
 At size 10/12 underscores in identifiers like `_get_sibling_stubs` were read as periods
