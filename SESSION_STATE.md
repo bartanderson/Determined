@@ -1,4 +1,4 @@
-Written at commit: 028c7ba
+Written at commit: f1ceb59
 
 # SESSION STATE -- opencode wiring, llm profiles, primer bundle awareness
 
@@ -9,12 +9,14 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
 
 ## STATE [V]
 
-- Branch: main at 028c7ba; local-only, 57 commits ahead of origin/main. Nothing pushed.
+- Branch: main at f1ceb59, PUSHED to origin/main (b8dc661..f1ceb59, no force); the repo
+  is public. This file's own commit follows and is pushed with it.
 - Other branch: dj2-state-machines-openspec (merged into main at 7600131; local and
-  origin copies can be deleted).
+  origin copies can be deleted). backup-before-sanitize (local, 4bca915) is the
+  pre-rewrite main; delete it once you are satisfied.
 - Working tree clean except untracked memory/reference_autosaddler.md (user file).
-- Regression: all ten groups pass after the autostart change (206, 203, 136, 181, 136,
-  112, 288, 48, 131, 81; 82 s total, no server left behind). --slow run of
+- Regression: all ten groups pass at f1ceb59's tree (206, 203, 136, 181, 136, 112, 310,
+  48, 131, 81; 93 s total, no server left behind). --slow run of
   test_intent_layer_ab.py: 28 passed in 431 s, server stopped at session end.
 - Parity check: `AGENT PARITY: ok`.
 - Model server for opencode (agent profile, port 8083) is running at time of writing [V].
@@ -37,6 +39,13 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
  ead23c4 llm_client autostart seam (DETERMINED_LLM_AUTOSTART), conftest makes tests
          hermetic by default, session teardown, 15 s unreachable memory
  028c7ba docs: autostart trap, fix and follow-ups (HISTORY, TRACKER RM80)
+ ba95804 SESSION_STATE for the above (rewritten hash of the former 4bca915)
+ a7f5933 docs: commit references refreshed after the unpushed-history cleanup
+ f1ceb59 guarded pushes: tools/pre_push_check.py, determined_git push, rule updated
+
+ Before the push, 11 unpushed commits were rewritten to drop mentions of an unrelated
+ private project (a commit message, a HISTORY line, a SESSION_STATE line, a tracker
+ item). The 19 openspec commits and the signed commit are byte-identical.
 
 ## LIVE IN THE CODE NOW [V]
 
@@ -50,6 +59,10 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
   scripts, honoring exit 2 and {"decision":"block"}), a per-prompt work_session_primer
   brief, tools determined_query/tests/git/python, `/next`. Default model
   local/qwen36-35b at 127.0.0.1:8083.
+- Pushing: `tools/pre_push_check.py` (fast-forward, secret shapes, DB/binary/large files,
+  private terms from ~/.determined/private_terms.txt which is outside the repo).
+  `determined_git push` runs it first and never forces; CLAUDE.md says the same for
+  Claude Code. The check scans exactly the outgoing range.
 - Primer: fully covered items move to "Already handed off"; partial ones show
   "changes N/M ... not changed by the bundle". Bundle state via
   `git apply --reverse --check` in project_root.
@@ -115,6 +128,18 @@ New this session:
   inner double quotes; opencode run treats a prompt word starting with "-" as a flag. [V]
 - opencode shell tool is PS 5.1; `bash` is the WSL launcher, not Git Bash. [V]
 - design_oracle's context lookup raises on pre-s313 DBs (RM75). [V]
+- The repo is PUBLIC (github.com/bartanderson/Determined). Do not name private projects
+  in commits, docs or code; a later cleanup commit does not remove text from history.
+  The pre-push check enforces this from ~/.determined/private_terms.txt. [V]
+- `git filter-branch` re-creates every commit it processes WITHOUT its signature, which
+  changes the hash of that commit and all descendants (this nearly rewrote 19 commits that
+  were already on the remote). To rewrite only what must change use a --commit-filter that
+  echoes $GIT_COMMIT for unchanged commits whose parents are unchanged, and keep a backup
+  branch first. Rewrite only commits that are not yet pushed. [V]
+- A secret scanner scans its own tests: build secret-shaped fixtures at runtime
+  (string concatenation), do not add allowlists. [V]
+- Windows PowerShell 5.1 wraps git's stderr progress in a red NativeCommandError even
+  when the exit code is 0; check $LASTEXITCODE. [V]
 
 ## RESOURCE / PROCESS RULES
 
@@ -154,6 +179,9 @@ To try opencode on real work:
 2. Open C:\Users\bartl\dev\Determined in opencode desktop on branch main, model
    local/qwen36-35b, run `/next`. The brief will list the dj2 cards with bundle coverage.
 3. Report friction (permission dialogs, tool choice) -- it feeds RM78.
+
+Before any push: `.venv\Scripts\python tools\pre_push_check.py` (or `determined_git`
+action `push`). Create/keep `~/.determined/private_terms.txt` with the private names.
 
 Open items are in docs/TRACKER.md RM74-RM80 (RM80 = LLM lifecycle follow-ups: flip lazy
 start per entry point, in-process mock server fixture, route Determined's calls to the
