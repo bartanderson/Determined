@@ -13,9 +13,9 @@ does not have) and fails on things that should not leave the machine:
     so the list of private names is itself never published.
 
 Usage:
-    python tools/pre_push_check.py                  # current branch vs origin/<branch>
-    python tools/pre_push_check.py --branch main --remote origin
-    python tools/pre_push_check.py --json
+    .venv/Scripts/python tools/pre_push_check.py                  # current branch vs origin
+    .venv/Scripts/python tools/pre_push_check.py --branch main --remote origin
+    .venv/Scripts/python tools/pre_push_check.py --json
 
 Exit 0 = clear to push, 1 = problems found, 2 = could not evaluate. Never pushes.
 """

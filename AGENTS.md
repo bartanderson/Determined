@@ -22,7 +22,8 @@ full test suite or run tests in the background.
 
 These tools never start a model server on their own. Determined tools that need the
 analysis LLM (reason_about, infer_behavior, narration) return "unavailable" until one
-is running: `tools/llm_server.py start --profile analysis` (via `determined_python`).
+is running. Start one with `determined_python` (script `tools/llm_server.py`, args
+`["start", "--profile", "analysis"]`).
 
 ## Shell (Windows PowerShell 5.1) for everything else
 

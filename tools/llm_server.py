@@ -1,10 +1,13 @@
 """Start, stop, or inspect a llama-server profile from the command line.
 
 Usage:
-    python tools/llm_server.py status [--profile NAME]
-    python tools/llm_server.py start  [--profile NAME]
-    python tools/llm_server.py stop   [--profile NAME]
-    python tools/llm_server.py profiles
+    .venv/Scripts/python tools/llm_server.py status [--profile NAME]
+    .venv/Scripts/python tools/llm_server.py start  [--profile NAME]
+    .venv/Scripts/python tools/llm_server.py stop   [--profile NAME]
+    .venv/Scripts/python tools/llm_server.py profiles
+
+Run it with the venv interpreter, as above (or activate the venv first and use `python`).
+A bare `tools/llm_server.py` opens the file in your editor on Windows.
 
 Profiles live in determined/agent/llm_client.py (_PROFILES). Only one profile's
 server fits in VRAM on the 8 GB card, so stop the running one before starting
@@ -54,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         if others:
             print("another llama-server is running (VRAM is shared): "
                   + ", ".join(f"pid {pid} port {port}" for pid, port in others))
-            print("stop it first (python tools/llm_server.py stop --profile <name>)")
+            print("stop it first (.venv\\Scripts\\python tools\\llm_server.py stop --profile <name>)")
             return 2
         ok = lc.start_server(wait_seconds=180)
         print("ready" if ok else "failed to start (see logs / model path)")

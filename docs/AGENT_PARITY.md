@@ -19,9 +19,9 @@ or change the model server, update the manifest and this table in the same commi
 | Shell guard (Bash-isms, wrong paths) | `.claude/hooks/validate_shell.py` | same script, run by the plugin before every `shell` call |
 | Wrong-interpreter guard | `~/.claude/hooks/check_venv_python.py` (user level) | same script, if present |
 | Session start context | `.claude/session_start_hook.py` | AGENTS.md checklist + `work_session_primer` brief added each prompt |
-| Determined tools | `python tools/query.py` | `determined_query` tool (no JSON quoting through PowerShell 5.1) |
-| Targeted tests | `python tools/run_tests.py` | `determined_tests` tool (shell route is redirected to it) |
-| git add / commit / push | `git ...` via the shell; run `tools/pre_push_check.py` before `git push` | `determined_git` tool (message as data; push runs the same check, never forces; no reset/amend) |
+| Determined tools | `.venv\Scripts\python tools\query.py` | `determined_query` tool (no JSON quoting through PowerShell 5.1) |
+| Targeted tests | `.venv\Scripts\python tools\run_tests.py` | `determined_tests` tool (shell route is redirected to it) |
+| git add / commit / push | `git ...` via the shell; run `.venv\Scripts\python tools\pre_push_check.py` before `git push` | `determined_git` tool (message as data; push runs the same check, never forces; no reset/amend) |
 | Pre-push check | `tools/pre_push_check.py` (secrets, DB/binary/large files, private terms from `~/.determined/private_terms.txt`, fast-forward) | same script, called by `determined_git push` |
 | Run a venv script | `.venv\Scripts\python.exe x.py` | `determined_python` tool |
 | bash / sh / wsl from the shell | blocked by `validate_shell.py` | same script, plus `opencode.json` deny rules |
@@ -58,7 +58,7 @@ One server fits in VRAM at a time; `start` refuses to stack a second.
   a commit message or prompt string trips them; pass such text in a file.
 - Determined processes the plugin spawns run with `DETERMINED_LLM_AUTOSTART=0`: a
   tool call never starts a model server. LLM-backed Determined tools report
-  "unavailable" until `tools/llm_server.py start --profile analysis` is run
+  "unavailable" until `.venv\Scripts\python tools\llm_server.py start --profile analysis` is run
   (`determined_tests` with `slow: true` opts back in).
 - Open parity items and follow-ups are tracked in `docs/TRACKER.md` (RM74-RM80).
 
@@ -67,5 +67,5 @@ One server fits in VRAM at a time; `start` refuses to stack a second.
 1. Finish the task and commit; update SESSION_STATE.md as usual (add a "last agent" line).
 2. Next session, either agent: run the drift check (`git diff <handoff-SHA>..HEAD --stat`,
    including `.claude`, `.opencode`, `opencode.json`, `AGENTS.md`, `docs/agent_parity.json`)
-   and `tools/check_agent_parity.py`.
+   and `.venv\Scripts\python tools\check_agent_parity.py`.
 3. If parity reports drift, fix the manifest or the missing side before real work.

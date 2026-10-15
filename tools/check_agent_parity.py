@@ -5,8 +5,8 @@ wired: .claude/settings.json hooks, opencode.json, AGENTS.md, the opencode plugi
 and the llm_client "agent" server profile.
 
 Usage:
-    python tools/check_agent_parity.py          # exit 0 = in parity
-    python tools/check_agent_parity.py --json   # machine-readable result
+    .venv/Scripts/python tools/check_agent_parity.py          # exit 0 = in parity
+    .venv/Scripts/python tools/check_agent_parity.py --json   # machine-readable result
 
 A problem line names the file to fix and what is missing. Add a hook script to the
 manifest (shared_guards / claude_only / session_start) when you wire a new one.
