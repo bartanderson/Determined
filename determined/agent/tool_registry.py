@@ -1328,11 +1328,11 @@ REGISTRY: dict[str, dict] = {
 
     # ── COMPLETION GATE: work session primer ─────────────────────────
     "work_session_primer": {
-        "purpose": "Top N (default 5) actionable work items for this corpus. Synthesizes rank_stubs + classify_stub + FSM stub detection into a ranked list of self-contained work cards. FSM action/guard stubs are surfaced as a distinct high-priority category (spec-backed, concrete, independent of caller count). Dead code (concept-not-applicable) is suppressed. No LLM — fully deterministic.",
+        "purpose": "Top N (default 5) actionable work items for this corpus. Synthesizes rank_stubs + classify_stub + FSM stub detection into a ranked list of self-contained work cards. FSM action/guard stubs are surfaced as a distinct high-priority category (spec-backed, concrete, independent of caller count). Dead code (concept-not-applicable) is suppressed. Verified handoff bundles under handoffs/<corpus>/ are read: items a bundle already implements move to an 'Already handed off' section, partly covered items carry 'changes N/M' and 'not changed by the bundle' lines. Those lines describe the patch, not the repo (an untouched handler may already exist at baseline), and bundle state comes from `git apply --reverse --check` in the project root (pending apply / already applied -> reingest_changed). No LLM — fully deterministic.",
         "args": {
             "top_n": "(optional) number of items to return, default 5",
         },
-        "output": "ranked work item cards, each with: badge (FSM-SPEC / DESIGN-INTENT / BLOCKED / UNCERTAIN), file:line, purpose, why-now, first step",
+        "output": "ranked work item cards, each with: badge (FSM-SPEC / DESIGN-INTENT / BLOCKED / UNCERTAIN), file:line, purpose, why-now, first step, optional Handoff lines; then an 'Already handed off' list",
         "feeds": ["classify_stub", "explore_stub", "fsm_scaffold", "feature_work_plan"],
         "use_when": "Session start on any corpus — answers 'what should I work on first?' with a grounded, ranked list of concrete work items. Replaces the manual 4-tool synthesis of rank_stubs + stub_prerequisite_map + design_oracle + classify_stub.",
         "category": "planning",

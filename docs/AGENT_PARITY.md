@@ -45,6 +45,17 @@ One server fits in VRAM at a time; `start` refuses to stack a second.
 - The permission hook sees pieces of compound commands, so whole-command guards
   run in `tool.execute.before`, where the raw command is visible.
 - The 8 GB card limits the local model; judgment-heavy work may belong in Claude.
+- opencode v2.0.29 does not auto-load `CLAUDE.md`; `AGENTS.md` is the entry point.
+  The v1 docs that search engines return first describe a different plugin API
+  and config keys; use opencode.ai/v2/docs.
+- Claude hook scripts block in two shapes (exit 2 with a deny decision, or exit 0
+  with `{"decision": "block"}`); the plugin honors both. New guards should be added
+  to `docs/agent_parity.json` so the parity check keeps both agents in step.
+- Shell redirects point at opencode-only tools, so they live in the plugin, not in
+  `validate_shell.py` (which Claude Code also runs).
+- Guard hooks scan command text. A literal `&&`, bare `python`, or `rm -rf *` inside
+  a commit message or prompt string trips them; pass such text in a file.
+- Open parity items and follow-ups are tracked in `docs/TRACKER.md` (RM74-RM79).
 
 ## Switching back and forth
 

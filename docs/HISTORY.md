@@ -847,6 +847,22 @@ no socket.emit in the HTML/JS source -- not a bug in the extractor, a gap in the
 
 2026-07-05: Assessor takes an oracle object, not a DB path -- `Assessor(oracle)` where oracle = `DBOracle('path.db')`; wrong import path is `determined.agent.assessor` (doesn't exist), correct is `determined.assessor.assessor`
 
-2026-07-05: llama-server is on-demand subprocess (port 8081, Qwen3-8B), NOT an NSSM Windows service -- NSSM removed session 77; started by UI on launch via background thread, stopped via atexit
+2026-07-05: llama-server is on-demand subprocess, NOT an NSSM Windows service -- NSSM removed session 77; started by UI on launch via background thread, stopped via atexit. (2026-10-15: model/port now come from llm_client._PROFILES -- `analysis` on 8081, `agent` on 8083; manage with tools/llm_server.py.)
 
 2026-07-05: HISTORY.md revived as curated decision log (was deleted session 71 for being a chronological dump) -- new contract: entries pruned when stale, promoted to memory files when durable; git log is the code history
+
+2026-10-15: opencode v2.0.29 is not what the v1 docs (first search hits) describe -- plugin API is Plugin.define({id, setup(ctx)}), config keys are `plugins` and `permissions` (array of {action, resource, effect}), and CLAUDE.md is NOT auto-loaded (AGENTS.md is; ours is a thin pointer). Confirm any opencode behavior with a probe plugin plus a scripted mock model before trusting it; v2 docs live under opencode.ai/v2/docs (v2.opencode.ai redirects).
+
+2026-10-15: opencode's permission hook sees pieces of a compound shell command ("echo a && echo b" arrives as "echo a"); whole-command guards must hook tool.execute.before (input.command is the raw string) and throw to block. Claude hook scripts block in two shapes -- exit 2 + hookSpecificOutput deny (validate_shell.py) or exit 0 + {"decision":"block"} (check_venv_python.py); the plugin honors both. A first version honored only exit 2 and let the venv guard through.
+
+2026-10-15: opencode's shell tool is Windows PowerShell 5.1, and `bash` on PATH is the WSL launcher (WindowsApps\bash.exe), not Git Bash. JSON on a PS 5.1 command line loses its double quotes, so the plugin's determined_query / determined_tests / determined_git / determined_python take arguments as data. validate_shell.py now blocks explicit bash/sh/zsh/wsl.
+
+2026-10-15: Guard hooks scan command text, not intent. A literal "&&", a bare `python`, or "rm -rf *" inside a commit message or prompt string trips them. Put such text in a file (git commit -F, a scratch .ps1) instead of the command line.
+
+2026-10-15: Test-harness trap: `git reset --hard` does not undo a commit. A prompt run after a committing prompt saw "nothing to commit" and burned ten tool calls. Reset to a recorded base SHA between runs.
+
+2026-10-15: llm_client.chat() on the Thinking VL model returns None at max_tokens=60 (reasoning eats the budget); the default 1200 is fine. _kill_orphaned_servers used to taskkill every llama-server.exe; it is now scoped to the active profile's port so the agent profile (8083) and the analysis profile (8081) never kill each other.
+
+2026-10-15: Primer bundle awareness reports what the patch changes, not what the repo lacks. dj2's parley_possible already exists at baseline and bundle 002 does not touch it, so "not changed by the bundle" is not "still to build" (RM74 tracks the FSM-stub false positive).
+
+2026-10-15: context_compactor (PNG-render compression) removed; only Determined used it. The analysis profile no longer loads an mmproj.

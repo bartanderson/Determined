@@ -193,3 +193,96 @@ small fraction of potential failure modes.
 - At minimum, do Option B first. Option A is follow-on work.
 
 **Gate:** Determined session only.
+
+---
+
+## RM74 -- Primer lists FSM handlers that already exist as functions
+
+work_session_primer builds FSM cards from `<FSM>::action::<name>` / `::guard::<name>`
+rows with is_stub=1. A handler can have a real, non-stub Python function of the same
+bare name (dj2: `parley_possible` in world/fsm/builtins.py), so the card headline
+("5 unimplemented handlers") overstates the work. The handoff-bundle annotation
+(handoff_bundles.py) reports "not changed by the bundle", which is accurate but
+does not say the function already exists.
+
+**What to do:**
+- In `_primer_split`, for each FSM handler check `functions` for a non-stub row with
+  the same bare name in a .py file; list those under "exists at baseline" and exclude
+  them from the unimplemented count.
+- Cases where the spec name differs from the function name (price_too_low ->
+  builtins.price_lt via registry key) need the registry mapping, not name equality;
+  check_fsm_consistency already resolves that.
+
+**Gate:** Determined session only. Verify against dj2 EncounterFSM/TradeFSM cards.
+
+---
+
+## RM75 -- design_oracle context lookup is unguarded on old corpus DBs
+
+`design_oracle` (agent_tools.py, context branch) selects `class_name` from `functions`
+without a guard. Corpus DBs ingested before session 313 lack the column and the call
+raises "no such column". The test fixture was fixed (07a85a0); the tool was not.
+
+**What to do:** catch the missing column (or check `PRAGMA table_info(functions)`) and
+fall back to the bare-name lookup; add a test with a fixture lacking class_name.
+
+**Gate:** Determined session only.
+
+---
+
+## RM76 -- determined.cfg fast_ctx / quality_ctx are stale budgets
+
+`[llm] fast_ctx = 16384` and `quality_ctx = 4096` predate the single-server layout and
+are far below the server's 32768 context. They set how much corpus_synthesis packs per
+pass (agent_tools.py), so raising them changes its output. Left as-is on purpose when
+the llm profiles landed (5f849a9).
+
+**What to do:** measure corpus_synthesis on one corpus at 4096/16384 vs 32768/32768,
+keep the larger values if pass quality holds, and update the comments in determined.cfg.
+
+**Gate:** Determined session only.
+
+---
+
+## RM77 -- Port 8081 may be in use by another local model server
+
+The `analysis` profile uses fixed port 8081, and starting it treats any llama-server
+already listening on 8081 as an orphan (port-scoped kill in llm_client). `agent` uses
+8083 and does not collide.
+
+**What to do:** only if another local tool needs 8081 at the same time: give `analysis`
+its own port in `_PROFILES` (llm_client.py) and update determined.cfg and docs.
+
+**Gate:** none until a real conflict appears.
+
+---
+
+## RM78 -- opencode parity gaps (docs/AGENT_PARITY.md)
+
+Known, listed `claude_only` or documented in the parity manifest:
+- scripts/capn_hook.py (pre/post trap-registry nudges) is not ported; needs a
+  tool.execute.before/after adapter in .opencode/plugins/determined/index.ts.
+- opencode v2.0.29 has no session-start or stop hook, so stop-time grounding gates and
+  the SessionStart state load cannot be ported; AGENTS.md checklist and the per-prompt
+  brief stand in. Revisit when opencode documents session hooks.
+- `.claude/commands/` is probably not read by opencode; only `/next` is registered.
+- Weaker models are untested against the tool-first prompt set (8B vs 35B).
+
+**Gate:** Determined session; only when working through opencode shows a real need.
+
+---
+
+## RM79 -- dj2 handoff close-out (apply bundles, record SHA, re-ingest)
+
+Bundles 001-005 under handoffs/dj2/ are verified against base 598ed55 and not yet
+applied to dj2. Until they are, the primer correctly shows them as "pending apply".
+
+**What to do:**
+- On a dj2 feature branch apply bundles in id order (handoffs/dj2/README.md), one commit
+  each; push.
+- Next Determined session: record the new dj2 SHA in handoffs/dj2/STATE.md, run
+  `reingest_changed`, and confirm the primer cards for the covered handlers close.
+- Follow-up change for buy.json / sell.json (ten unresolved references) uses the
+  bundle workflow (handoffs/dj2/WORKFLOW.md); a good first task for the local model.
+
+**Gate:** Bart authorizes changes to the dj2 repo.
