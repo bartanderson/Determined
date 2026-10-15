@@ -591,9 +591,11 @@ def test_dispatch_all_tools_registered():
         "work_session_primer",
         "fsm_scaffold",
         "fsm_diagram",
+        "check_fsm_consistency",
+        "check_event_coverage",
         "export_context",
-            "export_context_append",
-            "export_context_dump",
+        "export_context_append",
+        "export_context_dump",
         # structural gap tools
         "find_isolated_modules",
         "find_orphaned_interfaces",
@@ -1436,3 +1438,296 @@ if __name__ == "__main__":
             traceback.print_exc()
             failed += 1
     print(f"\n{passed + failed} tests: {passed} passed, {failed} failed")
+
+
+def test_check_fsm_consistency_flags_undefined_guard(tmp_path):
+    """
+    Spec dj2-fsm-completion: undefined guard referenced -> report file,
+    event, and the missing guard name.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "TestFSM",
+        "states": [
+            {"name": "awaiting_choice", "initial": True},
+            {"name": "resolving_fight"},
+        ],
+        "events": {
+            "fight": {
+                "transitions": [
+                    {
+                        "from": "awaiting_choice",
+                        "to": "resolving_fight",
+                        "cond": "fight_possible",
+                        "actions": ["start_combat"],
+                    }
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {"start_combat": {}},
+    }
+    (tmp_path / "test.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "test.json" in result
+    assert "fight" in result
+    assert "fight_possible" in result
+
+
+def test_check_fsm_consistency_passes_on_valid(tmp_path):
+    """
+    Spec dj2-fsm-completion: all references resolve -> per-machine table.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "GoodFSM",
+        "states": [
+            {"name": "a", "initial": True},
+            {"name": "b"},
+        ],
+        "events": {"go": {"transitions": [{"from": "a", "to": "b"}]}},
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "good.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("PASS")
+    assert "GoodFSM" in result
+
+
+def test_check_fsm_consistency_flags_undefined_action(tmp_path):
+    """
+    Spec dj2-fsm-completion: undefined action referenced is also a failure.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "BadAction",
+        "states": [{"name": "a", "initial": True}, {"name": "b"}],
+        "events": {
+            "go": {
+                "transitions": [
+                    {"from": "a", "to": "b", "actions": ["missing_action"]}
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "bad.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "missing_action" in result
+
+
+def test_check_fsm_consistency_flags_multiple_initial_states(tmp_path):
+    """
+    Spec dj2-fsm-completion: exactly one initial state is required.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "TwoInitial",
+        "states": [
+            {"name": "a", "initial": True},
+            {"name": "b", "initial": True},
+        ],
+        "events": {},
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "two.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "initial" in result
+
+def test_check_fsm_consistency_handles_list_from(tmp_path):
+    """
+    Spec dj2-fsm-completion: a transition whose 'from' is a list of
+    state names must not crash the check.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "ListFromFSM",
+        "states": [
+            {"name": "awaiting", "initial": True},
+            {"name": "countering"},
+            {"name": "completed", "final": True},
+        ],
+        "events": {
+            "confirm": {
+                "transitions": [
+                    {"from": ["awaiting", "countering"], "to": "completed"}
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "list.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("PASS")
+    assert "ListFromFSM" in result
+
+def test_check_fsm_consistency_flags_bad_name_in_list_from(tmp_path):
+    """
+    A name inside a list 'from' that is not a declared state is reported.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_fsm_consistency
+
+    fsm = {
+        "name": "BadListFSM",
+        "states": [{"name": "awaiting", "initial": True}],
+        "events": {
+            "go": {
+                "transitions": [
+                    {"from": ["awaiting", "ghost"], "to": "awaiting"}
+                ]
+            }
+        },
+        "guards": {},
+        "actions": {},
+    }
+    (tmp_path / "bad_list.json").write_text(_json.dumps(fsm), encoding="utf-8")
+
+    result = check_fsm_consistency(None, {"directory": str(tmp_path)})
+
+    assert result.startswith("FAIL")
+    assert "ghost" in result
+
+def test_check_event_coverage_flags_undeclared_emission(tmp_path):
+    """
+    Spec dj2-initial-event-set: an emit() of a type not in the taxonomy
+    appears under emitted-but-undeclared with file and line.
+    """
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "# Event Taxonomy\n\n### encounter\n"
+        "- `encounter.started`\n"
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "combat.py").write_text(
+        "def start_combat(log):\n"
+        "    log.emit('encounter.resolved', {'x': 1})\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "emitted-but-undeclared" in result
+    assert "encounter.resolved" in result
+    assert "combat.py" in result
+
+
+def test_check_event_coverage_typo_not_matched_to_declared(tmp_path):
+    """
+    Spec dj2-initial-event-set: a typo'd event type string is flagged as
+    emitted-but-undeclared and not silently matched to the correct type.
+    """
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "fsm.py").write_text(
+        "def resolve_flee(log):\n"
+        "    log.emit('encounter.endd')\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "encounter.endd" in result
+    assert "declared-but-never-emitted" in result
+    emitted_section = result.split("declared-but-never-emitted")[0]
+    assert "encounter.endd" in emitted_section
+
+
+def test_check_event_coverage_initial_set_pass_fail(tmp_path):
+    """
+    Spec dj2-initial-event-set: initial-set filter shows one row per initial
+    type with pass/fail against 'emitted AND consumed'.
+    """
+    import json as _json
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "- `combat.initiation.triggered`\n"
+        "- `encounter.updated`\n"
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "events").mkdir(parents=True)
+    (tmp_path / "config" / "events" / "initial_events.json").write_text(
+        _json.dumps(["combat.initiation.triggered", "encounter.ended"]),
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "encounter.py").write_text(
+        "def on_start(log):\n"
+        "    log.emit('combat.initiation.triggered', {'target': 'goblin'})\n"
+        "def register(log):\n"
+        "    log.on('combat.initiation.triggered', on_start)\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "initial-set filter" in result
+    assert "combat.initiation.triggered" in result
+    assert "PASS" in result
+    assert "FAIL" in result
+
+
+def test_check_event_coverage_clean_case(tmp_path):
+    """Fully covered event: declared, emitted, consumed -> no undeclared list entry."""
+    from determined.agent.agent_tools import check_event_coverage
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "design1a_event_taxonomy.md").write_text(
+        "- `encounter.ended`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "world").mkdir()
+    (tmp_path / "world" / "fsm.py").write_text(
+        "def resolve_flee(log):\n"
+        "    log.emit('encounter.ended')\n"
+        "def register(log):\n"
+        "    log.on('encounter.ended', resolve_flee)\n",
+        encoding="utf-8",
+    )
+
+    result = check_event_coverage(None, {"directory": str(tmp_path)})
+
+    assert "emitted-but-undeclared (0)" in result
+    assert "declared-but-never-emitted (0)" in result
+    assert "emitted-but-never-consumed (0)" in result
+    assert "consumed-but-never-emitted (0)" in result

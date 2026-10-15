@@ -1,0 +1,14 @@
+{
+  "id": "005",
+  "base_sha": "598ed551d0538c1129c75aec0f708b20205c80af",
+  "files_touched": [
+    "tests/unit/test_context_builder_encounter.py",
+    "world/context_builder.py"
+  ],
+  "tests_run": [
+    "tests/unit/test_context_builder_encounter.py"
+  ],
+  "finding_ids": [],
+  "openspec_task": "3.5",
+  "verified_at": "2026-10-14T07:22:44.839678+00:00"
+}

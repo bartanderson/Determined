@@ -1,0 +1,29 @@
+diff --git a/config/events/initial_events.json b/config/events/initial_events.json
+new file mode 100644
+index 0000000..02d76b9
+--- /dev/null
++++ b/config/events/initial_events.json
+@@ -0,0 +1,23 @@
++{
++  "encounter.started": {
++    "required_fields": ["session_id", "encounter_id", "description"]
++  },
++  "encounter.updated": {
++    "required_fields": ["session_id", "encounter_id"]
++  },
++  "encounter.ended": {
++    "required_fields": ["session_id", "encounter_id", "outcome"]
++  },
++  "combat.initiation.triggered": {
++    "required_fields": ["session_id", "encounter_id"]
++  },
++  "interaction.trade.offer_made": {
++    "required_fields": ["session_id", "merchant_id"]
++  },
++  "interaction.trade.completed": {
++    "required_fields": ["session_id", "merchant_id"]
++  },
++  "state.resource.changed": {
++    "required_fields": ["session_id", "resource", "delta"]
++  }
++}

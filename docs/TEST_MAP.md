@@ -144,6 +144,12 @@ pytest tests/regression/<file>  [<file2> ...]
 |---|---|
 | system_validator.py | test_integrity_view_wiring.py |
 
+## tools/
+
+| Source module | Test file(s) |
+|---|---|
+| handoff.py | test_handoff.py |
+
 ---
 
 ## Broad-impact modules (run these extra test groups when touching them)

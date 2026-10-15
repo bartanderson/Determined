@@ -1,0 +1,331 @@
+diff --git a/config/fsms/encounter.json b/config/fsms/encounter.json
+index a244a31..f12c0d2 100644
+--- a/config/fsms/encounter.json
++++ b/config/fsms/encounter.json
+@@ -9,7 +9,7 @@
+   "events": {
+     "next": {
+       "transitions": [
+-        {"from": "initiating", "to": "awaiting_choice"}
++        {"from": "initiating", "to": "awaiting_choice", "actions": ["begin_encounter"]}
+       ]
+     },
+     "fight": {
+@@ -34,6 +34,10 @@
+     }
+   },
+   "guards": {
++    "fight_possible": {
++      "parameters": {},
++      "description": "True if combat can begin."
++    },
+     "flee_possible": {
+       "parameters": {},
+       "description": "True if flee attempt succeeds."
+@@ -44,20 +48,25 @@
+     }
+   },
+   "actions": {
++    "begin_encounter": {
++      "parameters": {},
++      "context_uses": ["engine"],
++      "description": "Emits encounter.started when the machine leaves initiating."
++    },
+     "start_combat": {
+       "parameters": {},
+       "context_uses": ["engine"],
+-      "description": "Triggers combat system."
++      "description": "Emits combat.initiation.triggered; no combat rules run here."
+     },
+     "resolve_flee": {
+       "parameters": {},
+       "context_uses": ["engine"],
+-      "description": "Resolves flee success."
++      "description": "Emits encounter.updated then encounter.ended with outcome=fled."
+     },
+     "resolve_parley": {
+       "parameters": {},
+       "context_uses": ["engine"],
+-      "description": "Resolves parley success."
++      "description": "Emits encounter.updated then encounter.ended with outcome=parleyed."
+     }
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/tests/unit/test_encounter_fsm.py b/tests/unit/test_encounter_fsm.py
+new file mode 100644
+index 0000000..12385d2
+--- /dev/null
++++ b/tests/unit/test_encounter_fsm.py
+@@ -0,0 +1,153 @@
++"""
++Unit tests for the encounter FSM (config/fsms/encounter.json).
++
++Walks every declared transition through the GenericFSM runner, including
++both guard paths, and asserts the events emitted through the EventLog.
++"""
++from pathlib import Path
++
++from world.event_log import EventLog
++from world.fsm.generic_fsm import GenericFSM
++from world.fsm import builtins
++
++
++FSM_PATH = str(Path(__file__).resolve().parents[2] / "config" / "fsms" / "encounter.json")
++
++
++class StubEngine:
++    """Minimal engine stand-in: EventLog + guard hooks the FSM calls."""
++
++    def __init__(self, flee=True, parley=True, fight=True):
++        self.event_log = EventLog()
++        self._flee = flee
++        self._parley = parley
++        self._fight = fight
++
++    def _check_flee(self, encounter_data):
++        return self._flee
++
++    def _check_parley(self, encounter_data):
++        return self._parley
++
++    def _check_fight(self, encounter_data):
++        return self._fight
++
++
++def _build_fsm(engine, description="A goblin attacks!"):
++    guard_reg = {
++        'fight_possible':  builtins.fight_possible,
++        'flee_possible':   builtins.flee_possible,
++        'parley_possible': builtins.parley_possible,
++    }
++    action_reg = {
++        'begin_encounter': builtins.begin_encounter,
++        'start_combat':    builtins.start_combat,
++        'resolve_flee':    builtins.resolve_flee,
++        'resolve_parley':  builtins.resolve_parley,
++    }
++    context = {
++        'description': description,
++        'encounter_data': {'description': description},
++        'encounter_id': 'enc::test',
++        'engine': engine,
++        'session_id': 'test_session',
++        'character': None,
++        '_guard_registry': guard_reg,
++        '_action_registry': action_reg,
++    }
++    return GenericFSM(FSM_PATH, context)
++
++
++def _types(engine):
++    return [e.type for e in engine.event_log.get_all_events()]
++
++
++def _send_quiet(fsm, event):
++    """send_event that swallows guard-block exceptions, whatever the library raises."""
++    try:
++        fsm.send_event(event)
++    except Exception:
++        pass
++
++
++def test_begin_encounter_emits_started():
++    engine = StubEngine()
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    assert fsm.state == 'awaiting_choice'
++    assert 'encounter.started' in _types(engine)
++    started = engine.event_log.get_events('encounter.started')[0]
++    assert started.data['session_id'] == 'test_session'
++    assert started.data['encounter_id'] == 'enc::test'
++    assert 'description' in started.data
++
++
++def test_flee_success_emits_updated_then_ended():
++    engine = StubEngine(flee=True)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    fsm.send_event('flee')
++    assert fsm.state == 'completed'
++    types = _types(engine)
++    assert 'encounter.updated' in types
++    assert 'encounter.ended' in types
++    assert types.index('encounter.updated') < types.index('encounter.ended')
++    ended = engine.event_log.get_events('encounter.ended')[0]
++    assert ended.data['outcome'] == 'fled'
++
++
++def test_flee_blocked_by_guard():
++    engine = StubEngine(flee=False)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    _send_quiet(fsm, 'flee')
++    assert fsm.state == 'awaiting_choice'
++    assert 'encounter.ended' not in _types(engine)
++
++
++def test_parley_success_emits_updated_then_ended():
++    engine = StubEngine(parley=True)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    fsm.send_event('parley')
++    assert fsm.state == 'completed'
++    ended = engine.event_log.get_events('encounter.ended')[0]
++    assert ended.data['outcome'] == 'parleyed'
++
++
++def test_parley_blocked_by_guard():
++    engine = StubEngine(parley=False)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    _send_quiet(fsm, 'parley')
++    assert fsm.state == 'awaiting_choice'
++    assert 'encounter.ended' not in _types(engine)
++
++
++def test_fight_emits_combat_initiation():
++    engine = StubEngine(fight=True)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    fsm.send_event('fight')
++    assert fsm.state == 'resolving_fight'
++    types = _types(engine)
++    assert 'combat.initiation.triggered' in types
++    assert 'encounter.ended' not in types
++
++
++def test_fight_blocked_by_guard():
++    engine = StubEngine(fight=False)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    _send_quiet(fsm, 'fight')
++    assert fsm.state == 'awaiting_choice'
++    assert 'combat.initiation.triggered' not in _types(engine)
++
++
++def test_combat_ended_closes_encounter():
++    engine = StubEngine(fight=True)
++    fsm = _build_fsm(engine)
++    fsm.send_event('next')
++    fsm.send_event('fight')
++    fsm.send_event('combat_ended')
++    assert fsm.state == 'completed'
+diff --git a/world/adjudication_engine.py b/world/adjudication_engine.py
+index 1263571..c538f7c 100644
+--- a/world/adjudication_engine.py
++++ b/world/adjudication_engine.py
+@@ -564,18 +564,22 @@ class AdjudicationEngine:
+         if session_id in self.active_fsms:
+             return {"success": False, "message": "Already in an encounter."}
+         guard_reg = {
+-            'flee_possible': builtins.flee_possible,
++            'fight_possible':  builtins.fight_possible,
++            'flee_possible':   builtins.flee_possible,
+             'parley_possible': builtins.parley_possible,
+         }
+         action_reg = {
+-            'start_combat': builtins.start_combat,
+-            'resolve_flee': builtins.resolve_flee,
+-            'resolve_parley': builtins.resolve_parley,
++            'begin_encounter': builtins.begin_encounter,
++            'start_combat':    builtins.start_combat,
++            'resolve_flee':    builtins.resolve_flee,
++            'resolve_parley':  builtins.resolve_parley,
+         }
+         char = self.world._get_active_character(session_id)
++        encounter_id = encounter_data.get('encounter_id') or f"enc::{session_id}"
+         context = {
+             'description': encounter_data.get('description', ''),
+-            'encounter_data': encounter_data,   # store the full data
++            'encounter_data': encounter_data,
++            'encounter_id': encounter_id,
+             'monsters': encounter_data.get('monsters', []),
+             'engine': self,
+             'session_id': session_id,
+diff --git a/world/fsm/builtins.py b/world/fsm/builtins.py
+index 81dd58f..c500abb 100644
+--- a/world/fsm/builtins.py
++++ b/world/fsm/builtins.py
+@@ -108,27 +108,75 @@ def execute_barter(instance, event_data):
+         )
+     return instance.context
+ 
+-# Encounter actions (simple stubs)
++# ========== Encounter helpers ==========
++
++def _emit_encounter(instance, event_type, extra=None):
++    """
++    Emit an event through the engine's EventLog. All initial event types
++    require session_id and encounter_id in data (config/events/initial_events.json).
++    Silently no-ops when the engine is absent (e.g. in isolated unit tests).
++    """
++    engine = instance.context.get('engine')
++    if engine is None or not hasattr(engine, 'event_log'):
++        return
++    data = {
++        'session_id':   instance.context.get('session_id', ''),
++        'encounter_id': instance.context.get('encounter_id', ''),
++    }
++    if extra:
++        data.update(extra)
++    engine.event_log.emit(event_type, data, source_system='encounter')
++
++
++# ========== Encounter guards ==========
++
++def fight_possible(instance, event_data):
++    """True unless the engine provides _check_fight and it says no."""
++    engine = instance.context.get('engine')
++    if engine and hasattr(engine, '_check_fight'):
++        return engine._check_fight(instance.context.get('encounter_data'))
++    return True
++
++
+ def flee_possible(instance, event_data):
+     engine = instance.context.get('engine')
+     if engine and hasattr(engine, '_check_flee'):
+         return engine._check_flee(instance.context.get('encounter_data'))
+     return False
+ 
++
+ def parley_possible(instance, event_data):
+     engine = instance.context.get('engine')
+     if engine and hasattr(engine, '_check_parley'):
+         return engine._check_parley(instance.context.get('encounter_data'))
+     return False
+ 
++
++# ========== Encounter actions ==========
++
++def begin_encounter(instance, event_data):
++    """Emit encounter.started with the encounter description."""
++    _emit_encounter(instance, 'encounter.started', {
++        'description': instance.context.get('description', ''),
++    })
++    return instance.context
++
++
+ def start_combat(instance, event_data):
+-    engine = instance.context.get('engine')
+-    if engine and hasattr(engine, '_start_combat'):
+-        engine._start_combat(instance.context.get('encounter_data'))
++    """Emit combat.initiation.triggered. Combat rules are not implemented here."""
++    _emit_encounter(instance, 'combat.initiation.triggered')
+     return instance.context
+ 
++
+ def resolve_flee(instance, event_data):
++    """Emit encounter.updated then encounter.ended (outcome=fled)."""
++    _emit_encounter(instance, 'encounter.updated')
++    _emit_encounter(instance, 'encounter.ended', {'outcome': 'fled'})
+     return instance.context
+ 
++
+ def resolve_parley(instance, event_data):
++    """Emit encounter.updated then encounter.ended (outcome=parleyed)."""
++    _emit_encounter(instance, 'encounter.updated')
++    _emit_encounter(instance, 'encounter.ended', {'outcome': 'parleyed'})
+     return instance.context
+\ No newline at end of file

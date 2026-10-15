@@ -1,0 +1,210 @@
+diff --git a/tests/unit/test_barter_fsm.py b/tests/unit/test_barter_fsm.py
+new file mode 100644
+index 0000000..4ee7b8c
+--- /dev/null
++++ b/tests/unit/test_barter_fsm.py
+@@ -0,0 +1,130 @@
++"""
++Unit tests for the barter FSM (config/fsms/barter.json).
++
++Walks every declared transition through the GenericFSM runner and checks
++the events emitted through the EventLog.
++"""
++from pathlib import Path
++from unittest.mock import Mock
++
++from world.event_log import EventLog
++from world.fsm.generic_fsm import GenericFSM
++from world.fsm import builtins
++
++
++FSM_PATH = str(Path(__file__).resolve().parents[2] / "config" / "fsms" / "barter.json")
++
++
++class StubEngine:
++    """Minimal engine stand-in. _execute_barter is a mock; event_log is real."""
++
++    def __init__(self):
++        self.event_log = EventLog()
++        self._execute_barter = Mock()
++
++
++def _build_fsm(engine, shortage=3, give_value=10, receive_value=13):
++    guard_reg = {
++        'need_more_gold': builtins.need_more_gold,
++    }
++    action_reg = {
++        'add_gold': builtins.add_gold,
++        'execute_barter': builtins.execute_barter,
++    }
++    context = {
++        'give_item': 'shortsword',
++        'receive_item': 'healing potion',
++        'give_value': give_value,
++        'receive_value': receive_value,
++        'shortage': shortage,
++        'character': None,
++        'merchant': None,
++        'give_item_obj': None,
++        'receive_item_obj': None,
++        'engine': engine,
++        'session_id': 'test_session',
++        '_guard_registry': guard_reg,
++        '_action_registry': action_reg,
++    }
++    return GenericFSM(FSM_PATH, context)
++
++
++def _send_quiet(fsm, event, **kwargs):
++    """send_event that swallows guard-block exceptions."""
++    try:
++        fsm.send_event(event, kwargs or None)
++    except Exception:
++        pass
++
++
++def _types(engine):
++    return [e.type for e in engine.event_log.get_all_events()]
++
++
++def test_offer_below_shortage_transitions_to_countering():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('offer', {'value': 2})
++    assert fsm.state == 'countering'
++
++
++def test_offer_below_shortage_emits_resource_changed():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('offer', {'value': 2})
++    assert 'state.resource.changed' in _types(engine)
++    ev = engine.event_log.get_events('state.resource.changed')[0]
++    assert ev.data['session_id'] == 'test_session'
++    assert ev.data['resource'] == 'gold'
++    assert ev.data['delta'] == 2
++
++
++def test_offer_below_shortage_decrements_shortage():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('offer', {'value': 2})
++    assert fsm.context['shortage'] == 1
++    assert fsm.context['offered_extra'] == 2
++
++
++def test_offer_at_or_above_shortage_does_not_transition():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    _send_quiet(fsm, 'offer', value=3)
++    assert fsm.state == 'awaiting'
++    assert 'state.resource.changed' not in _types(engine)
++
++
++def test_confirm_emits_trade_completed():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('confirm')
++    assert fsm.state == 'completed'
++    assert 'interaction.trade.completed' in _types(engine)
++
++
++def test_confirm_calls_engine_execute_barter():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('confirm')
++    assert engine._execute_barter.called
++
++
++def test_full_barter_flow():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('offer', {'value': 2})
++    assert fsm.state == 'countering'
++    fsm.send_event('confirm')
++    assert fsm.state == 'completed'
++    types = _types(engine)
++    assert 'state.resource.changed' in types
++    assert 'interaction.trade.completed' in types
++
++
++def test_cancel_completes_without_trade_events():
++    engine = StubEngine()
++    fsm = _build_fsm(engine, shortage=3)
++    fsm.send_event('cancel')
++    assert fsm.state == 'completed'
++    assert 'interaction.trade.completed' not in _types(engine)
+\ No newline at end of file
+diff --git a/world/adjudication_engine.py b/world/adjudication_engine.py
+index 1263571..820100e 100644
+--- a/world/adjudication_engine.py
++++ b/world/adjudication_engine.py
+@@ -169,6 +169,7 @@ class AdjudicationEngine:
+                 'give_item_obj': give_item,
+                 'receive_item_obj': want_item,
+                 'engine': self,
++                'session_id': session_id,
+             }
+             if config.context_updates:
+                 context.update(config.context_updates)
+diff --git a/world/fsm/builtins.py b/world/fsm/builtins.py
+index 81dd58f..6b3e3df 100644
+--- a/world/fsm/builtins.py
++++ b/world/fsm/builtins.py
+@@ -56,6 +56,23 @@ def shortage_met(instance, event_data):
+     shortage = instance.context.get('shortage', 0)
+     return offered >= shortage
+ 
++# ========== Event emission helper ==========
++
++def _emit_event(instance, event_type, source_system, extra=None):
++    """
++    Emit an event through the engine's EventLog, merging session_id from
++    the FSM context. Silently no-ops when the engine or its event_log is
++    absent (isolated unit tests).
++    """
++    engine = instance.context.get('engine')
++    if engine is None or not hasattr(engine, 'event_log'):
++        return
++    data = {'session_id': instance.context.get('session_id', '')}
++    if extra:
++        data.update(extra)
++    engine.event_log.emit(event_type, data, source_system=source_system)
++
++
+ # ========== Actions ==========
+ 
+ def store_offer(instance, event_data):
+@@ -72,6 +89,8 @@ def add_gold(instance, event_data):
+     instance.context['offered_extra'] = extra
+     shortage = instance.context.get('shortage', 0)
+     instance.context['shortage'] = shortage - extra
++    _emit_event(instance, 'state.resource.changed', 'economy',
++                {'resource': 'gold', 'delta': extra})
+     return instance.context
+ 
+ def execute_purchase(instance, event_data):
+@@ -106,6 +125,10 @@ def execute_barter(instance, event_data):
+             instance.context['receive_item_obj'],
+             instance.context.get('offered_extra', 0)
+         )
++    merchant = instance.context.get('merchant')
++    merchant_id = getattr(merchant, 'id', '') if merchant is not None else ''
++    _emit_event(instance, 'interaction.trade.completed', 'economy',
++                {'merchant_id': merchant_id})
+     return instance.context
+ 
+ # Encounter actions (simple stubs)
+diff --git a/world/fsm/generic_fsm.py b/world/fsm/generic_fsm.py
+index 91d5b22..041f33b 100644
+--- a/world/fsm/generic_fsm.py
++++ b/world/fsm/generic_fsm.py
+@@ -86,7 +86,7 @@ class GenericFSM:
+     def send_event(self, event_name: str, event_data: Optional[Dict] = None):
+         method = getattr(self._machine, event_name)
+         if event_data:
+-            method(**event_data)
++            method(event_data)
+         else:
+             method()
+         return self

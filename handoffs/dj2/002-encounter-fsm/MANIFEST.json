@@ -1,0 +1,16 @@
+{
+  "id": "002",
+  "base_sha": "598ed551d0538c1129c75aec0f708b20205c80af",
+  "files_touched": [
+    "config/fsms/encounter.json",
+    "tests/unit/test_encounter_fsm.py",
+    "world/adjudication_engine.py",
+    "world/fsm/builtins.py"
+  ],
+  "tests_run": [
+    "tests/unit/test_encounter_fsm.py"
+  ],
+  "finding_ids": [],
+  "openspec_task": "3.2",
+  "verified_at": "2026-10-14T05:20:54.992463+00:00"
+}

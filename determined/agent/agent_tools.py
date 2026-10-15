@@ -12583,6 +12583,304 @@ def fsm_diagram(assessor: "Assessor", args: dict) -> str:
 
 TOOLS["fsm_diagram"] = (fsm_diagram, "assessor")
 
+def check_fsm_consistency(assessor: "Assessor", args: dict) -> str:
+    """
+    check_fsm_consistency(directory) - validate every FSM JSON in a directory.
+
+    For each *.json under the given directory, verifies:
+      - every transition's 'cond' names a guard defined under 'guards'
+      - every name in a transition's 'actions' is defined under 'actions'
+      - every transition's 'from' and 'to' names a state in 'states'
+      - exactly one state has 'initial': true
+
+    Returns "PASS: ..." plus a per-machine summary table when everything
+    resolves, or "FAIL: ..." listing every unresolved reference (file, event,
+    name) when it does not.  The prefix is stable so a caller can map it to
+    an exit code.
+
+    Args:
+      directory  - path to a directory of FSM JSON files (e.g. config/fsms)
+    """
+    import json as _json
+    from pathlib import Path
+
+    directory = args.get("directory", "").strip()
+    if not directory:
+        return "Error: directory is required."
+
+    root = Path(directory)
+    if not root.is_dir():
+        return f"Error: not a directory: {directory}"
+
+    files = sorted(root.glob("*.json"))
+    if not files:
+        return f"No *.json files found in {directory}"
+
+    failures: list[str] = []
+    table_rows: list[str] = []
+
+    for path in files:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                spec = _json.load(fh)
+        except Exception as exc:
+            failures.append(f"{path.name}: cannot parse JSON: {exc}")
+            continue
+
+        name = spec.get("name", path.stem)
+        states = spec.get("states", [])
+        events = spec.get("events", {})
+        guards = spec.get("guards", {})
+        actions = spec.get("actions", {})
+
+        state_names = {s.get("name") for s in states}
+        guard_names = set(guards.keys())
+        action_names = set(actions.keys())
+
+        initial = [s.get("name") for s in states if s.get("initial")]
+        if len(initial) != 1:
+            failures.append(
+                f"{path.name} [{name}]: expected exactly one initial state, "
+                f"found {len(initial)}: {initial or 'none'}"
+            )
+
+        for event_name, event_data in events.items():
+            for t in event_data.get("transitions", []):
+                frm = t.get("from")
+                to = t.get("to")
+                cond = t.get("cond")
+                acts = t.get("actions", []) or []
+
+                # 'from' may be a string or a list of state names
+                frm_names = frm if isinstance(frm, list) else [frm]
+                for frm_name in frm_names:
+                    if frm_name not in state_names:
+                        failures.append(
+                            f"{path.name} [{name}] event '{event_name}': "
+                            f"from state '{frm_name}' not in states"
+                        )
+                if to not in state_names:
+                    failures.append(
+                        f"{path.name} [{name}] event '{event_name}': "
+                        f"to state '{to}' not in states"
+                    )
+                if cond and cond not in guard_names:
+                    failures.append(
+                        f"{path.name} [{name}] event '{event_name}': "
+                        f"undefined guard '{cond}'"
+                    )
+                for a in acts:
+                    if a not in action_names:
+                        failures.append(
+                            f"{path.name} [{name}] event '{event_name}': "
+                            f"undefined action '{a}'"
+                        )
+
+        table_rows.append(
+            f"  {name:24} states={len(states):3d} events={len(events):3d} "
+            f"guards={len(guards):3d} actions={len(actions):3d}"
+        )
+
+    lines: list[str] = []
+    if failures:
+        lines.append(f"FAIL: {len(failures)} unresolved reference(s)")
+        lines.extend("  " + f for f in failures)
+    else:
+        lines.append("PASS: all FSM definitions resolve")
+    lines.append("")
+    lines.append(f"FSM summary ({len(files)} file(s) in {directory}):")
+    lines.extend(table_rows)
+
+    return "\n".join(lines)
+
+
+TOOLS["check_fsm_consistency"] = (check_fsm_consistency, "assessor")
+
+def check_event_coverage(oracle: "DBOracle", args: dict) -> str:
+    """
+    check_event_coverage(directory[, taxonomy_file][, initial_set_file]) - report
+    event coverage across a dj2 clone.
+
+    Scans the directory tree for:
+      - declared: event types listed in the taxonomy markdown file
+      - emitted:  literal emit("type", ...) call sites in Python source
+      - consumed: on("type", ...) handler registrations and on_any() wildcard listeners
+
+    Produces four diff lists:
+      - emitted-but-undeclared
+      - declared-but-never-emitted
+      - emitted-but-never-consumed
+      - consumed-but-never-emitted
+
+    If initial_set_file is provided (or present at directory/config/events/initial_events.json),
+    also prints a per-initial-type pass/fail table:
+      pass = emitted by at least one call site AND consumed by at least one listener
+             (typed on() or any on_any() present).
+
+    Args:
+      directory         - root of a dj2 checkout
+      taxonomy_file     - path to taxonomy doc; default: <directory>/docs/design1a_event_taxonomy.md
+      initial_set_file  - path to initial_events.json; default: <directory>/config/events/initial_events.json
+    """
+    import json as _json
+    import re as _re
+    from pathlib import Path
+
+    directory = args.get("directory", "").strip()
+    if not directory:
+        return "Error: directory is required."
+
+    root = Path(directory)
+    if not root.is_dir():
+        return f"Error: not a directory: {directory}"
+
+    taxonomy_file = args.get("taxonomy_file", "").strip()
+    if not taxonomy_file:
+        taxonomy_file = str(root / "docs" / "design1a_event_taxonomy.md")
+    taxonomy_path = Path(taxonomy_file)
+    if not taxonomy_path.is_file():
+        return f"Error: taxonomy file not found: {taxonomy_file}"
+
+    # --- Parse taxonomy -----------------------------------------------------
+    _TYPE_RE = _re.compile(r"^\s*-\s+`([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)`")
+    declared: set[str] = set()
+    for line in taxonomy_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = _TYPE_RE.match(line)
+        if m:
+            declared.add(m.group(1))
+
+    # --- Scan Python source ------------------------------------------------
+    _EMIT_RE = _re.compile(
+        r"""\bemit\s*\(\s*['"]([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)['"]"""
+    )
+    _ON_RE = _re.compile(
+        r"""\.on\s*\(\s*['"]([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)['"]"""
+    )
+    _ON_ANY_RE = _re.compile(r"\.on_any\s*\(")
+
+    emitted: dict[str, list[tuple[str, int]]] = {}
+    consumed: dict[str, list[tuple[str, int]]] = {}
+    wildcard_files: list[str] = []
+
+    skip_dirs = {".venv", "venv", "__pycache__", "node_modules", ".git", ".mypy_cache"}
+    for py in sorted(root.rglob("*.py")):
+        if any(part in skip_dirs for part in py.parts):
+            continue
+        rel = py.relative_to(root).as_posix()
+        try:
+            text = py.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        for match in _EMIT_RE.finditer(text):
+            lineno = text.count("\n", 0, match.start()) + 1
+            emitted.setdefault(match.group(1), []).append((rel, lineno))
+        for match in _ON_RE.finditer(text):
+            lineno = text.count("\n", 0, match.start()) + 1
+            consumed.setdefault(match.group(1), []).append((rel, lineno))
+        if _ON_ANY_RE.search(text):
+            wildcard_files.append(rel)
+
+    emitted_types = set(emitted.keys())
+    consumed_types = set(consumed.keys())
+    has_wildcard = bool(wildcard_files)
+
+    # --- Four diff lists ---------------------------------------------------
+    emitted_undeclared = sorted(emitted_types - declared)
+    declared_never_emitted = sorted(declared - emitted_types)
+    emitted_never_consumed = sorted(
+        t for t in emitted_types
+        if t not in consumed_types and not has_wildcard
+    )
+    consumed_never_emitted = sorted(consumed_types - emitted_types)
+
+    # --- Report ------------------------------------------------------------
+    def _fmt_sites(sites: list[tuple[str, int]], limit: int = 5) -> str:
+        shown = ", ".join(f"{f}:{ln}" for f, ln in sites[:limit])
+        if len(sites) > limit:
+            shown += f", +{len(sites) - limit} more"
+        return shown
+
+    lines: list[str] = []
+    lines.append(f"Event coverage for {root}")
+    lines.append(f"  taxonomy:  {taxonomy_path.name} ({len(declared)} declared type(s))")
+    lines.append(f"  emitted:   {len(emitted_types)} unique type(s) "
+                 f"across {sum(len(v) for v in emitted.values())} site(s)")
+    lines.append(f"  consumed:  {len(consumed_types)} unique type(s) "
+                 f"across {sum(len(v) for v in consumed.values())} site(s)")
+    if wildcard_files:
+        lines.append(f"  on_any:    present in {len(wildcard_files)} file(s) "
+                     f"(wildcard listener treats all declared types as consumed)")
+    lines.append("")
+
+    lines.append(f"emitted-but-undeclared ({len(emitted_undeclared)}):")
+    for t in emitted_undeclared:
+        lines.append(f"  {t}  [{_fmt_sites(emitted[t])}]")
+
+    lines.append(f"declared-but-never-emitted ({len(declared_never_emitted)}):")
+    for t in declared_never_emitted:
+        lines.append(f"  {t}")
+
+    lines.append(f"emitted-but-never-consumed ({len(emitted_never_consumed)}):")
+    for t in emitted_never_consumed:
+        lines.append(f"  {t}  [{_fmt_sites(emitted[t])}]")
+
+    lines.append(f"consumed-but-never-emitted ({len(consumed_never_emitted)}):")
+    for t in consumed_never_emitted:
+        lines.append(f"  {t}  [{_fmt_sites(consumed[t])}]")
+
+    # --- Initial-set filter ------------------------------------------------
+    initial_set_file = args.get("initial_set_file", "").strip()
+    if not initial_set_file:
+        candidate = root / "config" / "events" / "initial_events.json"
+        if candidate.is_file():
+            initial_set_file = str(candidate)
+
+    if initial_set_file:
+        initial_path = Path(initial_set_file)
+        if not initial_path.is_file():
+            lines.append("")
+            lines.append(f"initial-set filter: file not found: {initial_set_file}")
+        else:
+            try:
+                payload = _json.loads(initial_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                lines.append("")
+                lines.append(f"initial-set filter: cannot parse {initial_set_file}: {exc}")
+                payload = None
+
+            if isinstance(payload, dict):
+                if isinstance(payload.get("types"), list):
+                    initial_types = [t for t in payload["types"] if isinstance(t, str)]
+                else:
+                    initial_types = [k for k in payload.keys() if "." in k]
+            elif isinstance(payload, list):
+                initial_types = [t for t in payload if isinstance(t, str)]
+            else:
+                initial_types = []
+
+            if not initial_types:
+                lines.append("")
+                lines.append("initial-set filter: no types found in file")
+            else:
+                lines.append("")
+                lines.append(f"initial-set filter ({len(initial_types)} type(s)):")
+                lines.append(f"  {'type':<45} {'emitted':<8} {'consumed':<9} result")
+                for t in initial_types:
+                    is_emitted = t in emitted_types
+                    is_consumed = t in consumed_types or has_wildcard
+                    result = "PASS" if (is_emitted and is_consumed) else "FAIL"
+                    lines.append(
+                        f"  {t:<45} "
+                        f"{'yes' if is_emitted else 'no':<8} "
+                        f"{'yes' if is_consumed else 'no':<9} {result}"
+                    )
+
+    return "\n".join(lines)
+
+
+TOOLS["check_event_coverage"] = (check_event_coverage, "assessor")
+
 
 # ── chain_context — GAP-2: cross-layer chain synthesis ────────────────────────
 # Given a stub or domain name, show the full chain it would live in:
