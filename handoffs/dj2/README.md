@@ -102,4 +102,24 @@ of dj2 HEAD, or when dj2 changed a file the bundle touches. Stale bundles
 are not to be applied. Ask for regeneration; the regenerated bundle gets a
 new base_sha and fresh verify.md.
 
+## How the work-session primer uses bundles
+
+`work_session_primer` (and the UI primer) read the verified bundles here
+(determined/agent/handoff_bundles.py) so a ready bundle is not offered as new
+work. Per open item it says what the patch itself shows:
+
+- FSM handlers: a handler counts as covered when its name is on an added line
+  of a non-test .py file in change.patch (a def, or a registry key).
+- Python stubs: covered when the patch defines or changes a function of that
+  name in the same file.
+- Fully covered items move to an "Already handed off" section; partly covered
+  items stay in the list with "changes N/M" and "not changed by the bundle".
+- Each bundle is checked with `git apply --reverse --check` in the dj2 working
+  tree: "pending apply" means apply it; "already applied" means the corpus is
+  stale (run reingest_changed).
+
+Only bundles whose MANIFEST has `verified_at` are considered. "Not changed by
+the bundle" describes the patch, not the repo: the handler may already exist
+at the base SHA.
+
 

@@ -17,6 +17,7 @@ pytest tests/regression/<file>  [<file2> ...]
 | llm_client.py | test_llm_profiles.py test_agent_parity.py |
 | tools/check_agent_parity.py | test_agent_parity.py |
 | .claude/hooks/validate_shell.py | test_validate_shell.py |
+| handoff_bundles.py | test_handoff_bundles.py |
 | docs/agent_parity.json, opencode.json, AGENTS.md, .opencode/plugins/determined/index.ts | test_agent_parity.py |
 | config.py | test_llm_profiles.py |
 | fsm_walker.py | test_fsm_walker.py |

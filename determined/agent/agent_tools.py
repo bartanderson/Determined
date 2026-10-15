@@ -12280,8 +12280,19 @@ def _primer_items(oracle, top_n: int = 5) -> list[dict]:
       badge, name, file, file_path, line_no, purpose, is_fsm
       For FSM: actions[], guards[], total_handlers
       For Python: cls, confidence, callers, composite
+      Optional: handoff (a verified handoff bundle covers part of this item)
+    Items a verified handoff bundle already covers in full are left out; see _primer_split.
     """
+    return _primer_split(oracle, top_n)[0]
+
+
+def _primer_split(oracle, top_n: int = 5) -> tuple[list[dict], list[dict]]:
+    """(actionable items, items fully covered by verified handoff bundles).
+
+    Bundle coverage comes from handoffs/<corpus>/ (determined.agent.handoff_bundles); a
+    corpus with no bundles behaves exactly as before."""
     from determined.agent.classify_stub import extract_signals, score_hypotheses
+    from determined.agent.handoff_bundles import annotate_items, corpus_handoff_context
 
     conn = oracle.conn
 
@@ -12292,7 +12303,7 @@ def _primer_items(oracle, top_n: int = 5) -> list[dict]:
     ).fetchall()
 
     if not stubs:
-        return []
+        return [], []
 
     # Partition: FSM stubs vs Python stubs
     fsm_stubs: list[tuple] = []
@@ -12399,6 +12410,11 @@ def _primer_items(oracle, top_n: int = 5) -> list[dict]:
         })
 
     items.extend(scored_python)
+
+    # Items a verified handoff bundle already covers are not new work: keep the ones it
+    # covers only in part (annotated), and report the fully covered ones separately.
+    bundles, project_root = corpus_handoff_context(conn)
+    items, handed_off = annotate_items(items, bundles, project_root)
     result = items[:top_n]
 
     # Annotate Python stubs that are blocked by an FSM in the list.
@@ -12413,7 +12429,7 @@ def _primer_items(oracle, top_n: int = 5) -> list[dict]:
                 item["blocked_by"] = {"rank": rank, "name": fsm_name}
                 break
 
-    return result
+    return result, handed_off
 
 
 def work_session_primer(assessor: "Assessor", args: dict) -> str:
@@ -12428,14 +12444,20 @@ def work_session_primer(assessor: "Assessor", args: dict) -> str:
     they are spec-backed (FSM JSON is the design) and concrete regardless of caller count.
     Dead code (concept-not-applicable) is suppressed.
     """
-    top_n = int(args.get("top_n", 5))
-    items = _primer_items(assessor.oracle, top_n)
+    from determined.agent.handoff_bundles import describe as _describe_handoff
 
-    if not items:
+    top_n = int(args.get("top_n", 5))
+    items, handed_off = _primer_split(assessor.oracle, top_n)
+
+    if not items and not handed_off:
         return "No actionable stubs found."
 
-    lines = [f"Work session primer — top {len(items)} actionable items:\n"]
     sep = "─" * 52
+    if not items:
+        lines = ["Work session primer — no open items; every stub is covered by a verified "
+                 "handoff bundle.\n"]
+    else:
+        lines = [f"Work session primer — top {len(items)} actionable items:\n"]
     for i, item in enumerate(items, 1):
         lines.append(sep)
         if item["is_fsm"]:
@@ -12460,7 +12482,16 @@ def work_session_primer(assessor: "Assessor", args: dict) -> str:
                 f"    Why now:    {item['cls']} — composite score {item['composite']:.1f}\n"
                 f"    First step: classify_stub(symbol='{item['name']}')"
             )
+        if item.get("handoff"):
+            for hl in _describe_handoff(item["handoff"]):
+                lines.append(f"    Handoff:    {hl}")
     lines.append(sep)
+    if handed_off:
+        lines.append("Already handed off (a verified bundle covers all of it; do not reimplement):")
+        for item in handed_off:
+            for hl in _describe_handoff(item["handoff"]):
+                lines.append(f"  - {item['name']}: {hl}")
+        lines.append(sep)
     return "\n".join(lines)
 
 
