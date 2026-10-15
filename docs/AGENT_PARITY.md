@@ -57,6 +57,10 @@ profiles together fit (about 8 GB VRAM), so the plugin passes `--coexist`.
 - The permission hook sees pieces of compound commands, so whole-command guards
   run in `tool.execute.before`, where the raw command is visible.
 - The 8 GB card limits the local model; judgment-heavy work may belong in Claude.
+- The local model's window is 32k tokens; CLAUDE.md's checklist reads ~33k. The plugin
+  caps unbounded reads of files over 20 KB to ~8 KB (with a note giving the next
+  offset/limit), AGENTS.md has a "Context budget" section, and `/next` skips the large docs.
+  Claude Code is unaffected.
 - opencode v2.0.29 does not auto-load `CLAUDE.md`; `AGENTS.md` is the entry point.
   The v1 docs that search engines return first describe a different plugin API
   and config keys; use opencode.ai/v2/docs.

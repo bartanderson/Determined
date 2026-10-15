@@ -136,6 +136,11 @@ New this session:
   were already on the remote). To rewrite only what must change use a --commit-filter that
   echoes $GIT_COMMIT for unchanged commits whose parents are unchanged, and keep a backup
   branch first. Rewrite only commits that are not yet pushed. [V]
+- opencode's local model has a 32k window; the CLAUDE.md checklist reads ~33k tokens
+  (HISTORY.md alone ~18k). The first /next overflowed and compaction itself failed (a
+  session in that state cannot recover; start a new one). Plugin now caps unbounded reads
+  of files over 20 KB to ~8 KB with a "next part" note; AGENTS.md has a Context budget
+  section. If a session still compacts, check what it read. [V]
 - A secret scanner scans its own tests: build secret-shaped fixtures at runtime
   (string concatenation), do not add allowlists. [V]
 - Windows PowerShell 5.1 wraps git's stderr progress in a red NativeCommandError even

@@ -24,7 +24,15 @@
 // Parity with Claude Code: docs/AGENT_PARITY.md, checked by tools/check_agent_parity.py.
 import { Plugin } from "@opencode/plugin"
 import { execFile, spawnSync } from "node:child_process"
-import { appendFileSync, existsSync, readFileSync } from "node:fs"
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 
@@ -221,8 +229,64 @@ export default Plugin.define({
       return null
     }
 
+    // ---- 2b. bounded reads -----------------------------------------------
+    // The local model has a 32k-token context; a few unbounded reads of the large docs
+    // (HISTORY.md alone is ~18k tokens) overflow it and force compaction. A read of a big
+    // file with no explicit small limit is cut to about READ_CAP_BYTES, and the result says
+    // how to get the rest. Structure over vigilance: this does not depend on the model
+    // remembering an instruction.
+    const READ_BIG_FILE = 20000
+    const READ_CAP_BYTES = 8000
+    const readNotes = new Map<string, string>()
+    const capRead = (event: any) => {
+      try {
+        const p = String(event.input?.path ?? "")
+        if (!p) return
+        const full = resolve(dir, p)
+        if (!existsSync(full)) return
+        const st = statSync(full)
+        if (!st.isFile() || st.size <= READ_BIG_FILE) return
+        const lim = Number(event.input?.limit ?? 0)
+        if (lim > 0 && lim <= 400) return // an explicit, small, ranged read: leave it
+        const fd = openSync(full, "r")
+        const buf = Buffer.alloc(Math.min(65536, st.size))
+        const n = readSync(fd, buf, 0, buf.length, 0)
+        closeSync(fd)
+        const head = buf.subarray(0, n).toString("utf8")
+        const headLines = Math.max(1, head.split("\n").length - 1)
+        const avg = Math.max(20, n / headLines)
+        const lines = Math.max(40, Math.floor(READ_CAP_BYTES / avg))
+        event.input.limit = lines
+        const start = Number(event.input?.offset ?? 1) || 1
+        readNotes.set(
+          String(event.id),
+          `\n[determined plugin: ${p} is ${Math.round(st.size / 1024)} KB, about ` +
+            `${Math.round(st.size / 4 / 1000)}k tokens; this read was cut to ${lines} lines from ` +
+            `line ${start}. Read the next part with offset=${start + lines} and limit=${lines}, ` +
+            `or use grep to find the part you need.]`,
+        )
+      } catch {
+        // never block a read because the cap could not be computed
+      }
+    }
+
+    await ctx.tool.hook("execute.after", (event: any) => {
+      if (event.tool !== "read") return
+      const note = readNotes.get(String(event.id))
+      if (!note) return
+      readNotes.delete(String(event.id))
+      try {
+        const parts = event.result?.content
+        const part = Array.isArray(parts) ? parts.find((x: any) => typeof x?.text === "string") : null
+        if (part) part.text += note
+      } catch {
+        // the note is a courtesy; the cap already did its job
+      }
+    })
+
     await ctx.tool.hook("execute.before", (event: any) => {
       lastActivity = Date.now()
+      if (event.tool === "read") capRead(event)
       if (event.tool !== "shell") return
       const command = String(event.input?.command ?? "")
       if (hasDetermined && process.env.DETERMINED_REDIRECT !== "0") {
@@ -484,9 +548,12 @@ export default Plugin.define({
             ...prompt,
             sessionID,
             text:
-              "Follow the SESSION START CHECKLIST in CLAUDE.md, then take the first work item in " +
-              "the Determined brief: run readiness_check and completion_contract on it with " +
-              "determined_query, state a short plan with a verify step, and begin.\n\n" +
+              "Your context is 32k tokens, so follow the 'Context budget' section of AGENTS.md: " +
+              "read CLAUDE.md and SESSION_STATE.md only; do not read TRACKER.md, HISTORY.md or " +
+              "UI_REDESIGN.md whole (grep or ranged reads for a specific item). Then take the " +
+              "first work item in the Determined brief: run readiness_check and " +
+              "completion_contract on it with determined_query, state a short plan with a " +
+              "verify step, and begin.\n\n" +
               (prompt?.text ?? ""),
             delivery,
           })

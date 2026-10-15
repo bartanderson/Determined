@@ -1,8 +1,21 @@
 # Agent entry point (opencode)
 
 Project instructions live in `CLAUDE.md` and are the single source of truth. Read it
-in full before doing anything else, including its SESSION START CHECKLIST, then work
-from `SESSION_STATE.md` and `docs/TRACKER.md`. Do not duplicate its rules here.
+(about 4k tokens), then `SESSION_STATE.md` (about 3k). Do not duplicate its rules here.
+
+## Context budget (read this: your window is 32k tokens)
+
+CLAUDE.md's SESSION START CHECKLIST was written for a much larger context. Following it
+literally reads about 33k tokens of files and overflows yours (HISTORY.md alone is ~18k).
+So here, do steps 1 and 3 only, and treat the rest as lookups, not reading:
+
+- `docs/TRACKER.md`, `docs/HISTORY.md`, `docs/UI_REDESIGN.md`, `docs/DESIGN.md`: do not read
+  whole. `grep` for the item or keyword you need, or read a range with `offset` and `limit`.
+- Skip step 5 (session arc file) unless asked.
+- The plugin cuts an unbounded read of a large file to ~8 KB and tells you how to get the
+  next part; that is a limit, not an error.
+- The Determined brief below your instructions already says what is open and what a
+  verified bundle covers. Start from it.
 
 ## Use these tools instead of the shell
 
