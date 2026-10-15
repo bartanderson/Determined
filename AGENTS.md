@@ -4,16 +4,32 @@ Project instructions live in `CLAUDE.md` and are the single source of truth. Rea
 in full before doing anything else, including its SESSION START CHECKLIST, then work
 from `SESSION_STATE.md` and `docs/TRACKER.md`. Do not duplicate its rules here.
 
-Differences when running under opencode instead of Claude Code:
+## Use these tools instead of the shell
 
-- The shell is Windows PowerShell 5.1 (`&&` is invalid; chain with `;` or `if ($?)`).
-  A guard blocks Bash-isms and wrong-interpreter commands and tells you why.
-- Call Determined tools with the `determined_query` tool (`tool`, `args`, `db`), not
-  `python tools/query.py` with JSON on the command line (PowerShell strips the quotes).
-- A "Determined: next work items" brief is added to your context each prompt. Take
-  the first card, run `readiness_check` then `completion_contract` before writing code.
-- Tests: `.venv\Scripts\python tools\run_tests.py`; never the full suite, never in
-  the background. Commit completed work; never push (Bart pushes).
+Arguments are passed as data, so there is no quoting to get wrong:
+
+| To do this | Call |
+|---|---|
+| Ask Determined anything (`work_session_primer`, `readiness_check`, `completion_contract`, ...) | `determined_query` {tool, args, db} |
+| Run the targeted tests | `determined_tests` {files, full_files, slow, list} |
+| git status, diff, log, add, commit | `determined_git` {action, paths, message} |
+| Run a Python script with the venv | `determined_python` {script, args} |
+
+The shell blocks commands these tools cover and tells you which tool to use. Never
+push; Bart pushes. Never run the full test suite or run tests in the background.
+
+## Shell (Windows PowerShell 5.1) for everything else
+
+- No `&&` / `||`: chain with `;` or `if ($?) { ... }`. No heredocs (`<<`), no `/dev/null`
+  (use `$null`), no `export` (use `$env:NAME = 'value'`). `bash`, `sh` and `wsl` are blocked.
+- Use single quotes for literal strings; use full paths with the venv interpreter
+  `.venv\Scripts\python.exe`.
+- JSON on a command line loses its double quotes. Use the tools above instead.
+
+## Other differences from Claude Code
+
+- A "Determined: next work items" brief is added to your context each prompt. Take the
+  first card, run `readiness_check` then `completion_contract` before writing code.
 - The session scratchpad and Claude-specific tools named in CLAUDE.md do not exist
   here; keep `session_arc.md` in a temp or scratch folder you create.
-- Details of what each agent wires up: `docs/AGENT_PARITY.md`.
+- What each agent wires up: `docs/AGENT_PARITY.md`.

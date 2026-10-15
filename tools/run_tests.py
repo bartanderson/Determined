@@ -42,6 +42,8 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_agent_parity.py"],
     "tools/check_agent_parity.py": [
         "tests/regression/test_agent_parity.py"],
+    ".claude/hooks/validate_shell.py": [
+        "tests/regression/test_validate_shell.py"],
     "docs/agent_parity.json": [
         "tests/regression/test_agent_parity.py"],
     "opencode.json": [

@@ -20,6 +20,10 @@ if tool_name == "PowerShell":
         (r"/dev/null",            "/dev/null is Unix-only — use $null in PowerShell (e.g. 2>$null)"),
         (r"\bexport\s+\w+=",     "export VAR= is Bash syntax — use $env:VAR = 'value' in PowerShell"),
         (r"\s&&\s",               "&& chaining is Bash syntax — use '; if ($?) { cmd2 }' in PowerShell"),
+        # An explicit POSIX shell from PowerShell: `bash` resolves to the WSL launcher here,
+        # not Git Bash, so paths and semantics differ from everything else in this repo.
+        (r"(?:^|[;|&(]\s*)(?:&\s*)?(?:bash|sh|zsh|wsl)(?:\.exe)?(?:\s|$)",
+         "bash/sh/wsl is not available here (this is Windows PowerShell 5.1; bash would be WSL) — write the command in PowerShell syntax"),
     ]
     for pattern, message in checks:
         if re.search(pattern, command):

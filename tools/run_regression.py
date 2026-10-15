@@ -97,6 +97,7 @@ GROUPS: dict[str, list[str]] = {
         "test_layer_rules.py",
         "test_llm_profiles.py",
         "test_agent_parity.py",
+        "test_validate_shell.py",
         "test_local_agent.py",
         "test_oracle_cli_smoke.py",
         "test_oracle_router_persistence_lock.py",

@@ -20,6 +20,10 @@ or change the model server, update the manifest and this table in the same commi
 | Wrong-interpreter guard | `~/.claude/hooks/check_venv_python.py` (user level) | same script, if present |
 | Session start context | `.claude/session_start_hook.py` | AGENTS.md checklist + `work_session_primer` brief added each prompt |
 | Determined tools | `python tools/query.py` | `determined_query` tool (no JSON quoting through PowerShell 5.1) |
+| Targeted tests | `python tools/run_tests.py` | `determined_tests` tool (shell route is redirected to it) |
+| git add / commit | `git ...` via the shell | `determined_git` tool (message passed as data; no push/reset/amend) |
+| Run a venv script | `.venv\Scripts\python.exe x.py` | `determined_python` tool |
+| bash / sh / wsl from the shell | blocked by `validate_shell.py` | same script, plus `opencode.json` deny rules |
 | Skills | `.claude/skills/` | same folder, read natively |
 | Commands | `.claude/commands/` | `/next` registered by the plugin; others not ported |
 | capn trap registry hook | `scripts/capn_hook.py` | **not ported** (listed `claude_only`) |

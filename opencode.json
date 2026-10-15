@@ -12,6 +12,9 @@
   "permissions": [
     { "action": "shell", "resource": "git push *", "effect": "deny" },
     { "action": "shell", "resource": "rm -rf *", "effect": "deny" },
+    { "action": "shell", "resource": "bash *", "effect": "deny" },
+    { "action": "shell", "resource": "sh *", "effect": "deny" },
+    { "action": "shell", "resource": "wsl *", "effect": "deny" },
     { "action": "shell", "resource": "Remove-Item *-Recurse*", "effect": "ask" },
     { "action": "edit", "resource": ".claude/*", "effect": "ask" },
     { "action": "edit", "resource": ".opencode/*", "effect": "ask" },
