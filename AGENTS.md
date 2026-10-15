@@ -12,11 +12,13 @@ Arguments are passed as data, so there is no quoting to get wrong:
 |---|---|
 | Ask Determined anything (`work_session_primer`, `readiness_check`, `completion_contract`, ...) | `determined_query` {tool, args, db} |
 | Run the targeted tests | `determined_tests` {files, full_files, slow, list} |
-| git status, diff, log, add, commit | `determined_git` {action, paths, message} |
+| git status, diff, log, add, commit, push | `determined_git` {action, paths, message} |
 | Run a Python script with the venv | `determined_python` {script, args} |
 
-The shell blocks commands these tools cover and tells you which tool to use. Never
-push; Bart pushes. Never run the full test suite or run tests in the background.
+The shell blocks commands these tools cover and tells you which tool to use. Push with
+`determined_git` action `push`: it runs the pre-push check first and never forces. The
+repo is public, so never name private projects in commits, docs or code. Never run the
+full test suite or run tests in the background.
 
 These tools never start a model server on their own. Determined tools that need the
 analysis LLM (reason_about, infer_behavior, narration) return "unavailable" until one

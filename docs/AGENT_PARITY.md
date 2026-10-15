@@ -21,7 +21,8 @@ or change the model server, update the manifest and this table in the same commi
 | Session start context | `.claude/session_start_hook.py` | AGENTS.md checklist + `work_session_primer` brief added each prompt |
 | Determined tools | `python tools/query.py` | `determined_query` tool (no JSON quoting through PowerShell 5.1) |
 | Targeted tests | `python tools/run_tests.py` | `determined_tests` tool (shell route is redirected to it) |
-| git add / commit | `git ...` via the shell | `determined_git` tool (message passed as data; no push/reset/amend) |
+| git add / commit / push | `git ...` via the shell; run `tools/pre_push_check.py` before `git push` | `determined_git` tool (message as data; push runs the same check, never forces; no reset/amend) |
+| Pre-push check | `tools/pre_push_check.py` (secrets, DB/binary/large files, private terms from `~/.determined/private_terms.txt`, fast-forward) | same script, called by `determined_git push` |
 | Run a venv script | `.venv\Scripts\python.exe x.py` | `determined_python` tool |
 | bash / sh / wsl from the shell | blocked by `validate_shell.py` | same script, plus `opencode.json` deny rules |
 | Skills | `.claude/skills/` | same folder, read natively |

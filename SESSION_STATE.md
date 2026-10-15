@@ -63,7 +63,9 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
 - Redirects to opencode-only tools live in the plugin, not in validate_shell.py.
 - Only bundles with MANIFEST verified_at are read by the primer.
 - fast_ctx/quality_ctx in determined.cfg left as-is on purpose (RM76).
-- Never push; Bart pushes. dj2 repo changes need Bart's authorization.
+- Push is allowed after `tools/pre_push_check.py` is clear (public repo; never force).
+  Private project names stay out of commits and docs. dj2 repo changes need Bart's
+  authorization.
 
 ## FAILED APPROACHES / SURPRISES (details in docs/HISTORY.md)
 

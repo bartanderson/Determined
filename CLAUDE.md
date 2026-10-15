@@ -140,7 +140,14 @@ SESSION_STATE.md is always a complete overwrite -- the delta approach does not a
 ## Working agreement
 
 - Read/write access to this folder -- edit files in place, no patch files.
-- Run `git add` and `git commit` for completed work. Do NOT push -- Bart pushes.
+- Run `git add` and `git commit` for completed work, then push it: first
+  `.venv\Scripts\python tools\pre_push_check.py` (the repo is PUBLIC; it checks
+  fast-forward, secrets, DB/binary/large files, and private names from
+  `~/.determined/private_terms.txt`, which lives outside the repo), then
+  `git push origin <branch>`. Never force-push. If the check reports a problem, stop
+  and tell Bart; do not work around it. Do not name private projects in commits,
+  docs or code. (Under opencode use `determined_git` action `push`, which runs the
+  same check.)
 - **After each commit**: append one line to `session_arc.md` in the scratchpad:
   `<SHA> -- <what changed and why>`. This is the raw material for SESSION_STATE.md
   at wrap-up. One line per commit; no prose.

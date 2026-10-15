@@ -45,10 +45,11 @@ const REDIRECTS: { re: RegExp; msg: string }[] = [
       "Arguments: tool (name), args (object), db (optional corpus DB path).",
   },
   {
-    re: /(?:^|[;|&(]\s*)(?:&\s*)?git(?:\.exe)?\s+(?:commit|add)\b/i,
+    re: /(?:^|[;|&(]\s*)(?:&\s*)?git(?:\.exe)?\s+(?:commit|add|push)\b/i,
     msg:
-      "Use the determined_git tool for add and commit. Arguments: action ('add' with paths " +
-      "string[], or 'commit' with message). The message is passed as data, so no quoting.",
+      "Use the determined_git tool for add, commit and push. Arguments: action ('add' with " +
+      "paths string[], 'commit' with message, or 'push'). Messages are passed as data, so no " +
+      "quoting; push runs the pre-push check first.",
   },
 ]
 
@@ -66,6 +67,7 @@ export default Plugin.define({
     const py = existsSync(venvPy) ? venvPy : "python"
     const queryPy = join(dir, "tools", "query.py")
     const testsPy = join(dir, "tools", "run_tests.py")
+    const prePushPy = join(dir, "tools", "pre_push_check.py")
     const hasDetermined = existsSync(queryPy)
 
     const defaultDb = (() => {
@@ -264,12 +266,17 @@ export default Plugin.define({
         name: "git",
         description:
           "Git operations with arguments as data (no shell quoting). action: status | diff | log | " +
-          "branch | add | commit. add needs paths; commit needs message (multi-line fine). " +
-          "No push, reset, checkout, clean or amend: those stay with the user.",
+          "branch | add | commit | push. add needs paths; commit needs message (multi-line fine). " +
+          "push runs tools/pre_push_check.py first (this repo is public: secrets, DB/binary/large " +
+          "files, private terms, fast-forward) and pushes the current branch to origin only if it " +
+          "is clear; it never forces. No reset, checkout, clean or amend: those stay with the user.",
         input: {
           type: "object",
           properties: {
-            action: { type: "string", enum: ["status", "diff", "log", "branch", "add", "commit"] },
+            action: {
+              type: "string",
+              enum: ["status", "diff", "log", "branch", "add", "commit", "push"],
+            },
             paths: { type: "array", items: { type: "string" } },
             message: { type: "string", description: "Commit message (for commit)" },
             staged: { type: "boolean", description: "diff: show staged changes" },
@@ -283,6 +290,32 @@ export default Plugin.define({
           const paths: string[] = input.paths ?? []
           if (!isStringArray(paths) || paths.some((p) => p.startsWith("-"))) {
             return text("paths must be an array of paths not starting with '-'.")
+          }
+          if (input.action === "push") {
+            const cur = spawnSync("git", ["branch", "--show-current"], {
+              cwd: dir,
+              encoding: "utf8",
+              windowsHide: true,
+            })
+            const branch = String(cur.stdout ?? "").trim()
+            if (!branch) return text("push needs a checked-out branch (detached HEAD).")
+            // Same check a person runs by hand; no flags can bypass it from here.
+            const chk = await runProc(py, [prePushPy, "--branch", branch])
+            if (chk.code !== 0) {
+              return text(cap(`NOT PUSHED. pre-push check exit ${chk.code}\n${chk.out}`))
+            }
+            const pushed = spawnSync("git", ["push", "origin", branch], {
+              cwd: dir,
+              encoding: "utf8",
+              timeout: 120000,
+              windowsHide: true,
+            })
+            return text(
+              cap(
+                `${chk.out.trim()}\npush exit ${pushed.status}\n${pushed.stdout ?? ""}` +
+                  `${pushed.stderr ? "\n[stderr]\n" + pushed.stderr : ""}`,
+              ),
+            )
           }
           let argv: string[]
           let stdin: string | undefined
