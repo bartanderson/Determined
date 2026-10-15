@@ -14,7 +14,9 @@ pytest tests/regression/<file>  [<file2> ...]
 |---|---|
 | local_agent.py | test_domain_analyst.py |
 | agent_prompt.py | test_agent_prompt.py |
-| llm_client.py | test_llm_profiles.py |
+| llm_client.py | test_llm_profiles.py test_agent_parity.py |
+| tools/check_agent_parity.py | test_agent_parity.py |
+| docs/agent_parity.json, opencode.json, AGENTS.md, .opencode/plugins/determined/index.ts | test_agent_parity.py |
 | config.py | test_llm_profiles.py |
 | fsm_walker.py | test_fsm_walker.py |
 | agent_resolver.py | test_agent_resolver.py test_technique3.py |

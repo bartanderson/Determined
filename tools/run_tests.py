@@ -38,7 +38,18 @@ FILE_MAP: dict[str, list[str]] = {
     "determined/agent/agent_prompt.py": [
         "tests/regression/test_agent_prompt.py"],
     "determined/agent/llm_client.py": [
-        "tests/regression/test_llm_profiles.py"],
+        "tests/regression/test_llm_profiles.py",
+        "tests/regression/test_agent_parity.py"],
+    "tools/check_agent_parity.py": [
+        "tests/regression/test_agent_parity.py"],
+    "docs/agent_parity.json": [
+        "tests/regression/test_agent_parity.py"],
+    "opencode.json": [
+        "tests/regression/test_agent_parity.py"],
+    "AGENTS.md": [
+        "tests/regression/test_agent_parity.py"],
+    ".opencode/plugins/determined/index.ts": [
+        "tests/regression/test_agent_parity.py"],
     "determined/config.py": [
         "tests/regression/test_llm_profiles.py"],
     "determined/agent/fsm_walker.py": [

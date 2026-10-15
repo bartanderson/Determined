@@ -1,0 +1,37 @@
+{
+  "_comment": "Machine-readable manifest read by tools/check_agent_parity.py. Prose lives in docs/AGENT_PARITY.md. Every hook script wired in .claude/settings.json must appear under shared_guards, claude_only or session_start.",
+  "instructions": {
+    "canonical": "CLAUDE.md",
+    "opencode_entry": "AGENTS.md"
+  },
+  "shared_guards": [
+    {
+      "script": ".claude/hooks/validate_shell.py",
+      "claude_event": "PreToolUse",
+      "opencode": ".opencode/plugins/determined/index.ts (tool.execute.before, shell)"
+    }
+  ],
+  "user_level_guards": [
+    {
+      "script": "~/.claude/hooks/check_venv_python.py",
+      "note": "Applied to opencode by the plugin when present; user-level hook, not in this repo."
+    }
+  ],
+  "claude_only": [
+    {
+      "script": "scripts/capn_hook.py",
+      "why": "capn trap-registry nudges on Bash/Read; no opencode port yet (pre/post adapter needed)."
+    }
+  ],
+  "session_start": [
+    {
+      "script": ".claude/session_start_hook.py",
+      "opencode_equivalent": "AGENTS.md checklist + per-prompt Determined brief (work_session_primer) in the plugin"
+    }
+  ],
+  "model_server": {
+    "profile": "agent",
+    "opencode_provider": "local",
+    "opencode_model": "local/qwen36-35b"
+  }
+}

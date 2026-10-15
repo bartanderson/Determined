@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "local/qwen36-35b",
+  "providers": {
+    "local": {
+      "name": "Local llama-server (agent profile)",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": { "baseURL": "http://127.0.0.1:8083/v1" },
+      "models": { "qwen36-35b": { "name": "Qwen3.6 35B A3B" } }
+    }
+  },
+  "permissions": [
+    { "action": "shell", "resource": "git push *", "effect": "deny" },
+    { "action": "shell", "resource": "rm -rf *", "effect": "deny" },
+    { "action": "shell", "resource": "Remove-Item *-Recurse*", "effect": "ask" },
+    { "action": "edit", "resource": ".claude/*", "effect": "ask" },
+    { "action": "edit", "resource": ".opencode/*", "effect": "ask" },
+    { "action": "edit", "resource": "opencode.json", "effect": "ask" },
+    { "action": "external_directory", "resource": "*", "effect": "ask" },
+    { "action": "webfetch", "resource": "*", "effect": "ask" },
+    { "action": "websearch", "resource": "*", "effect": "ask" }
+  ]
+}
