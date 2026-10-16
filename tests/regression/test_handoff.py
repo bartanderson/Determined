@@ -439,3 +439,25 @@ def test_order_uses_the_commit_record_when_later_bundles_edit_the_same_lines(tmp
     assert _apply(b3, repo).startswith("OK:")
     assert (repo / "a.txt").read_text() == "three\n"
     assert (repo / "b.txt").read_text() == "third\n"
+
+
+def test_apply_refuses_a_patch_that_leaves_python_unparseable(tmp_path):
+    repo = _work_repo(tmp_path)
+    (repo / "m.py").write_text("X = {'a': 1}\n", encoding="utf-8", newline="\n")
+    _commit(repo, "add module")
+    patch = _diff_for(repo, {"m.py": "X = {X = {'a': 1},: 2}\n"})   # the bundle-004 shape
+    b = _bundle(tmp_path, "001-first", patch)
+    _git(["switch", "-c", "feat/x"], repo)
+    before = _git(["rev-parse", "HEAD"], repo).stdout.strip()
+    out = _apply(b, repo)
+    assert out.startswith("FAIL:") and "do not parse" in out and "m.py" in out
+    assert (repo / "m.py").read_text() == "X = {'a': 1}\n"
+    assert _git(["rev-parse", "HEAD"], repo).stdout.strip() == before
+
+
+def test_syntax_problems_reports_file_and_line(tmp_path):
+    (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "bad.py").write_text("x = 1\ny = (\n", encoding="utf-8")
+    (tmp_path / "note.txt").write_text("(((", encoding="utf-8")
+    probs = handoff._syntax_problems(tmp_path, ["ok.py", "bad.py", "note.txt", "gone.py"])
+    assert len(probs) == 1 and probs[0].startswith("bad.py:")

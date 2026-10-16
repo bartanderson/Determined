@@ -171,19 +171,29 @@ def cmd_verify(args):
     if status.stdout.strip():
         return "Error: clone is not clean:\n" + status.stdout
 
-    check = _git(["apply", "--check", str(patch_path)], clone)
+    apply_path = lf_patch(patch_path)   # a CRLF checkout of the patch cannot match LF files
+    check = _git(["apply", "--check", "--whitespace=nowarn", str(apply_path)], clone)
     if check.returncode == 0:
-        apply_result = _git(["apply", str(patch_path)], clone)
+        apply_result = _git(["apply", "--whitespace=nowarn", str(apply_path)], clone)
         apply_method = "direct"
     else:
         # Context mismatch - expected when earlier bundles have already
         # changed the same files. Fall back to three-way merge using the
         # blob SHAs recorded in the patch.
-        apply_result = _git(["apply", "--3way", str(patch_path)], clone)
+        apply_result = _git(["apply", "--3way", "--whitespace=nowarn", str(apply_path)], clone)
         apply_method = "3way"
+
+    touched = [ln.split("\t")[-1] for ln in
+               _git(["apply", "--numstat", str(apply_path)], clone).stdout.splitlines() if ln.strip()]
+    if apply_path != Path(patch_path):
+        apply_path.unlink(missing_ok=True)
 
     if apply_result.returncode != 0:
         return f"FAIL: git apply failed ({apply_method}): {apply_result.stderr.strip()}"
+
+    bad = _syntax_problems(clone, touched)
+    if bad:
+        return "FAIL: patched files do not parse:\n  " + "\n  ".join(bad)
 
     if apply_method == "direct":
         command_lines = [
@@ -209,6 +219,10 @@ def cmd_verify(args):
         *command_lines,
         "",
     ]
+
+    py_count = len([f for f in touched if f.endswith(".py")])
+    lines.extend(["## Parse check", "",
+                  f"- {py_count} touched Python file(s) compile -> OK", ""])
 
     tests_run = manifest.get("tests_run") or []
     if tests_run:
@@ -270,6 +284,25 @@ def lf_patch(patch_path):
     with os.fdopen(fd, "wb") as fh:
         fh.write(data.replace(b"\r\n", b"\n"))
     return Path(tmp)
+
+
+def _syntax_problems(repo, files):
+    """Touched .py files that do not compile. In-process (nothing is written to disk).
+
+    A bundle's named tests may never import a module it edits, so passing tests do not
+    show a patched file is valid Python (bundle 004 shipped a mangled registry line this
+    way). Every touched Python file must at least parse."""
+    problems = []
+    for f in files:
+        p = Path(repo) / f
+        if not f.endswith(".py") or not p.is_file():
+            continue
+        try:
+            compile(p.read_bytes(), str(p), "exec")
+        except (SyntaxError, ValueError) as exc:
+            line = getattr(exc, "lineno", "?")
+            problems.append(f"{f}:{line}: {getattr(exc, 'msg', exc)}")
+    return problems
 
 
 def _patch_applied(repo, patch_path, bundle_id=None):
@@ -369,6 +402,11 @@ def _apply_patch(args, manifest, bundle_dir, repo, original_patch, patch):
     if done.returncode != 0:
         rollback()
         return f"FAIL: git apply failed ({method}); repo restored:\n{done.stderr.strip()}"
+
+    bad = _syntax_problems(repo, files)
+    if bad:
+        rollback()
+        return "FAIL: patched files do not parse; repo restored:\n  " + "\n  ".join(bad)
 
     lines = []
     if not getattr(args, "skip_tests", False):
