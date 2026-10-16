@@ -561,6 +561,7 @@ export default Plugin.define({
             repo: { type: "string", description: "Work repository path; default this repository" },
             bundle: { type: "string", description: "apply_bundle: 3-digit bundle id, e.g. 004" },
             branch: { type: "string", description: "Branch name for switch (e.g. feat/trade-fsm)" },
+            base: { type: "string", description: "switch: start point for a NEW branch (default main, else master)" },
             paths: { type: "array", items: { type: "string" } },
             message: { type: "string", description: "Commit message (for commit)" },
             staged: { type: "boolean", description: "diff: show staged changes" },
@@ -577,7 +578,10 @@ export default Plugin.define({
           if (!isStringArray(paths) || paths.some((p) => p.startsWith("-"))) {
             return text("paths must be an array of paths not starting with '-'.")
           }
-          const root = input.repo ? resolve(String(input.repo)) : repoRoot
+          // Accept a bare work-repo name (dj2) as well as a full path.
+          const wanted = input.repo ? String(input.repo) : ""
+          const byName = allowedRoots.find((r) => basename(r).toLowerCase() === wanted.toLowerCase())
+          const root = wanted ? (byName ?? resolve(wanted)) : repoRoot
           if (!allowedRoots.some((r) => r.toLowerCase() === root.toLowerCase())) {
             return text(
               `repo must be one of: ${allowedRoots.join(", ")} (determined.cfg [agent] work_repos).`,
@@ -657,7 +661,21 @@ export default Plugin.define({
                 ["-C", root, "rev-parse", "--verify", "-q", `refs/heads/${b}`],
                 { windowsHide: true },
               ).status === 0
-              argv = exists ? ["switch", b] : ["switch", "-c", b]
+              if (exists) {
+                argv = ["switch", b]
+                break
+              }
+              // A new branch starts from the repo's main line, not from whatever is checked out:
+              // otherwise a leftover branch's commits ride along unnoticed.
+              const refExists = (r: string) =>
+                spawnSync("git", ["-C", root, "rev-parse", "--verify", "-q", `refs/heads/${r}`], {
+                  windowsHide: true,
+                }).status === 0
+              const base = String(input.base ?? "").trim() || (refExists("main") ? "main" : refExists("master") ? "master" : "")
+              if (base && (!/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/.test(base) || base.includes("..") || !refExists(base))) {
+                return text(`base '${base}' is not an existing local branch.`)
+              }
+              argv = base ? ["switch", "-c", b, base] : ["switch", "-c", b]
               break
             }
             case "diff":
