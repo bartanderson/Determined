@@ -294,3 +294,39 @@ session teardown, 15 s unreachable memory. Remaining, in the order they pay off:
    LLM_BASE_URL to 127.0.0.1 halves it; touches tests and one error message string.
 
 **Gate:** Determined session only.
+
+---
+
+## RM81 -- Close the loop so the agent can run unattended on dj2
+
+The intended loop: brief card -> readiness_check -> completion_contract -> implement
+on a feature branch -> run the project's tests -> commit -> push the branch -> re-ingest
+-> next card. Verified so far: brief, determined_query, shell guards, bounded reads,
+edit boundary + feature-branch rule, git with repo=, push check, model auto-start.
+Missing links, in the order they block the loop:
+
+1. **Apply a verified bundle.** The primer now (correctly) says "bundle 004 pending apply,
+   do not reimplement", and the agent has no safe way to do the one correct thing.
+   Needs an action (determined_git `apply_bundle` or its own tool): feature branch
+   required, ids in order, `git apply --3way` of change.patch, run the bundle's
+   tests_run, commit "bundle NNN". tools/handoff.py verify already has the apply logic.
+2. **Run dj2's tests.** determined_tests runs Determined's suite and determined_python
+   only runs scripts inside this repo or temp, so the agent cannot verify anything in
+   dj2. Needs a runner for a work repo (pytest of named test files with that repo as
+   cwd, limited output, a timeout).
+3. **Refresh the corpus after changes.** reingest_changed does not run the FSM pass,
+   so wired/defined/missing handler status (RM74) only updates on a full ingest.
+   Call ingest_fsm_pass from reingest_changed/reingest_file for .json FSM files.
+4. **Measure the model on a real dj2 task.** Only toy tasks and guard tests have run.
+   Run one supervised full loop on bundle 004 (35B, feature branch) and record steps,
+   time, refusals and mistakes; run the 8B on the same card. This sets the bar for
+   "can walk away".
+5. **Unverified in the desktop app:** idle auto-stop, recovery after a compaction
+   failure, behavior of the 1-2 minute first prompt.
+
+Pattern behind most of today's failures: an instruction was relied on where a
+structural limit was needed (checklist size, scratch folder, repo boundary, primer
+false positives). Expect more of these in the first long task; add the limit, not
+another sentence.
+
+**Gate:** Determined session only; item 4 needs Bart present for the first run.
