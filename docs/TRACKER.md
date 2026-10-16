@@ -254,15 +254,15 @@ Known, listed `claude_only` or documented in the parity manifest:
 ## RM79 -- dj2 handoff close-out (apply bundles, record SHA, re-ingest)
 
 Bundles 001-005 were applied by the agent through opencode (2026-10-16) and merged into
-dj2 main locally (f368fd2, fast-forward, NOT pushed; origin/main is 598ed55). Review found
+dj2 main (f368fd2, fast-forward) and pushed to origin, Bart authorizing. Review found
 bundle 004 had renamed the buy registry keys, which broke buy.json (InvalidDefinition);
 fixed in 31e3d18 by the agent, with a guard test (f368fd2) that reads the engine's
 registries and fails when the bug is restored. Earlier, bundle 004 also had a syntax
 error (repaired); see HISTORY 2026-10-16.
 
 **What to do:**
-- Bart pushes dj2 main (after reviewing if wanted).
-- Then: record the resulting dj2 SHA in handoffs/dj2/STATE.md (bundles -> applied),
+- dj2 main is pushed (f368fd2).
+- Now: record the resulting dj2 SHA in handoffs/dj2/STATE.md (bundles -> applied),
   re-ingest dj2 (reingest_file per changed file plus ingest_fsm_pass; see RM81 item 2),
   and confirm the primer is empty. Verified on the branch: 14 FSM handlers wired,
   "No actionable stubs found".

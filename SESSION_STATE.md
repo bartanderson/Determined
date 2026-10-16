@@ -21,9 +21,9 @@ Observation sources: plugin log `%TEMP%\determined-opencode.log`, opencode log
 
 - Determined main at 5807d24, pushed to origin (public repo). Working tree clean except
   untracked memory/reference_autosaddler.md (Bart's file). Parity check: AGENT PARITY: ok.
-- dj2 (C:\Users\bartl\dev\dj2): main is f368fd2, fast-forwarded locally 2026-10-16 from
+- dj2 (C:\Users\bartl\dev\dj2): main is f368fd2, fast-forwarded 2026-10-16 from
   feat/buy-registry-fix (bundles 001-005 = 41c02db..0d4dc8f, then 31e3d18 buy registry fix,
-  f368fd2 guard test). NOT PUSHED: origin/main is still 598ed55; Bart pushes. 43 related
+  f368fd2 guard test) and PUSHED to origin (598ed55..f368fd2, Bart authorized). 43 related
   tests pass on main. Branches feat/bundles-agent and feat/buy-registry-fix still exist
   (merged); feat/handoff-bundles and Determined's backup-before-sanitize are deleted.
   Another branch there, claude/vigorous-volhard-ec6b27, is not ours; left alone.
