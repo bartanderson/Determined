@@ -54,4 +54,16 @@ is running. Start one with `determined_python` (script `tools/llm_server.py`, ar
   here. Do not create `session_arc.md` or any other file outside the repository; there
   is no scratch folder for you. If you need notes, put them in your reply or in a file
   inside the repo that you then commit.
+- Where you may edit: this repository, and the work repositories in determined.cfg
+  `[agent] work_repos` (dj2). Anything else is refused by the plugin. dj2 is your
+  working target: build there. Rules, enforced by the plugin and `determined_git`:
+  1. In dj2, create a feature branch first (`determined_git` action `switch`, `repo`
+     = the dj2 path, `branch` = `feat/<name>`). Edits on main/master are refused.
+  2. Use `determined_git` with `repo` for add, commit and push in dj2 (the shell
+     blocks git). Push sends a feature branch only, after the pre-push check; a person
+     merges it.
+  3. Do not hand-write what a verified handoff bundle already contains. Handlers the
+     primer lists as "not changed by the bundle" may already exist or be mapped in the
+     registry: check with `completion_contract` or `check_fsm_consistency` first. To
+     take a bundle, apply its `change.patch` on a feature branch instead of retyping it.
 - What each agent wires up: `docs/AGENT_PARITY.md`.

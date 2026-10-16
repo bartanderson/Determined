@@ -58,7 +58,7 @@ const REDIRECTS: { re: RegExp; msg: string }[] = [
       "Arguments: tool (name), args (object), db (optional corpus DB path).",
   },
   {
-    re: /(?:^|[;|&(]\s*)(?:&\s*)?git(?:\.exe)?\s+(?:commit|add|push)\b/i,
+    re: /(?:^|[;|&(]\s*)(?:&\s*)?git(?:\.exe)?\s+(?:-C\s+\S+\s+)?(?:commit|add|push|switch|checkout)\b/i,
     msg:
       "Use the determined_git tool for add, commit and push. Arguments: action ('add' with " +
       "paths string[], 'commit' with message, or 'push'). Messages are passed as data, so no " +
@@ -284,8 +284,70 @@ export default Plugin.define({
       }
     })
 
+    // ---- 2c. where edits may land -------------------------------------------
+    // This repository, plus the work repositories listed in determined.cfg [agent]
+    // work_repos (or env DETERMINED_WORK_REPOS, ';'-separated). The permission layer
+    // only ASKS about paths outside the project and a click on allow is easy, so the
+    // boundary is enforced here. In a work repo other than this one, writes are allowed
+    // only on a feature branch, never main/master (the documented dj2 practice: a
+    // person merges the branch).
+    const repoRoot = resolve(dir)
+    const workRepos: string[] = (() => {
+      let raw = process.env.DETERMINED_WORK_REPOS
+      if (raw === undefined) {
+        try {
+          const cfg = readFileSync(join(dir, "determined.cfg"), "utf8")
+          const sec = cfg.split(/^\[/m).find((s) => s.startsWith("agent]"))
+          raw = sec?.match(/^\s*work_repos\s*=\s*(.+)$/m)?.[1]?.trim() ?? ""
+        } catch {
+          raw = ""
+        }
+      }
+      return String(raw)
+        .split(/[;,]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => resolve(s))
+    })()
+    const allowedRoots = [repoRoot, ...workRepos]
+    const rootFor = (p: string): string | null => {
+      const full = (resolve(repoRoot, p) + sep).toLowerCase()
+      for (const r of allowedRoots) if (full.startsWith((r + sep).toLowerCase())) return r
+      return null
+    }
+    const currentBranch = (root: string) =>
+      String(
+        spawnSync("git", ["-C", root, "branch", "--show-current"], {
+          encoding: "utf8",
+          windowsHide: true,
+        }).stdout ?? "",
+      ).trim()
+    const protectedBranch = (b: string) => b === "" || b === "main" || b === "master"
+
     await ctx.tool.hook("execute.before", (event: any) => {
       lastActivity = Date.now()
+      if (event.tool === "edit" || event.tool === "write") {
+        const p = String(event.input?.path ?? "")
+        if (p) {
+          const root = rootFor(p)
+          if (!root) {
+            throw new Error(
+              `Refused: ${p} is outside the repositories this agent may edit ` +
+                `(${allowedRoots.join(", ")}). Change determined.cfg [agent] work_repos to add one.`,
+            )
+          }
+          if (root !== repoRoot) {
+            const b = currentBranch(root)
+            if (protectedBranch(b)) {
+              throw new Error(
+                `Refused: ${root} is on ${b || "a detached HEAD"}. Create a feature branch first ` +
+                  `with determined_git (action 'switch', repo '${root}', branch 'feat/<name>'); ` +
+                  "a person merges it.",
+              )
+            }
+          }
+        }
+      }
       if (event.tool === "read") capRead(event)
       if (event.tool !== "shell") return
       const command = String(event.input?.command ?? "")
@@ -412,17 +474,21 @@ export default Plugin.define({
         name: "git",
         description:
           "Git operations with arguments as data (no shell quoting). action: status | diff | log | " +
-          "branch | add | commit | push. add needs paths; commit needs message (multi-line fine). " +
-          "push runs tools/pre_push_check.py first (this repo is public: secrets, DB/binary/large " +
-          "files, private terms, fast-forward) and pushes the current branch to origin only if it " +
-          "is clear; it never forces. No reset, checkout, clean or amend: those stay with the user.",
+          "branch | switch | add | commit | push. add needs paths; commit needs message " +
+          "(multi-line fine); switch needs branch (creates it if it does not exist). repo " +
+          "(optional) selects a configured work repository such as dj2; default is this one. " +
+          "In a work repo, edits need a feature branch, and push never sends main/master. " +
+          "push runs tools/pre_push_check.py first (secrets, DB/binary/large files, private " +
+          "terms, fast-forward) and never forces. No reset, clean or amend.",
         input: {
           type: "object",
           properties: {
             action: {
               type: "string",
-              enum: ["status", "diff", "log", "branch", "add", "commit", "push"],
+              enum: ["status", "diff", "log", "branch", "switch", "add", "commit", "push"],
             },
+            repo: { type: "string", description: "Work repository path; default this repository" },
+            branch: { type: "string", description: "Branch name for switch (e.g. feat/trade-fsm)" },
             paths: { type: "array", items: { type: "string" } },
             message: { type: "string", description: "Commit message (for commit)" },
             staged: { type: "boolean", description: "diff: show staged changes" },
@@ -437,21 +503,35 @@ export default Plugin.define({
           if (!isStringArray(paths) || paths.some((p) => p.startsWith("-"))) {
             return text("paths must be an array of paths not starting with '-'.")
           }
+          const root = input.repo ? resolve(String(input.repo)) : repoRoot
+          if (!allowedRoots.some((r) => r.toLowerCase() === root.toLowerCase())) {
+            return text(
+              `repo must be one of: ${allowedRoots.join(", ")} (determined.cfg [agent] work_repos).`,
+            )
+          }
+          if (
+            root !== repoRoot &&
+            (input.action === "add" || input.action === "commit") &&
+            protectedBranch(currentBranch(root))
+          ) {
+            return text(
+              `${root} is on a protected branch. Create a feature branch first: ` +
+                "determined_git action 'switch' with repo and branch 'feat/<name>'.",
+            )
+          }
           if (input.action === "push") {
-            const cur = spawnSync("git", ["branch", "--show-current"], {
-              cwd: dir,
-              encoding: "utf8",
-              windowsHide: true,
-            })
-            const branch = String(cur.stdout ?? "").trim()
+            const branch = currentBranch(root)
             if (!branch) return text("push needs a checked-out branch (detached HEAD).")
+            if (root !== repoRoot && protectedBranch(branch)) {
+              return text(`NOT PUSHED. ${branch} in ${root} is not pushed from here; push a feature branch.`)
+            }
             // Same check a person runs by hand; no flags can bypass it from here.
-            const chk = await runProc(py, [prePushPy, "--branch", branch])
+            const chk = await runProc(py, [prePushPy, "--repo", root, "--branch", branch])
             if (chk.code !== 0) {
               return text(cap(`NOT PUSHED. pre-push check exit ${chk.code}\n${chk.out}`))
             }
             const pushed = spawnSync("git", ["push", "origin", branch], {
-              cwd: dir,
+              cwd: root,
               encoding: "utf8",
               timeout: 120000,
               windowsHide: true,
@@ -472,6 +552,19 @@ export default Plugin.define({
             case "branch":
               argv = ["branch", "--show-current"]
               break
+            case "switch": {
+              const b = String(input.branch ?? "").trim()
+              if (!/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/.test(b) || b.includes("..")) {
+                return text("switch needs a plain branch name such as feat/trade-fsm.")
+              }
+              const exists = spawnSync(
+                "git",
+                ["-C", root, "rev-parse", "--verify", "-q", `refs/heads/${b}`],
+                { windowsHide: true },
+              ).status === 0
+              argv = exists ? ["switch", b] : ["switch", "-c", b]
+              break
+            }
             case "diff":
               argv = ["diff", ...(input.staged ? ["--cached"] : []), ...(input.stat ? ["--stat"] : [])]
               if (paths.length) argv.push("--", ...paths)
@@ -497,7 +590,7 @@ export default Plugin.define({
               return text(`Unknown action: ${input.action}`)
           }
           const r = spawnSync("git", argv, {
-            cwd: dir,
+            cwd: root,
             input: stdin,
             encoding: "utf8",
             timeout: 60000,

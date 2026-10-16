@@ -77,8 +77,12 @@ Last agent: Claude Code (desktop app). Next agent may be opencode (see Next step
 - Only bundles with MANIFEST verified_at are read by the primer.
 - fast_ctx/quality_ctx in determined.cfg left as-is on purpose (RM76).
 - Push is allowed after `tools/pre_push_check.py` is clear (public repo; never force).
-  Private project names stay out of commits and docs. dj2 repo changes need Bart's
-  authorization.
+  Private project names stay out of commits and docs.
+- dj2 is a work repo for the opencode agent (determined.cfg [agent] work_repos): edits
+  only on a feature branch (never main/master), git through determined_git with
+  repo=<dj2 path>, push sends feature branches only, a person merges. Anything else
+  outside this repo is refused by the plugin. Handoff bundles stay the way to take
+  verified patches (apply change.patch on a feature branch). [V]
 
 ## FAILED APPROACHES / SURPRISES (details in docs/HISTORY.md)
 
