@@ -325,6 +325,22 @@ Missing links, in the order they block the loop:
 4. **Unverified in the desktop app:** idle auto-stop, recovery after a compaction
    failure, behavior of the 1-2 minute first prompt.
 
+**First real desktop run (2026-10-16, opencode desktop, 35B, Determined project):**
+the agent created feat/bundles-agent in dj2 and applied bundles 001-005 through
+`apply_bundle` (commits 41c02db..0d4dc8f, tests passed, tree identical to the earlier
+feat/handoff-bundles); verified against git by Claude afterwards. Findings:
+- Defect fixed (5807d24): `switch` created the branch from the checked-out branch, not
+  main, so the first attempt already contained every bundle. New branches now start from
+  main (else master) unless `base` is given; `repo` accepts a bare name such as dj2.
+- Desktop: the server must have Determined loaded as the project (log line "location
+  services booted ... Determined"). The app reopens on the last project, so dj2 can be
+  loaded instead, which hides the repo's providers and the plugin (no local model, no
+  guards). The Custom provider form is unavailable on this server; opencode.json is the
+  source. New sessions did not default to the configured local model; pick it once.
+- Primer: asked for pending bundles it answered "no actionable stubs" (it saw the branch
+  that already held them); whether it lists pending bundles on a clean main is [?], check.
+- Still open: dj2's own CLAUDE.md not shown to the agent; /next assumes the dj2 corpus.
+
 Pattern behind most of today's failures: an instruction was relied on where a
 structural limit was needed (checklist size, scratch folder, repo boundary, primer
 false positives). Expect more of these in the first long task; add the limit, not

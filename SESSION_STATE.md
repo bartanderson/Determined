@@ -1,104 +1,83 @@
-Written at commit: f1ceb59
+﻿Written at commit: 5807d24
 
-# SESSION STATE -- opencode wiring, llm profiles, primer bundle awareness
+# SESSION STATE -- opencode desktop is the daily driver; Claude helps on request
 
-Arc file missing (no session_arc.md was kept this session); reconstructed from
-git log and re-verification. Tags: [V] confirmed by a command this run, [?] recalled.
+Arc file missing (none kept); built from git log, TRACKER RM81 and checks run at write
+time. Tags: [V] confirmed by a command this run, [?] recalled, not rechecked.
 
-Last agent: Claude Code (desktop app). Next agent may be opencode (see Next steps).
+Last agent: Claude Code (desktop app). Day-to-day work now runs in opencode desktop
+(local Qwen3.6-35B-A3B). Bart asks Claude for help only when needed.
+
+## HOW TO START A CLAUDE SESSION HERE
+
+Read this file and docs/TRACKER.md RM81, then do what Bart asks. Standing rule
+(memory: feedback_use_the_tools_dont_bypass): when Bart is running the opencode flow,
+do not do the real work from the Claude side and do not touch dj2 unasked. Observe,
+fix the TOOL when it fails, say what changed, ask Bart to rerun.
+Observation sources: plugin log `%TEMP%\determined-opencode.log`, opencode log
+`%USERPROFILE%\.local\share\opencode\log\opencode.log`, `git -C <dj2>`.
 
 ## STATE [V]
 
-- Branch: main at f1ceb59, PUSHED to origin/main (b8dc661..f1ceb59, no force); the repo
-  is public. This file's own commit follows and is pushed with it.
-- Other branch: dj2-state-machines-openspec (merged into main at 7600131; local and
-  origin copies can be deleted). backup-before-sanitize (local, 4bca915) is the
-  pre-rewrite main; delete it once you are satisfied.
-- Working tree clean except untracked memory/reference_autosaddler.md (user file).
-- Regression: all ten groups pass at f1ceb59's tree (206, 203, 136, 181, 136, 112, 310,
-  48, 131, 81; 93 s total, no server left behind). --slow run of
-  test_intent_layer_ab.py: 28 passed in 431 s, server stopped at session end.
-- Parity check: `AGENT PARITY: ok`.
-- Model server for opencode (agent profile, port 8083) is running at time of writing [V].
-  Stop with `.venv\Scripts\python tools\llm_server.py stop --profile agent`.
+- Determined main at 5807d24, pushed to origin (public repo). Working tree clean except
+  untracked memory/reference_autosaddler.md (Bart's file). Parity check: AGENT PARITY: ok.
+- dj2 (C:\Users\bartl\dev\dj2): main still 598ed55 (untouched). Branches
+  feat/bundles-agent (agent-made, bundles 001-005 = 41c02db..0d4dc8f, currently checked
+  out) and feat/handoff-bundles (earlier, d5a9b29); trees identical. Local only, nothing
+  pushed. Awaits Bart's review/merge (RM79). Local backup-before-sanitize still exists.
+- Regression groups were last run at f1ceb59 (all ten passed); not rerun after
+  5807d24, which only touches the TypeScript plugin [?].
 
-## WHAT HAPPENED (main, oldest first)
+## FIRST REAL DESKTOP RUN (2026-10-16) [V]
 
- 5f849a9 llm_client: named server profiles (analysis 8081, agent 8083), port-scoped
-         orphan kill, tools/llm_server.py, determined.cfg rewritten
- aff1aae context_compactor removed (only Determined used it)
- 1e4ace7 analysis profile text-only (no mmproj); HISTORY pointer fixed
- 2c56608 opencode wiring: .opencode/plugins/determined, opencode.json, AGENTS.md,
-         docs/AGENT_PARITY.md + agent_parity.json, tools/check_agent_parity.py
- 89f9efd plugin tools determined_tests / determined_git / determined_python,
-         shell redirect, bash/sh/wsl block in validate_shell.py
- 7600131 merge of dj2-state-machines-openspec (session 314 handoff work, 19 commits)
- 306208a design_oracle test fixture gains class_name; test mapped to agent_tools
- f34791e primer aware of verified handoff bundles (determined/agent/handoff_bundles.py)
- 1da59ea docs: lessons recorded (registry, AGENT_PARITY, HISTORY, TRACKER RM74-RM79)
- ead23c4 llm_client autostart seam (DETERMINED_LLM_AUTOSTART), conftest makes tests
-         hermetic by default, session teardown, 15 s unreachable memory
- 028c7ba docs: autostart trap, fix and follow-ups (HISTORY, TRACKER RM80)
- ba95804 SESSION_STATE for the above (rewritten hash of the former 4bca915)
- a7f5933 docs: commit references refreshed after the unpushed-history cleanup
- f1ceb59 guarded pushes: tools/pre_push_check.py, determined_git push, rule updated
+The agent created feat/bundles-agent in dj2 and applied bundles 001-005 through
+`determined_git apply_bundle`; Claude verified the commits against git afterwards.
+- Tool defect found and fixed (5807d24): `switch` cut new branches from the checked-out
+  branch, not main. Now main (else master), `base` optional; `repo` accepts "dj2".
+- Desktop trap: the app reopens on the last project. If dj2 is the loaded project the
+  server never reads Determined's opencode.json or the plugin: only catalog providers
+  show, no local model, no guards. Open Determined as the project (opencode.log shows
+  "location services booted ... Determined"), then start a new session.
+- The Custom provider form is unavailable on this server; opencode.json is the source.
+- New sessions did not default to the local model; select it once in the picker.
 
- Before the push, 11 unpushed commits were rewritten to drop mentions of an unrelated
- private project (a commit message, a HISTORY line, a SESSION_STATE line, a tracker
- item). The 19 openspec commits and the signed commit are byte-identical.
+## NEXT STEPS (RM81, in the order they block unattended work)
 
-## LIVE IN THE CODE NOW [V]
+1. dj2 test runner for the agent (determined_tests is Determined-only).
+2. FSM re-ingest after changes (reingest_changed says "up to date"; ingested_at NULL).
+3. One measured real task on a card that is not a bundle (steps, time, refusals).
+4. Check whether the primer lists pending bundles on a clean dj2 main [?]; show dj2's
+   own CLAUDE.md to the agent; /next assumes the dj2 corpus.
+5. Desktop-only unknowns: idle auto-stop, compaction recovery, long first prompt.
+First command for a fresh Claude session: `git log --oneline -5` then read RM81.
+
+## LIVE IN THE CODE NOW [V at f1ceb59; plugin changes since in git log]
 
 - Profiles: `DETERMINED_LLM_PROFILE` env > determined.cfg `[llm] profile` > analysis.
-  Public llm_client API unchanged. One profile's server fits in 8 GB VRAM at a time.
-- Autostart: `DETERMINED_LLM_AUTOSTART` env > `[llm] autostart` > true. Off = generate()/
-  chat() never start a server (None instead). tests/regression/conftest.py turns it off
-  for every test not marked slow/live_llm and not using warmup_llm, and stops a server
-  the session launched. The plugin runs Determined children with it off.
-- opencode (v2.0.29) in the Determined folder: plugin gives guards (the repo's own hook
-  scripts, honoring exit 2 and {"decision":"block"}), a per-prompt work_session_primer
-  brief, tools determined_query/tests/git/python, `/next`. Default model
-  local/qwen36-35b at 127.0.0.1:8083.
-- Pushing: `tools/pre_push_check.py` (fast-forward, secret shapes, DB/binary/large files,
-  private terms from ~/.determined/private_terms.txt which is outside the repo).
-  `determined_git push` runs it first and never forces; CLAUDE.md says the same for
-  Claude Code. The check scans exactly the outgoing range.
-- Primer: fully covered items move to "Already handed off"; partial ones show
-  "changes N/M ... not changed by the bundle". Bundle state via
-  `git apply --reverse --check` in project_root.
-- Verified live with the real 35B through opencode (headless and background-service
-  mode): brief, determined_query, both guards, redirect, tool-first on 8 prompts.
+  One profile's server fits in 8 GB VRAM at a time (analysis 8081 VL-8B, agent 8083 35B).
+- Autostart: `DETERMINED_LLM_AUTOSTART` env > `[llm] autostart` > true; conftest turns it
+  off for tests not marked slow/live_llm.
+- Plugin (.opencode/plugins/determined): guards, per-prompt primer brief, bounded reads,
+  work-repo edit boundary (feature branch only), shell-write guard, tools
+  determined_query/tests/git/python, `/next`, per-repo lock, model auto-start/idle stop.
+- Pushing: tools/pre_push_check.py, `determined_git push`, never force.
+- Bundles: tools/handoff.py apply (verified, feature branch, ordered, tests, parse check,
+  commit, rollback); primer reads handoffs/<project>/ via project_meta.project_root.
 
 ## DECISIONS PINNED
 
-- AGENTS.md is a thin pointer to CLAUDE.md (single source). opencode v2.0.29 did not
-  auto-load CLAUDE.md in testing.
-- Redirects to opencode-only tools live in the plugin, not in validate_shell.py.
-- Only bundles with MANIFEST verified_at are read by the primer.
-- fast_ctx/quality_ctx in determined.cfg left as-is on purpose (RM76).
-- Push is allowed after `tools/pre_push_check.py` is clear (public repo; never force).
-  Private project names stay out of commits and docs.
-- dj2 is a work repo for the opencode agent (determined.cfg [agent] work_repos): edits
-  only on a feature branch (never main/master), git through determined_git with
-  repo=<dj2 path>, push sends feature branches only, a person merges. Anything else
-  outside this repo is refused by the plugin. Handoff bundles stay the way to take
-  verified patches (apply change.patch on a feature branch). [V]
+- AGENTS.md is the opencode entry (CLAUDE.md is not auto-loaded by v2.0.29).
+- dj2 is a work repo (determined.cfg [agent] work_repos): feature branch only, git via
+  determined_git repo=, a person merges. Private project names stay out of the repo.
+- fast_ctx/quality_ctx in determined.cfg left stale on purpose (RM76).
 
 ## FAILED APPROACHES / SURPRISES (details in docs/HISTORY.md)
 
-- v1 opencode docs (first search hits) do not match v2.0.29.
-- Permission hook sees pieces of a compound shell command; use tool.execute.before.
-- A first plugin honored only exit 2 and let check_venv_python through.
-- Harness reset --hard did not undo a commit and contaminated a measurement.
-
-## NOT VERIFIED [?]
-
-- opencode desktop GUI itself has not been clicked through (permission dialogs untested).
-- 8B model against the tool-first prompt set.
-- Long sessions / dj2-scale tasks on the local model; quality vs Claude on real work.
+- v1 opencode docs do not match v2.0.29; permission hook sees pieces of compound shell
+  commands (block in tool.execute.before); a bundle can be "verified" yet unparseable
+  (parse guard added); I applied bundles myself once and cost Bart the real run.
 
 ## KNOWN TRAPS
-
 Carried forward from session 314:
 - Cytoscape containers need position:relative;overflow:hidden. [V s290]
 - llm_client.chat() reasoning_content fallback removed -- don't re-add it. [V s290]
