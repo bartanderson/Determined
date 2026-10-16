@@ -54,6 +54,8 @@ is running. Start one with `determined_python` (script `tools/llm_server.py`, ar
   here. Do not create `session_arc.md` or any other file outside the repository; there
   is no scratch folder for you. If you need notes, put them in your reply or in a file
   inside the repo that you then commit.
+- Throwaway debug scripts go in `.scratch/` in this repository (git-ignored), never in
+  `tools/`, `tests/` or a work repo, and never named `test_*.py`. Delete them when done.
 - Where you may edit: this repository, and the work repositories in determined.cfg
   `[agent] work_repos` (dj2). Anything else is refused by the plugin. dj2 is your
   working target: build there. Rules, enforced by the plugin and `determined_git`:

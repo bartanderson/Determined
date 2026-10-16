@@ -20,3 +20,6 @@ build/
 *.db.bak*
 *.db.preingest*
 .omp/
+
+# throwaway scripts written by the opencode agent (AGENTS.md)
+.scratch/
