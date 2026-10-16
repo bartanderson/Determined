@@ -325,6 +325,14 @@ Missing links, in the order they block the loop:
 4. **Unverified in the desktop app:** idle auto-stop, recovery after a compaction
    failure, behavior of the 1-2 minute first prompt.
 
+5. **Scored task set (extends item 3; build only when the need shows).** A standing set
+   of real dj2 tasks with an automatic pass/fail script, split train/dev; one append-only
+   trace file per agent run; after any harness change, rerun and sort results into fixed /
+   regressed / still-failing / still-passing, and never judge a change on the failure that
+   prompted it. Diagnosing traces stays a Claude help session with Bart gating. Decided
+   against adopting Microsoft's AutoSaddler (needs a paid or untested optimizer provider
+   plus a ~10-module plugin); revisit at ~15-20 scored tasks.
+
 **First real desktop run (2026-10-16, opencode desktop, 35B, Determined project):**
 the agent created feat/bundles-agent in dj2 and applied bundles 001-005 through
 `apply_bundle` (commits 41c02db..0d4dc8f, tests passed, tree identical to the earlier
