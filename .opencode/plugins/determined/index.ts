@@ -335,6 +335,51 @@ export default Plugin.define({
       ).trim()
     const protectedBranch = (b: string) => b === "" || b === "main" || b === "master"
 
+    // The edit/write fence does not cover the shell, which can write anywhere (verified).
+    // Best effort: a shell command that names a work repo while that repo is on a
+    // protected branch must be read-only, judged by an allowlist of verbs. Anything not
+    // on the list is refused, which errs toward asking the model to use edit/write or
+    // determined_git (those carry the real rules). Writes via a feature branch pass.
+    const SHELL_READONLY = new Set([
+      "get-content", "gc", "cat", "type", "get-childitem", "gci", "ls", "dir", "select-string",
+      "sls", "test-path", "get-item", "gi", "measure-object", "select-object", "where-object",
+      "sort-object", "format-table", "format-list", "write-output", "echo", "get-location",
+      "resolve-path", "split-path", "join-path", "get-filehash", "findstr", "head", "tail",
+    ])
+    const GIT_READONLY = new Set([
+      "status", "diff", "log", "show", "branch", "rev-parse", "ls-files", "grep", "blame",
+      "remote", "describe", "shortlog", "rev-list", "cat-file", "ls-tree", "stash",
+    ])
+    const shellIsReadOnly = (command: string): boolean => {
+      // redirection writes; ignore the harmless forms
+      const stripped = command.replace(/2>&1|\d?>\s*\$null/gi, "")
+      if (/>/.test(stripped)) return false
+      for (const seg of command.split(/;|\||&&|\r?\n/)) {
+        const t = seg.trim().replace(/^[&(]\s*/, "")
+        if (!t) continue
+        const parts = t.split(/\s+/)
+        const first = parts[0].replace(/^['"]|['"]$/g, "").toLowerCase()
+        if (first === "git" || first === "git.exe") {
+          let i = 1
+          while (parts[i] === "-C" || parts[i]?.startsWith("--")) i += parts[i] === "-C" ? 2 : 1
+          const sub = String(parts[i] ?? "").toLowerCase()
+          if (sub === "stash" && !/\b(list|show)\b/i.test(t)) return false
+          if (sub === "branch" && /\s(-d|-D|-m|-M|-c|-C|--delete|--move)\b/.test(t)) return false
+          if (!GIT_READONLY.has(sub)) return false
+        } else if (!SHELL_READONLY.has(first)) {
+          return false
+        }
+      }
+      return true
+    }
+    const namesRepo = (command: string, root: string): boolean => {
+      const c = command.replace(/\\/g, "/").toLowerCase()
+      const r = root.replace(/\\/g, "/").toLowerCase()
+      if (c.includes(r)) return true
+      const base = r.split("/").pop() ?? ""
+      return base !== "" && new RegExp(`(^|[/'"\\s(])${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([/'"\\s)]|$)`).test(c)
+    }
+
     await ctx.tool.hook("execute.before", (event: any) => {
       lastActivity = Date.now()
       if (event.tool === "edit" || event.tool === "write") {
@@ -362,6 +407,16 @@ export default Plugin.define({
       if (event.tool === "read") capRead(event)
       if (event.tool !== "shell") return
       const command = String(event.input?.command ?? "")
+      for (const root of workRepos) {
+        if (namesRepo(command, root) && protectedBranch(currentBranch(root)) && !shellIsReadOnly(command)) {
+          throw new Error(
+            `Refused: this shell command names ${root}, which is on ` +
+              `${currentBranch(root) || "a detached HEAD"}, and is not a read-only command. ` +
+              "Create a feature branch first (determined_git action 'switch', repo, branch " +
+              "'feat/<name>'), then use the edit/write tools or determined_git. Reading is allowed.",
+          )
+        }
+      }
       if (hasDetermined && process.env.DETERMINED_REDIRECT !== "0") {
         for (const r of REDIRECTS) if (r.re.test(command)) throw new Error(r.msg)
       }
