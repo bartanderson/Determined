@@ -29,12 +29,13 @@ import {
   closeSync,
   existsSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   statSync,
 } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { join, resolve, sep } from "node:path"
+import { basename, join, resolve, sep } from "node:path"
 
 const MAX_OUTPUT = 12000
 const BRIEF_ITEMS = 3
@@ -81,6 +82,7 @@ export default Plugin.define({
     const queryPy = join(dir, "tools", "query.py")
     const testsPy = join(dir, "tools", "run_tests.py")
     const prePushPy = join(dir, "tools", "pre_push_check.py")
+    const handoffPy = join(dir, "tools", "handoff.py")
     const hasDetermined = existsSync(queryPy)
 
     const defaultDb = (() => {
@@ -310,6 +312,15 @@ export default Plugin.define({
         .map((s) => resolve(s))
     })()
     const allowedRoots = [repoRoot, ...workRepos]
+    // Serialize operations per repository (see the git tool).
+    const repoLocks = new Map<string, Promise<unknown>>()
+    const withRepoLock = <T,>(repo: string, fn: () => Promise<T>): Promise<T> => {
+      const key = resolve(repo).toLowerCase()
+      const prev = repoLocks.get(key) ?? Promise.resolve()
+      const next = prev.catch(() => undefined).then(fn)
+      repoLocks.set(key, next.catch(() => undefined))
+      return next
+    }
     const rootFor = (p: string): string | null => {
       const full = (resolve(repoRoot, p) + sep).toLowerCase()
       for (const r of allowedRoots) if (full.startsWith((r + sep).toLowerCase())) return r
@@ -474,9 +485,14 @@ export default Plugin.define({
         name: "git",
         description:
           "Git operations with arguments as data (no shell quoting). action: status | diff | log | " +
-          "branch | switch | add | commit | push. add needs paths; commit needs message " +
-          "(multi-line fine); switch needs branch (creates it if it does not exist). repo " +
-          "(optional) selects a configured work repository such as dj2; default is this one. " +
+          "branch | switch | add | commit | push | apply_bundle. add needs paths; commit needs " +
+          "message (multi-line fine); switch needs branch (creates it if it does not exist); " +
+          "apply_bundle needs repo (a work repo) and bundle (3-digit id such as '004'): it " +
+          "applies that verified handoff bundle on the current feature branch, in order, runs " +
+          "its tests and commits, or changes nothing. Bundles are cumulative: apply them in " +
+          "ascending id order, one call per bundle, and read each result before the next. " +
+          "repo (optional otherwise) selects a " +
+          "configured work repository such as dj2; default is this one. " +
           "In a work repo, edits need a feature branch, and push never sends main/master. " +
           "push runs tools/pre_push_check.py first (secrets, DB/binary/large files, private " +
           "terms, fast-forward) and never forces. No reset, clean or amend.",
@@ -485,9 +501,10 @@ export default Plugin.define({
           properties: {
             action: {
               type: "string",
-              enum: ["status", "diff", "log", "branch", "switch", "add", "commit", "push"],
+              enum: ["status", "diff", "log", "branch", "switch", "add", "commit", "push", "apply_bundle"],
             },
             repo: { type: "string", description: "Work repository path; default this repository" },
+            bundle: { type: "string", description: "apply_bundle: 3-digit bundle id, e.g. 004" },
             branch: { type: "string", description: "Branch name for switch (e.g. feat/trade-fsm)" },
             paths: { type: "array", items: { type: "string" } },
             message: { type: "string", description: "Commit message (for commit)" },
@@ -498,7 +515,9 @@ export default Plugin.define({
           required: ["action"],
           additionalProperties: false,
         },
-        execute: async (input: any) => {
+        // One git operation at a time per repository: a model may issue several tool calls
+        // in one batch, and two writers on one working tree and index corrupt each other.
+        execute: (input: any) => withRepoLock(String(input?.repo ?? repoRoot), async () => {
           const paths: string[] = input.paths ?? []
           if (!isStringArray(paths) || paths.some((p) => p.startsWith("-"))) {
             return text("paths must be an array of paths not starting with '-'.")
@@ -518,6 +537,27 @@ export default Plugin.define({
               `${root} is on a protected branch. Create a feature branch first: ` +
                 "determined_git action 'switch' with repo and branch 'feat/<name>'.",
             )
+          }
+          if (input.action === "apply_bundle") {
+            if (root === repoRoot) {
+              return text("apply_bundle targets a work repository: pass repo (for example dj2).")
+            }
+            const id = String(input.bundle ?? "").trim()
+            if (!/^\d{3}$/.test(id)) return text("apply_bundle needs bundle: a 3-digit id such as '004'.")
+            const projDir = join(repoRoot, "handoffs", basename(root))
+            const match = existsSync(projDir)
+              ? readdirSync(projDir).find((n) => n.startsWith(`${id}-`))
+              : undefined
+            if (!match) return text(`No bundle ${id} under handoffs/${basename(root)}.`)
+            // The CLI enforces: verified, feature branch, clean tree, earlier bundles in,
+            // tests pass, commit; any failure restores the repository.
+            const r = await runProc(
+              py,
+              [handoffPy, "apply", "--bundle-dir", join(projDir, match), "--repo", root],
+              undefined,
+              900000,
+            )
+            return text(cap(`exit ${r.code}\n${r.out}`))
           }
           if (input.action === "push") {
             const branch = currentBranch(root)
@@ -597,7 +637,7 @@ export default Plugin.define({
             windowsHide: true,
           })
           return text(cap(`exit ${r.status}\n${r.stdout ?? ""}${r.stderr ? "\n[stderr]\n" + r.stderr : ""}`))
-        },
+        }),
       })
 
       editor.add({

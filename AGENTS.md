@@ -62,8 +62,12 @@ is running. Start one with `determined_python` (script `tools/llm_server.py`, ar
   2. Use `determined_git` with `repo` for add, commit and push in dj2 (the shell
      blocks git). Push sends a feature branch only, after the pre-push check; a person
      merges it.
-  3. Do not hand-write what a verified handoff bundle already contains. Handlers the
-     primer lists as "not changed by the bundle" may already exist or be mapped in the
-     registry: check with `completion_contract` or `check_fsm_consistency` first. To
-     take a bundle, apply its `change.patch` on a feature branch instead of retyping it.
+  3. Do not hand-write what a verified handoff bundle already contains. When the primer
+     says a bundle is "pending apply", apply it: `determined_git` action `apply_bundle`
+     with `repo` = the dj2 path and `bundle` = its 3-digit id, on your feature branch.
+     One call per bundle, in ascending id order, reading each result first (bundles are
+     cumulative; the tool refuses out-of-order, unverified, dirty-tree or main-branch
+     applies, runs the bundle's tests, commits "bundle NNN", and restores the repo on
+     any failure). Handlers listed as "not changed by the bundle" may already exist or
+     be mapped in the registry: check with `completion_contract` first.
 - What each agent wires up: `docs/AGENT_PARITY.md`.

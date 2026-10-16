@@ -140,14 +140,39 @@ def bundle_state(bundle: Bundle, project_root: str | Path | None) -> str:
     root = Path(project_root)
     if not (root / ".git").exists():
         return "unknown"
+    patch = bundle.dir / "change.patch"
+    tmp: Path | None = None
     try:
+        # `tools/handoff.py apply` commits as "bundle <id>: <slug>"; that record survives
+        # later bundles editing the same lines, which breaks the reverse-apply check.
+        log = subprocess.run(
+            ["git", "-C", str(root), "log", "HEAD", "-n", "1", "--format=%h",
+             f"--grep=^bundle {bundle.id}: "],
+            capture_output=True, text=True, timeout=20,
+        )
+        if log.returncode == 0 and log.stdout.strip():
+            return "applied"
+        # A patch checked out on Windows (core.autocrlf) has CRLF on every line and
+        # cannot match LF files; same normalization as tools/handoff.py lf_patch.
+        data = patch.read_bytes()
+        if data.split(b"\n", 1)[0].endswith(b"\r"):
+            import os
+            import tempfile
+            fd, name = tempfile.mkstemp(suffix=".patch")
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data.replace(b"\r\n", b"\n"))
+            tmp = Path(name)
+            patch = tmp
         r = subprocess.run(
-            ["git", "-C", str(root), "apply", "--reverse", "--check",
-             str(bundle.dir / "change.patch")],
+            ["git", "-C", str(root), "apply", "--reverse", "--check", "--whitespace=nowarn",
+             str(patch)],
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
         return "unknown"
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
     return "applied" if r.returncode == 0 else "pending"
 
 

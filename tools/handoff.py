@@ -13,11 +13,14 @@ Subcommands:
     make    -- create a bundle from a dj2 clone that has the change applied
     verify  -- apply a bundle to a fresh clone at base_sha and run named tests
     check   -- assert the bundle directory has all four files and a valid manifest
+    apply   -- apply a verified bundle to a working repo, on a feature branch, in order,
+               run its tests, and commit; roll back on any failure
 
 Usage:
-    python tools/handoff.py make --clone PATH --bundle-dir PATH --id 001 --base-sha SHA
-    python tools/handoff.py check handoffs/dj2/001-encounter
-    python tools/handoff.py verify --bundle-dir PATH --clone PATH
+    .venv/Scripts/python tools/handoff.py make --clone PATH --bundle-dir PATH --id 001 --base-sha SHA
+    .venv/Scripts/python tools/handoff.py check handoffs/dj2/001-encounter
+    .venv/Scripts/python tools/handoff.py verify --bundle-dir PATH --clone PATH
+    .venv/Scripts/python tools/handoff.py apply --bundle-dir handoffs/dj2/004-trade-fsm --repo C:/path/dj2
 """
 
 import argparse
@@ -244,6 +247,175 @@ def cmd_verify(args):
     return f"verify: wrote {bundle_dir / 'verify.md'}"
 
 
+PROTECTED_BRANCHES = {"", "main", "master"}
+
+
+def lf_patch(patch_path):
+    """Path to a patch git apply can match against LF files.
+
+    A patch checked out on Windows with core.autocrlf=true has CRLF on every line,
+    headers included, and then fails against LF content. That case is detected by
+    the first line (the `diff --git` header) ending in CRLF; a genuine patch of a
+    CRLF file has LF headers and is returned untouched. A temp copy is returned when
+    a conversion was needed, otherwise the original path. Callers may delete a copy
+    (it differs from the input path)."""
+    import os
+    import tempfile
+    p = Path(patch_path)
+    data = p.read_bytes()
+    first = data.split(b"\n", 1)[0]
+    if not first.endswith(b"\r"):
+        return p
+    fd, tmp = tempfile.mkstemp(suffix=".patch")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data.replace(b"\r\n", b"\n"))
+    return Path(tmp)
+
+
+def _patch_applied(repo, patch_path, bundle_id=None):
+    """True if the bundle is already in the repo.
+
+    Evidence, in order: a commit on HEAD's history whose subject starts "bundle <id>: "
+    (what `apply` writes; survives later bundles editing the same lines), then whether
+    the patch reverses cleanly (bundles applied by hand)."""
+    if bundle_id:
+        log = _git(["log", "HEAD", "-n", "1", "--format=%h",
+                    f"--grep=^bundle {bundle_id}: "], repo)
+        if log.returncode == 0 and log.stdout.strip():
+            return True
+    pp = lf_patch(patch_path)
+    try:
+        r = _git(["apply", "--reverse", "--check", "--whitespace=nowarn", str(pp)], repo)
+    finally:
+        if pp != Path(patch_path):
+            pp.unlink(missing_ok=True)
+    return r.returncode == 0
+
+
+def cmd_apply(args):
+    """Apply a verified bundle to a working repo and commit it, or change nothing.
+
+    Refuses unless: the bundle passes `check` and has verified_at; the repo is on a
+    feature branch (not main/master/detached); the tracked tree is clean; every earlier
+    bundle in the same handoffs directory is already applied. The patch is applied
+    directly or with --3way, the manifest's tests_run run in the repo, and only then
+    committed. Any failure resets the repo to HEAD (safe: the tree was clean)."""
+    bundle_dir = Path(args.bundle_dir).resolve()
+    repo = Path(args.repo).resolve()
+
+    checked = cmd_check(argparse.Namespace(bundle_dir=str(bundle_dir)))
+    if not checked.startswith("PASS"):
+        return "Error: bundle is not valid:\n" + checked
+    manifest = json.loads((bundle_dir / "MANIFEST.json").read_text(encoding="utf-8"))
+    if not manifest.get("verified_at"):
+        return f"Error: bundle {manifest.get('id')} has no verified_at; verify it first"
+    original_patch = bundle_dir / "change.patch"
+    patch = lf_patch(original_patch)
+    try:
+        return _apply_patch(args, manifest, bundle_dir, repo, original_patch, patch)
+    finally:
+        if patch != original_patch:
+            patch.unlink(missing_ok=True)
+
+
+def _apply_patch(args, manifest, bundle_dir, repo, original_patch, patch):
+    """The body of cmd_apply once the bundle is known valid; `patch` is LF-safe."""
+
+    if not (repo / ".git").exists():
+        return f"Error: not a git repo: {repo}"
+    branch = _git(["branch", "--show-current"], repo).stdout.strip()
+    if branch in PROTECTED_BRANCHES:
+        return (f"Error: {repo} is on {branch or 'a detached HEAD'}; apply bundles on a "
+                f"feature branch (git switch -c feat/<name>)")
+    dirty = _git(["status", "--porcelain", "--untracked-files=no"], repo).stdout.strip()
+    if dirty:
+        return "Error: the working tree has uncommitted tracked changes:\n" + dirty
+
+    if _patch_applied(repo, patch, str(manifest["id"])):
+        return f"OK: bundle {manifest['id']} is already applied in {repo} (nothing to do)"
+
+    # Order: every earlier sibling bundle must already be in the tree.
+    for sib in sorted(p for p in bundle_dir.parent.iterdir() if p.is_dir()):
+        if sib.name >= bundle_dir.name:
+            break
+        sp = sib / "change.patch"
+        if sp.is_file() and not _patch_applied(repo, sp, sib.name.partition("-")[0]):
+            return f"Error: earlier bundle {sib.name} is not applied; apply it first"
+
+    names = _git(["apply", "--numstat", str(patch)], repo).stdout.splitlines()
+    files = [ln.split("\t")[-1] for ln in names if ln.strip()]
+    preexisting = {f for f in files if (repo / f).exists()}
+
+    def rollback():
+        # reset --hard undoes tracked changes; a file the patch created is untracked after
+        # a direct apply, so remove exactly those (never one that existed beforehand).
+        _git(["reset", "--hard", "-q", "HEAD"], repo)
+        for f in files:
+            p = repo / f
+            if f not in preexisting and p.is_file():
+                p.unlink()
+                try:
+                    p.parent.rmdir()
+                except OSError:
+                    pass
+
+    direct = _git(["apply", "--check", "--whitespace=nowarn", str(patch)], repo)
+    method = "direct"
+    if direct.returncode == 0:
+        done = _git(["apply", "--whitespace=nowarn", str(patch)], repo)
+    else:
+        method = "3way"
+        done = _git(["apply", "--3way", "--whitespace=nowarn", str(patch)], repo)
+    if done.returncode != 0:
+        rollback()
+        return f"FAIL: git apply failed ({method}); repo restored:\n{done.stderr.strip()}"
+
+    lines = []
+    if not getattr(args, "skip_tests", False):
+        for t in manifest.get("tests_run") or []:
+            try:
+                res = subprocess.run(
+                    [sys.executable, "-m", "pytest", t, "-q", "-p", "no:cacheprovider"],
+                    cwd=repo, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=600,
+                )
+            except subprocess.TimeoutExpired:
+                rollback()
+                return f"FAIL: test {t} timed out after 600 s; repo restored"
+            tail = (res.stdout or "").strip().splitlines()
+            last = tail[-1] if tail else "(no output)"
+            lines.append(f"- {t}: {'PASS' if res.returncode == 0 else 'FAIL'} ({last})")
+            if res.returncode != 0:
+                rollback()
+                return (f"FAIL: test {t} failed; repo restored\n"
+                        + "\n".join((res.stdout or "").strip().splitlines()[-15:]))
+
+    add = _git(["add", "--", *files], repo)
+    if add.returncode != 0:
+        rollback()
+        return f"FAIL: git add failed; repo restored:\n{add.stderr.strip()}"
+    slug = bundle_dir.name.partition("-")[2] or bundle_dir.name
+    message = (
+        f"bundle {manifest['id']}: {slug}\n\n"
+        f"Applied from {bundle_dir.name} (base {str(manifest.get('base_sha'))[:8]}, "
+        f"{method}). Verified {manifest.get('verified_at')}.\n"
+        + ("Tests:\n" + "\n".join(lines) + "\n" if lines else "Tests: none named in the manifest.\n")
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "commit", "-q", "-F", "-"],
+        input=message, capture_output=True, text=True, encoding="utf-8",
+    )
+    if commit.returncode != 0:
+        rollback()
+        return f"FAIL: git commit failed; repo restored:\n{commit.stderr.strip()}"
+    sha = _git(["rev-parse", "--short", "HEAD"], repo).stdout.strip()
+    return "\n".join([
+        f"OK: bundle {manifest['id']} applied ({method}) and committed as {sha} on {branch}",
+        f"files: {len(files)}",
+        *lines,
+    ])
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Manage dj2 handoff bundles.",
@@ -270,6 +442,13 @@ def main():
     v.add_argument("--bundle-dir", required=True)
     v.add_argument("--clone", required=True)
     v.set_defaults(func=cmd_verify)
+
+    a = sub.add_parser("apply", help="apply a verified bundle to a repo on a feature branch")
+    a.add_argument("--bundle-dir", required=True)
+    a.add_argument("--repo", required=True)
+    a.add_argument("--skip-tests", action="store_true",
+                   help="do not run the manifest's tests_run (not for unattended use)")
+    a.set_defaults(func=cmd_apply)
 
     args = parser.parse_args()
     result = args.func(args)

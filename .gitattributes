@@ -3,3 +3,6 @@
 *.md text eol=lf
 *.toml text eol=lf
 *.json text eol=lf
+
+# Handoff patches must stay byte-exact: no line-ending conversion on checkout.
+handoffs/**/change.patch -text

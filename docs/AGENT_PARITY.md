@@ -22,6 +22,7 @@ or change the model server, update the manifest and this table in the same commi
 | Determined tools | `.venv\Scripts\python tools\query.py` | `determined_query` tool (no JSON quoting through PowerShell 5.1) |
 | Targeted tests | `.venv\Scripts\python tools\run_tests.py` | `determined_tests` tool (shell route is redirected to it) |
 | git add / commit / push | `git ...` via the shell; run `.venv\Scripts\python tools\pre_push_check.py` before `git push` | `determined_git` tool (message as data; push runs the same check, never forces; no reset/amend) |
+| Apply a handoff bundle | `.venv\Scripts\python tools\handoff.py apply --bundle-dir handoffs\dj2\NNN-slug --repo <dj2>` | `determined_git` action `apply_bundle` (same CLI) |
 | Edit scope | any path (user prompts) | this repo plus `determined.cfg [agent] work_repos` (dj2); in a work repo only on a feature branch; `determined_git` takes `repo` and `switch` |
 | Pre-push check | `tools/pre_push_check.py` (secrets, DB/binary/large files, private terms from `~/.determined/private_terms.txt`, fast-forward) | same script, called by `determined_git push` |
 | Run a venv script | `.venv\Scripts\python.exe x.py` | `determined_python` tool |
