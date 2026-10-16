@@ -154,34 +154,9 @@ Full old text: `git show 8707451:SESSION_STATE.md`. Still live elsewhere:
   shows "pending apply" per covered item.
 - The pre-existing G3 failure from that handoff is fixed (306208a).
 
-## NEXT STEPS
+## ALSO STILL OPEN
 
-First commands (any agent):
-
-    git log --oneline -5
-    .venv\Scripts\python tools\check_agent_parity.py
-
-To try opencode on real work:
-
-1. Nothing to start: the plugin starts the agent server on the first prompt (1-2 min cold)
-   and stops it after 30 idle minutes if it started it. Manual:
-   `.venv\Scripts\python tools\llm_server.py start --profile agent`.
-2. Open C:\Users\bartl\dev\Determined in opencode desktop on branch main, model
-   local/qwen36-35b, run `/next`. The brief will list the dj2 cards with bundle coverage.
-3. Report friction (permission dialogs, tool choice) -- it feeds RM78.
-
-Before any push: `.venv\Scripts\python tools\pre_push_check.py` (or `determined_git`
-action `push`). Create/keep `~/.determined/private_terms.txt` with the private names.
-
-Open items are in docs/TRACKER.md RM74-RM80 (RM80 = LLM lifecycle follow-ups: flip lazy
-start per entry point, in-process mock server fixture, route Determined's calls to the
-agent server under opencode). Suggested order:
-
-- RM79 dj2 close-out: apply bundles 001-005 on a dj2 branch (Bart authorizes), record
-  the SHA in handoffs/dj2/STATE.md, `reingest_changed`, confirm primer cards close.
-- RM74 primer: do not count FSM handlers that already exist as functions.
-- RM75 guard design_oracle against pre-s313 DBs.
-- buy.json / sell.json follow-up change (ten unresolved references) via
-  handoffs/dj2/WORKFLOW.md -- first real task for the local model.
-- Pre-existing: docs/UI_REDESIGN.md Phase B/C is the main work driver per CLAUDE.md;
-  untouched this session.
+- Before any push: tools/pre_push_check.py (or determined_git push); keep ~/.determined/private_terms.txt.
+- RM75 guard design_oracle against pre-s313 DBs; RM80 LLM lifecycle follow-ups; buy.json/sell.json
+  follow-up change via handoffs/dj2/WORKFLOW.md (a good first non-bundle task for the local model).
+- docs/UI_REDESIGN.md Phase B/C is the main work driver per CLAUDE.md; untouched in these sessions.
