@@ -21,10 +21,14 @@ Observation sources: plugin log `%TEMP%\determined-opencode.log`, opencode log
 
 - Determined main at 5807d24, pushed to origin (public repo). Working tree clean except
   untracked memory/reference_autosaddler.md (Bart's file). Parity check: AGENT PARITY: ok.
-- dj2 (C:\Users\bartl\dev\dj2): main still 598ed55 (untouched). Branches
-  feat/bundles-agent (agent-made, bundles 001-005 = 41c02db..0d4dc8f, currently checked
-  out) and feat/handoff-bundles (earlier, d5a9b29); trees identical. Local only, nothing
-  pushed. Awaits Bart's review/merge (RM79). Local backup-before-sanitize still exists.
+- dj2 (C:\Users\bartl\dev\dj2): main is f368fd2, fast-forwarded locally 2026-10-16 from
+  feat/buy-registry-fix (bundles 001-005 = 41c02db..0d4dc8f, then 31e3d18 buy registry fix,
+  f368fd2 guard test). NOT PUSHED: origin/main is still 598ed55; Bart pushes. 43 related
+  tests pass on main. Branches feat/bundles-agent and feat/buy-registry-fix still exist
+  (merged); feat/handoff-bundles and Determined's backup-before-sanitize are deleted.
+  Another branch there, claude/vigorous-volhard-ec6b27, is not ours; left alone.
+  Follow-ups: world.db MagicMock stub leaks at import in test_context_builder_encounter.py;
+  sell flow emits no trade.completed event; context builder scans the whole event log.
 - Regression groups were last run at f1ceb59 (all ten passed); not rerun after
   5807d24, which only touches the TypeScript plugin [?].
 
