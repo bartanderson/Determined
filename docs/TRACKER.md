@@ -311,10 +311,12 @@ bundle apply (determined_git `apply_bundle`: feature branch, ordered, tests, com
 rollback; verified with the 35B on bundles 001-004 in a throwaway dj2 clone).
 Missing links, in the order they block the loop:
 
-1. **Run dj2's tests.** determined_tests runs Determined's suite and determined_python
-   only runs scripts inside this repo or temp, so outside bundle apply the agent cannot
-   verify anything in dj2. Needs a runner for a work repo (pytest of named test files
-   with that repo as cwd, limited output, a timeout).
+1. **Run dj2's tests -- done 2026-10-16.** `determined_tests` takes `repo` and
+   `test_paths` (pytest of named files inside the work repo, repo as cwd, 3 min timeout,
+   capped output, no bytecode or cache litter). Verified with the 35B in throwaway clones:
+   tests/unit/test_event_log.py gave 8 passed; paths outside the repo or missing are
+   refused. Note: dj2's Postgres-dependent tests fail at import (handoffs/dj2/BASELINE.md);
+   tests run under Determined's venv, not a dj2 environment.
 2. **Refresh the corpus after changes.** reingest_changed does not run the FSM pass,
    so wired/defined/missing handler status (RM74) only updates on a full ingest.
    Call ingest_fsm_pass from reingest_changed/reingest_file for .json FSM files.

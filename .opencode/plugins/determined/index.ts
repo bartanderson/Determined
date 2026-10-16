@@ -103,13 +103,18 @@ export default Plugin.define({
       signal?: AbortSignal,
       timeout = 120000,
       autostart = false,
+      opts: { cwd?: string; env?: Record<string, string> } = {},
     ) =>
       new Promise<{ code: number; out: string }>((done) => {
-        const env = autostart ? process.env : { ...process.env, DETERMINED_LLM_AUTOSTART: "0" }
+        const env = {
+          ...process.env,
+          ...(autostart ? {} : { DETERMINED_LLM_AUTOSTART: "0" }),
+          ...(opts.env ?? {}),
+        }
         execFile(
           file,
           argv,
-          { cwd: dir, timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true, signal, env },
+          { cwd: opts.cwd ?? dir, timeout, maxBuffer: 16 * 1024 * 1024, windowsHide: true, signal, env },
           (err, stdout, stderr) => {
             const code = err ? (typeof (err as any).code === "number" ? (err as any).code : 1) : 0
             let out = String(stdout ?? "")
@@ -508,10 +513,20 @@ export default Plugin.define({
         description:
           "Run the targeted test runner (tools/run_tests.py): it picks the minimum tests for " +
           "the changed files. Pass files to name source files explicitly (e.g. " +
-          "['determined/agent/llm_client.py']). Never runs the whole suite. Returns exit code and output.",
+          "['determined/agent/llm_client.py']). Never runs the whole suite. Returns exit code and output. " +
+          "For a work repository (dj2) pass repo and test_paths (test files inside it, optionally " +
+          "'file.py::test_name'): pytest runs there with that repo as the working directory, " +
+          "output limited, 3 minute timeout. Tests that need Postgres or other services fail at " +
+          "import; that is not caused by your change.",
         input: {
           type: "object",
           properties: {
+            repo: { type: "string", description: "Work repository (name or path) whose tests to run" },
+            test_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "With repo: test files or directories inside it (required with repo)",
+            },
             files: { type: "array", items: { type: "string" }, description: "Source files to look up" },
             full_files: { type: "boolean", description: "Run whole matching test files" },
             slow: { type: "boolean", description: "Include slow (live LLM) tests" },
@@ -520,6 +535,37 @@ export default Plugin.define({
           additionalProperties: false,
         },
         execute: async (input: any, c: any) => {
+          if (input.repo) {
+            const wanted = String(input.repo)
+            const root =
+              allowedRoots.find((r) => basename(r).toLowerCase() === wanted.toLowerCase()) ?? resolve(wanted)
+            if (root.toLowerCase() === repoRoot.toLowerCase() || !allowedRoots.some((r) => r.toLowerCase() === root.toLowerCase())) {
+              return text(`repo must be a work repository: ${workRepos.join(", ") || "(none configured)"}.`)
+            }
+            const tp: string[] = input.test_paths ?? []
+            if (!isStringArray(tp) || tp.length === 0 || tp.some((p) => p.startsWith("-"))) {
+              return text("test_paths is required with repo: an array of test files not starting with '-'.")
+            }
+            const targets: string[] = []
+            for (const p of tp) {
+              const [file, ...node] = p.split("::")
+              const full = resolve(root, file)
+              if (!full.toLowerCase().startsWith((root + sep).toLowerCase()) || !existsSync(full)) {
+                return text(`${p}: not an existing path inside ${root}.`)
+              }
+              targets.push([full, ...node].join("::"))
+            }
+            // Bytecode and the pytest cache would dirty the work repo's tree.
+            const r = await runProc(
+              py,
+              ["-m", "pytest", ...targets, "-q", "--tb=short", "--maxfail=10", "-p", "no:cacheprovider"],
+              c?.signal,
+              180000,
+              false,
+              { cwd: root, env: { PYTHONDONTWRITEBYTECODE: "1" } },
+            )
+            return text(cap(`exit ${r.code}\n${r.out}`))
+          }
           const argv = [testsPy]
           if (input.files !== undefined) {
             if (!isStringArray(input.files) || input.files.some((f: string) => f.startsWith("-"))) {

@@ -24,7 +24,7 @@ Arguments are passed as data, so there is no quoting to get wrong:
 | To do this | Call |
 |---|---|
 | Ask Determined anything (`work_session_primer`, `readiness_check`, `completion_contract`, ...) | `determined_query` {tool, args, db} |
-| Run the targeted tests | `determined_tests` {files, full_files, slow, list} |
+| Run the targeted tests | `determined_tests` {files, full_files, slow, list}; in a work repo (dj2): {repo, test_paths} with named test files, e.g. test_paths ["tests/unit/test_event_log.py"] |
 | git status, diff, log, add, commit, push | `determined_git` {action, paths, message} |
 | Run a Python script with the venv | `determined_python` {script, args} |
 
