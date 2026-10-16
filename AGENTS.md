@@ -51,5 +51,7 @@ is running. Start one with `determined_python` (script `tools/llm_server.py`, ar
 - A "Determined: next work items" brief is added to your context each prompt. Take the
   first card, run `readiness_check` then `completion_contract` before writing code.
 - The session scratchpad and Claude-specific tools named in CLAUDE.md do not exist
-  here; keep `session_arc.md` in a temp or scratch folder you create.
+  here. Do not create `session_arc.md` or any other file outside the repository; there
+  is no scratch folder for you. If you need notes, put them in your reply or in a file
+  inside the repo that you then commit.
 - What each agent wires up: `docs/AGENT_PARITY.md`.
