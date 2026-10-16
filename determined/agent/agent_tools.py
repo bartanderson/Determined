@@ -12407,6 +12407,10 @@ def _primer_split(oracle, top_n: int = 5) -> tuple[list[dict], list[dict]]:
             "actions":        [e["name"] for e in actions],
             "guards":         [e["name"] for e in guards],
             "total_handlers": total,
+            # A function of that name exists but no registry key names it (fsm_walker):
+            # the work is wiring it up, not writing it.
+            "wire_only":      [e["name"] for e in actions + guards
+                               if e["purpose"].startswith("[defined, not registered]")],
         })
 
     items.extend(scored_python)
@@ -12468,7 +12472,10 @@ def work_session_primer(assessor: "Assessor", args: dict) -> str:
                 f"    File:     {item['file']}\n"
                 f"    Actions:  {action_str}\n"
                 f"    Guards:   {guard_str}\n"
-                f"    Purpose:  {item['purpose']}\n"
+                + (f"    Wire only: {', '.join(item['wire_only'])} "
+                   f"(a function of that name exists; no registry key names it)\n"
+                   if item.get("wire_only") else "")
+                + f"    Purpose:  {item['purpose']}\n"
                 f"    Why now:  Concrete spec-backed work; implement Python handlers for each FSM action/guard\n"
                 f"    First step: read {item['file']} for spec, then create Python handler module"
             )

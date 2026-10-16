@@ -273,3 +273,103 @@ def test_ingest_pass_skips_bad_file(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "skipped" in captured.out
     assert total == 14  # bad file skipped, encounter ingested
+
+
+# ---------------------------------------------------------------------------
+# Handler wiring: a declared handler is only "unimplemented" if code lacks it
+# ---------------------------------------------------------------------------
+
+from determined.ingestion.fsm_walker import classify_handlers, python_registry_keys  # noqa: E402
+
+TRADE_FSM = {
+    "name": "TradeFSM",
+    "states": [{"name": "awaiting", "initial": True}, {"name": "completed", "final": True}],
+    "events": {"offer": {"transitions": [
+        {"from": "awaiting", "to": "completed", "cond": "price_too_low", "actions": ["update_price"]}]}},
+    "guards": {"price_too_low": {"description": "offer < price"}},
+    "actions": {"update_price": {"description": "store the counter"},
+                "execute_buy": {"description": "complete the purchase"}},
+}
+
+
+def _write_py(tmp_path: Path, rel: str, text: str) -> str:
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return str(p).replace("\\", "/")
+
+
+def _add_function(conn, file_path: str, name: str, is_stub: int = 0) -> None:
+    conn.execute(
+        "INSERT INTO functions (file_path, name, line_number, is_stub) VALUES (?,?,1,?)",
+        (file_path, name, is_stub),
+    )
+
+
+def _wiring_corpus(tmp_path: Path):
+    """builtins defines price_lt and update_price; the engine registry maps the guard
+    name price_too_low to price_lt but has no 'update_price' key; execute_buy is nowhere."""
+    conn = _make_db()
+    b = _write_py(tmp_path, "world/fsm/builtins.py",
+                  "def price_lt(i, e):\n    return True\n\ndef update_price(i, e):\n    return i\n")
+    g = _write_py(tmp_path, "world/engine.py",
+                  "import builtins_mod as builtins\n"
+                  "REG = {'price_too_low': builtins.price_lt, 'noise': 3}\n")
+    _add_function(conn, b, "price_lt")
+    _add_function(conn, b, "update_price")
+    _add_function(conn, g, "build")
+    conn.commit()
+    return conn
+
+
+def test_registry_keys_found_with_value_names(tmp_path):
+    p = _write_py(tmp_path, "e.py", "R = {'a': mod.f, 'b': g, 'c': 1, 'd': mod.sub.h}\n")
+    keys = python_registry_keys([p])
+    assert keys["a"][0][0] == "f" and keys["b"][0][0] == "g" and keys["d"][0][0] == "h"
+    assert "c" not in keys
+
+
+def test_registry_scan_skips_tests_and_bad_files(tmp_path):
+    t = _write_py(tmp_path, "tests/test_x.py", "R = {'k': f}\n")
+    t2 = _write_py(tmp_path, "pkg/test_y.py", "R = {'k2': f}\n")
+    bad = _write_py(tmp_path, "pkg/bad.py", "def (:\n")
+    assert python_registry_keys([t, t2, bad, str(tmp_path / "missing.py")]) == {}
+
+
+def test_classify_wired_defined_and_missing(tmp_path):
+    conn = _wiring_corpus(tmp_path)
+    w = classify_handlers(conn)
+    assert w["price_too_low"][0] == "wired"
+    assert "engine.py" in w["price_too_low"][1] and "price_lt" in w["price_too_low"][1]
+    assert w["update_price"][0] == "defined"          # function exists, no registry key
+    assert "execute_buy" not in w                     # missing
+
+
+def test_wired_value_must_be_a_real_function(tmp_path):
+    conn = _make_db()
+    g = _write_py(tmp_path, "e.py", "R = {'ghost': builtins.not_defined_anywhere}\n")
+    _add_function(conn, g, "build")
+    assert "ghost" not in classify_handlers(conn)
+
+
+def test_ingest_marks_wired_defined_missing(tmp_path):
+    conn = _wiring_corpus(tmp_path)
+    path = _write_fsm(tmp_path, TRADE_FSM)
+    ingest_fsm_pass(conn, tmp_path)
+    rows = {r[0]: (r[1], r[2] or "") for r in conn.execute(
+        "SELECT name, is_stub, docstring FROM functions WHERE file_path LIKE '%.json'")}
+    guard = rows["TradeFSM::guard::price_too_low"]
+    assert guard[0] == 0 and guard[1].startswith("[wired:")
+    defined = rows["TradeFSM::action::update_price"]
+    assert defined[0] == 1 and defined[1].startswith("[defined, not registered]")
+    missing = rows["TradeFSM::action::execute_buy"]
+    assert missing[0] == 1 and not missing[1].startswith("[")
+
+
+def test_ingest_without_python_files_keeps_everything_stub(tmp_path):
+    conn = _make_db()
+    path = _write_fsm(tmp_path, TRADE_FSM)
+    ingest_fsm_file(path, conn, tmp_path)
+    stubs = conn.execute(
+        "SELECT COUNT(*) FROM functions WHERE is_stub=1 AND file_path LIKE '%.json'").fetchone()[0]
+    assert stubs == 3          # 1 guard + 2 actions, nothing resolved

@@ -196,27 +196,6 @@ small fraction of potential failure modes.
 
 ---
 
-## RM74 -- Primer lists FSM handlers that already exist as functions
-
-work_session_primer builds FSM cards from `<FSM>::action::<name>` / `::guard::<name>`
-rows with is_stub=1. A handler can have a real, non-stub Python function of the same
-bare name (dj2: `parley_possible` in world/fsm/builtins.py), so the card headline
-("5 unimplemented handlers") overstates the work. The handoff-bundle annotation
-(handoff_bundles.py) reports "not changed by the bundle", which is accurate but
-does not say the function already exists.
-
-**What to do:**
-- In `_primer_split`, for each FSM handler check `functions` for a non-stub row with
-  the same bare name in a .py file; list those under "exists at baseline" and exclude
-  them from the unimplemented count.
-- Cases where the spec name differs from the function name (price_too_low ->
-  builtins.price_lt via registry key) need the registry mapping, not name equality;
-  check_fsm_consistency already resolves that.
-
-**Gate:** Determined session only. Verify against dj2 EncounterFSM/TradeFSM cards.
-
----
-
 ## RM75 -- design_oracle context lookup is unguarded on old corpus DBs
 
 `design_oracle` (agent_tools.py, context branch) selects `class_name` from `functions`

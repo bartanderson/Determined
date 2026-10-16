@@ -2,11 +2,20 @@
 FSM ingestor: parse FSM JSON files and write symbols + edges into corpus DB.
 
 States and events  -> functions (is_stub=0)
-Actions and guards -> functions (is_stub=1)
+Actions and guards -> functions (is_stub=1 unless the code already wires them)
 Transitions        -> graph_edges (edge_type='fsm_transition')
+
+A handler declared in an FSM JSON is only "unimplemented" if the code does not
+provide it. Three states, decided from the corpus and the Python source:
+  wired    a registry dict literal maps the handler's name to a function that
+           exists (e.g. {'price_too_low': builtins.price_lt}); is_stub=0
+  defined  a function of that name exists but no registry key names it; stays
+           is_stub=1 and the docstring says "[defined, not registered]"
+  missing  neither; stays is_stub=1
 """
 from __future__ import annotations
 
+import ast
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,12 +95,92 @@ def _parse_fsm(path: Path) -> tuple[str, list[_FsmSymbol], list[tuple[str, str]]
     return fsm, symbols, transitions
 
 
-def ingest_fsm_file(path: Path, conn, project_root: Path) -> int:
+def _bare_name(node: ast.AST) -> str | None:
+    """Bare callable name of a Name / Attribute value (builtins.price_lt -> price_lt)."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def python_registry_keys(paths: list[str]) -> dict[str, list[tuple[str, str]]]:
+    """Scan Python files for dict literals with string keys and callable-reference values.
+
+    Returns {key: [(value_bare_name, file_path), ...]}. Registries such as
+    guard_registry={'price_too_low': builtins.price_lt} are how FSM names reach code
+    (string dispatch), so they are invisible to a call graph. Test files are skipped;
+    unreadable or unparseable files are ignored."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    for p in paths:
+        low = p.replace("\\", "/").lower()
+        name = low.rsplit("/", 1)[-1]
+        if "/tests/" in low or name.startswith("test_") or name.endswith("_test.py"):
+            continue
+        try:
+            tree = ast.parse(Path(p).read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            for k, v in zip(node.keys, node.values):
+                if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                    bare = _bare_name(v)
+                    if bare:
+                        out.setdefault(k.value, []).append((bare, p))
+    return out
+
+
+def classify_handlers(conn) -> dict[str, tuple[str, str]]:
+    """{handler_name: ("wired"|"defined", evidence)} for names the code provides.
+
+    Names absent from the result are missing. Uses the corpus DB for which functions
+    exist (is_stub=0, Python) and the Python source for registry dict literals."""
+    try:
+        impl_rows = conn.execute(
+            "SELECT DISTINCT name FROM functions "
+            "WHERE is_stub=0 AND file_path LIKE '%.py' AND name NOT LIKE '%::%'"
+        ).fetchall()
+        path_rows = conn.execute(
+            "SELECT DISTINCT file_path FROM functions WHERE file_path LIKE '%.py'"
+        ).fetchall()
+    except Exception:
+        return {}
+    impl = {r[0].rsplit(".", 1)[-1] for r in impl_rows if r[0]}
+    registries = python_registry_keys([r[0] for r in path_rows if r[0]])
+
+    result: dict[str, tuple[str, str]] = {}
+    for key, targets in registries.items():
+        for value, file_path in targets:
+            if value in impl:
+                short = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+                result[key] = ("wired", f"{short}: '{key}' -> {value}")
+                break
+    for name in impl:
+        result.setdefault(name, ("defined", ""))
+    return result
+
+
+def ingest_fsm_file(path: Path, conn, project_root: Path,
+                    wiring: dict[str, tuple[str, str]] | None = None) -> int:
     """
     Ingest one FSM JSON file into the corpus DB. Idempotent.
+    `wiring` is classify_handlers(conn); computed here when not given.
     Returns count of symbols inserted.
     """
     _, symbols, transitions = _parse_fsm(path)
+    if wiring is None:
+        wiring = classify_handlers(conn)
+    for sym in symbols:
+        if "::action::" not in sym.canonical and "::guard::" not in sym.canonical:
+            continue
+        state, evidence = wiring.get(sym.canonical.split("::")[2], ("missing", ""))
+        if state == "wired":
+            sym.is_stub = 0
+            sym.docstring = f"[wired: {evidence}] {sym.docstring}".strip()
+        elif state == "defined":
+            sym.docstring = f"[defined, not registered] {sym.docstring}".strip()
     file_path = normalize_file_path(path)
     cursor = conn.cursor()
 
@@ -126,9 +215,10 @@ def ingest_fsm_pass(conn, root: Path) -> int:
     """Discover and ingest all FSM files under root. Returns total symbols ingested."""
     root = Path(root)
     total = 0
+    wiring = classify_handlers(conn)   # once per pass, not once per FSM file
     for path in discover_fsm_files(root):
         try:
-            total += ingest_fsm_file(path, conn, root)
+            total += ingest_fsm_file(path, conn, root, wiring)
         except (ValueError, KeyError) as exc:
             print(f"[fsm_walker] skipped {path.name}: {exc}")
     return total

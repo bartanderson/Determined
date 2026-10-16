@@ -60,6 +60,8 @@ FILE_MAP: dict[str, list[str]] = {
         "tests/regression/test_llm_profiles.py"],
     "determined/agent/fsm_walker.py": [
         "tests/regression/test_fsm_walker.py"],
+    "determined/ingestion/fsm_walker.py": [
+        "tests/regression/test_fsm_walker.py"],
     "determined/agent/agent_resolver.py": [
         "tests/regression/test_agent_resolver.py",
         "tests/regression/test_technique3.py"],
