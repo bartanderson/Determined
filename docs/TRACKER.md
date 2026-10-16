@@ -253,18 +253,22 @@ Known, listed `claude_only` or documented in the parity manifest:
 
 ## RM79 -- dj2 handoff close-out (apply bundles, record SHA, re-ingest)
 
-Bundles 001-005 under handoffs/dj2/ are verified against base 598ed55 and not yet
-applied to dj2. Until they are, the primer correctly shows them as "pending apply".
+Bundles 001-005 are applied in the real dj2 on branch `feat/handoff-bundles` (five
+commits "bundle NNN: slug" on top of 598ed55; 40 bundle tests pass; every .py under
+world/ and tests/ parses). Not merged, not pushed. dj2 main is still 598ed55.
+Applying them exposed a syntax error in bundle 004 (since repaired and re-verified);
+see HISTORY 2026-10-16.
 
 **What to do:**
-- On a dj2 feature branch apply bundles in id order (handoffs/dj2/README.md), one commit
-  each; push.
-- Next Determined session: record the new dj2 SHA in handoffs/dj2/STATE.md, run
-  `reingest_changed`, and confirm the primer cards for the covered handlers close.
+- Bart reviews feat/handoff-bundles in dj2, merges it, pushes.
+- Then: record the resulting dj2 SHA in handoffs/dj2/STATE.md (bundles -> applied),
+  re-ingest dj2 (reingest_file per changed file plus ingest_fsm_pass; see RM81 item 2),
+  and confirm the primer is empty. Verified on the branch: 14 FSM handlers wired,
+  "No actionable stubs found".
 - Follow-up change for buy.json / sell.json (ten unresolved references) uses the
   bundle workflow (handoffs/dj2/WORKFLOW.md); a good first task for the local model.
 
-**Gate:** Bart authorizes changes to the dj2 repo.
+**Gate:** Bart reviews and merges dj2 changes.
 
 ---
 
