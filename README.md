@@ -34,4 +34,4 @@ UI: Flask + Socket.IO server, Cytoscape.js for graph views, vanilla JS frontend
 Point it at any Python codebase. The tool is code-agnostic by design — it reads structure and design intent, not language semantics.
 
 Status
-Active development. Core analysis and UI are functional. MCTS reasoning and frontier graph are the current build frontier.
+Its ready for more development but it is being used now. You can ask it what it does or can do. I don't use the tool without AI because it can use it better than I can and then answer questions about the results better than I could figure them out on my own. That's kind of the point, augmenting LLMs so that you give them facts and they help you figure out what's going on, whats next, how far from this feature, what's in the way and lots more.
