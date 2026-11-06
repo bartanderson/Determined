@@ -26,6 +26,7 @@ from typing import Optional
 
 from determined.core.pathing import normalize_file_path
 from determined.identity.edge_identity import edge_identity
+from determined.ingestion.fsm_walker import ingest_fsm_file, ingest_fsm_pass
 
 
 # ------------------------------------------------------------------
@@ -335,6 +336,16 @@ def reingest_file(
 
     normalized = normalize_file_path(file_path)
 
+    # FSM JSON files: handled separately (no Python AST parsing)
+    if normalized.endswith(".json"):
+        try:
+            ingest_fsm_file(Path(normalized), conn, Path(repo_root or str(fp.parent)))
+        except Exception as exc:
+            return f"ERROR ingesting FSM file {normalized}: {exc}"
+        finally:
+            conn.close()
+        return f"FSM file re-ingested: {normalized}"
+
     conn = sqlite3.connect(str(db))
     try:
         # Derive global symbols: DB (other files) + fresh scan of this file
@@ -516,5 +527,16 @@ def reingest_changed(
         lines.append(f"\n{errors} file(s) failed re-ingest.")
     else:
         lines.append(f"\nAll {len(all_files)} file(s) re-ingested successfully.")
+
+    # Run FSM pass to refresh wiring classification for all FSM files
+    # (Python file changes may affect handler classification: wired/defined/missing)
+    try:
+        _conn = sqlite3.connect(db_path)
+        _root = Path(repo_root) if repo_root else Path(db_path).parent
+        total = ingest_fsm_pass(_conn, _root)
+        lines.append(f"FSM pass: {total} symbols processed across all FSM files.")
+        _conn.close()
+    except Exception as exc:
+        lines.append(f"WARNING: FSM pass failed: {exc}")
 
     return "\n".join(lines)
