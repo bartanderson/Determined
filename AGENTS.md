@@ -1,21 +1,22 @@
 # Agent entry point (opencode)
 
-Project instructions live in `CLAUDE.md` and are the single source of truth. Read it
-(about 4k tokens), then `SESSION_STATE.md` (about 3k). Do not duplicate its rules here.
+This file is the single source of truth for agent behavior in this project. Ignore the
+"SESSION START CHECKLIST" in CLAUDE.md — it tells you to read ~33k tokens of files and
+will fill your context window before you can start working. Use this file instead.
 
 ## Context budget (read this: your window is 32k tokens)
 
-CLAUDE.md's SESSION START CHECKLIST was written for a much larger context. Following it
-literally reads about 33k tokens of files and overflows yours (HISTORY.md alone is ~18k).
-So here, do steps 1 and 3 only, and treat the rest as lookups, not reading:
+CLAUDE.md's SESSION START CHECKLIST tells you to read many large files. **Do NOT follow it literally** — doing so loads ~33k tokens and fills your context window before you can start working.
 
-- `docs/TRACKER.md`, `docs/HISTORY.md`, `docs/UI_REDESIGN.md`, `docs/DESIGN.md`: do not read
-  whole. `grep` for the item or keyword you need, or read a range with `offset` and `limit`.
-- Skip step 5 (session arc file) unless asked.
-- The plugin cuts an unbounded read of a large file to ~8 KB and tells you how to get the
-  next part; that is a limit, not an error.
-- The Determined brief below your instructions already says what is open and what a
-  verified bundle covers. Start from it.
+**What to actually do at session start:**
+1. Read `docs/session-context.md` — it summarizes current work, decisions, and next steps.
+2. Read `docs/TRACKER.md` only if you need the open items list (grep first, read whole only if grep returns nothing useful).
+3. Everything else (HISTORY.md, UI_REDESIGN.md, DESIGN.md): **do not read whole**. `grep` for what you need.
+
+**Important limits:**
+- The plugin cuts unbounded reads of large files to ~8 KB — that is a limit, not an error.
+- The "Determined: next work items" brief is added each prompt. Don't read additional large files on top of it.
+- Never read HISTORY.md (18k+ tokens) at session start.
 
 ## Use these tools instead of the shell
 
